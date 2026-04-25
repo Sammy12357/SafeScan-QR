@@ -6,19 +6,12 @@
   <title>SafeScan QR Demo</title>
   <link rel="stylesheet" href="/static/styles.css">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <style>
-    .verdict-malicious { background-color: #ea4335; color: white; }
-    .verdict-safe { background-color: #34a853; color: white; }
-  </style>
 </head>
 <body>
   <div class="page-shell">
     <div class="top-auth">
       {% if not logged_in %}
-        <div id="g_id_onload"
-             data-client_id="{{ google_client_id }}"
-             data-login_uri="https://safescan-qr.onrender.com/auth/google">
-        </div>
+        <div id="g_id_onload" data-client_id="{{ google_client_id }}" data-login_uri="https://safescan-qr-docker.onrender.com/auth/google"></div>
         <div class="g_id_signin" data-type="standard"></div>
       {% else %}
         <div id="airdropProfile" class="top-profile">
@@ -26,7 +19,7 @@
             <p class="profile-name">Authorized Researcher</p>
             <p class="profile-email">{{ email }}</p>
           </div>
-          <a href="/" class="sign-out-button" style="text-decoration: none; padding: 5px 10px; border: 1px solid #ccc; border-radius: 5px;">Sign out</a>
+          <a href="/" class="sign-out-button" style="text-decoration: none;">Sign out</a>
         </div>
       {% endif %}
     </div>
@@ -35,52 +28,53 @@
       <div class="hero-copy">
         <p class="eyebrow">Cybersecurity Hackathon Demo</p>
         <h1>SafeScan QR</h1>
-        <p class="hero-text">
-          Scan once, inspect the hidden destination, and safely continue without rescanning.
-        </p>
+        <p class="hero-text">Scan once, inspect the hidden payload, and safely continue without rescanning.</p>
         <div class="hero-actions">
           <a class="primary-button" href="#scanner">Try the demo</a>
         </div>
+      </div>
+      <div class="hero-card">
+        <div class="hero-card-label">Engine focus</div>
+        <ul>
+          <li>Decodes QR directly via Python ZBar</li>
+          <li>Real-time Google Safe Browsing API checks</li>
+          <li>Database caching for 24-hour safety windows</li>
+        </ul>
       </div>
     </header>
 
     <main>
       {% if logged_in %}
+      <section class="airdrop-panel" id="airdrop">
+        <div class="panel-header">
+          <div><p class="eyebrow">Community airdrop</p><h2>Registration Tiers</h2></div>
+          <div class="airdrop-status signed-in">Verified Researcher</div>
+        </div>
+        <div class="airdrop-grid">
+            <article class="airdrop-card unlocked"><h3>Scanner Tier</h3><p>Active</p></article>
+            <article class="airdrop-card"><h3>Referrer Tier</h3><p>Locked</p></article>
+            <article class="airdrop-card"><h3>Guardian Tier</h3><p>Locked</p></article>
+        </div>
+      </section>
+
       <section class="scanner-panel" id="scanner">
         <div class="panel-header">
-          <div>
-            <p class="eyebrow">Interactive demo</p>
-            <h2>Analyze a QR destination</h2>
-          </div>
+          <div><p class="eyebrow">Interactive demo</p><h2>Analyze any QR payload</h2></div>
         </div>
-
         <div class="scanner-grid">
           <div class="scanner-card">
             <form action="/search_qr_api" method="post" enctype="multipart/form-data">
-              <div class="scan-mode-bar">
-                <label class="upload-chip" for="qrImageInput" style="cursor: pointer;">Use iPhone camera/photo</label>
-                <input id="qrImageInput" name="file" type="file" accept="image/*" onchange="this.form.submit()" hidden>
-              </div>
-
-              <label for="urlInput" style="margin-top: 15px; display: block;">Paste a URL manually</label>
-              <div style="display: flex; gap: 10px; margin-top: 5px;">
-                <input id="urlInput" name="manual_url" type="text" placeholder="https://example.com/login" style="flex-grow: 1;">
-                <button type="submit" class="sample-button">Check</button>
-              </div>
+              <label class="upload-chip" for="qrImageInput" style="display:inline-block; cursor:pointer;">Use iPhone camera/photo</label>
+              <input id="qrImageInput" name="file" type="file" accept="image/*" onchange="this.form.submit()" hidden>
+              
+              <label for="urlInput" style="margin-top:20px; display:block;">Or paste a URL manually</label>
+              <input id="urlInput" name="manual_url" type="text" placeholder="https://example.com">
+              <button type="submit" class="primary-button" style="margin-top:15px; width:100%;">Analyze Payload</button>
             </form>
-
-            <div class="scan-status" style="margin-top: 15px;">
-                {% if results_visible %}
-                    Analysis complete. Results shown below.
-                {% else %}
-                    Waiting for a scan or pasted QR destination.
-                {% endif %}
-            </div>
           </div>
-
           <div class="scanner-card visual-card">
-            <p class="visual-label">AI Scanner Status</p>
-            <div class="qr-frame">
+            <div class="qr-frame {{ 'scanning' if not results_visible }}">
+              <div class="qr-grid"><span></span><span></span><span></span><span></span><span></span><span></span></div>
               <div class="scan-line"></div>
             </div>
           </div>
@@ -89,39 +83,21 @@
 
       {% if results_visible %}
       <section id="resultsSection" class="results-panel">
-          <div class="results-header">
-              <div>
-                  <p class="eyebrow">Analysis result</p>
-                  <h2 id="resultTitle">Verdict: {{ status }}</h2>
-              </div>
-              <div class="verdict-badge {{ 'verdict-malicious' if status == 'MALICIOUS' else 'verdict-safe' }}">
-                  {{ status }}
-              </div>
-          </div>
-
-          <div class="results-grid">
-              <article class="result-card">
-                  <h3>Destination</h3>
-                  <p class="mono" style="word-break: break-all; background: #f9f9f9; padding: 10px;">{{ url_found }}</p>
-                  <p class="result-support">Verified via: {{ source }}</p>
-              </article>
-
-              <article class="result-card result-card-wide engine-card">
-                  <div class="engine-header">
-                      <h3>AI risk engine</h3>
-                  </div>
-                  <div class="engine-grid">
-                      <div>
-                          <p class="engine-label">Heuristic score</p>
-                          <p class="score-value">{{ '95/100' if status == 'MALICIOUS' else '0/100' }}</p>
-                      </div>
-                      <div>
-                          <p class="engine-label">Action Gate</p>
-                          <p class="engine-copy">{{ 'ACCESS_BLOCKED' if status == 'MALICIOUS' else 'CLEARED' }}</p>
-                      </div>
-                  </div>
-              </article>
-          </div>
+        <div class="results-header">
+          <div><p class="eyebrow">Analysis result</p><h2>Verdict: {{ status }}</h2></div>
+          <div class="verdict-badge {{ 'verdict-safe' if status == 'SAFE' else 'verdict-dangerous' }}">{{ status }}</div>
+        </div>
+        <div class="results-grid">
+          <article class="result-card"><h3>Decoded payload</h3><p class="mono">{{ url_found }}</p></article>
+          <article class="result-card result-card-wide engine-card">
+            <div class="engine-header"><h3>AI risk engine</h3><p>Decision visibility for judges.</p></div>
+            <div class="engine-grid">
+              <div><p class="engine-label">Heuristic score</p><p class="score-value">{{ score }}</p></div>
+              <div><p class="engine-label">Threat class</p><p class="engine-copy">{{ threat_class }}</p></div>
+              <div><p class="engine-label">Action gate</p><p class="engine-copy">{{ 'BLOCKED' if status == 'MALICIOUS' else 'CLEARED' }}</p></div>
+            </div>
+          </article>
+        </div>
       </section>
       {% endif %}
       {% endif %}

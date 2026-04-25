@@ -148,7 +148,6 @@ async def scan_qr(request: Request, file: UploadFile = File(...)):
     # 6. Save result to database for next time
     save_to_cache(url_qr, status)
     
-    # 7. Render the final result back to your professional HTML
     return templates.TemplateResponse("index.html", {
         "request": request,
         "logged_in": True,
@@ -156,10 +155,11 @@ async def scan_qr(request: Request, file: UploadFile = File(...)):
         "status": status,
         "url_found": url_qr,
         "source": "SafeScan Engine",
+        "score": "95" if status == "MALICIOUS" else "0",  # Added this
+        "threat_class": "Phishing/Malware Risk" if status == "MALICIOUS" else "Safe Destination", # Added this
         "email": "restreposamuel2004@gmail.com",
-        "google_client_id": CLIENT_ID  # <-- Add this!
+        "google_client_id": CLIENT_ID
     })
-    
 
 @qr_app.post("/auth/google", response_class=HTMLResponse)
 async def auth_google(request: Request, credential: str = Form(...)):
