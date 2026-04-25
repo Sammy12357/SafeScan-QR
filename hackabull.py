@@ -49,7 +49,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-    init_db()
+init_db()
 
 # NEW: Helper functions for scoring
 def record_unique_scan(email, url):
