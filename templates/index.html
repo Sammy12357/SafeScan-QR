@@ -11,7 +11,7 @@
   <div class="page-shell">
     <div class="top-auth">
       {% if not logged_in %}
-        <div id="g_id_onload" data-client_id="{{ google_client_id }}" data-login_uri="https://safescan-qr.onrender.com/auth/google"></div>
+        <div id="g_id_onload" data-client_id="{{ google_client_id }}" data-login_uri="https://safescan-qr-docker.onrender.com/auth/google"></div>
         <div class="g_id_signin" data-type="standard"></div>
       {% else %}
         <div id="airdropProfile" class="top-profile">
@@ -47,13 +47,79 @@
       {% if logged_in %}
       <section class="airdrop-panel" id="airdrop">
         <div class="panel-header">
-          <div><p class="eyebrow">Community airdrop</p><h2>Registration Tiers</h2></div>
-          <div class="airdrop-status signed-in">Verified Researcher</div>
+          <div><p class="eyebrow">Community airdrop</p><h2>Register for SafeScan QR tiers</h2></div>
+          <div id="airdropStatus" class="airdrop-status">Not signed in</div>
         </div>
+
+        <div class="token-strip">
+          <div><p class="token-label">Token name</p><div class="token-pill">SafeScan</div></div>
+          <div><p class="token-label">Ticker</p><div class="token-ticker">SQR</div></div>
+          <div>
+            <p class="token-label">Address</p>
+            <div class="token-address-row">
+              <p id="tokenAddress" class="token-address">Bpdt7Hey78HeEEr9Q6x19gYAns5n6w44LdjJhxN3pump</p>
+              <button id="copyTokenAddressButton" class="token-copy-button" type="button">Copy</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="airdrop-progress">
+          <div>
+            <p class="eyebrow">Current tier</p>
+            <h3 id="currentTierName">Not registered</h3>
+            <p id="currentTierSummary" class="airdrop-copy">Sign in to start earning airdrop progress.</p>
+          </div>
+          <div class="progress-stats">
+            <div><span id="scanProgressValue">0 / 5</span><p>QR scans</p></div>
+            <div><span id="referralProgressValue">0</span><p>Referrals</p></div>
+          </div>
+        </div>
+
+        <div class="wallet-panel">
+          <div>
+            <p class="eyebrow">Airdrop wallet</p>
+            <p id="walletStatus" class="wallet-address">Sign in, then connect your Solana wallet.</p>
+            <p class="airdrop-copy">This wallet address will be saved with the same account email used for registration.</p>
+          </div>
+          <div class="wallet-actions">
+            <button id="connectWalletButton" class="primary-button" type="button">Connect wallet</button>
+            <button id="demoWalletButton" class="secondary-button" type="button">Use demo wallet</button>
+          </div>
+        </div>
+
+        <div class="referral-panel">
+          <div>
+            <p class="eyebrow">Referral link</p>
+            <p id="referralLink" class="referral-link">Sign in to generate your link.</p>
+            <p id="incomingReferral" class="airdrop-copy hidden"></p>
+            <p id="referralAttribution" class="airdrop-copy hidden"></p>
+          </div>
+          <div class="referral-actions">
+            <button id="copyReferralButton" class="secondary-button" type="button">Copy referral</button>
+            <button id="shareReferralButton" class="primary-button" type="button">Share</button>
+            <button id="demoReferralButton" class="secondary-button" type="button">Add demo referral</button>
+          </div>
+        </div>
+
         <div class="airdrop-grid">
-            <article class="airdrop-card unlocked"><h3>Scanner Tier</h3><p>Active</p></article>
-            <article class="airdrop-card"><h3>Referrer Tier</h3><p>Locked</p></article>
-            <article class="airdrop-card"><h3>Guardian Tier</h3><p>Locked</p></article>
+          <div id="tierOneCard" class="tier-card">
+            <p class="tier-rank">Tier 1</p>
+            <h3>Scanner</h3>
+            <p>Create an account and scan 5 QR codes.</p>
+            <div class="tier-reward">Base allocation</div>
+          </div>
+          <div id="tierTwoCard" class="tier-card">
+            <p class="tier-rank">Tier 2</p>
+            <h3>Referrer</h3>
+            <p>Invite 1 person with your referral link.</p>
+            <div class="tier-reward">2x allocation</div>
+          </div>
+          <div id="tierThreeCard" class="tier-card">
+            <p class="tier-rank">Tier 3</p>
+            <h3>Guardian</h3>
+            <p>Invite multiple people and scan 50 QR codes.</p>
+            <div class="tier-reward">5x allocation</div>
+          </div>
         </div>
       </section>
 
