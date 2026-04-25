@@ -20,6 +20,8 @@ from google.auth.transport import requests as google_requests
 import os
 from dotenv import load_dotenv
 
+from fastapi.staticfiles import StaticFiles 
+
 
 templates = Jinja2Templates(directory="templates")
 
@@ -89,6 +91,7 @@ def check_url(target_url):
     
 
 qr_app = FastAPI()
+qr_app.mount("/static", StaticFiles(directory="static"), name="static")
 
 qr_app.add_middleware(
     CORSMiddleware,
