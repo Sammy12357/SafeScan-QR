@@ -1,7 +1,7 @@
 # Use a lightweight Python image
 FROM python:3.11-slim
 
-# Install the missing QR library (This is the magic line!)
+# Install the missing QR library
 RUN apt-get update && apt-get install -y libzbar0
 
 # Set up the folder
