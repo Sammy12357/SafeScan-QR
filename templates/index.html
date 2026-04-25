@@ -170,5 +170,19 @@
     </main>
   </div>
   <script src="/static/app.js"></script>
+  
+  {% if email and email != 'guest@demo.com' %}
+  <script>
+    // Bridge Python Auth to Javascript Airdrop Profile
+    if (!getStoredAirdropProfile()) {
+       registerAirdropUser({ 
+         email: "{{ email }}", 
+         name: "{{ email }}".split('@')[0], 
+         sub: "backend-auth" 
+       });
+    }
+  </script>
+  {% endif %}
+  
 </body>
 </html>
