@@ -165,6 +165,7 @@ async def scan_qr(request: Request, file: UploadFile = File(...)):
     })
 
 @qr_app.post("/auth/google", response_class=HTMLResponse)
+@qr_app.post("/auth/google/", response_class=HTMLResponse)
 async def auth_google(request: Request, credential: str = Form(...)):
     # Verify logic...
     user_email = "example@gmail.com" # Get this from the token verification
