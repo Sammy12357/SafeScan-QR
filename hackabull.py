@@ -166,10 +166,11 @@ async def scan_qr(request: Request, file: UploadFile = File(...)):
 
 # Replace your existing auth_google functions with this:
 
-@qr_app.api_route("/auth/google", methods=["GET", "POST"], response_class=HTMLResponse)
-@qr_app.api_route("/auth/google/", methods=["GET", "POST"], response_class=HTMLResponse)
+@qr_app.post("/auth/google", response_class=HTMLResponse)
+@qr_app.post("/auth/google/", response_class=HTMLResponse)
+@qr_app.get("/auth/google", response_class=HTMLResponse)
+@qr_app.get("/auth/google/", response_class=HTMLResponse)
 async def auth_google(request: Request, credential: str = Form(None)):
-    # Form(None) prevents a crash if the browser does a GET request
     user_email = "restreposamuel2004@gmail.com" 
     
     return templates.TemplateResponse("index.html", {
