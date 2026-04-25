@@ -164,23 +164,23 @@ async def scan_qr(request: Request, file: UploadFile = File(...)):
         "google_client_id": CLIENT_ID
     })
 
-@qr_app.post("/auth/google", response_class=HTMLResponse)
-@qr_app.post("/auth/google/", response_class=HTMLResponse)
-async def auth_google(request: Request, credential: str = Form(...)):
-    # In a real app, you would verify the 'credential' token here.
-    # For the hackathon demo, we will simulate a successful login.
+# Replace your existing auth_google functions with this:
+
+@qr_app.api_route("/auth/google", methods=["GET", "POST"], response_class=HTMLResponse)
+@qr_app.api_route("/auth/google/", methods=["GET", "POST"], response_class=HTMLResponse)
+async def auth_google(request: Request, credential: str = Form(None)):
+    # Form(None) prevents a crash if the browser does a GET request
     user_email = "restreposamuel2004@gmail.com" 
     
     return templates.TemplateResponse("index.html", {
         "request": request, 
         "logged_in": True, 
-        "results_visible": False, # Hide results until they scan something
+        "results_visible": False, 
         "email": user_email,
-        "score": "0",             # Placeholder for the UI
-        "threat_class": "N/A",    # Placeholder for the UI
+        "score": "0",             
+        "threat_class": "N/A",    
         "google_client_id": CLIENT_ID
     })
-
     
 
 def save_user_to_db(google_id, email):
