@@ -128,7 +128,7 @@ async def read_index(request: Request):
     })
 
 @qr_app.post("/search_qr_api", response_class=HTMLResponse)
-async def scan_qr(request: Request, file: UploadFile = File(...)):
+async def scan_qr(request: Request, file: UploadFile = File(...), user_email: str = Form("guest@demo.com")):
     # 1. Read the image file from the HTML form
     contents = await file.read()
     image = Image.open(io.BytesIO(contents))
@@ -169,8 +169,7 @@ async def scan_qr(request: Request, file: UploadFile = File(...)):
     # 6. Save result to cache
     save_to_cache(url_qr, status)
     
-    # 7. Record scan and get new score
-    user_email = "restreposamuel2004@gmail.com"
+    # 7. Record scan and get new score using the dynamic user_email
     record_unique_scan(user_email, url_qr)
     current_scans = get_scan_count(user_email)
     

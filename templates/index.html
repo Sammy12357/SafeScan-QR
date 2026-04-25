@@ -130,6 +130,7 @@
         <div class="scanner-grid">
           <div class="scanner-card">
             <form action="/search_qr_api" method="post" enctype="multipart/form-data">
+              <input type="hidden" name="user_email" value="{{ email }}">
               <label class="upload-chip" for="qrImageInput" style="display:inline-block; cursor:pointer;">Use iPhone camera/photo</label>
               <input id="qrImageInput" name="file" type="file" accept="image/*" onchange="this.form.submit()" hidden>
               

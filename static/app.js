@@ -585,23 +585,24 @@ async function saveAirdropProfile(profile) {
 
 function renderAirdropProfile(profile) {
   if (!profile) {
-    dom.airdropStatus.textContent = "Not signed in";
-    dom.airdropStatus.classList.remove("signed-in");
-    dom.airdropProfile.classList.add("hidden");
-    dom.googleSignInButton.classList.remove("hidden");
+    dom.airdropStatus?.classList.remove("signed-in");
+    if (dom.airdropStatus) dom.airdropStatus.textContent = "Not signed in";
+    dom.airdropProfile?.classList.add("hidden");
+    dom.googleSignInButton?.classList.remove("hidden");
     updateAirdropProgress();
     return;
   }
 
   const tier = getAirdropTier();
-  dom.airdropStatus.textContent = "Registered";
-  dom.airdropStatus.classList.add("signed-in");
-  dom.airdropProfile.classList.remove("hidden");
-  dom.googleSignInButton.classList.add("hidden");
-  dom.demoGoogleButton.classList.remove("is-visible");
-  dom.profileName.textContent = `Name: ${profile.name}`;
-  dom.profileEmail.textContent = `Email: ${profile.email}`;
-  dom.profileTier.textContent = tier.name;
+  if (dom.airdropStatus) dom.airdropStatus.textContent = "Registered";
+  dom.airdropStatus?.classList.add("signed-in");
+  dom.airdropProfile?.classList.remove("hidden");
+  dom.googleSignInButton?.classList.add("hidden");
+  dom.demoGoogleButton?.classList.remove("is-visible");
+  if (dom.profileName) dom.profileName.textContent = `Name: ${profile.name}`;
+  if (dom.profileEmail) dom.profileEmail.textContent = `Email: ${profile.email}`;
+  if (dom.profileTier) dom.profileTier.textContent = tier.name;
+  
   renderWalletState(profile);
   updateAirdropProgress();
 }
