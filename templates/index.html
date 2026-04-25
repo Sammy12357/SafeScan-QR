@@ -70,7 +70,7 @@
             <p id="currentTierSummary" class="airdrop-copy">Sign in to start earning airdrop progress.</p>
           </div>
           <div class="progress-stats">
-            <div><span id="scanProgressValue">0 / 5</span><p>QR scans</p></div>
+            <div><span id="scanProgressValue" data-backend-count="{{ scan_count }}">{{ scan_count | default(0) }} / 5</span><p>QR scans</p></div>
             <div><span id="referralProgressValue">0</span><p>Referrals</p></div>
           </div>
         </div>

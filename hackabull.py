@@ -43,10 +43,28 @@ def init_db():
     #user database
     conn.execute('''CREATE TABLE IF NOT EXISTS users 
                         (google_id TEXT PRIMARY KEY, email TEXT, last_login TEXT)''')
+    #unique scans tracker
+    cursor.execute('''CREATE TABLE IF NOT EXISTS user_scans 
+                        (email TEXT, url TEXT, PRIMARY KEY (email, url))''')
     conn.commit()
     conn.close()
 
-init_db()
+    init_db()
+
+# NEW: Helper functions for scoring
+def record_unique_scan(email, url):
+    with sqlite3.connect("qr_cache.db") as conn:
+        try:
+            conn.execute("INSERT INTO user_scans (email, url) VALUES (?, ?)", (email, url))
+            return True # Successfully added new unique scan
+        except sqlite3.IntegrityError:
+            return False # Duplicate scan, ignored
+
+def get_scan_count(email):
+    with sqlite3.connect("qr_cache.db") as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM user_scans WHERE email = ?", (email,))
+        return cursor.fetchone()[0]
 
 
 
@@ -148,8 +166,13 @@ async def scan_qr(request: Request, file: UploadFile = File(...)):
     safety_result = check_url(url_qr)
     status = "MALICIOUS" if "matches" in safety_result else "SAFE"
     
-    # 6. Save result to database for next time
+    # 6. Save result to cache
     save_to_cache(url_qr, status)
+    
+    # 7. Record scan and get new score
+    user_email = "restreposamuel2004@gmail.com"
+    record_unique_scan(user_email, url_qr)
+    current_scans = get_scan_count(user_email)
     
     return templates.TemplateResponse("index.html", {
         "request": request,
@@ -158,11 +181,13 @@ async def scan_qr(request: Request, file: UploadFile = File(...)):
         "status": status,
         "url_found": url_qr,
         "source": "SafeScan Engine",
-        "score": "95" if status == "MALICIOUS" else "0",  # Added this
-        "threat_class": "Phishing/Malware Risk" if status == "MALICIOUS" else "Safe Destination", # Added this
-        "email": "restreposamuel2004@gmail.com",
+        "score": "95" if status == "MALICIOUS" else "0",  
+        "threat_class": "Phishing/Malware Risk" if status == "MALICIOUS" else "Safe Destination", 
+        "email": user_email,
+        "scan_count": current_scans, # Pass updated score to HTML
         "google_client_id": CLIENT_ID
     })
+    
 
 # Replace your existing auth_google functions with this:
 
@@ -171,18 +196,32 @@ async def scan_qr(request: Request, file: UploadFile = File(...)):
 @qr_app.get("/auth/google", response_class=HTMLResponse)
 @qr_app.get("/auth/google/", response_class=HTMLResponse)
 async def auth_google(request: Request, credential: str = Form(None)):
-    user_email = "restreposamuel2004@gmail.com" 
+    
+    # 1. Decode the real email from Google's token
+    if credential:
+        try:
+            idinfo = id_token.verify_oauth2_token(
+                credential, google_requests.Request(), CLIENT_ID
+            )
+            user_email = idinfo['email']
+        except ValueError:
+            user_email = "error@invalid-token.com" # Failsafe
+    else:
+        user_email = "guest@demo.com" # Failsafe for direct GET requests
+        
+    # 2. Fetch the real score for this specific user
+    current_scans = get_scan_count(user_email) 
     
     return templates.TemplateResponse("index.html", {
         "request": request, 
         "logged_in": True, 
         "results_visible": False, 
-        "email": user_email,
+        "email": user_email,          # <--- Dynamically injected here
         "score": "0",             
-        "threat_class": "N/A",    
+        "threat_class": "N/A",
+        "scan_count": current_scans,  # <--- Dynamic scan count
         "google_client_id": CLIENT_ID
     })
-    
 
 def save_user_to_db(google_id, email):
     with sqlite3.connect("qr_cache.db") as conn:
