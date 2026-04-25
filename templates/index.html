@@ -7,7 +7,6 @@
   <link rel="stylesheet" href="/static/styles.css">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <style>
-    /* These classes fix the CSS validator errors in your editor */
     .verdict-malicious { background-color: #ea4335; color: white; }
     .verdict-safe { background-color: #34a853; color: white; }
   </style>
@@ -17,10 +16,8 @@
     <div class="top-auth">
       {% if not logged_in %}
         <div id="g_id_onload"
-             <div id="g_id_onload"
-              data-client_id="{{ google_client_id }}"
-              data-login_uri="http://localhost:8000/auth/google">
-</div>
+             data-client_id="{{ google_client_id }}"
+             data-login_uri="https://safescan-qr.onrender.com/auth/google">
         </div>
         <div class="g_id_signin" data-type="standard"></div>
       {% else %}
@@ -127,7 +124,8 @@
           </div>
       </section>
       {% endif %}
-      {% endif %} </main>
+      {% endif %}
+    </main>
   </div>
 </body>
 </html>
