@@ -6,7 +6,7 @@ import sqlite3
 import hashlib
 import traceback
 from datetime import datetime, timedelta
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 from pyzbar.pyzbar import decode
 
 from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query
@@ -138,6 +138,52 @@ def check_url(target_url):
     response = requests.post(url, json=payload)
     return response.json()
 
+def decode_qr_image(image):
+    image = ImageOps.exif_transpose(image)
+    candidates = []
+
+    def add_candidate(candidate):
+        if candidate.mode not in ("RGB", "L"):
+            candidate = candidate.convert("RGB")
+        candidates.append(candidate)
+
+    add_candidate(image)
+
+    max_side = max(image.size)
+    if max_side < 1400:
+        scale = 1400 / max_side
+        resized = image.resize(
+            (int(image.width * scale), int(image.height * scale)),
+            Image.Resampling.LANCZOS
+        )
+        add_candidate(resized)
+    else:
+        resized = image
+
+    gray = ImageOps.grayscale(resized)
+    add_candidate(gray)
+
+    contrast = ImageOps.autocontrast(gray)
+    add_candidate(contrast)
+
+    sharpened = contrast.filter(ImageFilter.SHARPEN)
+    add_candidate(sharpened)
+
+    high_contrast = ImageEnhance.Contrast(sharpened).enhance(1.8)
+    add_candidate(high_contrast)
+
+    for threshold in (95, 125, 155):
+        add_candidate(high_contrast.point(lambda pixel, limit=threshold: 255 if pixel > limit else 0))
+
+    for candidate in candidates:
+        for angle in (0, 90, 180, 270):
+            rotated = candidate if angle == 0 else candidate.rotate(angle, expand=True)
+            decoded = decode(rotated)
+            if decoded:
+                return decoded
+
+    return []
+
 qr_app = FastAPI()
 qr_app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -167,7 +213,7 @@ async def scan_qr(
         contents = await file.read()
         try:
             image = Image.open(io.BytesIO(contents))
-            decoded_qr = decode(image)
+            decoded_qr = decode_qr_image(image)
             if decoded_qr:
                 url_qr = decoded_qr[0].data.decode("utf-8")
         except Exception:
