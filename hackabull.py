@@ -5,6 +5,8 @@ import io
 import sqlite3
 import hashlib
 import traceback
+import re
+from urllib.parse import urlparse
 from datetime import datetime, timedelta
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 from pyzbar.pyzbar import decode
@@ -138,6 +140,157 @@ def check_url(target_url):
     response = requests.post(url, json=payload)
     return response.json()
 
+def is_url_like(value):
+    return bool(re.match(r"^https?://", value, re.IGNORECASE) or re.match(r"^[a-z0-9.-]+\.[a-z]{2,}(/|$)", value, re.IGNORECASE))
+
+def normalize_url(target_url):
+    trimmed = target_url.strip()
+    if not re.match(r"^https?://", trimmed, re.IGNORECASE):
+        return f"https://{trimmed}"
+    return trimmed
+
+def extract_urls(text):
+    return re.findall(r"https?://[^\s<>'\"]+", text, flags=re.IGNORECASE)
+
+def detect_payload(raw_payload):
+    payload = raw_payload.strip()
+    upper = payload.upper()
+
+    if is_url_like(payload):
+        return "URL", "Open website", normalize_url(payload)
+    if upper.startswith("WIFI:"):
+        return "Wi-Fi", "Join Wi-Fi network", payload
+    if "BEGIN:VCARD" in upper:
+        return "Contact card", "Import contact", payload
+    if upper.startswith(("SMSTO:", "SMS:")):
+        return "SMS", "Open prefilled text message", payload
+    if upper.startswith("MAILTO:"):
+        return "Email", "Open prefilled email", payload
+    if upper.startswith(("SOLANA:", "BITCOIN:", "ETHEREUM:")):
+        return "Crypto/payment", "Open wallet or payment request", payload
+    if upper.startswith("BEGIN:VEVENT") or "BEGIN:VCALENDAR" in upper:
+        return "Calendar", "Add calendar event", payload
+
+    try:
+        json.loads(payload)
+        return "JSON/custom", "Run app-specific data flow", payload
+    except ValueError:
+        return "Plain text", "Display text payload", payload
+
+def analyze_non_url_payload(raw_payload):
+    payload_type, action, normalized = detect_payload(raw_payload)
+    embedded_urls = extract_urls(normalized)
+    score = 0
+    status = "SAFE"
+    threat_class = f"{payload_type}: {action}"
+
+    if payload_type == "Wi-Fi":
+        score = 25
+        status = "CAUTION"
+        if "T:WEP" in normalized.upper() or "T:NOPASS" in normalized.upper():
+            score = 45
+            threat_class = "Wi-Fi network with weak or open security"
+        else:
+            threat_class = "Wi-Fi join request: review network name before joining"
+    elif payload_type in ("SMS", "Email"):
+        score = 35
+        status = "CAUTION"
+        threat_class = f"{payload_type} action: review recipient and message before sending"
+    elif payload_type == "Contact card":
+        score = 20
+        status = "CAUTION"
+        threat_class = "Contact import: review names, phone numbers, and links before saving"
+    elif payload_type == "Crypto/payment":
+        score = 60
+        status = "CAUTION"
+        threat_class = "Wallet/payment request: verify destination before approving"
+    elif payload_type == "Calendar":
+        score = 20
+        status = "CAUTION"
+        threat_class = "Calendar event: review event details before adding"
+    elif payload_type == "JSON/custom":
+        score = 30
+        status = "CAUTION"
+        threat_class = "Custom app payload: inspect app-specific action before running"
+
+    if embedded_urls:
+        score = max(score, 45)
+        status = "CAUTION"
+        threat_class = f"{payload_type} containing embedded URL: inspect destination before action"
+
+    risky_words = ("password", "seed", "recovery", "verify", "login", "wallet", "bank", "urgent")
+    if any(word in normalized.lower() for word in risky_words):
+        score = max(score, 55)
+        status = "CAUTION"
+        threat_class = f"{payload_type} includes sensitive or urgency language"
+
+    return {
+        "status": status,
+        "score": str(score),
+        "threat_class": threat_class,
+        "source": "SafeScan Payload Analyzer",
+        "normalized": normalized,
+        "payload_type": payload_type
+    }
+
+def analyze_url_payload(raw_payload):
+    normalized = normalize_url(raw_payload)
+    parsed = urlparse(normalized)
+    lower_url = normalized.lower()
+    score = 0
+    threat_class = "Safe Destination"
+
+    cached_status = get_cached_result(normalized)
+    if cached_status:
+        return {
+            "status": cached_status,
+            "score": "95" if cached_status == "MALICIOUS" else "0",
+            "threat_class": "Phishing/Malware Risk" if cached_status == "MALICIOUS" else "Safe Destination",
+            "source": "Local Cache",
+            "normalized": normalized,
+            "payload_type": "URL"
+        }
+
+    safety_result = check_url(normalized)
+    status = "MALICIOUS" if "matches" in safety_result else "SAFE"
+
+    if parsed.scheme != "https":
+        score += 20
+        threat_class = "Non-HTTPS destination"
+    if parsed.hostname and parsed.hostname.endswith((".top", ".zip", ".click", ".shop")):
+        score += 20
+        threat_class = "Higher-risk URL destination"
+    if any(keyword in lower_url for keyword in ("download", ".apk", ".exe", ".dmg", ".pkg", ".zip")):
+        score += 45
+        threat_class = "Download or installer link: review before opening"
+    if any(keyword in lower_url for keyword in ("verify", "login", "password", "wallet", "seed", "recovery")):
+        score += 25
+        threat_class = "Credential or wallet-themed URL"
+
+    if status == "MALICIOUS":
+        score = 95
+        threat_class = "Phishing/Malware Risk"
+    elif score >= 45:
+        status = "CAUTION"
+    else:
+        score = 0
+
+    save_to_cache(normalized, status)
+    return {
+        "status": status,
+        "score": str(min(score, 95)),
+        "threat_class": threat_class,
+        "source": "SafeScan Engine",
+        "normalized": normalized,
+        "payload_type": "URL"
+    }
+
+def analyze_qr_payload(raw_payload):
+    payload_type, _, normalized = detect_payload(raw_payload)
+    if payload_type == "URL":
+        return analyze_url_payload(normalized)
+    return analyze_non_url_payload(normalized)
+
 def decode_qr_image(image):
     image = ImageOps.exif_transpose(image)
     candidates = []
@@ -227,27 +380,14 @@ async def scan_qr(
             "email": user_email, "scan_count": get_scan_count(user_email), "google_client_id": CLIENT_ID
         })
 
-    cached_status = get_cached_result(url_qr)
-    if cached_status:
-        record_unique_scan(user_email, url_qr, wallet_address)
-        return templates.TemplateResponse("index.html", {
-            "request": request, "logged_in": True, "results_visible": True,
-            "status": cached_status, "url_found": url_qr, "source": "Local Cache",
-            "score": "95" if cached_status == "MALICIOUS" else "0",
-            "threat_class": "Phishing/Malware Risk" if cached_status == "MALICIOUS" else "Safe Destination",
-            "email": user_email, "scan_count": get_scan_count(user_email), "google_client_id": CLIENT_ID
-        })
-
-    safety_result = check_url(url_qr)
-    status = "MALICIOUS" if "matches" in safety_result else "SAFE"
-    save_to_cache(url_qr, status)
+    analysis = analyze_qr_payload(url_qr)
     record_unique_scan(user_email, url_qr, wallet_address)
 
     return templates.TemplateResponse("index.html", {
         "request": request, "logged_in": True, "results_visible": True,
-        "status": status, "url_found": url_qr, "source": "SafeScan Engine",
-        "score": "95" if status == "MALICIOUS" else "0",
-        "threat_class": "Phishing/Malware Risk" if status == "MALICIOUS" else "Safe Destination",
+        "status": analysis["status"], "url_found": analysis["normalized"], "source": analysis["source"],
+        "score": analysis["score"],
+        "threat_class": analysis["threat_class"],
         "email": user_email, "scan_count": get_scan_count(user_email), "google_client_id": CLIENT_ID
     })
 
