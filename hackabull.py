@@ -43,15 +43,14 @@ url = f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={api_key}"
 def init_db():
     conn = sqlite3.connect("qr_cache.db")
     cursor = conn.cursor()
-    #qr database
     cursor.execute('''CREATE TABLE IF NOT EXISTS scan_results 
                       (url TEXT PRIMARY KEY, status TEXT, timestamp TEXT)''')
-    #user database
-    conn.execute('''CREATE TABLE IF NOT EXISTS users 
+    cursor.execute('''CREATE TABLE IF NOT EXISTS users 
                         (google_id TEXT PRIMARY KEY, email TEXT, last_login TEXT)''')
-    #unique scans tracker
-    cursor.execute('''CREATE TABLE IF NOT EXISTS user_scans 
-                        (email TEXT, url TEXT, PRIMARY KEY (email, url))''')
+    # Added the table used by record_unique_scan
+    cursor.execute('''CREATE TABLE IF NOT EXISTS scans 
+                        (email TEXT PRIMARY KEY, url_found TEXT, scan_count INTEGER DEFAULT 0, 
+                         wallet_address TEXT, tokens_sent INTEGER DEFAULT 0)''')
     conn.commit()
     conn.close()
 
@@ -77,7 +76,6 @@ def record_unique_scan(email, url, wallet):
 def get_scan_count(email):
     with sqlite3.connect("qr_cache.db") as conn:
         cursor = conn.cursor()
-        # Change 'user_scans' to 'scans'
         cursor.execute("SELECT scan_count FROM scans WHERE email = ?", (email,))
         result = cursor.fetchone()
         return result[0] if result else 0
