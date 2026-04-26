@@ -6,49 +6,9 @@
   <title>SafeScan QR Demo</title>
   <link rel="stylesheet" href="/static/styles.css">
   <style>
-    .google-signin-wrap {
-      position: relative;
-      display: inline-flex;
-      flex: 0 0 auto;
-      width: 240px;
-      height: 44px;
-      min-height: 44px;
-      border-radius: 12px;
-      background: #05070b;
-      overflow: hidden;
-    }
-    .google-visual-button {
-      position: absolute;
-      inset: 0;
-      z-index: 1;
-      display: inline-flex;
-      justify-content: center;
-      align-items: center;
-      gap: 12px;
-      width: 240px;
-      min-height: 44px;
-      padding: 10px 18px 10px 14px;
-      border-radius: 12px;
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      background: #05070b;
-      color: #f8fafc;
-      font-family: "Roboto", "Google Sans", Arial, sans-serif;
-      font-size: 14px;
-      font-weight: 500;
-      letter-spacing: 0;
-      pointer-events: none;
-      box-shadow: 0 14px 32px rgba(0, 0, 0, 0.22);
-    }
-    .google-signin-wrap .google-signin-slot,
-    .google-signin-wrap .g_id_signin {
-      position: absolute;
-      inset: 0;
-      z-index: 2;
-      width: 240px;
-      min-height: 44px;
-      overflow: hidden;
-      opacity: 0.01;
-    }
+    .google-signin-wrap { position: relative; display: inline-flex; width: 240px; height: 44px; border-radius: 12px; background: #05070b; overflow: hidden; }
+    .google-visual-button { position: absolute; inset: 0; z-index: 1; display: inline-flex; justify-content: center; align-items: center; gap: 12px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.18); background: #05070b; color: #f8fafc; font-family: "Roboto", sans-serif; pointer-events: none; }
+    .google-signin-wrap .g_id_signin { position: absolute; inset: 0; z-index: 2; opacity: 0.01; }
   </style>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
@@ -60,18 +20,8 @@
       {% if not logged_in %}
         <div id="g_id_onload" data-client_id="{{ google_client_id }}" data-login_uri="https://safescan-qr.onrender.com/auth/google"></div>
         <div class="google-signin-wrap">
-          <button class="google-visual-button" type="button" tabindex="-1" aria-hidden="true">
-            <span class="google-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false">
-                <path fill="#4285f4" d="M22.6 12.2c0-.8-.1-1.5-.2-2.2H12v4.2h5.9c-.3 1.4-1 2.5-2.1 3.2v2.7h3.4c2-1.8 3.4-4.5 3.4-7.9Z"/>
-                <path fill="#34a853" d="M12 23c2.9 0 5.3-1 7.1-2.6l-3.4-2.7c-1 .6-2.2 1-3.7 1-2.8 0-5.1-1.9-6-4.4H2.5v2.8C4.3 20.6 7.9 23 12 23Z"/>
-                <path fill="#fbbc05" d="M6 14.3c-.2-.6-.3-1.3-.3-2.1s.1-1.4.3-2.1V7.3H2.5C1.8 8.8 1.4 10.4 1.4 12.2s.4 3.4 1.1 4.9L6 14.3Z"/>
-                <path fill="#ea4335" d="M12 5.7c1.6 0 3 .5 4.1 1.6l3-3C17.3 2.6 14.9 1.6 12 1.6 7.9 1.6 4.3 4 2.5 7.3L6 10.1c.9-2.5 3.2-4.4 6-4.4Z"/>
-              </svg>
-            </span>
-            <span>Sign in with Google</span>
-          </button>
-          <div id="googleSignInButton" class="g_id_signin google-signin-slot" data-type="standard"></div>
+          <button class="google-visual-button" type="button"><span>Sign in with Google</span></button>
+          <div id="googleSignInButton" class="g_id_signin" data-type="standard"></div>
         </div>
       {% else %}
         <div id="airdropProfile" class="top-profile">
@@ -85,15 +35,7 @@
       <div class="hero-copy">
         <div class="hero-kicker">
           <p class="eyebrow">Hackabull Demo</p>
-          <div class="powered-by-solana" aria-label="Powered by Solana">
-            <span>Powered By</span>
-            <svg viewBox="0 0 398 312" role="img" aria-hidden="true" focusable="false">
-              <defs><linearGradient id="solanaGradientTop" x1="360" y1="28" x2="62" y2="301" gradientUnits="userSpaceOnUse"><stop stop-color="#14F195"/><stop offset="0.5" stop-color="#55A6F8"/><stop offset="1" stop-color="#9945FF"/></linearGradient></defs>
-              <path fill="url(#solanaGradientTop)" d="M64.6 3.8C67 1.4 70.4 0 73.8 0h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1L64.6 3.8Z"/>
-              <path fill="url(#solanaGradientTop)" d="M333.1 120.1c-2.4-2.4-5.7-3.8-9.2-3.8H6.5c-5.8 0-8.7-7-4.6 11.1l62.7 62.7c2.4 2.4 5.7 3.8 9.2 3.8h317.4c5.8 0 8.7-7 4.6-11.1l-62.7-62.7Z"/>
-              <path fill="url(#solanaGradientTop)" d="M64.6 237.9c2.4-2.4 5.7-3.8 9.2-3.8h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1l62.7-62.7Z"/>
-            </svg>
-          </div>
+          <div class="powered-by-solana"><span>Powered By</span><svg viewBox="0 0 398 312"><defs><linearGradient id="solanaGradientTop" x1="360" y1="28" x2="62" y2="301" gradientUnits="userSpaceOnUse"><stop stop-color="#14F195"/><stop offset="0.5" stop-color="#55A6F8"/><stop offset="1" stop-color="#9945FF"/></linearGradient></defs><path fill="url(#solanaGradientTop)" d="M64.6 3.8C67 1.4 70.4 0 73.8 0h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1L64.6 3.8Z"/><path fill="url(#solanaGradientTop)" d="M333.1 120.1c-2.4-2.4-5.7-3.8-9.2-3.8H6.5c-5.8 0-8.7-7-4.6-11.1l62.7 62.7c2.4 2.4 5.7 3.8 9.2 3.8h317.4c5.8 0 8.7-7 4.6-11.1l-62.7-62.7Z"/><path fill="url(#solanaGradientTop)" d="M64.6 237.9c2.4-2.4 5.7-3.8 9.2-3.8h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1l62.7-62.7Z"/></svg></div>
         </div>
         <h1>SafeScan QR</h1>
         <p class="hero-problem">Can you distinguish a malicious QR?</p>
@@ -102,31 +44,40 @@
       </div>
       <div class="hero-card">
         <div class="hero-card-label">Demo focus</div>
-        <ul><li>Direct Python ZBar decoding</li><li>Real-time Google Safe Browsing API</li><li>Token-gated community rewards</li></ul>
+        <ul><li>Decodes QR directly via Python ZBar</li><li>Real-time Google Safe Browsing API</li><li>Tracks scan progress for airdrop tiers</li></ul>
       </div>
     </header>
 
     <main>
-      <section class="story-grid" id="story">
-        <article class="story-card"><h2>Why this matters</h2><p>SafeScan QR reveals hidden payloads first so unsafe links are easier to spot.</p></article>
-        <article class="story-card"><h2>What's different?</h2><p>We explain what the payload wants to do before execution.</p></article>
-        <article class="story-card"><h2>How it works</h2><p>Backend decodes images, checks safety, and caches for 24 hours.</p></article>
-        <article class="story-card"><h2>The hook</h2><p>Combines cybersecurity with community token rewards.</p></article>
-      </section>
-
       {% if logged_in %}
       <section class="airdrop-panel" id="airdrop">
-        <div class="panel-header"><div><p class="eyebrow">Airdrop</p><h2>Registration Tiers</h2></div></div>
+        <div class="panel-header">
+          <div><p class="eyebrow">Community airdrop</p><h2>Register for SafeScan QR tiers</h2></div>
+          <div id="airdropStatus" class="airdrop-status">Registered</div>
+        </div>
+
         <div class="token-strip">
+          <div><p class="token-label">Token name</p><div class="token-pill">SafeScan</div></div>
           <div><p class="token-label">Ticker</p><div class="token-ticker">SQR</div></div>
-          <div><p class="token-label">Address</p><div class="token-address">Bpdt7Hey78HeEEr9Q6x19gYAns5n6w44LdjJhxN3pump</div></div>
+          <div>
+            <p class="token-label">Address</p>
+            <div class="token-address-row">
+              <p id="tokenAddress" class="token-address">Bpdt7Hey78HeEEr9Q6x19gYAns5n6w44LdjJhxN3pump</p>
+              <button id="copyTokenAddressButton" class="token-copy-button" type="button">Copy</button>
+            </div>
+          </div>
         </div>
+
         <div class="airdrop-progress">
-          <div><h3 id="currentTierName">Scanner</h3><p id="currentTierSummary" class="airdrop-copy">Perform 5 scans to unlock.</p></div>
-          <div class="progress-stats"><div><span id="scanProgressValue">{{ scan_count | default(0) }} / 5</span><p>QR scans</p></div></div>
+          <div><p class="eyebrow">Current tier</p><h3 id="currentTierName">Scanner</h3><p id="currentTierSummary" class="airdrop-copy">Perform 5 scans to unlock Tier 1.</p></div>
+          <div class="progress-stats">
+            <div><span id="scanProgressValue">{{ scan_count | default(0) }} / 5</span><p>QR scans</p></div>
+            <div><span id="referralProgressValue">0</span><p>Referrals</p></div>
+          </div>
         </div>
+
         <div class="wallet-panel">
-          <div><p class="token-label">Airdrop wallet</p><p id="walletStatus">Sign in to unlock.</p></div>
+          <div><p class="token-label">Airdrop wallet</p><p id="walletStatus" class="wallet-status">Checking connection...</p></div>
           <div class="wallet-actions">
             <button id="connectWalletButton" class="primary-button" type="button">Connect wallet</button>
             <button id="disconnectWalletButton" class="secondary-button hidden" type="button">Disconnect wallet</button>
@@ -136,17 +87,15 @@
       </section>
 
       <section class="scanner-panel" id="scanner">
-        <div class="panel-header"><div><p class="eyebrow">Demo</p><h2>Analyze Payload</h2></div></div>
+        <div class="panel-header"><div><p class="eyebrow">Interactive demo</p><h2>Analyze Payload</h2></div></div>
         <div class="scanner-grid">
           <div class="scanner-card">
             <form id="qrForm" action="/search_qr_api" method="post" enctype="multipart/form-data">
               <input type="hidden" name="user_email" value="{{ email }}">
               <input type="hidden" id="hiddenWalletInput" name="wallet_address">
-              
               <label class="upload-chip" for="qrImageInput">Use mobile camera/photo</label>
               <input id="qrImageInput" name="file" type="file" accept="image/*" onchange="this.form.submit()" hidden>
-              
-              <label for="urlInput" style="margin-top:20px; display:block;">Or paste URL manually</label>
+              <label for="urlInput" style="margin-top:20px; display:block;">Or paste a URL manually</label>
               <input id="urlInput" name="manual_url" type="text" placeholder="https://example.com">
               <button type="submit" class="primary-button" style="margin-top:15px; width:100%;">Analyze Payload</button>
             </form>
@@ -163,7 +112,7 @@
         <div class="results-grid">
           <article class="result-card"><h3>Decoded payload</h3><p class="mono">{{ url_found }}</p></article>
           <article class="result-card result-card-wide engine-card">
-            <div class="engine-grid"><div><p class="engine-label">Score</p><p class="score-value">{{ score }}</p></div><div><p class="engine-label">Class</p><p>{{ threat_class }}</p></div></div>
+            <div class="engine-grid"><div><p class="engine-label">Heuristic score</p><p class="score-value">{{ score }}</p></div><div><p class="engine-label">Threat class</p><p>{{ threat_class }}</p></div></div>
           </article>
         </div>
       </section>
