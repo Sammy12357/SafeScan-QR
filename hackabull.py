@@ -4,6 +4,7 @@ import warnings
 import io
 import sqlite3
 import hashlib
+import traceback
 from datetime import datetime, timedelta
 from PIL import Image
 from pyzbar.pyzbar import decode
@@ -12,7 +13,7 @@ from fastapi import FastAPI, UploadFile, File, Request, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles 
+from fastapi.staticfiles import StaticFiles
 
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
@@ -145,14 +146,14 @@ async def read_index(request: Request):
 
 @qr_app.post("/search_qr_api", response_class=HTMLResponse)
 async def scan_qr(
-    request: Request, 
+    request: Request,
     user_email: str = Form(...),
     wallet_address: str = Form(""),
     file: UploadFile = File(None),
     manual_url: str = Form(None)
 ):
     url_qr = None
-    
+
     if manual_url and manual_url.strip():
         url_qr = manual_url.strip()
     elif file and file.filename:
@@ -188,12 +189,12 @@ async def scan_qr(
     status = "MALICIOUS" if "matches" in safety_result else "SAFE"
     save_to_cache(url_qr, status)
     record_unique_scan(user_email, url_qr, wallet_address)
-    
+
     return templates.TemplateResponse("index.html", {
         "request": request, "logged_in": True, "results_visible": True,
         "status": status, "url_found": url_qr, "source": "SafeScan Engine",
-        "score": "95" if status == "MALICIOUS" else "0",  
-        "threat_class": "Phishing/Malware Risk" if status == "MALICIOUS" else "Safe Destination", 
+        "score": "95" if status == "MALICIOUS" else "0",
+        "threat_class": "Phishing/Malware Risk" if status == "MALICIOUS" else "Safe Destination",
         "email": user_email, "scan_count": get_scan_count(user_email), "google_client_id": CLIENT_ID
     })
 
@@ -208,9 +209,9 @@ async def auth_google(request: Request, credential: str = Form(None)):
             user_email = "error@invalid-token.com"
     else:
         user_email = "guest@demo.com"
-        
+
     return templates.TemplateResponse("index.html", {
-        "request": request, "logged_in": True, "results_visible": False, 
+        "request": request, "logged_in": True, "results_visible": False,
         "email": user_email, "score": "0", "threat_class": "N/A",
         "scan_count": get_scan_count(user_email), "google_client_id": CLIENT_ID
     })
@@ -218,10 +219,19 @@ async def auth_google(request: Request, credential: str = Form(None)):
 @qr_app.get("/trigger-airdrop-secret")
 async def trigger_airdrop():
     try:
-        await airdrop_sweep()
-        return {"status": "Success", "message": "Airdrop sweep executed! Check Render logs."}
+        result = await airdrop_sweep()
+        return {
+            "status": result.get("status", "ok"),
+            "message": "Airdrop sweep executed.",
+            "result": result
+        }
     except Exception as e:
-        return {"status": "Failed", "error": str(e)}
+        return {
+            "status": "Failed",
+            "error": str(e) or repr(e),
+            "error_type": type(e).__name__,
+            "traceback": traceback.format_exc(limit=3)
+        }
 
 def save_user_to_db(google_id, email):
     with sqlite3.connect("qr_cache.db") as conn:
