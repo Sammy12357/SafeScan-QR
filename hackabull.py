@@ -77,8 +77,10 @@ def record_unique_scan(email, url, wallet):
 def get_scan_count(email):
     with sqlite3.connect("qr_cache.db") as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM user_scans WHERE email = ?", (email,))
-        return cursor.fetchone()[0]
+        # Change 'user_scans' to 'scans'
+        cursor.execute("SELECT scan_count FROM scans WHERE email = ?", (email,))
+        result = cursor.fetchone()
+        return result[0] if result else 0
 
 
 
