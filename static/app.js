@@ -78,7 +78,7 @@ const dom = {
 };
 
 let lastAnalysis = null;
-let scanCount = Number(window.localStorage.getItem("phishproofScanCount") || "0");
+let scanCount = Number(document.getElementById("scanProgressValue")?.getAttribute("data-backend-count") || "0");
 
 function isUrlLike(value) {
   return /^https?:\/\//i.test(value) || /^[a-z0-9.-]+\.[a-z]{2,}(\/|$)/i.test(value);
@@ -436,11 +436,11 @@ function renderAnalysis(result) {
   dom.threatClass.textContent = result.threatClass;
 
   dom.recommendedAction.textContent = result.recommendedAction;
-  dom.continueButton.textContent = result.canAutoContinue && dom.autoContinueToggle.checked
+  dom.continueButton.textContent = result.canAutoContinue && dom.autoContinueToggle?.checked
     ? "Auto-continue triggered"
     : "Continue safely";
 
-  if (result.canAutoContinue && dom.autoContinueToggle.checked) {
+  if (result.canAutoContinue && dom.autoContinueToggle?.checked) {
     dom.recommendedAction.textContent = "Safe mode is enabled, so the app would continue automatically without a second scan.";
   }
 }
@@ -532,7 +532,6 @@ function saveReferralAttribution(profile) {
 }
 
 function decodeJwtPayload(token) {
-  // Frontend decoding is only for display/demo registration. Verify this token on your server before writing to the real database.
   const [, payload] = token.split(".");
   if (!payload) throw new Error("Google sign-in did not return a valid credential.");
   const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
@@ -609,24 +608,24 @@ function renderAirdropProfile(profile) {
 
 function renderWalletState(profile = getStoredAirdropProfile()) {
   if (!profile) {
-    dom.walletStatus.textContent = "Sign in, then connect your Solana wallet.";
-    dom.connectWalletButton.disabled = false;
-    dom.demoWalletButton.disabled = false;
+    if (dom.walletStatus) dom.walletStatus.textContent = "Sign in, then connect your Solana wallet.";
+    if (dom.connectWalletButton) dom.connectWalletButton.disabled = false;
+    if (dom.demoWalletButton) dom.demoWalletButton.disabled = false;
     return;
   }
 
   if (profile.walletAddress) {
-    dom.walletStatus.textContent = profile.walletAddress;
-    dom.connectWalletButton.textContent = "Wallet connected";
-    dom.connectWalletButton.disabled = true;
-    dom.demoWalletButton.disabled = true;
+    if (dom.walletStatus) dom.walletStatus.textContent = profile.walletAddress;
+    if (dom.connectWalletButton) dom.connectWalletButton.textContent = "Wallet connected";
+    if (dom.connectWalletButton) dom.connectWalletButton.disabled = true;
+    if (dom.demoWalletButton) dom.demoWalletButton.disabled = true;
     return;
   }
 
-  dom.walletStatus.textContent = "No wallet connected yet.";
-  dom.connectWalletButton.textContent = "Connect wallet";
-  dom.connectWalletButton.disabled = false;
-  dom.demoWalletButton.disabled = false;
+  if (dom.walletStatus) dom.walletStatus.textContent = "No wallet connected yet.";
+  if (dom.connectWalletButton) dom.connectWalletButton.textContent = "Connect wallet";
+  if (dom.connectWalletButton) dom.connectWalletButton.disabled = false;
+  if (dom.demoWalletButton) dom.demoWalletButton.disabled = false;
 }
 
 async function attachWalletToProfile(walletAddress, provider = "solana") {
@@ -678,40 +677,40 @@ function updateAirdropProgress() {
     referralCount >= 3 && scanCount >= 50
   ];
 
-  dom.currentTierName.textContent = tier.name;
-  dom.currentTierSummary.textContent = tier.description;
-  dom.scanProgressValue.textContent = `${scanCount} / ${scanCount >= 50 ? 50 : 5}`;
-  dom.referralProgressValue.textContent = String(referralCount);
+  if (dom.currentTierName) dom.currentTierName.textContent = tier.name;
+  if (dom.currentTierSummary) dom.currentTierSummary.textContent = tier.description;
+  if (dom.scanProgressValue) dom.scanProgressValue.textContent = `${scanCount} / ${scanCount >= 50 ? 50 : 5}`;
+  if (dom.referralProgressValue) dom.referralProgressValue.textContent = String(referralCount);
 
   tierCards.forEach((card, index) => {
-    card.classList.toggle("unlocked", unlocked[index]);
-    card.classList.remove("current");
+    card?.classList.toggle("unlocked", unlocked[index]);
+    card?.classList.remove("current");
   });
 
-  if (tier.name.includes("Tier 3")) dom.tierThreeCard.classList.add("current");
-  else if (tier.name.includes("Tier 2")) dom.tierTwoCard.classList.add("current");
-  else if (tier.name.includes("Tier 1")) dom.tierOneCard.classList.add("current");
+  if (tier.name.includes("Tier 3")) dom.tierThreeCard?.classList.add("current");
+  else if (tier.name.includes("Tier 2")) dom.tierTwoCard?.classList.add("current");
+  else if (tier.name.includes("Tier 1")) dom.tierOneCard?.classList.add("current");
 
   if (profile) {
     const referralCode = profile.referralCode || getReferralCode(profile);
     const updatedProfile = { ...profile, referralCode, tier: tier.name, tierDescription: tier.description };
     window.localStorage.setItem(AIRDROP_STORAGE_KEY, JSON.stringify(updatedProfile));
-    dom.referralLink.textContent = buildReferralLink(updatedProfile);
+    if (dom.referralLink) dom.referralLink.textContent = buildReferralLink(updatedProfile);
 
     if (updatedProfile.referredBy) {
-      dom.referralAttribution.classList.remove("hidden");
-      dom.referralAttribution.textContent = `This account was referred by ${updatedProfile.referredBy}.`;
+      dom.referralAttribution?.classList.remove("hidden");
+      if (dom.referralAttribution) dom.referralAttribution.textContent = `This account was referred by ${updatedProfile.referredBy}.`;
     } else {
-      dom.referralAttribution.classList.add("hidden");
+      dom.referralAttribution?.classList.add("hidden");
     }
   } else {
-    dom.referralLink.textContent = "Sign in to generate your link.";
-    dom.referralAttribution.classList.add("hidden");
+    if (dom.referralLink) dom.referralLink.textContent = "Sign in to generate your link.";
+    dom.referralAttribution?.classList.add("hidden");
   }
 
   if (incomingReferral) {
-    dom.incomingReferral.classList.remove("hidden");
-    dom.incomingReferral.textContent = `Referral detected: ${incomingReferral}. If this user signs in, that referrer code is saved with their account.`;
+    dom.incomingReferral?.classList.remove("hidden");
+    if (dom.incomingReferral) dom.incomingReferral.textContent = `Referral detected: ${incomingReferral}. If this user signs in, that referrer code is saved with their account.`;
   }
 }
 
@@ -756,13 +755,13 @@ function handleGoogleCredential(response) {
 }
 
 function openDemoAccountChooser() {
-  dom.demoAccountModal.classList.remove("hidden");
-  dom.demoAccountModal.setAttribute("aria-hidden", "false");
+  dom.demoAccountModal?.classList.remove("hidden");
+  dom.demoAccountModal?.setAttribute("aria-hidden", "false");
 }
 
 function closeDemoAccountChooser() {
-  dom.demoAccountModal.classList.add("hidden");
-  dom.demoAccountModal.setAttribute("aria-hidden", "true");
+  dom.demoAccountModal?.classList.add("hidden");
+  dom.demoAccountModal?.setAttribute("aria-hidden", "true");
 }
 
 function initGoogleSignIn() {
@@ -771,7 +770,7 @@ function initGoogleSignIn() {
   const hasRealClientId = GOOGLE_CLIENT_ID && !GOOGLE_CLIENT_ID.includes("PASTE_YOUR");
 
   if (!hasRealClientId) {
-    dom.demoGoogleButton.classList.add("is-visible");
+    dom.demoGoogleButton?.classList.add("is-visible");
     return;
   }
 
@@ -781,7 +780,7 @@ function initGoogleSignIn() {
       window.setTimeout(initGoogleSignIn, 300);
       return;
     }
-    dom.demoGoogleButton.classList.add("is-visible");
+    dom.demoGoogleButton?.classList.add("is-visible");
     return;
   }
 
@@ -803,92 +802,95 @@ function initGoogleSignIn() {
 
   window.google.accounts.id.prompt((notification) => {
     if (notification.isNotDisplayed?.() || notification.isSkippedMoment?.()) {
-      dom.googleSignInButton.classList.remove("hidden");
+      dom.googleSignInButton?.classList.remove("hidden");
     }
   });
 }
 
 function recordScan() {
-  scanCount += 1;
-  window.localStorage.setItem("phishproofScanCount", String(scanCount));
+  // The Python backend handles the real math and duplicate blocking now.
   updateAirdropProgress();
 }
 
 function runAnalysis({ countScan = true } = {}) {
   try {
-    dom.scanStatus.textContent = "QR decoded. Classifying payload and running risk checks.";
+    if (dom.scanStatus) dom.scanStatus.textContent = "QR decoded. Classifying payload and running risk checks.";
     const result = analyzePayload(dom.urlInput.value);
     if (countScan) recordScan();
     renderAnalysis(result);
-    dom.resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+    dom.resultsSection?.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (error) {
     window.alert(error.message);
   }
 }
 
-dom.analyzeButton.addEventListener("click", runAnalysis);
+// --------------------------------------------------------
+// SAFE EVENT LISTENERS (Optional Chaining)
+// --------------------------------------------------------
 
-dom.clearButton.addEventListener("click", () => {
-  dom.urlInput.value = "";
-  dom.resultsSection.classList.add("hidden");
-  dom.uploadPreview.classList.add("hidden");
-  dom.previewImage.removeAttribute("src");
-  dom.scanStatus.textContent = "Waiting for a scan or pasted QR payload.";
+dom.analyzeButton?.addEventListener("click", runAnalysis);
+
+dom.clearButton?.addEventListener("click", () => {
+  if (dom.urlInput) dom.urlInput.value = "";
+  dom.resultsSection?.classList.add("hidden");
+  dom.uploadPreview?.classList.add("hidden");
+  dom.previewImage?.removeAttribute("src");
+  if (dom.scanStatus) dom.scanStatus.textContent = "Waiting for a scan or pasted QR payload.";
   lastAnalysis = null;
 });
 
-dom.sampleButtons.forEach((button) => {
+dom.sampleButtons?.forEach((button) => {
   button.addEventListener("click", () => {
-    dom.urlInput.value = sampleUrls[button.dataset.sample];
+    if (dom.urlInput) dom.urlInput.value = sampleUrls[button.dataset.sample];
     runAnalysis({ countScan: false });
   });
 });
 
-dom.simulateScanButton.addEventListener("click", () => {
-  dom.scanStatus.textContent = "iPhone camera locked onto QR code. Decoding payload...";
-  dom.qrFrame.classList.add("scanning");
-  dom.urlInput.value = sampleUrls.safe;
+dom.simulateScanButton?.addEventListener("click", () => {
+  if (dom.scanStatus) dom.scanStatus.textContent = "iPhone camera locked onto QR code. Decoding payload...";
+  dom.qrFrame?.classList.add("scanning");
+  if (dom.urlInput) dom.urlInput.value = sampleUrls.safe;
   window.setTimeout(() => {
-    dom.scanStatus.textContent = "QR payload found. Preparing safety analysis.";
-    dom.qrFrame.classList.remove("scanning");
+    if (dom.scanStatus) dom.scanStatus.textContent = "QR payload found. Preparing safety analysis.";
+    dom.qrFrame?.classList.remove("scanning");
     runAnalysis({ countScan: false });
   }, 1400);
 });
 
-dom.qrImageInput.addEventListener("change", (event) => {
+dom.qrImageInput?.addEventListener("change", (event) => {
   const [file] = event.target.files || [];
   if (!file) return;
   const reader = new FileReader();
   reader.onload = () => {
-    dom.previewImage.src = reader.result;
-    dom.uploadPreview.classList.remove("hidden");
-    dom.scanStatus.textContent = "Camera or photo input received. On iPhone, the full product would decode the QR directly from this capture flow.";
+    if(dom.previewImage) dom.previewImage.src = reader.result;
+    dom.uploadPreview?.classList.remove("hidden");
+    if(dom.scanStatus) dom.scanStatus.textContent = "Camera or photo input received. On iPhone, the full product would decode the QR directly from this capture flow.";
   };
   reader.readAsDataURL(file);
 });
 
-dom.copyButton.addEventListener("click", async () => {
+dom.copyButton?.addEventListener("click", async () => {
   if (!lastAnalysis) return;
   try {
     await navigator.clipboard.writeText(lastAnalysis.urlString);
-    dom.copyButton.textContent = "Copied";
-    setTimeout(() => { dom.copyButton.textContent = "Copy payload"; }, 1200);
+    if (dom.copyButton) dom.copyButton.textContent = "Copied";
+    setTimeout(() => { if (dom.copyButton) dom.copyButton.textContent = "Copy payload"; }, 1200);
   } catch {
     window.alert("Clipboard copy failed in this browser.");
   }
 });
 
-dom.copyTokenAddressButton.addEventListener("click", async () => {
+dom.copyTokenAddressButton?.addEventListener("click", async () => {
   try {
-    await navigator.clipboard.writeText(dom.tokenAddress.textContent);
-    dom.copyTokenAddressButton.textContent = "Copied";
-    setTimeout(() => { dom.copyTokenAddressButton.textContent = "Copy"; }, 1200);
+    await navigator.clipboard.writeText(dom.tokenAddress?.textContent || "");
+    if (dom.copyTokenAddressButton) dom.copyTokenAddressButton.textContent = "Copied";
+    setTimeout(() => { if (dom.copyTokenAddressButton) dom.copyTokenAddressButton.textContent = "Copy"; }, 1200);
   } catch {
     window.alert("Clipboard copy failed in this browser.");
   }
 });
 
-dom.continueButton.addEventListener("click", () => {
+dom.continueButton?.addEventListener("click", () => {
   if (!lastAnalysis) return;
   if (!lastAnalysis.canAutoContinue) {
     window.alert("In the real app, sensitive QR payloads would require explicit confirmation before any action runs.");
@@ -897,11 +899,11 @@ dom.continueButton.addEventListener("click", () => {
   window.alert(`Demo action: continue with ${lastAnalysis.urlString}`);
 });
 
-dom.demoGoogleButton.addEventListener("click", () => {
+dom.demoGoogleButton?.addEventListener("click", () => {
   openDemoAccountChooser();
 });
 
-dom.accountOptions.forEach((button) => {
+dom.accountOptions?.forEach((button) => {
   button.addEventListener("click", () => {
     closeDemoAccountChooser();
     registerAirdropUser({
@@ -912,20 +914,20 @@ dom.accountOptions.forEach((button) => {
   });
 });
 
-dom.closeAccountModal.addEventListener("click", closeDemoAccountChooser);
+dom.closeAccountModal?.addEventListener("click", closeDemoAccountChooser);
 
-dom.demoAccountModal.addEventListener("click", (event) => {
+dom.demoAccountModal?.addEventListener("click", (event) => {
   if (event.target === dom.demoAccountModal) closeDemoAccountChooser();
 });
 
-dom.signOutButton.addEventListener("click", () => {
+dom.signOutButton?.addEventListener("click", () => {
   window.localStorage.removeItem(AIRDROP_STORAGE_KEY);
   renderAirdropProfile(null);
   renderWalletState(null);
   initGoogleSignIn();
 });
 
-dom.connectWalletButton.addEventListener("click", async () => {
+dom.connectWalletButton?.addEventListener("click", async () => {
   const profile = getStoredAirdropProfile();
   if (!profile) {
     window.alert("Sign in with Google before connecting a wallet.");
@@ -947,11 +949,11 @@ dom.connectWalletButton.addEventListener("click", async () => {
   }
 });
 
-dom.demoWalletButton.addEventListener("click", () => {
+dom.demoWalletButton?.addEventListener("click", () => {
   attachWalletToProfile("DemoSQRWallet11111111111111111111111111111", "demo");
 });
 
-dom.copyReferralButton.addEventListener("click", async () => {
+dom.copyReferralButton?.addEventListener("click", async () => {
   const profile = getStoredAirdropProfile();
   if (!profile) {
     window.alert("Sign in first to generate your referral link.");
@@ -960,14 +962,14 @@ dom.copyReferralButton.addEventListener("click", async () => {
 
   try {
     await navigator.clipboard.writeText(buildReferralLink(profile));
-    dom.copyReferralButton.textContent = "Copied";
-    setTimeout(() => { dom.copyReferralButton.textContent = "Copy referral"; }, 1200);
+    if (dom.copyReferralButton) dom.copyReferralButton.textContent = "Copied";
+    setTimeout(() => { if (dom.copyReferralButton) dom.copyReferralButton.textContent = "Copy referral"; }, 1200);
   } catch {
     window.alert("Clipboard copy failed in this browser.");
   }
 });
 
-dom.shareReferralButton.addEventListener("click", async () => {
+dom.shareReferralButton?.addEventListener("click", async () => {
   const profile = getStoredAirdropProfile();
   if (!profile) {
     window.alert("Sign in first to share your referral link.");
@@ -988,7 +990,7 @@ dom.shareReferralButton.addEventListener("click", async () => {
   window.alert("Referral link copied.");
 });
 
-dom.demoReferralButton.addEventListener("click", () => {
+dom.demoReferralButton?.addEventListener("click", () => {
   const profile = getStoredAirdropProfile();
   if (!profile) {
     window.alert("Sign in first to track referrals.");
