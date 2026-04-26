@@ -892,7 +892,7 @@ dom.sampleButtons?.forEach((button) => {
 });
 
 dom.simulateScanButton?.addEventListener("click", () => {
-  if (dom.scanStatus) dom.scanStatus.textContent = "iPhone camera locked onto QR code. Decoding payload...";
+  if (dom.scanStatus) dom.scanStatus.textContent = "Mobile camera locked onto QR code. Decoding payload...";
   dom.qrFrame?.classList.add("scanning");
   if (dom.urlInput) dom.urlInput.value = sampleUrls.safe;
   window.setTimeout(() => {
@@ -909,7 +909,7 @@ dom.qrImageInput?.addEventListener("change", (event) => {
   reader.onload = () => {
     if(dom.previewImage) dom.previewImage.src = reader.result;
     dom.uploadPreview?.classList.remove("hidden");
-    if(dom.scanStatus) dom.scanStatus.textContent = "Camera or photo input received. On iPhone, the full product would decode the QR directly from this capture flow.";
+    if(dom.scanStatus) dom.scanStatus.textContent = "Camera or photo input received. On a mobile device, the full product would decode the QR directly from this capture flow.";
   };
   reader.readAsDataURL(file);
 });
