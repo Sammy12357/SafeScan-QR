@@ -22,6 +22,11 @@ from dotenv import load_dotenv
 
 from fastapi.staticfiles import StaticFiles 
 
+#web3 imports
+from solana.rpc.async_api import AsyncClient
+from solders.keypair import Keypair
+import base58
+
 
 templates = Jinja2Templates(directory="templates")
 
@@ -31,6 +36,8 @@ warnings.filterwarnings("ignore", category=ImportWarning)
 load_dotenv()
 CLIENT_ID = os.getenv("googe_client_id")
 api_key = os.getenv("googe_api_key")
+
+
 url = f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={api_key}"
 
 
