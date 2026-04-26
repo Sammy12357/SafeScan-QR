@@ -566,10 +566,14 @@ input[type="text"] {
 
 .google-signin-wrap {
   position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
   width: 240px;
+  height: 44px;
   min-height: 44px;
   border-radius: 12px;
   background: #05070b;
+  overflow: hidden;
 }
 
 .google-signin-wrap.hidden {
@@ -599,7 +603,8 @@ input[type="text"] {
 }
 
 .google-visual-button {
-  position: relative;
+  position: absolute;
+  inset: 0;
   z-index: 1;
   pointer-events: none;
 }
@@ -1103,6 +1108,10 @@ input[type="text"] {
   .top-action-button,
   .top-profile {
     width: 100%;
+  }
+
+  .google-signin-wrap {
+    flex-basis: 100%;
   }
 
   .google-signin-wrap .google-signin-slot,
