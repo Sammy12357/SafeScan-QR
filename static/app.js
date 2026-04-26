@@ -868,7 +868,9 @@ function runAnalysis({ countScan = true } = {}) {
     const result = analyzePayload(dom.urlInput.value);
     if (countScan) recordScan();
     renderAnalysis(result);
-    dom.resultsSection?.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.requestAnimationFrame(() => {
+      dom.resultsSection?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   } catch (error) {
     window.alert(error.message);
   }

@@ -20,6 +20,7 @@
 
 html {
   scroll-behavior: smooth;
+  scroll-padding-top: 18px;
 }
 
 body {
@@ -828,6 +829,8 @@ input[type="text"] {
   background: linear-gradient(160deg, rgba(103, 242, 200, 0.08), rgba(61, 119, 255, 0.15));
   border: 1px solid rgba(103, 242, 200, 0.2);
   overflow: hidden;
+  transform: translateZ(0);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
 .qr-frame.scanning {
@@ -842,11 +845,13 @@ input[type="text"] {
   width: 72%;
   height: 72%;
   margin: 14%;
+  transform: translateZ(0);
 }
 
 .qr-grid span {
   border-radius: 6px;
   background: rgba(237, 244, 255, 0.95);
+  transition: background 0.25s ease, transform 0.25s ease;
 }
 
 .qr-grid span:nth-child(4n),
@@ -858,16 +863,35 @@ input[type="text"] {
   position: absolute;
   left: 8%;
   right: 8%;
-  top: 18%;
+  top: 10%;
   height: 2px;
   background: linear-gradient(90deg, transparent, var(--accent), transparent);
   box-shadow: 0 0 18px rgba(103, 242, 200, 0.7);
-  animation: sweep 2.4s infinite ease-in-out;
+  will-change: transform, opacity;
+  animation: sweep 2.8s infinite cubic-bezier(0.45, 0, 0.2, 1);
 }
 
 @keyframes sweep {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(220px); }
+  0% { opacity: 0; transform: translate3d(0, 0, 0); }
+  12% { opacity: 1; }
+  50% { opacity: 1; transform: translate3d(0, 255px, 0); }
+  88% { opacity: 1; }
+  100% { opacity: 0; transform: translate3d(0, 0, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
 }
 
 .verdict-badge {
