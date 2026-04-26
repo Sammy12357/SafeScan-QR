@@ -9,7 +9,7 @@ from pyzbar.pyzbar import decode
 
 # Updated FastAPI imports
 from fastapi import FastAPI, UploadFile, File, Request, Form
-from fastapi.responses import FileResponse, HTMLResponse 
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -134,6 +134,12 @@ async def read_index(request: Request):
         "google_client_id": CLIENT_ID  # <-- Add this!
     })
 
+@qr_app.get("/api/config")
+async def read_config():
+    return JSONResponse({
+        "google_client_id": CLIENT_ID or ""
+    })
+
 @qr_app.post("/search_qr_api", response_class=HTMLResponse)
 async def scan_qr(request: Request, file: UploadFile = File(...), user_email: str = Form("guest@demo.com")):
     # 1. Read the image file from the HTML form
@@ -254,7 +260,6 @@ def save_user_to_db(google_id, email):
 
 # print("Testing URL good:")
 # print(check_url("https://google.com"))
-
 
 
 
