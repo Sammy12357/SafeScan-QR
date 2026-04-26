@@ -50,6 +50,8 @@ const dom = {
   copyTokenAddressButton: document.getElementById("copyTokenAddressButton"),
   googleSignInButton: document.getElementById("googleSignInButton"),
   demoGoogleButton: document.getElementById("demoGoogleButton"),
+  topCopyReferralButton: document.getElementById("topCopyReferralButton"),
+  topConnectWalletButton: document.getElementById("topConnectWalletButton"),
   airdropStatus: document.getElementById("airdropStatus"),
   airdropProfile: document.getElementById("airdropProfile"),
   profileName: document.getElementById("profileName"),
@@ -608,23 +610,30 @@ function renderAirdropProfile(profile) {
 
 function renderWalletState(profile = getStoredAirdropProfile()) {
   if (!profile) {
-    if (dom.walletStatus) dom.walletStatus.textContent = "Sign in, then connect your Solana wallet.";
+    if (dom.walletStatus) dom.walletStatus.textContent = "Sign in to unlock wallet connection.";
+    if (dom.connectWalletButton) dom.connectWalletButton.textContent = "Connect wallet";
+    if (dom.topConnectWalletButton) dom.topConnectWalletButton.textContent = "Connect wallet";
     if (dom.connectWalletButton) dom.connectWalletButton.disabled = false;
+    if (dom.topConnectWalletButton) dom.topConnectWalletButton.disabled = false;
     if (dom.demoWalletButton) dom.demoWalletButton.disabled = false;
     return;
   }
 
   if (profile.walletAddress) {
-    if (dom.walletStatus) dom.walletStatus.textContent = profile.walletAddress;
+    if (dom.walletStatus) dom.walletStatus.textContent = "Wallet saved to your airdrop account.";
     if (dom.connectWalletButton) dom.connectWalletButton.textContent = "Wallet connected";
+    if (dom.topConnectWalletButton) dom.topConnectWalletButton.textContent = "Wallet connected";
     if (dom.connectWalletButton) dom.connectWalletButton.disabled = true;
+    if (dom.topConnectWalletButton) dom.topConnectWalletButton.disabled = true;
     if (dom.demoWalletButton) dom.demoWalletButton.disabled = true;
     return;
   }
 
   if (dom.walletStatus) dom.walletStatus.textContent = "No wallet connected yet.";
   if (dom.connectWalletButton) dom.connectWalletButton.textContent = "Connect wallet";
+  if (dom.topConnectWalletButton) dom.topConnectWalletButton.textContent = "Connect wallet";
   if (dom.connectWalletButton) dom.connectWalletButton.disabled = false;
+  if (dom.topConnectWalletButton) dom.topConnectWalletButton.disabled = false;
   if (dom.demoWalletButton) dom.demoWalletButton.disabled = false;
 }
 
@@ -695,7 +704,8 @@ function updateAirdropProgress() {
     const referralCode = profile.referralCode || getReferralCode(profile);
     const updatedProfile = { ...profile, referralCode, tier: tier.name, tierDescription: tier.description };
     window.localStorage.setItem(AIRDROP_STORAGE_KEY, JSON.stringify(updatedProfile));
-    if (dom.referralLink) dom.referralLink.textContent = buildReferralLink(updatedProfile);
+    if (dom.referralLink) dom.referralLink.textContent = "Your referral link is ready. Copy it with one click.";
+    if (dom.topCopyReferralButton) dom.topCopyReferralButton.textContent = "Referral link";
 
     if (updatedProfile.referredBy) {
       dom.referralAttribution?.classList.remove("hidden");
@@ -704,13 +714,53 @@ function updateAirdropProgress() {
       dom.referralAttribution?.classList.add("hidden");
     }
   } else {
-    if (dom.referralLink) dom.referralLink.textContent = "Sign in to generate your link.";
+    if (dom.referralLink) dom.referralLink.textContent = "Sign in to unlock your referral link.";
+    if (dom.topCopyReferralButton) dom.topCopyReferralButton.textContent = "Referral link";
     dom.referralAttribution?.classList.add("hidden");
   }
 
   if (incomingReferral) {
     dom.incomingReferral?.classList.remove("hidden");
     if (dom.incomingReferral) dom.incomingReferral.textContent = `Referral detected: ${incomingReferral}. If this user signs in, that referrer code is saved with their account.`;
+  }
+}
+
+async function connectWallet() {
+  const profile = getStoredAirdropProfile();
+  if (!profile) {
+    window.alert("Sign in with Google before connecting a wallet.");
+    return;
+  }
+
+  const detectedWallet = getSolanaWalletProvider();
+  if (!detectedWallet) {
+    window.alert("No Phantom, Solflare, or Brave Solana wallet was detected. Install a wallet or use the demo wallet for local testing.");
+    return;
+  }
+
+  try {
+    const response = await detectedWallet.provider.connect();
+    const publicKey = response?.publicKey || detectedWallet.provider.publicKey;
+    await attachWalletToProfile(publicKey.toString(), detectedWallet.name);
+  } catch {
+    window.alert("Wallet connection was cancelled or failed.");
+  }
+}
+
+async function copyReferralLink(button = dom.copyReferralButton) {
+  const profile = getStoredAirdropProfile();
+  if (!profile) {
+    window.alert("Sign in first to generate your referral link.");
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(buildReferralLink(profile));
+    const defaultText = button === dom.topCopyReferralButton ? "Referral link" : "Copy referral link";
+    if (button) button.textContent = "Copied link";
+    setTimeout(() => { if (button) button.textContent = defaultText; }, 1200);
+  } catch {
+    window.alert("Clipboard copy failed in this browser.");
   }
 }
 
@@ -927,47 +977,15 @@ dom.signOutButton?.addEventListener("click", () => {
   initGoogleSignIn();
 });
 
-dom.connectWalletButton?.addEventListener("click", async () => {
-  const profile = getStoredAirdropProfile();
-  if (!profile) {
-    window.alert("Sign in with Google before connecting a wallet.");
-    return;
-  }
-
-  const detectedWallet = getSolanaWalletProvider();
-  if (!detectedWallet) {
-    window.alert("No Phantom, Solflare, or Brave Solana wallet was detected. Install a wallet or use the demo wallet for local testing.");
-    return;
-  }
-
-  try {
-    const response = await detectedWallet.provider.connect();
-    const publicKey = response?.publicKey || detectedWallet.provider.publicKey;
-    await attachWalletToProfile(publicKey.toString(), detectedWallet.name);
-  } catch {
-    window.alert("Wallet connection was cancelled or failed.");
-  }
-});
+dom.topConnectWalletButton?.addEventListener("click", connectWallet);
+dom.connectWalletButton?.addEventListener("click", connectWallet);
 
 dom.demoWalletButton?.addEventListener("click", () => {
   attachWalletToProfile("DemoSQRWallet11111111111111111111111111111", "demo");
 });
 
-dom.copyReferralButton?.addEventListener("click", async () => {
-  const profile = getStoredAirdropProfile();
-  if (!profile) {
-    window.alert("Sign in first to generate your referral link.");
-    return;
-  }
-
-  try {
-    await navigator.clipboard.writeText(buildReferralLink(profile));
-    if (dom.copyReferralButton) dom.copyReferralButton.textContent = "Copied";
-    setTimeout(() => { if (dom.copyReferralButton) dom.copyReferralButton.textContent = "Copy referral"; }, 1200);
-  } catch {
-    window.alert("Clipboard copy failed in this browser.");
-  }
-});
+dom.topCopyReferralButton?.addEventListener("click", () => copyReferralLink(dom.topCopyReferralButton));
+dom.copyReferralButton?.addEventListener("click", () => copyReferralLink(dom.copyReferralButton));
 
 dom.shareReferralButton?.addEventListener("click", async () => {
   const profile = getStoredAirdropProfile();

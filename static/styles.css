@@ -43,8 +43,36 @@ body {
   display: flex;
   justify-content: flex-end;
   align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
   min-height: 52px;
   margin-bottom: 14px;
+}
+
+.top-action-button {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--text);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.top-action-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(103, 242, 200, 0.5);
+  background: rgba(103, 242, 200, 0.1);
+}
+
+.top-action-button:disabled {
+  cursor: default;
+  color: var(--accent);
+  border-color: rgba(103, 242, 200, 0.36);
+  background: rgba(103, 242, 200, 0.08);
 }
 
 .hero,
@@ -951,6 +979,7 @@ input[type="text"] {
   }
 
   .google-button,
+  .top-action-button,
   .top-profile {
     width: 100%;
   }
