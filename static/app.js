@@ -9,7 +9,6 @@ const dom = {
   disconnectWalletButton: document.getElementById("disconnectWalletButton"),
   topConnectWalletButton: document.getElementById("topConnectWalletButton"),
   airdropProfile: document.getElementById("airdropProfile"),
-  airdropStatus: document.getElementById("airdropStatus"),
   googleSignInButton: document.getElementById("googleSignInButton"),
   demoWalletButton: document.getElementById("demoWalletButton")
 };
@@ -20,8 +19,6 @@ function getStoredAirdropProfile() {
 
 function renderWalletState(profile = getStoredAirdropProfile()) {
   const walletAddr = profile?.walletAddress || "";
-  
-  // Update hidden field for backend
   if (dom.hiddenWalletInput) dom.hiddenWalletInput.value = walletAddr;
 
   if (!profile || !walletAddr) {
@@ -29,17 +26,12 @@ function renderWalletState(profile = getStoredAirdropProfile()) {
     dom.connectWalletButton?.classList.remove("hidden");
     dom.topConnectWalletButton?.classList.remove("hidden");
     dom.disconnectWalletButton?.classList.add("hidden");
-    if (dom.topConnectWalletButton) {
-        dom.topConnectWalletButton.textContent = "Connect wallet";
-        dom.topConnectWalletButton.disabled = false;
-    }
     return;
   }
 
   if (dom.walletStatus) dom.walletStatus.textContent = `Connected: ${walletAddr}`;
   dom.connectWalletButton?.classList.add("hidden");
   dom.disconnectWalletButton?.classList.remove("hidden");
-  
   if (dom.topConnectWalletButton) {
     dom.topConnectWalletButton.textContent = "Wallet connected";
     dom.topConnectWalletButton.disabled = true;
@@ -49,25 +41,19 @@ function renderWalletState(profile = getStoredAirdropProfile()) {
 async function connectWallet() {
   const profile = getStoredAirdropProfile();
   if (!profile) { window.alert("Sign in with Google first."); return; }
-  
-  // Simulated Phantom Logic
   const detectedWallet = window.phantom?.solana || window.solana;
   if (!detectedWallet) { window.alert("No Solana wallet detected."); return; }
-
   try {
     const response = await detectedWallet.connect();
     const publicKey = response?.publicKey || detectedWallet.publicKey;
-    
     const updatedProfile = { ...profile, walletAddress: publicKey.toString() };
     window.localStorage.setItem(AIRDROP_STORAGE_KEY, JSON.stringify(updatedProfile));
     renderWalletState(updatedProfile);
   } catch { window.alert("Connection failed."); }
 }
 
-// Event Listeners
 dom.connectWalletButton?.addEventListener("click", connectWallet);
 dom.topConnectWalletButton?.addEventListener("click", connectWallet);
-
 dom.disconnectWalletButton?.addEventListener("click", () => {
   const profile = getStoredAirdropProfile();
   if (!profile) return;
@@ -77,31 +63,11 @@ dom.disconnectWalletButton?.addEventListener("click", () => {
   renderWalletState(updatedProfile);
 });
 
-dom.demoWalletButton?.addEventListener("click", () => {
-  const profile = getStoredAirdropProfile();
-  const updatedProfile = { ...profile, walletAddress: "DemoSQRWallet111111111111111111111" };
-  window.localStorage.setItem(AIRDROP_STORAGE_KEY, JSON.stringify(updatedProfile));
-  renderWalletState(updatedProfile);
-});
-
-// Prevent scan without wallet
 dom.qrForm?.addEventListener("submit", (e) => {
   if (!dom.hiddenWalletInput.value) {
     e.preventDefault();
-    window.alert("Please connect your wallet first to track scan rewards!");
+    window.alert("Connect your wallet first to track rewards!");
   }
 });
 
-function renderAirdropProfile(profile) {
-  if (!profile) {
-    if (dom.airdropStatus) dom.airdropStatus.textContent = "Not signed in";
-    dom.airdropProfile?.classList.add("hidden");
-    renderWalletState(null);
-    return;
-  }
-  dom.airdropProfile?.classList.remove("hidden");
-  renderWalletState(profile);
-}
-
-// Initial Run
-renderAirdropProfile(getStoredAirdropProfile());
+renderWalletState();
