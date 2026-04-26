@@ -835,7 +835,7 @@ function initGoogleSignIn() {
   });
 
   window.google.accounts.id.renderButton(dom.googleSignInButton, {
-    theme: "outline",
+    theme: "filled_black",
     size: "large",
     shape: "rectangular",
     text: "signin_with",

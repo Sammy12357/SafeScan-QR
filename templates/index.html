@@ -14,7 +14,7 @@
       <button id="topConnectWalletButton" class="top-action-button" type="button">Connect wallet</button>
       {% if not logged_in %}
         <div id="g_id_onload" data-client_id="{{ google_client_id }}" data-login_uri="https://safescan-qr.onrender.com/auth/google"></div>
-        <div class="g_id_signin" data-type="standard"></div>
+        <div class="g_id_signin" data-type="standard" data-theme="filled_black" data-size="large" data-shape="rectangular" data-text="signin_with" data-logo_alignment="left"></div>
       {% else %}
         <div id="airdropProfile" class="top-profile">
           <div>
