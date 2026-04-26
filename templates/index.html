@@ -16,7 +16,7 @@
       {% else %}
         <div id="airdropProfile" class="top-profile">
           <div>
-            <p class="profile-name">Authorized Researcher</p>
+            <p class="profile-name">Safe scanner</p>
             <p class="profile-email">{{ email }}</p>
           </div>
           <a href="/" class="sign-out-button" style="text-decoration: none;">Sign out</a>
@@ -26,24 +26,65 @@
 
     <header class="hero">
       <div class="hero-copy">
-        <p class="eyebrow">Cybersecurity Hackathon Demo</p>
+        <div class="hero-kicker">
+          <p class="eyebrow">Hackabull Demo</p>
+          <div class="powered-by-solana" aria-label="Powered by Solana">
+            <span>Powered By</span>
+            <svg viewBox="0 0 120 88" role="img" aria-hidden="true" focusable="false">
+              <defs>
+                <linearGradient id="solanaGradientTop" x1="0" y1="0" x2="120" y2="88" gradientUnits="userSpaceOnUse">
+                  <stop stop-color="#14F195"/>
+                  <stop offset="1" stop-color="#9945FF"/>
+                </linearGradient>
+              </defs>
+              <path fill="url(#solanaGradientTop)" d="M20 11h87c3 0 5 4 3 7L96 32c-1 2-3 3-5 3H4c-3 0-5-4-3-7l14-14c1-2 3-3 5-3Z"/>
+              <path fill="url(#solanaGradientTop)" d="M24 54h87c3 0 5 4 3 7L100 75c-1 2-3 3-5 3H8c-3 0-5-4-3-7l14-14c1-2 3-3 5-3Z"/>
+              <path fill="url(#solanaGradientTop)" d="M100 43H13c-3 0-5-4-3-7l14-14c1-2 3-3 5-3h87c3 0 5 4 3 7l-14 14c-1 2-3 3-5 3Z"/>
+            </svg>
+          </div>
+        </div>
         <h1>SafeScan QR</h1>
-        <p class="hero-text">Scan once, inspect the hidden payload, and safely continue without rescanning.</p>
+        <p class="hero-problem">Can you distinguish a malicious QR?</p>
+        <p class="hero-text">
+          Scan once, inspect the hidden payload, and safely continue without rescanning.
+          This Python-backed demo checks QR destinations with Google Safe Browsing before anything runs.
+        </p>
         <div class="hero-actions">
-          <a class="primary-button" href="#scanner">Try the demo</a>
+          <a class="primary-button" href="#scanner">Scan QR</a>
+          <a class="secondary-button" href="#airdrop">Airdrop</a>
         </div>
       </div>
       <div class="hero-card">
-        <div class="hero-card-label">Engine focus</div>
+        <div class="hero-card-label">Demo focus</div>
         <ul>
           <li>Decodes QR directly via Python ZBar</li>
           <li>Real-time Google Safe Browsing API checks</li>
           <li>Database caching for 24-hour safety windows</li>
+          <li>Tracks scan progress for airdrop tiers</li>
         </ul>
       </div>
     </header>
 
     <main>
+      <section class="story-grid" id="story">
+        <article class="story-card">
+          <h2>Why this problem matters</h2>
+          <p>Most people cannot tell the difference between a malicious QR code and a safe one before scanning. SafeScan QR reveals the hidden payload first, so unsafe links, payment requests, and app actions are easier to spot.</p>
+        </article>
+        <article class="story-card">
+          <h2>What makes this different?</h2>
+          <p>Instead of immediately opening or executing a QR action, SafeScan QR explains what the payload wants to do and why it looks safe or suspicious.</p>
+        </article>
+        <article class="story-card">
+          <h2>How does scanning work?</h2>
+          <p>The backend decodes uploaded QR images in Python, checks the destination, caches results, and stores user scan progress.</p>
+        </article>
+        <article class="story-card">
+          <h2>What is the hackathon hook?</h2>
+          <p>It combines a clear cybersecurity problem, real authentication, a Python safety engine, and token-gated community rewards.</p>
+        </article>
+      </section>
+
       {% if logged_in %}
       <section class="airdrop-panel" id="airdrop">
         <div class="panel-header">
@@ -77,8 +118,8 @@
 
         <div class="wallet-panel">
           <div>
-            <p class="eyebrow">Airdrop wallet</p>
-            <p id="walletStatus" class="wallet-address">Sign in, then connect your Solana wallet.</p>
+            <p class="token-label">Airdrop wallet</p>
+            <p id="walletStatus" class="wallet-status">Sign in to unlock wallet connection.</p>
             <p class="airdrop-copy">This wallet address will be saved with the same account email used for registration.</p>
           </div>
           <div class="wallet-actions">
@@ -87,16 +128,16 @@
           </div>
         </div>
 
-        <div class="referral-panel">
+        <div class="referral-panel compact-referral-panel">
           <div>
-            <p class="eyebrow">Referral link</p>
-            <p id="referralLink" class="referral-link">Sign in to generate your link.</p>
+            <p class="token-label">Referral</p>
+            <p id="referralLink" class="referral-link">Sign in to unlock your referral link.</p>
             <p id="incomingReferral" class="airdrop-copy hidden"></p>
             <p id="referralAttribution" class="airdrop-copy hidden"></p>
           </div>
           <div class="referral-actions">
-            <button id="copyReferralButton" class="secondary-button" type="button">Copy referral</button>
-            <button id="shareReferralButton" class="primary-button" type="button">Share</button>
+            <button id="copyReferralButton" class="primary-button referral-copy-button" type="button">Copy referral link</button>
+            <button id="shareReferralButton" class="secondary-button" type="button">Share</button>
             <button id="demoReferralButton" class="secondary-button" type="button">Add demo referral</button>
           </div>
         </div>

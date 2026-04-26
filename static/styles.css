@@ -65,11 +65,27 @@ body {
   padding: 36px;
 }
 
+.hero-kicker {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
 .hero-copy h1 {
   margin: 8px 0 12px;
   font-size: clamp(2.8rem, 6vw, 4.8rem);
   line-height: 0.95;
   letter-spacing: -0.06em;
+}
+
+.hero-problem {
+  margin: 0 0 12px;
+  color: var(--text);
+  font-size: 1.25rem;
+  font-weight: 800;
+  line-height: 1.35;
+  max-width: 680px;
 }
 
 .eyebrow {
@@ -78,6 +94,22 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.18em;
   font-size: 0.74rem;
+}
+
+.powered-by-solana {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.powered-by-solana svg {
+  width: 36px;
+  height: 26px;
+  display: block;
 }
 
 .hero-text,
@@ -337,26 +369,20 @@ input[type="text"] {
 
 .referral-link {
   margin: 0;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: rgba(0, 0, 0, 0.16);
-  color: var(--text);
-  font-family: "IBM Plex Mono", "Consolas", monospace;
-  font-size: 0.88rem;
-  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.5;
 }
 
-.wallet-address {
+.referral-copy-button {
+  min-width: 178px;
+}
+
+.wallet-status {
   margin: 0 0 8px;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: rgba(0, 0, 0, 0.16);
-  color: var(--text);
-  font-family: "IBM Plex Mono", "Consolas", monospace;
-  font-size: 0.88rem;
-  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.5;
 }
 
 .token-label,
