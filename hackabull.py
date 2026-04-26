@@ -60,15 +60,40 @@ def record_unique_scan(email, url, wallet):
     conn = sqlite3.connect('qr_cache.db')
     cursor = conn.cursor()
     
-    # We use 'REPLACE' or an 'UPDATE' logic to ensure the wallet 
-    # is attached to the email record
-    cursor.execute("""
-        INSERT INTO scans (email, url_found, scan_count, wallet_address)
-        VALUES (?, ?, 1, ?)
-        ON CONFLICT(email) DO UPDATE SET 
-            scan_count = scan_count + 1,
-            wallet_address = excluded.wallet_address
-    """, (email, url, wallet))
+    # Fetch the user's current scan record
+    cursor.execute("SELECT url_found FROM scans WHERE email = ?", (email,))
+    row = cursor.fetchone()
+    
+    if row:
+        # User exists. Check if they already scanned this exact QR code.
+        existing_urls = row[0] if row[0] else ""
+        scanned_list = existing_urls.split(",")
+        
+        if url not in scanned_list:
+            # It is a NEW scan. Add it to their list and increment the score.
+            scanned_list.append(url)
+            updated_urls = ",".join(scanned_list)
+            
+            cursor.execute("""
+                UPDATE scans 
+                SET scan_count = scan_count + 1, 
+                    url_found = ?, 
+                    wallet_address = ?
+                WHERE email = ?
+            """, (updated_urls, wallet, email))
+        else:
+            # They already scanned this! Do NOT increment. Just update the wallet.
+            cursor.execute("""
+                UPDATE scans 
+                SET wallet_address = ?
+                WHERE email = ?
+            """, (wallet, email))
+    else:
+        # First time this user is scanning anything
+        cursor.execute("""
+            INSERT INTO scans (email, url_found, scan_count, wallet_address)
+            VALUES (?, ?, 1, ?)
+        """, (email, url, wallet))
     
     conn.commit()
     conn.close()
