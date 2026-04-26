@@ -37,7 +37,6 @@ load_dotenv()
 CLIENT_ID = os.getenv("googe_client_id")
 api_key = os.getenv("googe_api_key")
 
-
 url = f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={api_key}"
 
 
@@ -58,14 +57,22 @@ def init_db():
 
 init_db()
 
-# NEW: Helper functions for scoring
-def record_unique_scan(email, url):
-    with sqlite3.connect("qr_cache.db") as conn:
-        try:
-            conn.execute("INSERT INTO user_scans (email, url) VALUES (?, ?)", (email, url))
-            return True # Successfully added new unique scan
-        except sqlite3.IntegrityError:
-            return False # Duplicate scan, ignored
+def record_unique_scan(email, url, wallet):
+    conn = sqlite3.connect('qr_cache.db')
+    cursor = conn.cursor()
+    
+    # We use 'REPLACE' or an 'UPDATE' logic to ensure the wallet 
+    # is attached to the email record
+    cursor.execute("""
+        INSERT INTO scans (email, url_found, scan_count, wallet_address)
+        VALUES (?, ?, 1, ?)
+        ON CONFLICT(email) DO UPDATE SET 
+            scan_count = scan_count + 1,
+            wallet_address = excluded.wallet_address
+    """, (email, url, wallet))
+    
+    conn.commit()
+    conn.close()
 
 def get_scan_count(email):
     with sqlite3.connect("qr_cache.db") as conn:
@@ -135,7 +142,12 @@ async def read_index(request: Request):
     })
 
 @qr_app.post("/search_qr_api", response_class=HTMLResponse)
-async def scan_qr(request: Request, file: UploadFile = File(...), user_email: str = Form("guest@demo.com")):
+async def scan_qr(
+    request: Request, 
+    file: UploadFile = File(...), 
+    user_email: str = Form(...),
+    wallet_address: str = Form(...)  # <--- New field
+):
     # 1. Read the image file from the HTML form
     contents = await file.read()
     image = Image.open(io.BytesIO(contents))
@@ -188,7 +200,7 @@ async def scan_qr(request: Request, file: UploadFile = File(...), user_email: st
     save_to_cache(url_qr, status)
     
     # 7. Record scan and get new score
-    record_unique_scan(user_email, url_qr)
+    record_unique_scan(user_email, url_qr, wallet_address)
     
     return templates.TemplateResponse("index.html", {
         "request": request,
