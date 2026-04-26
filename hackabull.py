@@ -136,7 +136,7 @@ async def scan_qr(request: Request, file: UploadFile = File(...), user_email: st
     # 2. Use ZBar to find the QR code
     decoded_qr = decode(image)
 
-    # Error Handle: If no QR is found, show the page with an error message
+    # Error Handle
     if not decoded_qr:
         return templates.TemplateResponse("index.html", {
             "request": request,
@@ -144,7 +144,12 @@ async def scan_qr(request: Request, file: UploadFile = File(...), user_email: st
             "results_visible": True,
             "status": "ERROR",
             "url_found": "No QR code detected in the image.",
-            "source": "Local Scanner"
+            "source": "Local Scanner",
+            "score": "0",
+            "threat_class": "N/A",
+            "email": user_email,
+            "scan_count": get_scan_count(user_email),
+            "google_client_id": CLIENT_ID
         })
     
     # 3. Extract the URL from the QR code
@@ -153,13 +158,19 @@ async def scan_qr(request: Request, file: UploadFile = File(...), user_email: st
     # 4. Check Cache First (to save API credits and speed)
     cached_status = get_cached_result(url_qr)
     if cached_status:
+        record_unique_scan(user_email, url_qr) # Track scan attempt
         return templates.TemplateResponse("index.html", {
             "request": request,
             "logged_in": True,
             "results_visible": True,
             "status": cached_status,
             "url_found": url_qr,
-            "source": "Local Cache"
+            "source": "Local Cache",
+            "score": "95" if cached_status == "MALICIOUS" else "0",
+            "threat_class": "Phishing/Malware Risk" if cached_status == "MALICIOUS" else "Safe Destination",
+            "email": user_email,
+            "scan_count": get_scan_count(user_email), # Pass real score
+            "google_client_id": CLIENT_ID
         })
 
     # 5. Cache Miss - Call Google Safe Browsing
@@ -169,9 +180,8 @@ async def scan_qr(request: Request, file: UploadFile = File(...), user_email: st
     # 6. Save result to cache
     save_to_cache(url_qr, status)
     
-    # 7. Record scan and get new score using the dynamic user_email
+    # 7. Record scan and get new score
     record_unique_scan(user_email, url_qr)
-    current_scans = get_scan_count(user_email)
     
     return templates.TemplateResponse("index.html", {
         "request": request,
@@ -183,12 +193,10 @@ async def scan_qr(request: Request, file: UploadFile = File(...), user_email: st
         "score": "95" if status == "MALICIOUS" else "0",  
         "threat_class": "Phishing/Malware Risk" if status == "MALICIOUS" else "Safe Destination", 
         "email": user_email,
-        "scan_count": current_scans, # Pass updated score to HTML
+        "scan_count": get_scan_count(user_email), # Pass real score
         "google_client_id": CLIENT_ID
     })
     
-
-# Replace your existing auth_google functions with this:
 
 @qr_app.post("/auth/google", response_class=HTMLResponse)
 @qr_app.post("/auth/google/", response_class=HTMLResponse)
