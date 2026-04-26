@@ -183,7 +183,7 @@ async def scan_qr(
     # 4. Check Cache First (to save API credits and speed)
     cached_status = get_cached_result(url_qr)
     if cached_status:
-        record_unique_scan(user_email, url_qr) # Track scan attempt
+        record_unique_scan(user_email, url_qr, wallet_address)
         return templates.TemplateResponse("index.html", {
             "request": request,
             "logged_in": True,
