@@ -1,4 +1,8 @@
+@import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap");
+
 :root {
+  --body-font: "Space Grotesk", "Aptos", "Segoe UI", sans-serif;
+  --display-font: "Orbitron", "Space Grotesk", "Aptos", "Segoe UI", sans-serif;
   --bg: #09111f;
   --panel: rgba(13, 24, 43, 0.88);
   --panel-strong: rgba(10, 18, 33, 0.95);
@@ -31,7 +35,7 @@ body {
     radial-gradient(circle at top left, rgba(53, 140, 255, 0.22), transparent 28%),
     radial-gradient(circle at top right, rgba(103, 242, 200, 0.14), transparent 22%),
     linear-gradient(145deg, #07101c 0%, #0a1425 52%, #122038 100%);
-  font-family: "Space Grotesk", "Aptos", "Segoe UI", sans-serif;
+  font-family: var(--body-font);
 }
 
 .page-shell {
@@ -102,13 +106,17 @@ body {
 }
 
 .hero-copy h1 {
+  font-family: var(--display-font);
   margin: 8px 0 12px;
   font-size: clamp(2.8rem, 6vw, 4.8rem);
   line-height: 0.95;
-  letter-spacing: -0.06em;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  font-variant: normal;
 }
 
 .hero-problem {
+  font-family: var(--display-font);
   margin: 0 0 12px;
   color: var(--text);
   font-size: 1.25rem;
@@ -118,6 +126,7 @@ body {
 }
 
 .eyebrow {
+  font-family: var(--display-font);
   margin: 0;
   color: var(--accent);
   text-transform: uppercase;
@@ -126,6 +135,7 @@ body {
 }
 
 .powered-by-solana {
+  font-family: var(--display-font);
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -194,6 +204,14 @@ body {
   color: var(--text);
 }
 
+#scanner .sample-button,
+#scanner .upload-chip,
+#scanner .secondary-button,
+#scanner .primary-button,
+#scanner .scan-status {
+  font-family: var(--body-font);
+}
+
 .primary-button:hover,
 .secondary-button:hover,
 .sample-button:hover,
@@ -260,6 +278,36 @@ body {
   justify-content: space-between;
   gap: 16px;
   align-items: center;
+}
+
+.story-card h2,
+.panel-header h2,
+.scanner-card label,
+.visual-label,
+.results-header h2,
+.result-card h3,
+.engine-label,
+.tier-rank,
+.tier-reward,
+.primary-button,
+.secondary-button,
+.sample-button,
+.top-action-button,
+.token-copy-button,
+.airdrop-status,
+.verdict-badge {
+  font-family: var(--display-font);
+}
+
+.airdrop-panel > .panel-header h2,
+#currentTierName,
+.airdrop-grid h3 {
+  font-family: var(--body-font);
+}
+
+.airdrop-panel > .wallet-panel,
+.airdrop-panel > .referral-panel {
+  display: none;
 }
 
 .toggle-card {
@@ -511,6 +559,8 @@ input[type="text"] {
 
 .google-signin-slot {
   min-height: 40px;
+  border-radius: 12px;
+  background: #05070b;
 }
 
 .google-button {
@@ -521,14 +571,16 @@ input[type="text"] {
   min-height: 44px;
   padding: 10px 18px 10px 14px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  background: #ffffff;
-  color: #1f2937;
-  font: inherit;
-  font-weight: 700;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: #05070b;
+  color: #f8fafc;
+  font-family: "Roboto", "Google Sans", Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0;
   cursor: pointer;
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.22);
-  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
 }
 
 .google-button.is-visible {
@@ -538,6 +590,7 @@ input[type="text"] {
 .google-button:hover {
   transform: translateY(-1px);
   border-color: rgba(103, 242, 200, 0.45);
+  background: #0b111d;
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
 }
 

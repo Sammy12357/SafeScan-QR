@@ -11,6 +11,7 @@ const sampleUrls = {
   json: "{\"type\":\"airdrop\",\"ref\":\"SAFE-DEMO\",\"action\":\"open\",\"url\":\"https://bit.ly/3secure-deal\"}"
 };
 
+// Use your specific Google Client ID provided in your .env
 const GOOGLE_CLIENT_ID = "230684501873-4aauu1triudaaopdcus2k7achvesr3el.apps.googleusercontent.com";
 const AIRDROP_REGISTER_ENDPOINT = "";
 const PUBLIC_SITE_URL = "https://josephhomza.github.io/hackathon-ideas/phishproof-qr-demo/";
@@ -67,7 +68,7 @@ const dom = {
   referralProgressValue: document.getElementById("referralProgressValue"),
   walletStatus: document.getElementById("walletStatus"),
   connectWalletButton: document.getElementById("connectWalletButton"),
-  disconnectWalletButton: document.getElementById("disconnectWalletButton"), // Re-added
+  disconnectWalletButton: document.getElementById("disconnectWalletButton"), // RESTORED
   demoWalletButton: document.getElementById("demoWalletButton"),
   referralLink: document.getElementById("referralLink"),
   incomingReferral: document.getElementById("incomingReferral"),
@@ -83,7 +84,7 @@ const dom = {
 let lastAnalysis = null;
 let scanCount = Number(document.getElementById("scanProgressValue")?.getAttribute("data-backend-count") || "0");
 
-// [HEURISTIC ANALYSIS FUNCTIONS REMAIN THE SAME]
+// --- HEURISTIC ANALYSIS (PARTNER VERSION) ---
 function isUrlLike(value) { return /^https?:\/\//i.test(value) || /^[a-z0-9.-]+\.[a-z]{2,}(\/|$)/i.test(value); }
 function normalizeUrl(raw) { const trimmed = raw.trim(); if (!trimmed) throw new Error("Paste a URL to analyze."); if (!/^https?:\/\//i.test(trimmed)) return new URL(`https://${trimmed}`); return new URL(trimmed); }
 function decodeIfNeeded(value) { try { return decodeURIComponent(value); } catch { return value; } }
@@ -92,67 +93,119 @@ function detectPayload(rawValue) { const raw = rawValue.trim(); const upper = ra
 function analyzeUrl(rawValue) { const parsed = normalizeUrl(rawValue); const urlString = parsed.toString(); const lowerUrl = urlString.toLowerCase(); const decodedPath = decodeIfNeeded(`${parsed.pathname}${parsed.search}`); const reasons = []; const tags = []; let score = 0; let threatClass = "Low-risk web destination"; if (parsed.hostname.match(/^\d{1,3}(\.\d{1,3}){3}$/)) { score += 30; reasons.push("Points to raw IP."); tags.push("IP host"); } const knownShorteners = ["bit.ly", "tinyurl"]; if (knownShorteners.some((domain) => parsed.hostname.includes(domain))) { score += 22; reasons.push("Uses shortener."); tags.push("Shortener"); } let verdict = score >= 65 ? "Dangerous" : score >= 35 ? "Caution" : "Safe"; return { verdict, score, urlString, redirects: [urlString], reasons, tags, threatClass, canAutoContinue: verdict === "Safe", recommendedAction: verdict === "Safe" ? "Safe to proceed." : "Caution recommended." }; }
 function analyzePayload(rawValue) { const payload = detectPayload(rawValue); if (payload.type === "URL") return analyzeUrl(payload.normalized); return { verdict: "Safe", score: 0, urlString: payload.normalized, redirects: [payload.action], reasons: ["No malicious patterns."], tags: [payload.type], threatClass: "Payload", canAutoContinue: true, recommendedAction: "View safely." }; }
 
-// [RESTORED WALLET LOGIC]
+// --- RESTORED WALLET LOGIC (MERGED WITH PARTNER UI) ---
 function renderWalletState(profile = getStoredAirdropProfile()) {
   if (!profile || !profile.walletAddress) {
     if (dom.walletStatus) dom.walletStatus.textContent = "Sign in to unlock wallet connection.";
+    
+    // Show connect buttons
     dom.connectWalletButton?.classList.remove("hidden");
     dom.topConnectWalletButton?.classList.remove("hidden");
+    if (dom.topConnectWalletButton) {
+      dom.topConnectWalletButton.textContent = "Connect wallet";
+      dom.topConnectWalletButton.disabled = false;
+    }
+    
+    // Hide disconnect button
     dom.disconnectWalletButton?.classList.add("hidden");
-    if (dom.topConnectWalletButton) dom.topConnectWalletButton.textContent = "Connect wallet";
+    if (dom.demoWalletButton) dom.demoWalletButton.disabled = false;
     return;
   }
 
+  // Wallet is connected
   if (dom.walletStatus) dom.walletStatus.textContent = `Connected: ${profile.walletAddress}`;
+  
+  // Hide main connect, show disconnect
   dom.connectWalletButton?.classList.add("hidden");
   dom.disconnectWalletButton?.classList.remove("hidden");
   
+  // Handle partner's top button
   if (dom.topConnectWalletButton) {
     dom.topConnectWalletButton.textContent = "Wallet connected";
     dom.topConnectWalletButton.disabled = true;
   }
+  
+  if (dom.demoWalletButton) dom.demoWalletButton.disabled = true;
 }
 
 async function connectWallet() {
   const profile = getStoredAirdropProfile();
-  if (!profile) { window.alert("Sign in with Google first."); return; }
+  if (!profile) { window.alert("Sign in with Google before connecting a wallet."); return; }
+  
   const detectedWallet = getSolanaWalletProvider();
-  if (!detectedWallet) { window.alert("No Solana wallet detected."); return; }
+  if (!detectedWallet) { window.alert("No Solana wallet was detected. Install Phantom or use the demo wallet."); return; }
+
   try {
     const response = await detectedWallet.provider.connect();
     const publicKey = response?.publicKey || detectedWallet.provider.publicKey;
     await attachWalletToProfile(publicKey.toString(), detectedWallet.name);
-  } catch { window.alert("Connection failed."); }
+  } catch {
+    window.alert("Wallet connection was cancelled or failed.");
+  }
 }
 
 async function attachWalletToProfile(walletAddress, provider = "solana") {
   const profile = getStoredAirdropProfile();
-  const updatedProfile = { ...profile, walletAddress, walletProvider: provider, walletConnectedAt: new Date().toISOString() };
+  if (!profile) return;
+
+  const updatedProfile = {
+    ...profile,
+    walletAddress,
+    walletProvider: provider,
+    walletConnectedAt: new Date().toISOString()
+  };
+
   await saveAirdropProfile(updatedProfile);
   renderAirdropProfile(updatedProfile);
 }
 
-// [EVENT LISTENERS]
+// --- CORE EVENT LISTENERS ---
 dom.connectWalletButton?.addEventListener("click", connectWallet);
 dom.topConnectWalletButton?.addEventListener("click", connectWallet);
 
 dom.disconnectWalletButton?.addEventListener("click", async () => {
   const profile = getStoredAirdropProfile();
   if (!profile) return;
+
+  // Clear wallet fields from profile
   const updatedProfile = { ...profile };
   delete updatedProfile.walletAddress;
   delete updatedProfile.walletProvider;
+
   await saveAirdropProfile(updatedProfile);
   renderAirdropProfile(updatedProfile);
-  window.alert("Wallet disconnected.");
+  window.alert("Wallet disconnected. You can now connect a different account.");
 });
 
-// [CORE PROFILE LOGIC REMAINS THE SAME]
+dom.demoWalletButton?.addEventListener("click", () => {
+  attachWalletToProfile("DemoSQRWallet11111111111111111111111111111", "demo");
+});
+
+// --- GOOGLE AUTH & PROFILE LOGIC ---
 function getStoredAirdropProfile() { try { return JSON.parse(window.localStorage.getItem(AIRDROP_STORAGE_KEY)); } catch { return null; } }
 async function saveAirdropProfile(profile) { window.localStorage.setItem(AIRDROP_STORAGE_KEY, JSON.stringify(profile)); }
-function renderAirdropProfile(profile) { if (!profile) { renderWalletState(null); return; } renderWalletState(profile); updateAirdropProgress(); }
-function updateAirdropProgress() { /* Handles scan count / 5 display */ }
-function getSolanaWalletProvider() { return window.phantom?.solana ? { name: "phantom", provider: window.phantom.solana } : null; }
 
-// Initial load
+function renderAirdropProfile(profile) {
+  if (!profile) {
+    if (dom.airdropStatus) dom.airdropStatus.textContent = "Not signed in";
+    dom.airdropProfile?.classList.add("hidden");
+    renderWalletState(null);
+    return;
+  }
+  if (dom.airdropStatus) dom.airdropStatus.textContent = "Registered";
+  dom.airdropProfile?.classList.remove("hidden");
+  renderWalletState(profile);
+  updateAirdropProgress();
+}
+
+function updateAirdropProgress() {
+    // Keeps scan progress text like "2 / 5" updated
+    if (dom.scanProgressValue) dom.scanProgressValue.textContent = `${scanCount} / 5`;
+}
+
+function getSolanaWalletProvider() {
+  return window.phantom?.solana ? { name: "phantom", provider: window.phantom.solana } : null;
+}
+
+// Initial Load
 renderAirdropProfile(getStoredAirdropProfile());
