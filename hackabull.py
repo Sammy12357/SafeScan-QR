@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from PIL import Image
 from pyzbar.pyzbar import decode
 
-from fastapi import FastAPI, UploadFile, File, Request, Form
+from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,6 +26,7 @@ load_dotenv()
 
 CLIENT_ID = os.getenv("googe_client_id")
 api_key = os.getenv("googe_api_key")
+AIRDROP_ADMIN_SECRET = os.getenv("AIRDROP_ADMIN_SECRET")
 url = f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={api_key}"
 
 templates = Jinja2Templates(directory="templates")
@@ -40,6 +41,11 @@ def init_db():
                         (email TEXT NOT NULL, payload_hash TEXT NOT NULL, url_found TEXT NOT NULL,
                          first_scanned_at TEXT NOT NULL,
                          PRIMARY KEY (email, payload_hash))''')
+    cursor.execute("PRAGMA table_info(scans)")
+    scan_columns = {row[1] for row in cursor.fetchall()}
+    if "airdrop_eligible" not in scan_columns:
+        cursor.execute("ALTER TABLE scans ADD COLUMN airdrop_eligible INTEGER DEFAULT 0")
+    cursor.execute("UPDATE scans SET airdrop_eligible = 1 WHERE scan_count >= 5")
     conn.commit()
     conn.close()
 
@@ -87,7 +93,8 @@ def record_unique_scan(email, url, wallet):
             UPDATE scans
             SET scan_count = scan_count + 1,
                 url_found = ?,
-                wallet_address = COALESCE(?, wallet_address)
+                wallet_address = COALESCE(?, wallet_address),
+                airdrop_eligible = CASE WHEN scan_count + 1 >= 5 THEN 1 ELSE airdrop_eligible END
             WHERE email = ?
         """, (updated_urls, wallet, email))
         return True
@@ -217,7 +224,23 @@ async def auth_google(request: Request, credential: str = Form(None)):
     })
 
 @qr_app.get("/trigger-airdrop-secret")
-async def trigger_airdrop():
+async def trigger_airdrop(
+    secret: str = Query(None),
+    x_airdrop_secret: str = Header(None)
+):
+    provided_secret = x_airdrop_secret or secret
+    if not AIRDROP_ADMIN_SECRET:
+        return {
+            "status": "Blocked",
+            "error": "AIRDROP_ADMIN_SECRET is not set on the server."
+        }
+
+    if provided_secret != AIRDROP_ADMIN_SECRET:
+        return {
+            "status": "Blocked",
+            "error": "Invalid or missing airdrop admin secret."
+        }
+
     try:
         result = await airdrop_sweep()
         return {

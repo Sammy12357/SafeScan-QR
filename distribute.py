@@ -144,8 +144,15 @@ async def airdrop_sweep():
         conn = sqlite3.connect('qr_cache.db')
         cursor = conn.cursor()
 
-        # 2. Find eligible winners (5+ scans, not yet paid)
-        cursor.execute("SELECT email, wallet_address FROM scans WHERE scan_count >= 5 AND tokens_sent = 0")
+        # 2. Find eligible winners (5+ unique scans, not yet paid)
+        cursor.execute("""
+            SELECT email, wallet_address
+            FROM scans
+            WHERE scan_count >= 5
+              AND tokens_sent = 0
+              AND wallet_address IS NOT NULL
+              AND TRIM(wallet_address) != ''
+        """)
         winners = cursor.fetchall()
 
         summary = {
