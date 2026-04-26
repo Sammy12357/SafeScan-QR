@@ -17,13 +17,17 @@ from spl.token.instructions import (
 )
 from spl.token.constants import TOKEN_PROGRAM_ID
 
+try:
+    from spl.token.constants import TOKEN_2022_PROGRAM_ID
+except ImportError:
+    TOKEN_2022_PROGRAM_ID = None
+
 load_dotenv()
 
 # SQR Configuration
 MINT_ADDRESS = Pubkey.from_string("Bpdt7Hey78HeEEr9Q6x19gYAns5n6w44LdjJhxN3pump")
 AIRDROP_AMOUNT = 10  # Low amount for safety test
 RPC_URL = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
-TOKEN_2022_PROGRAM_ID = Pubkey.from_string("TokenzQdBNbLqP5VEhdkAS6EPFvfksu3BzSs623VQ5DA")
 
 
 def describe_exception(exc):
@@ -94,7 +98,11 @@ async def get_token_program_id(client):
         raise RuntimeError(f"Token mint account was not found: {MINT_ADDRESS}")
 
     token_program_id = mint_info.value.owner
-    if token_program_id not in (TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID):
+    supported_programs = [TOKEN_PROGRAM_ID]
+    if TOKEN_2022_PROGRAM_ID is not None:
+        supported_programs.append(TOKEN_2022_PROGRAM_ID)
+
+    if token_program_id not in supported_programs:
         raise RuntimeError(f"Unexpected token program for SQR mint: {token_program_id}")
 
     return token_program_id
