@@ -63,8 +63,6 @@ body {
 .story-card h2, .panel-header h2, .scanner-card label, .visual-label, .results-header h2, .result-card h3, .engine-label, .tier-rank, .tier-reward, .primary-button, .secondary-button, .sample-button, .top-action-button, .token-copy-button, .airdrop-status, .verdict-badge { font-family: var(--display-font); }
 .airdrop-panel > .panel-header h2, #currentTierName, .airdrop-grid h3 { font-family: var(--body-font); }
 
-/* NOTE: The display: none lines for the wallet panel were completely removed here */
-
 .toggle-card { display: inline-flex; gap: 14px; align-items: center; padding: 12px 16px; color: var(--muted); }
 .toggle-card input { display: none; }
 .toggle-slider { width: 58px; height: 32px; border-radius: 999px; background: rgba(255, 255, 255, 0.12); position: relative; }

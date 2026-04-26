@@ -21,6 +21,7 @@ function getStoredAirdropProfile() {
 function renderWalletState(profile = getStoredAirdropProfile()) {
   const walletAddr = profile?.walletAddress || "";
   
+  // Update hidden field for backend recording
   if (dom.hiddenWalletInput) dom.hiddenWalletInput.value = walletAddr;
 
   if (!profile || !walletAddr) {
