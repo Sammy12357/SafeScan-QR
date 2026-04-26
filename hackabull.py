@@ -39,36 +39,41 @@ def init_db():
 
 init_db()
 
-def record_unique_scan(email, url, wallet):
+def record_unique_scan(email, target_url, wallet):
+    target_url = target_url.strip()
     conn = sqlite3.connect('qr_cache.db')
     cursor = conn.cursor()
     
-    cursor.execute("SELECT url_found FROM scans WHERE email = ?", (email,))
+    cursor.execute("SELECT url_found, scan_count FROM scans WHERE email = ?", (email,))
     row = cursor.fetchone()
     
     if row:
-        existing_urls = row[0] if row[0] else ""
-        # Create a unique set of URLs to prevent duplicate counting
-        scanned_set = set(filter(bool, existing_urls.split(",")))
+        existing_urls = str(row[0]) if row[0] else ""
+        current_count = int(row[1]) if row[1] else 0
         
-        if url not in scanned_set:
-            scanned_set.add(url)
-            updated_urls = ",".join(scanned_set)
-            new_count = len(scanned_set) # Force count to equal unique URLs
+        # Build clean list of previously scanned URLs
+        scanned_list = [u.strip() for u in existing_urls.split(",") if u.strip()]
+        
+        if target_url not in scanned_list:
+            # Completely new URL: Append and +1 the score
+            scanned_list.append(target_url)
+            updated_urls = ",".join(scanned_list)
+            new_count = current_count + 1 
             
             cursor.execute("""
                 UPDATE scans SET scan_count = ?, url_found = ?, wallet_address = ? WHERE email = ?
             """, (new_count, updated_urls, wallet, email))
         else:
-            # Already scanned, do not increment count
+            # Duplicate URL: Do not increment score, just update wallet
             cursor.execute("""
                 UPDATE scans SET wallet_address = ? WHERE email = ?
             """, (wallet, email))
     else:
+        # First scan ever
         cursor.execute("""
             INSERT INTO scans (email, url_found, scan_count, wallet_address)
             VALUES (?, ?, 1, ?)
-        """, (email, url, wallet))
+        """, (email, target_url, wallet))
     
     conn.commit()
     conn.close()
@@ -135,10 +140,8 @@ async def scan_qr(
 ):
     url_qr = None
     
-    # 1. Handle manual text input first
     if manual_url and manual_url.strip():
         url_qr = manual_url.strip()
-    # 2. Or handle uploaded image
     elif file and file.filename:
         contents = await file.read()
         try:
@@ -149,7 +152,6 @@ async def scan_qr(
         except Exception:
             pass
 
-    # Error if both are empty or fail
     if not url_qr:
         return templates.TemplateResponse("index.html", {
             "request": request, "logged_in": True, "results_visible": True,
