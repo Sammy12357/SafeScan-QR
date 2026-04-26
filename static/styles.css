@@ -77,7 +77,11 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
 .airdrop-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 22px; }
 .token-strip { display: grid; grid-template-columns: 0.36fr 0.2fr 1fr; gap: 16px; align-items: center; margin-top: 22px; padding: 18px 20px; border: 1px solid rgba(103, 242, 200, 0.2); border-radius: 18px; background: radial-gradient(circle at top right, rgba(103, 242, 200, 0.1), transparent 35%), rgba(255, 255, 255, 0.035); }
 .airdrop-progress, .wallet-panel, .referral-panel { display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: center; margin-top: 16px; padding: 18px 20px; border: 1px solid var(--line); border-radius: 18px; background: rgba(255, 255, 255, 0.035); }
-.airdrop-progress h3 { margin: 0 0 6px; font-size: 1.45rem; }
+.airdrop-progress > div:first-child > .token-label,
+.airdrop-progress > div:first-child > .eyebrow,
+.airdrop-progress > div:first-child > h3 { margin-bottom: 8px; }
+.airdrop-progress > div:first-child > h3 { margin-top: 0; font-size: 1.45rem; }
+.airdrop-progress > div:first-child > .airdrop-copy { margin: 0; }
 .progress-stats, .wallet-actions, .referral-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
 .progress-stats div { min-width: 112px; padding: 12px 14px; border: 1px solid rgba(103, 242, 200, 0.18); border-radius: 16px; background: rgba(103, 242, 200, 0.07); }
 .progress-stats span { display: block; color: var(--text); font-weight: 800; font-size: 1.15rem; }

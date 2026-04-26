@@ -69,9 +69,13 @@
         </div>
 
         <div class="airdrop-progress">
-          <div><p class="eyebrow">Current tier</p><h3 id="currentTierName">Scanner</h3><p id="currentTierSummary" class="airdrop-copy">Perform 5 scans to unlock Tier 1.</p></div>
+          <div>
+            <p class="token-label">Current tier</p>
+            <h3 id="currentTierName">{{ "Tier 1: Scanner" if (scan_count | default(0)) >= 5 else "Registered" }}</h3>
+            <p id="currentTierSummary" class="airdrop-copy">{{ "Base allocation unlocked after account creation and 5 QR scans." if (scan_count | default(0)) >= 5 else "Scan 5 QR codes to unlock Tier 1." }}</p>
+          </div>
           <div class="progress-stats">
-            <div><span id="scanProgressValue">{{ scan_count | default(0) }} / 5</span><p>QR scans</p></div>
+            <div><span id="scanProgressValue" data-backend-count="{{ scan_count | default(0) }}">{{ scan_count | default(0) }} / 5</span><p>QR scans</p></div>
             <div><span id="referralProgressValue">0</span><p>Referrals</p></div>
           </div>
         </div>
@@ -83,6 +87,29 @@
             <button id="disconnectWalletButton" class="secondary-button hidden" type="button">Disconnect wallet</button>
             <button id="demoWalletButton" class="secondary-button" type="button">Use demo wallet</button>
           </div>
+        </div>
+
+        <div class="airdrop-grid">
+          <article id="tierOneCard" class="airdrop-card tier-card {{ 'unlocked current' if (scan_count | default(0)) >= 5 else '' }}">
+            <div class="tier-rank">Tier 1</div>
+            <h3>Scanner</h3>
+            <p>Create an account and scan 5 QR codes.</p>
+            <div class="tier-reward">Base allocation</div>
+          </article>
+
+          <article id="tierTwoCard" class="airdrop-card tier-card">
+            <div class="tier-rank">Tier 2</div>
+            <h3>Referrer</h3>
+            <p>Invite 1 person with your referral link.</p>
+            <div class="tier-reward">2x allocation</div>
+          </article>
+
+          <article id="tierThreeCard" class="airdrop-card tier-card">
+            <div class="tier-rank">Tier 3</div>
+            <h3>Guardian</h3>
+            <p>Invite multiple people and scan 50 QR codes.</p>
+            <div class="tier-reward">5x allocation</div>
+          </article>
         </div>
       </section>
 
