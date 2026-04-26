@@ -409,21 +409,18 @@ input[type="text"] {
   background: rgba(255, 255, 255, 0.035);
 }
 
-.airdrop-progress h3 {
-  margin: 0 0 6px;
+.airdrop-progress > div:first-child > .token-label,
+.airdrop-progress > div:first-child > .eyebrow,
+.airdrop-progress > div:first-child > h3 {
+  margin-bottom: 8px;
+}
+
+.airdrop-progress > div:first-child > h3 {
+  margin-top: 0;
   font-size: 1.45rem;
 }
 
-.current-tier-stack {
-  display: grid;
-  gap: 8px;
-  align-content: center;
-}
-
-.current-tier-stack .token-label,
-.current-tier-stack .eyebrow,
-.current-tier-stack h3,
-.current-tier-stack .airdrop-copy {
+.airdrop-progress > div:first-child > .airdrop-copy {
   margin: 0;
 }
 
