@@ -3,6 +3,7 @@ import json
 import warnings
 import io
 import sqlite3
+import hashlib
 from datetime import datetime, timedelta
 from PIL import Image
 from pyzbar.pyzbar import decode
@@ -34,49 +35,61 @@ def init_db():
     cursor.execute('''CREATE TABLE IF NOT EXISTS scan_results (url TEXT PRIMARY KEY, status TEXT, timestamp TEXT)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS users (google_id TEXT PRIMARY KEY, email TEXT, last_login TEXT)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS scans (email TEXT PRIMARY KEY, url_found TEXT, scan_count INTEGER DEFAULT 0, wallet_address TEXT, tokens_sent INTEGER DEFAULT 0)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS scan_events
+                        (email TEXT NOT NULL, payload_hash TEXT NOT NULL, url_found TEXT NOT NULL,
+                         first_scanned_at TEXT NOT NULL,
+                         PRIMARY KEY (email, payload_hash))''')
     conn.commit()
     conn.close()
 
 init_db()
 
-def record_unique_scan(email, target_url, wallet):
-    target_url = target_url.strip()
-    conn = sqlite3.connect('qr_cache.db')
-    cursor = conn.cursor()
-    
-    cursor.execute("SELECT url_found, scan_count FROM scans WHERE email = ?", (email,))
-    row = cursor.fetchone()
-    
-    if row:
-        existing_urls = str(row[0]) if row[0] else ""
-        current_count = int(row[1]) if row[1] else 0
-        
-        # Build clean list of previously scanned URLs
-        scanned_list = [u.strip() for u in existing_urls.split(",") if u.strip()]
-        
-        if target_url not in scanned_list:
-            # Completely new URL: Append and +1 the score
-            scanned_list.append(target_url)
-            updated_urls = ",".join(scanned_list)
-            new_count = current_count + 1 
-            
-            cursor.execute("""
-                UPDATE scans SET scan_count = ?, url_found = ?, wallet_address = ? WHERE email = ?
-            """, (new_count, updated_urls, wallet, email))
-        else:
-            # Duplicate URL: Do not increment score, just update wallet
-            cursor.execute("""
-                UPDATE scans SET wallet_address = ? WHERE email = ?
-            """, (wallet, email))
-    else:
-        # First scan ever
+def record_unique_scan(email, url, wallet):
+    normalized_payload = url.strip()
+    payload_hash = hashlib.sha256(normalized_payload.encode("utf-8")).hexdigest()
+
+    with sqlite3.connect('qr_cache.db') as conn:
+        cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO scans (email, url_found, scan_count, wallet_address)
-            VALUES (?, ?, 1, ?)
-        """, (email, target_url, wallet))
-    
-    conn.commit()
-    conn.close()
+            VALUES (?, ?, 0, ?)
+            ON CONFLICT(email) DO UPDATE SET
+                wallet_address = COALESCE(excluded.wallet_address, scans.wallet_address)
+        """, (email, normalized_payload, wallet))
+
+        cursor.execute("SELECT url_found, scan_count FROM scans WHERE email = ?", (email,))
+        previous_url, current_count = cursor.fetchone()
+
+        cursor.execute("""
+            INSERT OR IGNORE INTO scan_events (email, payload_hash, url_found, first_scanned_at)
+            VALUES (?, ?, ?, ?)
+        """, (email, payload_hash, normalized_payload, datetime.now().isoformat()))
+
+        if cursor.rowcount == 0:
+            return False
+
+        # Existing rows may already have counted the last scanned payload before
+        # scan_events existed. Backfill that event without giving an extra scan.
+        previous_urls = [entry.strip() for entry in str(previous_url or "").split(",") if entry.strip()]
+        if normalized_payload in previous_urls and current_count > 0:
+            cursor.execute("""
+                UPDATE scans
+                SET wallet_address = COALESCE(?, wallet_address)
+                WHERE email = ?
+            """, (wallet, email))
+            return False
+
+        previous_urls.append(normalized_payload)
+        updated_urls = ",".join(previous_urls)
+
+        cursor.execute("""
+            UPDATE scans
+            SET scan_count = scan_count + 1,
+                url_found = ?,
+                wallet_address = COALESCE(?, wallet_address)
+            WHERE email = ?
+        """, (updated_urls, wallet, email))
+        return True
 
 def get_scan_count(email):
     with sqlite3.connect("qr_cache.db") as conn:
@@ -209,3 +222,21 @@ async def trigger_airdrop():
         return {"status": "Success", "message": "Airdrop sweep executed! Check Render logs."}
     except Exception as e:
         return {"status": "Failed", "error": str(e)}
+
+def save_user_to_db(google_id, email):
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.execute("""
+            INSERT INTO users (google_id, email, last_login)
+            VALUES (?, ?, ?)
+            ON CONFLICT(google_id) DO UPDATE SET
+                email=excluded.email,
+                last_login=excluded.last_login
+        """, (google_id, email, datetime.now().isoformat()))
+
+
+
+# print("Testing URL bad:")
+# print(check_url("http://testsafebrowsing.appspot.com/s/malware.html"))
+
+# print("Testing URL good:")
+# print(check_url("https://google.com"))
