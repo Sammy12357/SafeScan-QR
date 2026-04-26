@@ -610,8 +610,21 @@ function renderAirdropProfile(profile) {
 }
 
 function renderWalletState(profile = getStoredAirdropProfile()) {
-  if (!profile || !profile.walletAddress) {
+  if (!profile) {
     if (dom.walletStatus) dom.walletStatus.textContent = "Sign in to unlock wallet connection.";
+    if (dom.connectWalletButton) dom.connectWalletButton.textContent = "Connect wallet";
+    if (dom.topConnectWalletButton) dom.topConnectWalletButton.textContent = "Connect wallet";
+    if (dom.connectWalletButton) dom.connectWalletButton.classList.remove("hidden");
+    if (dom.topConnectWalletButton) dom.topConnectWalletButton.classList.remove("hidden");
+    if (dom.disconnectWalletButton) dom.disconnectWalletButton.classList.add("hidden");
+    if (dom.connectWalletButton) dom.connectWalletButton.disabled = false;
+    if (dom.topConnectWalletButton) dom.topConnectWalletButton.disabled = false;
+    if (dom.demoWalletButton) dom.demoWalletButton.disabled = false;
+    return;
+  }
+
+  if (!profile.walletAddress) {
+    if (dom.walletStatus) dom.walletStatus.textContent = "No wallet connected yet.";
     if (dom.connectWalletButton) dom.connectWalletButton.textContent = "Connect wallet";
     if (dom.topConnectWalletButton) dom.topConnectWalletButton.textContent = "Connect wallet";
     if (dom.connectWalletButton) dom.connectWalletButton.classList.remove("hidden");
@@ -625,7 +638,11 @@ function renderWalletState(profile = getStoredAirdropProfile()) {
 
   if (dom.walletStatus) dom.walletStatus.textContent = `Connected: ${profile.walletAddress}`;
   if (dom.connectWalletButton) dom.connectWalletButton.classList.add("hidden");
-  if (dom.topConnectWalletButton) dom.topConnectWalletButton.classList.add("hidden");
+  if (dom.topConnectWalletButton) {
+    dom.topConnectWalletButton.classList.remove("hidden");
+    dom.topConnectWalletButton.textContent = "Wallet connected";
+    dom.topConnectWalletButton.disabled = true;
+  }
   if (dom.disconnectWalletButton) dom.disconnectWalletButton.classList.remove("hidden");
   if (dom.demoWalletButton) dom.demoWalletButton.disabled = true;
 }
@@ -747,13 +764,15 @@ async function copyReferralLink(button = dom.copyReferralButton) {
     return;
   }
 
+  const referralUrl = buildReferralLink(profile);
   try {
-    await navigator.clipboard.writeText(buildReferralLink(profile));
+    if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable.");
+    await navigator.clipboard.writeText(referralUrl);
     const defaultText = button === dom.topCopyReferralButton ? "Referral link" : "Copy referral link";
     if (button) button.textContent = "Copied link";
     setTimeout(() => { if (button) button.textContent = defaultText; }, 1200);
   } catch {
-    window.alert("Clipboard copy failed in this browser.");
+    window.prompt("Copy your referral link:", referralUrl);
   }
 }
 
