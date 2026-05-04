@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SafeScan QR Demo</title>
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/styles.css?v=render-polish-v1">
   <style>
     .google-signin-wrap { position: relative; display: inline-flex; width: 240px; height: 44px; border-radius: 12px; background: #05070b; overflow: hidden; }
     .google-visual-button { position: absolute; inset: 0; z-index: 1; display: inline-flex; justify-content: center; align-items: center; gap: 12px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.18); background: #05070b; color: #f8fafc; font-family: "Roboto", sans-serif; pointer-events: none; }
@@ -35,7 +35,7 @@
       <div class="hero-copy">
         <div class="hero-kicker">
           <p class="eyebrow">Hackabull Demo</p>
-          <div class="powered-by-solana"><span>Powered By</span><svg viewBox="0 0 398 312"><defs><linearGradient id="solanaGradientTop" x1="360" y1="28" x2="62" y2="301" gradientUnits="userSpaceOnUse"><stop stop-color="#14F195"/><stop offset="0.5" stop-color="#55A6F8"/><stop offset="1" stop-color="#9945FF"/></linearGradient></defs><path fill="url(#solanaGradientTop)" d="M64.6 3.8C67 1.4 70.4 0 73.8 0h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1L64.6 3.8Z"/><path fill="url(#solanaGradientTop)" d="M333.1 120.1c-2.4-2.4-5.7-3.8-9.2-3.8H6.5c-5.8 0-8.7-7-4.6-11.1l62.7 62.7c2.4 2.4 5.7 3.8 9.2 3.8h317.4c5.8 0 8.7-7 4.6-11.1l-62.7-62.7Z"/><path fill="url(#solanaGradientTop)" d="M64.6 237.9c2.4-2.4 5.7-3.8 9.2-3.8h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1l62.7-62.7Z"/></svg></div>
+          <div class="powered-by-solana" aria-label="Powered by Solana"><span>Powered By</span><svg viewBox="0 0 398 312" role="img" aria-hidden="true" focusable="false"><defs><linearGradient id="solanaGradientTop" x1="360" y1="28" x2="62" y2="301" gradientUnits="userSpaceOnUse"><stop stop-color="#14F195"/><stop offset="0.5" stop-color="#55A6F8"/><stop offset="1" stop-color="#9945FF"/></linearGradient></defs><path fill="url(#solanaGradientTop)" d="M64.6 3.8C67 1.4 70.4 0 73.8 0h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1L64.6 3.8Z"/><path fill="url(#solanaGradientTop)" d="M333.1 120.1c-2.4-2.4-5.7-3.8-9.2-3.8H6.5c-5.8 0-8.7 7-4.6 11.1l62.7 62.7c2.4 2.4 5.7 3.8 9.2 3.8h317.4c5.8 0 8.7-7 4.6-11.1l-62.7-62.7Z"/><path fill="url(#solanaGradientTop)" d="M64.6 237.9c2.4-2.4 5.7-3.8 9.2-3.8h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1l62.7-62.7Z"/></svg></div>
         </div>
         <h1>SafeScan QR</h1>
         <p class="hero-problem">Can you distinguish a malicious QR?</p>
@@ -49,7 +49,25 @@
     </header>
 
     <main>
-      {% if logged_in %}
+      <section class="story-grid" id="story">
+        <article class="story-card">
+          <h2>What problem are we solving?</h2>
+          <p>QR codes hide the destination until after a scan. SafeScan reveals the payload before a user opens a link, joins Wi-Fi, sends a message, or approves a wallet action.</p>
+        </article>
+        <article class="story-card">
+          <h2>What makes this different?</h2>
+          <p>The backend decodes QR images, checks URLs with Google Safe Browsing, tracks scans, and keeps airdrop progress connected to an email and wallet.</p>
+        </article>
+        <article class="story-card">
+          <h2>How does scanning work?</h2>
+          <p>Upload a QR photo or paste a decoded payload. The Render backend classifies the payload and returns a verdict from the same page.</p>
+        </article>
+        <article class="story-card">
+          <h2>What is the hackathon hook?</h2>
+          <p>It combines cybersecurity, mobile behavior, Solana wallet rewards, and a judge-friendly demo loop that is easy to understand fast.</p>
+        </article>
+      </section>
+
       <section class="airdrop-panel" id="airdrop">
         <div class="panel-header">
           <div><p class="eyebrow">Community airdrop</p><h2>Register for SafeScan QR tiers</h2></div>
@@ -118,13 +136,35 @@
         <div class="scanner-grid">
           <div class="scanner-card">
             <form id="qrForm" action="/search_qr_api" method="post" enctype="multipart/form-data">
-              <input type="hidden" name="user_email" value="{{ email }}">
+              <input type="hidden" name="user_email" value="{{ email | default('guest@demo.com') }}">
               <input type="hidden" id="hiddenWalletInput" name="wallet_address">
-              <label class="upload-chip" for="qrImageInput">Use mobile camera/photo</label>
-              <input id="qrImageInput" name="file" type="file" accept="image/*" onchange="this.form.submit()" hidden>
+              <div class="scan-mode-bar">
+                <button id="simulateScanButton" class="sample-button" type="button">Simulate mobile scan</button>
+                <label class="upload-chip" for="qrImageInput">Use mobile camera/photo</label>
+                <input id="qrImageInput" name="file" type="file" accept="image/*" capture="environment" hidden>
+              </div>
               <label for="urlInput" style="margin-top:20px; display:block;">Or paste a URL manually</label>
               <input id="urlInput" name="manual_url" type="text" placeholder="https://example.com">
+              <div id="scanStatus" class="scan-status">Waiting for a scan, QR photo, or pasted payload.</div>
+              <div id="uploadPreview" class="upload-preview hidden">
+                <img id="previewImage" alt="Uploaded QR preview">
+                <div>
+                  <p class="preview-title">Image ready</p>
+                  <p class="preview-copy">Submit the form to decode and analyze it with the SafeScan backend.</p>
+                </div>
+              </div>
               <button type="submit" class="primary-button" style="margin-top:15px; width:100%;">Analyze Payload</button>
+              <div class="sample-block">
+                <p class="sample-title">Try sample QR payloads</p>
+                <div class="sample-buttons">
+                  <button class="sample-button" type="button" data-sample="safe">Safe brand link</button>
+                  <button class="sample-button" type="button" data-sample="shortener">Shortened redirect</button>
+                  <button class="sample-button" type="button" data-sample="lookalike">Lookalike phishing</button>
+                  <button class="sample-button" type="button" data-sample="malware">Malware delivery</button>
+                  <button class="sample-button" type="button" data-sample="wifi">Wi-Fi join</button>
+                  <button class="sample-button" type="button" data-sample="crypto">Crypto payment</button>
+                </div>
+              </div>
             </form>
           </div>
           <div class="scanner-card visual-card">
@@ -155,10 +195,16 @@
           </article>
         </div>
       </section>
-      {% endif %}
-      {% endif %}
     </main>
   </div>
-  <script src="/static/app.js"></script>
+  <script>
+    window.SAFESCAN_BOOTSTRAP = {
+      loggedIn: {{ "true" if logged_in else "false" }},
+      email: "{{ email | default('guest@demo.com') }}",
+      scanCount: {{ scan_count | default(0) }},
+      googleClientId: "{{ google_client_id }}"
+    };
+  </script>
+  <script src="/static/app.js?v=render-polish-v1"></script>
 </body>
 </html>
