@@ -39,15 +39,10 @@
         </div>
         <h1>SafeScan QR</h1>
         <p class="hero-problem">Can you distinguish a malicious QR?</p>
-        <p class="hero-text">A trust layer for QR links, wallet prompts, and payment redirects. Decode the payload, score the risk, and keep the user in control before anything runs.</p>
+        <p class="hero-text">Check QR destinations with AI before anything runs.</p>
         <div class="hero-actions"><a class="primary-button" href="#scanner">Scan QR</a><a class="secondary-button" href="#airdrop">Airdrop</a></div>
-        <div class="hero-metrics" aria-label="SafeScan QR demo capabilities">
-          <div><span>AI</span><p>Risk verdicts</p></div>
-          <div><span>ZBar</span><p>QR decoding</p></div>
-          <div><span>SQR</span><p>Reward tiers</p></div>
-        </div>
       </div>
-      <div class="spline-showcase" data-spline-src="">
+      <div class="hero-card spline-showcase" data-spline-src="">
         <canvas class="three-scene" id="safeScanModel" aria-label="Interactive SafeScan QR 3D security model"></canvas>
         <div class="spline-embed" id="splineEmbed"></div>
         <div class="device-orbit" aria-hidden="true">
@@ -63,28 +58,14 @@
           </div>
           <div class="scan-beam"></div>
         </div>
+        <div class="model-caption">
+          <p class="model-caption-label">Interactive 3D scanner</p>
+          <p>Hover or drag the Solana-style phone to inspect the QR scanner and Seed Vault detail.</p>
+        </div>
       </div>
     </header>
 
     <main>
-      <section class="trust-strip" aria-label="SafeScan workflow">
-        <article>
-          <span>01</span>
-          <h2>Decode</h2>
-          <p>Extract QR destinations before the browser, wallet, or payment app opens.</p>
-        </article>
-        <article>
-          <span>02</span>
-          <h2>Classify</h2>
-          <p>Check reputation signals and suspicious intent with a clear risk verdict.</p>
-        </article>
-        <article>
-          <span>03</span>
-          <h2>Reward</h2>
-          <p>Track trusted scanner behavior through wallet-linked SQR airdrop tiers.</p>
-        </article>
-      </section>
-
       {% if logged_in %}
       <section class="airdrop-panel" id="airdrop">
         <div class="panel-header">
