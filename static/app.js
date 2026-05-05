@@ -14,6 +14,22 @@ const dom = {
   demoWalletButton: document.getElementById("demoWalletButton")
 };
 
+const splineShowcase = document.querySelector(".spline-showcase");
+const splineEmbed = document.getElementById("splineEmbed");
+
+function hydrateSplineShowcase() {
+  const sceneUrl = splineShowcase?.dataset.splineSrc?.trim();
+  if (!sceneUrl || !splineEmbed) return;
+
+  const frame = document.createElement("iframe");
+  frame.src = sceneUrl;
+  frame.title = "Interactive SafeScan QR 3D model";
+  frame.loading = "lazy";
+  frame.allow = "autoplay; fullscreen; xr-spatial-tracking";
+  splineEmbed.replaceChildren(frame);
+  splineShowcase?.classList.add("spline-loaded");
+}
+
 function getStoredAirdropProfile() { 
   try { return JSON.parse(window.localStorage.getItem(AIRDROP_STORAGE_KEY)); } catch { return null; } 
 }
@@ -102,3 +118,4 @@ function renderAirdropProfile(profile) {
 }
 
 renderAirdropProfile(getStoredAirdropProfile());
+hydrateSplineShowcase();

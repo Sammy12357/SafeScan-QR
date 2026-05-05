@@ -4,3 +4,6 @@ __pycache__/
 .DS_Store
 .env
 qr_cache.db
+.codex_server_*.log
+.codex_tmp_deps/
+.codex_tmp_deps2/
