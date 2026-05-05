@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SafeScan QR Demo</title>
-  <link rel="stylesheet" href="/static/styles.css?v=top-3d-showcase-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=full-hero-3d-v1">
   <style>
     .google-signin-wrap { position: relative; display: inline-flex; width: 240px; height: 44px; border-radius: 12px; background: #05070b; overflow: hidden; }
     .google-visual-button { position: absolute; inset: 0; z-index: 1; display: inline-flex; justify-content: center; align-items: center; gap: 12px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.18); background: #05070b; color: #f8fafc; font-family: "Roboto", sans-serif; pointer-events: none; }
@@ -39,8 +39,13 @@
         </div>
         <h1>SafeScan QR</h1>
         <p class="hero-problem">Can you distinguish a malicious QR?</p>
-        <p class="hero-text">Check QR destinations with AI before anything runs.</p>
+        <p class="hero-text">A trust layer for QR links, wallet prompts, and payment redirects. Decode the payload, score the risk, and keep the user in control before anything runs.</p>
         <div class="hero-actions"><a class="primary-button" href="#scanner">Scan QR</a><a class="secondary-button" href="#airdrop">Airdrop</a></div>
+        <div class="hero-metrics" aria-label="SafeScan QR demo capabilities">
+          <div><span>AI</span><p>Risk verdicts</p></div>
+          <div><span>ZBar</span><p>QR decoding</p></div>
+          <div><span>SQR</span><p>Reward tiers</p></div>
+        </div>
       </div>
       <div class="hero-card spline-showcase" data-spline-src="">
         <canvas class="three-scene" id="safeScanModel" aria-label="Interactive SafeScan QR 3D security model"></canvas>
@@ -59,8 +64,8 @@
           <div class="scan-beam"></div>
         </div>
         <div class="model-caption">
-          <p class="model-caption-label">Interactive 3D scanner</p>
-          <p>Hover or drag the Solana-style phone to inspect the QR scanner and Seed Vault detail.</p>
+          <p class="model-caption-label">Solana Mobile 3D scan model</p>
+          <p>Saga-inspired hardware, Solana Mobile branding, QR inspection, and threat shielding in one scene.</p>
         </div>
       </div>
     </header>
@@ -176,7 +181,7 @@
       {% endif %}
     </main>
   </div>
-  <script type="module" src="/static/safescan-3d.js?v=top-3d-showcase-v1"></script>
-  <script src="/static/app.js?v=top-3d-showcase-v1"></script>
+  <script type="module" src="/static/safescan-3d.js?v=full-hero-3d-v1"></script>
+  <script src="/static/app.js?v=full-hero-3d-v1"></script>
 </body>
 </html>
