@@ -239,11 +239,11 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
 .report-status { min-height: 22px; margin: 12px 0 0; color: var(--muted); font-weight: 700; }
 @keyframes modalSlideUp { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: translateY(0); } }
 
-.site-footer { margin-top: 42px; margin-left: calc(50% - 50vw); width: 100vw; background-color: #07070a; border-top: 1px solid #1e293b; padding-top: 46px; }
-.footer-newsletter { width: min(864px, calc(100% - 48px)); margin: 0 auto 156px; padding: 40px 56px 58px; border: 1px solid #334155; border-radius: 10px; background: rgba(15, 23, 42, 0.36); text-align: center; }
+.site-footer { margin-top: 42px; margin-left: calc(50% - 50vw); width: 100vw; background-color: #07070a; border-top: 1px solid #1e293b; padding-top: 46px; overflow: visible; }
+.footer-newsletter { width: min(864px, calc(100% - 48px)); min-height: 292px; margin: 0 auto 92px; padding: 42px 56px 54px; border: 1px solid #334155; border-radius: 10px; background: #10151d; text-align: center; overflow: visible; }
 .footer-newsletter h2 { margin: 0 0 16px; color: #f8fafc; font-size: 1.45rem; line-height: 1.2; }
 .footer-newsletter p { margin: 0; color: #94a3b8; line-height: 1.6; }
-.footer-newsletter-form { display: grid; grid-template-columns: minmax(220px, 375px) 98px; justify-content: center; gap: 8px; margin: 24px auto 46px; }
+.footer-newsletter-form { display: grid; grid-template-columns: minmax(220px, 375px) 98px; justify-content: center; gap: 8px; margin: 24px auto 44px; }
 .footer-newsletter-form input { min-height: 44px; padding: 0 14px; border: 1px solid #334155; border-radius: 8px; background: #0b1118; color: #f8fafc; font: inherit; }
 .footer-newsletter-form input::placeholder { color: #64748b; }
 .footer-newsletter-form button { min-height: 44px; border: 0; border-radius: 8px; background: #f8fafc; color: #07070a; font: inherit; cursor: pointer; }
@@ -315,7 +315,7 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
 
 @media (max-width: 768px) {
   .site-footer { padding-top: 32px; }
-  .footer-newsletter { width: min(100% - 32px, 864px); margin-bottom: 72px; padding: 30px 18px 34px; }
+  .footer-newsletter { width: min(100% - 32px, 864px); min-height: auto; margin-bottom: 56px; padding: 30px 18px 34px; }
   .footer-newsletter-form { grid-template-columns: 1fr; margin-bottom: 28px; }
   .footer-newsletter-form button { width: 100%; }
   .footer-grid { grid-template-columns: 1fr; padding: 40px 24px 32px 24px; gap: 32px 0; }
