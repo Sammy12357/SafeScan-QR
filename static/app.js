@@ -16,6 +16,17 @@ const dom = {
 
 const splineShowcase = document.querySelector(".spline-showcase");
 const splineEmbed = document.getElementById("splineEmbed");
+const riskModal = document.getElementById("riskVerdictModal");
+const blockReportButton = document.getElementById("blockReportButton");
+const continueSafelyButton = document.getElementById("continueSafelyButton");
+const reportStatus = document.getElementById("reportStatus");
+const analysisLoadingState = document.getElementById("analysisLoadingState");
+const loadingSteps = [
+  "Tracing redirects...",
+  "Checking domain age...",
+  "Running reputation scan...",
+  "Consulting AI analyst..."
+];
 
 function hydrateSplineShowcase() {
   const sceneUrl = splineShowcase?.dataset.splineSrc?.trim();
@@ -103,6 +114,17 @@ dom.qrForm?.addEventListener("submit", (e) => {
   if (!dom.hiddenWalletInput.value) {
     e.preventDefault();
     window.alert("Please connect your wallet first to track scan rewards!");
+    return;
+  }
+
+  if (analysisLoadingState) {
+    let index = 0;
+    analysisLoadingState.textContent = loadingSteps[index];
+    analysisLoadingState.classList.remove("hidden");
+    window.setInterval(() => {
+      index = Math.min(index + 1, loadingSteps.length - 1);
+      analysisLoadingState.textContent = loadingSteps[index];
+    }, 900);
   }
 });
 
@@ -119,3 +141,53 @@ function renderAirdropProfile(profile) {
 
 renderAirdropProfile(getStoredAirdropProfile());
 hydrateSplineShowcase();
+
+if (riskModal) {
+  document.body.style.overflow = "hidden";
+  const scoreGauge = riskModal.querySelector(".score-gauge");
+  const finalScore = Number(scoreGauge?.dataset.score || 0);
+  if (scoreGauge) {
+    const start = performance.now();
+    const animateGauge = (now) => {
+      const progress = Math.min((now - start) / 1000, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      scoreGauge.style.setProperty("--score", String(Math.round(finalScore * eased)));
+      if (progress < 1) window.requestAnimationFrame(animateGauge);
+    };
+    window.requestAnimationFrame(animateGauge);
+  }
+
+  riskModal.addEventListener("click", (event) => {
+    if (event.target === riskModal) {
+      event.preventDefault();
+      riskModal.querySelector(".risk-modal-card")?.animate(
+        [{ transform: "scale(1)" }, { transform: "scale(0.992)" }, { transform: "scale(1)" }],
+        { duration: 180, easing: "ease-out" }
+      );
+    }
+  });
+
+  riskModal.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      if (reportStatus) reportStatus.textContent = "Use Block & Report or Continue Safely to leave this verdict.";
+    }
+  });
+
+  window.setTimeout(() => {
+    blockReportButton?.focus();
+  }, 0);
+}
+
+blockReportButton?.addEventListener("click", () => {
+  const payload = document.querySelector(".decoded-box .mono")?.textContent?.trim() || "";
+  const reports = JSON.parse(window.localStorage.getItem("safeScanReports") || "[]");
+  reports.push({ payload, reportedAt: new Date().toISOString(), verdict: riskModal?.dataset.verdict || "UNKNOWN" });
+  window.localStorage.setItem("safeScanReports", JSON.stringify(reports.slice(-25)));
+  if (reportStatus) reportStatus.textContent = "Blocked locally and added to your report queue.";
+});
+
+continueSafelyButton?.addEventListener("click", () => {
+  document.body.style.overflow = "";
+  riskModal?.classList.add("hidden");
+});

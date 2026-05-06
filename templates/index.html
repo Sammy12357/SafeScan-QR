@@ -147,6 +147,7 @@
               <label for="urlInput" style="margin-top:20px; display:block;">Or paste a URL manually</label>
               <input id="urlInput" name="manual_url" type="text" placeholder="https://example.com">
               <button type="submit" class="primary-button" style="margin-top:15px; width:100%;">Analyze Payload</button>
+              <div id="analysisLoadingState" class="scan-status hidden" aria-live="polite">Tracing redirects...</div>
             </form>
           </div>
           <div class="scanner-card visual-card">
@@ -169,11 +170,79 @@
 
       {% if results_visible %}
       <section id="resultsSection" class="results-panel">
+        <div
+          id="riskVerdictModal"
+          class="risk-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="riskVerdictTitle"
+          data-verdict="{{ status }}"
+        >
+          <div class="risk-modal-card {{ 'risk-modal-safe' if status == 'SAFE' else ('risk-modal-caution' if status == 'CAUTION' else 'risk-modal-dangerous') }}">
+            {% if overall_risk == 'high' %}
+            <div class="risk-warning-banner">Caution: This QR code shows strong indicators of a phishing or wallet drain attack.</div>
+            {% endif %}
+            <div class="risk-verdict-top">
+              <div class="score-gauge" data-score="{{ score }}" style="--score: 0;" aria-label="Risk score {{ score }} out of 100">
+                <span>{{ score }}</span>
+              </div>
+              <div>
+                <p class="engine-label">Scan verdict</p>
+                <h2 id="riskVerdictTitle">{{ status }}</h2>
+                <p class="result-support">{{ verdict_summary | default("SafeScan decoded the QR and checked the payload before any wallet, browser, or payment flow opened.") }}</p>
+              </div>
+            </div>
+
+            <div class="decoded-box">
+              <p class="engine-label">Decoded URL / payload</p>
+              <p class="mono">{{ url_found }}</p>
+            </div>
+
+            <div class="confidence-panel">
+              <div class="confidence-header">
+                <div><p class="engine-label">Confidence breakdown</p><h3>{{ score }} / 100 risk score</h3></div>
+                <div class="verdict-badge {{ 'verdict-safe' if status == 'SAFE' else ('verdict-caution' if status == 'CAUTION' else 'verdict-dangerous') }}">{{ status }}</div>
+              </div>
+
+              <div class="reputation-row">
+                <span class="severity-badge severity-{{ 'high' if reputation and reputation.status == 'MALICIOUS' else 'low' }}">{{ reputation.provider if reputation else source }}</span>
+                <span>{{ reputation.detail if reputation else source }}</span>
+              </div>
+
+              <div class="reason-accordion">
+                {% for reason in risk_reasons %}
+                <details class="reason-row" {% if loop.first %}open{% endif %}>
+                  <summary>
+                    <span><strong>{{ reason.label }}</strong>{% if reason.result %} <em>{{ reason.result }}</em>{% endif %}</span>
+                    <span class="severity-badge severity-{{ reason.severity }}">{{ reason.severity }}</span>
+                  </summary>
+                  <p>{{ reason.detail }}</p>
+                </details>
+                {% endfor %}
+              </div>
+            </div>
+
+            <div class="modal-actions">
+              <button id="blockReportButton" class="danger-button" type="button">Block &amp; Report</button>
+              {% if url_found.startswith("http://") or url_found.startswith("https://") %}
+              <a id="continueSafelyButton" class="primary-button" href="{{ url_found }}" target="_blank" rel="noopener noreferrer">Continue Safely</a>
+              {% else %}
+              <a id="continueSafelyButton" class="primary-button" href="#scanner">Continue Safely</a>
+              {% endif %}
+            </div>
+            <p id="reportStatus" class="report-status" aria-live="polite"></p>
+          </div>
+        </div>
+
         <div class="results-header"><div><h2>Verdict: {{ status }}</h2></div><div class="verdict-badge {{ 'verdict-safe' if status == 'SAFE' else ('verdict-caution' if status == 'CAUTION' else 'verdict-dangerous') }}">{{ status }}</div></div>
         <div class="results-grid">
           <article class="result-card"><h3>Decoded payload</h3><p class="mono">{{ url_found }}</p></article>
           <article class="result-card result-card-wide engine-card">
-            <div class="engine-grid"><div><p class="engine-label">Heuristic score</p><p class="score-value">{{ score }}</p></div><div><p class="engine-label">Threat class</p><p>{{ threat_class }}</p></div></div>
+            <div class="engine-grid">
+              <div><p class="engine-label">Risk score</p><p class="score-value">{{ score }}</p></div>
+              <div><p class="engine-label">Threat class</p><p>{{ threat_class }}</p></div>
+              <div><p class="engine-label">Reputation</p><p>{{ reputation.status if reputation else source }}</p></div>
+            </div>
           </article>
         </div>
       </section>
