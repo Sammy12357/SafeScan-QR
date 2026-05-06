@@ -240,7 +240,8 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
 @keyframes modalSlideUp { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: translateY(0); } }
 
 .site-footer { margin-top: 42px; margin-left: calc(50% - 50vw); width: 100vw; background-color: #07070a; border-top: 1px solid #1e293b; }
-.footer-grid { display: grid; grid-template-columns: 240px repeat(4, 1fr); gap: 0 48px; padding: 56px 80px 48px 80px; }
+.footer-grid { display: grid; grid-template-columns: 240px repeat(4, minmax(120px, max-content)); justify-content: space-between; column-gap: 48px; padding: 56px 80px 48px 80px; }
+.footer-col { min-width: 120px; }
 .footer-brand-name { font-size: 15px; font-weight: 700; color: #f8fafc; display: block; margin-bottom: 8px; }
 .footer-brand-desc { font-size: 13px; color: #94a3b8; line-height: 1.6; margin: 0; }
 .footer-col-header { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; margin: 0 0 16px 0; }
