@@ -78,6 +78,8 @@ def init_db():
     cursor.execute('''CREATE TABLE IF NOT EXISTS privacy_opt_outs
                         (id TEXT PRIMARY KEY, email TEXT NOT NULL, region TEXT,
                          opt_out_type TEXT NOT NULL, timestamp TEXT NOT NULL)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS waitlist_signups
+                        (email TEXT PRIMARY KEY, source TEXT, created_at TEXT NOT NULL)''')
     cursor.execute("PRAGMA table_info(scans)")
     scan_columns = {row[1] for row in cursor.fetchall()}
     if "airdrop_eligible" not in scan_columns:
@@ -1015,6 +1017,16 @@ async def read_index(request: Request):
 @qr_app.get("/legal/privacy-policy", response_class=HTMLResponse)
 async def privacy_policy(request: Request):
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Privacy Policy", PRIVACY_POLICY_HTML))
+
+@qr_app.post("/waitlist", response_class=HTMLResponse)
+async def waitlist_signup(request: Request, email: str = Form(...)):
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO waitlist_signups VALUES (?, ?, ?)",
+            (email.strip().lower(), "footer", datetime.utcnow().isoformat() + "Z")
+        )
+    body = "<h2>You're on the list</h2><p>Thanks for joining the SafeScan QR waitlist. We'll send only major product updates.</p><p><a href='/'>Return to SafeScan QR</a></p>"
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Waitlist", body))
 
 @qr_app.get("/legal/terms-of-use", response_class=HTMLResponse)
 async def terms_of_use(request: Request):
