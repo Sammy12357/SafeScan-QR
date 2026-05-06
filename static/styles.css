@@ -71,17 +71,20 @@ body {
 .hero-metrics div { padding: 14px; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; background: rgba(255, 255, 255, 0.045); }
 .hero-metrics span { display: block; color: var(--accent); font-family: var(--display-font); font-size: 1rem; font-weight: 800; }
 .hero-metrics p { margin: 6px 0 0; color: var(--muted); font-size: 0.88rem; }
-.spline-showcase { min-height: 530px; padding: 0; overflow: hidden; transform-style: preserve-3d; background: radial-gradient(circle at 50% 42%, rgba(103, 242, 200, 0.07), transparent 46%), var(--panel-strong); }
+.spline-showcase { min-height: 530px; padding: 0; overflow: hidden; transform-style: preserve-3d; background: #070b12; }
+.spline-showcase::before { content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 1; background: url("./safescan-3d-fallback.png") center / cover no-repeat; transition: opacity 0.42s ease; }
 .spline-showcase::after { content: none; }
 .three-scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block; opacity: 0; transition: opacity 0.35s ease; cursor: grab; touch-action: none; z-index: 1; }
 .three-scene:active { cursor: grabbing; }
 .spline-showcase.webgl-ready .three-scene { opacity: 1; }
+.spline-showcase.webgl-ready::before,
+.spline-showcase.spline-loaded::before { opacity: 0; }
 .spline-showcase.webgl-ready .device-orbit,
 .spline-showcase.spline-loaded .device-orbit,
 .spline-showcase.spline-loaded .three-scene { opacity: 0; pointer-events: none; }
 .spline-embed, .spline-embed iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 .spline-embed:not(:empty) ~ .device-orbit { opacity: 0; pointer-events: none; }
-.device-orbit { position: absolute; inset: 24px; display: grid; place-items: center; perspective: 1100px; }
+.device-orbit { position: absolute; inset: 24px; display: grid; place-items: center; perspective: 1100px; opacity: 0; }
 .device-orbit::before { content: ""; position: absolute; width: 72%; aspect-ratio: 1; border: 1px solid rgba(103, 242, 200, 0.2); border-radius: 50%; transform: rotateX(68deg); box-shadow: inset 0 0 36px rgba(103, 242, 200, 0.08); }
 .phone-model { position: relative; width: min(68%, 300px); aspect-ratio: 0.52; padding: 22px 18px 18px; border: 1px solid rgba(255, 255, 255, 0.24); border-radius: 36px; background: linear-gradient(145deg, #111b2b, #05080d); box-shadow: 0 48px 90px rgba(0, 0, 0, 0.45), inset 0 0 0 8px rgba(255, 255, 255, 0.035); transform: rotateY(-18deg) rotateX(10deg); animation: modelFloat 7s ease-in-out infinite; }
 .phone-sensor { width: 72px; height: 7px; margin: 0 auto 18px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); }
@@ -90,7 +93,7 @@ body {
 .screen-grid span:nth-child(4n), .screen-grid span:nth-child(7n) { background: var(--accent); }
 .screen-verdict { margin-top: 18px; padding: 12px; border-radius: 8px; background: rgba(80, 227, 164, 0.13); border: 1px solid rgba(80, 227, 164, 0.32); color: var(--safe); font-family: var(--display-font); font-weight: 800; text-align: center; letter-spacing: 0.08em; }
 .scan-beam { position: absolute; width: 76%; height: 2px; top: 46%; background: linear-gradient(90deg, transparent, var(--accent), #ffffff, var(--accent), transparent); box-shadow: 0 0 28px rgba(103, 242, 200, 0.75); animation: showcaseSweep 3.8s ease-in-out infinite; }
-.model-caption { position: absolute; left: 18px; right: 18px; bottom: 16px; z-index: 2; padding: 16px 18px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 16px; background: rgba(5, 8, 13, 0.72); backdrop-filter: blur(14px); pointer-events: none; }
+.model-caption { position: absolute; left: 18px; right: 18px; bottom: 16px; z-index: 2; padding: 16px 18px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 16px; background: rgba(5, 8, 13, 0.72); backdrop-filter: blur(14px); opacity: 0; pointer-events: none; }
 .model-caption p { margin: 0; color: var(--muted); font-size: 1.02rem; line-height: 1.48; }
 .model-caption-label { margin-bottom: 6px !important; color: var(--accent) !important; font-family: var(--display-font); font-size: 0.9rem !important; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; }
 .story-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 22px 0; }
