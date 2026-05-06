@@ -1029,6 +1029,11 @@ async def terms_history(request: Request):
     body = "<h2>Version History</h2><p>v1.0 - May 2026: Initial SafeScan QR Terms of Use.</p>"
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Terms History", body))
 
+@qr_app.get("/changelog", response_class=HTMLResponse)
+async def changelog_page(request: Request):
+    body = "<h2>Changelog</h2><p>v0.1 - May 2026: SafeScan QR hackathon MVP, risk engine, legal pages, and footer system.</p>"
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Changelog", body))
+
 @qr_app.get("/legal/license", response_class=HTMLResponse)
 async def license_page(request: Request):
     body = """
