@@ -1029,6 +1029,67 @@ async def terms_history(request: Request):
     body = "<h2>Version History</h2><p>v1.0 - May 2026: Initial SafeScan QR Terms of Use.</p>"
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Terms History", body))
 
+@qr_app.get("/legal/license", response_class=HTMLResponse)
+async def license_page(request: Request):
+    body = """
+    <h2>License</h2>
+    <p>SafeScan QR is currently proprietary while the product is in hackathon and early beta development. Open-source components remain governed by their original licenses.</p>
+    <p>Public API, SDK, and mobile client licensing will be published before a production developer release.</p>
+    """
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "License", body))
+
+@qr_app.get("/legal/security", response_class=HTMLResponse)
+async def security_page(request: Request):
+    body = f"""
+    <h2>Security</h2>
+    <p>SafeScan QR analyzes QR payloads, URLs, wallet links, redirect chains, reputation signals, and crypto-specific risk patterns before users continue.</p>
+    <p>To report a vulnerability, contact <a href="mailto:{ADMIN_EMAIL}">{ADMIN_EMAIL}</a>. Please include affected routes, reproduction steps, and potential impact.</p>
+    """
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Security", body))
+
+@qr_app.get("/contact", response_class=HTMLResponse)
+async def contact_page(request: Request):
+    body = f"""
+    <h2>Contact</h2>
+    <p>For privacy, security, partnerships, or hackathon questions, contact <a href="mailto:{ADMIN_EMAIL}">{ADMIN_EMAIL}</a>.</p>
+    """
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Contact", body))
+
+@qr_app.get("/product/install", response_class=HTMLResponse)
+async def product_install(request: Request):
+    body = "<h2>Install</h2><p>SafeScan QR is currently available as a web demo. iOS, Android, and Solana Mobile distribution are planned after the hackathon MVP.</p>"
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Install", body))
+
+@qr_app.get("/product/getting-started", response_class=HTMLResponse)
+async def product_getting_started(request: Request):
+    body = "<h2>Getting Started</h2><p>Sign in, connect a wallet for airdrop tracking, then scan or paste a QR payload to see the SafeScan risk verdict and signal breakdown.</p>"
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Getting Started", body))
+
+@qr_app.get("/product/wedges", response_class=HTMLResponse)
+async def product_wedges(request: Request):
+    body = "<h2>Wedges</h2><p>SafeScan starts with consumer QR safety, expands into Solana Mobile distribution, and grows into a threat-intelligence API for wallets, dApps, and payment providers.</p>"
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Wedges", body))
+
+@qr_app.get("/product/pricing", response_class=HTMLResponse)
+async def product_pricing(request: Request):
+    body = "<h2>Pricing</h2><p>The SafeScan QR public demo is free during the hackathon. Future wallet, merchant, and API pricing will be published as the product matures.</p>"
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Pricing", body))
+
+@qr_app.get("/resources/docs", response_class=HTMLResponse)
+async def resources_docs(request: Request):
+    body = "<h2>Docs</h2><p>SafeScan docs will cover QR scanning, risk signals, reputation checks, wallet-pattern detection, and API usage.</p>"
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Docs", body))
+
+@qr_app.get("/resources/architecture", response_class=HTMLResponse)
+async def resources_architecture(request: Request):
+    body = "<h2>Architecture</h2><p>The risk engine pipeline normalizes QR payloads, checks domain intelligence, traces redirects, runs reputation lookups, matches crypto risk patterns, and merges signals into a verdict.</p>"
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Architecture", body))
+
+@qr_app.get("/resources/roadmap", response_class=HTMLResponse)
+async def resources_roadmap(request: Request):
+    body = "<h2>Roadmap</h2><p>Next milestones: waitlist, mobile beta, Solana dApp Store submission, wallet integrations, threat-intelligence API, and expanded abuse reporting.</p>"
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Roadmap", body))
+
 @qr_app.get("/legal/do-not-sell", response_class=HTMLResponse)
 async def do_not_sell(request: Request):
     body = """
