@@ -4,10 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SafeScan QR Demo</title>
-  <link rel="stylesheet" href="/static/styles.css?v=full-hero-3d-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=google-logo-v1">
   <style>
     .google-signin-wrap { position: relative; display: inline-flex; width: 240px; height: 44px; border-radius: 12px; background: #05070b; overflow: hidden; }
     .google-visual-button { position: absolute; inset: 0; z-index: 1; display: inline-flex; justify-content: center; align-items: center; gap: 12px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.18); background: #05070b; color: #f8fafc; font-family: "Roboto", sans-serif; pointer-events: none; }
+    .google-icon { display: inline-grid; place-items: center; width: 24px; height: 24px; flex: 0 0 auto; }
+    .google-icon svg { width: 20px; height: 20px; display: block; }
     .google-signin-wrap .g_id_signin { position: absolute; inset: 0; z-index: 2; opacity: 0.01; }
   </style>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -20,7 +22,17 @@
       {% if not logged_in %}
         <div id="g_id_onload" data-client_id="{{ google_client_id }}" data-login_uri="https://safescan-qr.onrender.com/auth/google"></div>
         <div class="google-signin-wrap">
-          <button class="google-visual-button" type="button"><span>Sign in with Google</span></button>
+          <button class="google-visual-button" type="button" tabindex="-1" aria-hidden="true">
+            <span class="google-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path fill="#4285f4" d="M22.6 12.2c0-.8-.1-1.5-.2-2.2H12v4.2h5.9c-.3 1.4-1 2.5-2.1 3.2v2.7h3.4c2-1.8 3.4-4.5 3.4-7.9Z"/>
+                <path fill="#34a853" d="M12 23c2.9 0 5.3-1 7.1-2.6l-3.4-2.7c-1 .6-2.2 1-3.7 1-2.8 0-5.1-1.9-6-4.4H2.5v2.8C4.3 20.6 7.9 23 12 23Z"/>
+                <path fill="#fbbc05" d="M6 14.3c-.2-.6-.3-1.3-.3-2.1s.1-1.4.3-2.1V7.3H2.5C1.8 8.8 1.4 10.4 1.4 12.2s.4 3.4 1.1 4.9L6 14.3Z"/>
+                <path fill="#ea4335" d="M12 5.7c1.6 0 3 .5 4.1 1.6l3-3C17.3 2.6 14.9 1.6 12 1.6 7.9 1.6 4.3 4 2.5 7.3L6 10.1c.9-2.5 3.2-4.4 6-4.4Z"/>
+              </svg>
+            </span>
+            <span>Sign in with Google</span>
+          </button>
           <div id="googleSignInButton" class="g_id_signin" data-type="standard"></div>
         </div>
         <p class="signup-terms">By signing up, you agree to the <a href="/legal/terms-of-use">Terms</a> and <a href="/legal/privacy-policy">Privacy Policy</a>.</p>
