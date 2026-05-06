@@ -21,6 +21,7 @@ const blockReportButton = document.getElementById("blockReportButton");
 const continueSafelyButton = document.getElementById("continueSafelyButton");
 const reportStatus = document.getElementById("reportStatus");
 const analysisLoadingState = document.getElementById("analysisLoadingState");
+const cookieConsentBanner = document.getElementById("cookieConsentBanner");
 const loadingSteps = [
   "Tracing redirects...",
   "Checking domain age...",
@@ -191,3 +192,46 @@ continueSafelyButton?.addEventListener("click", () => {
   document.body.style.overflow = "";
   riskModal?.classList.add("hidden");
 });
+
+function storedConsentIsFresh(record) {
+  if (!record?.timestamp) return false;
+  const acceptedAt = new Date(record.timestamp).getTime();
+  return Number.isFinite(acceptedAt) && Date.now() - acceptedAt < 365 * 24 * 60 * 60 * 1000;
+}
+
+function showConsentBannerIfNeeded() {
+  if (!cookieConsentBanner) return;
+  let storedConsent = null;
+  try {
+    storedConsent = JSON.parse(window.localStorage.getItem("safeScanConsent"));
+  } catch {
+    storedConsent = null;
+  }
+  if (!storedConsentIsFresh(storedConsent)) {
+    cookieConsentBanner.classList.remove("hidden");
+  }
+}
+
+cookieConsentBanner?.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-consent-choice]");
+  if (!button) return;
+  const consentType = button.dataset.consentChoice;
+  const bannerVersion = cookieConsentBanner.dataset.version || "consent-v1";
+  const record = { consentType, bannerVersion, timestamp: new Date().toISOString() };
+  window.localStorage.setItem("safeScanConsent", JSON.stringify(record));
+  cookieConsentBanner.classList.add("hidden");
+
+  try {
+    const response = await fetch("/api/consent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ consentType, bannerVersion })
+    });
+    const body = await response.json();
+    if (body.id) window.localStorage.setItem("safeScanConsentId", body.id);
+  } catch {
+    cookieConsentBanner.classList.remove("hidden");
+  }
+});
+
+showConsentBannerIfNeeded();

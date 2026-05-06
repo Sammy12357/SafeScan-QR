@@ -14,7 +14,7 @@ from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 from pyzbar.pyzbar import decode
 
 from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -31,6 +31,9 @@ load_dotenv()
 CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID") or os.getenv("googe_client_id")
 api_key = os.getenv("GOOGLE_SAFE_BROWSING_API_KEY") or os.getenv("googe_api_key")
 AIRDROP_ADMIN_SECRET = os.getenv("AIRDROP_ADMIN_SECRET")
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "privacy@safescan-qr.onrender.com")
+LEGAL_VERSION = "v1.0"
+LEGAL_LAST_UPDATED = "May 2026"
 safe_browsing_url = f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={api_key}"
 VIRUSTOTAL_API_KEY = os.getenv("VIRUSTOTAL_API_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
@@ -55,6 +58,26 @@ def init_db():
                         (email TEXT NOT NULL, payload_hash TEXT NOT NULL, url_found TEXT NOT NULL,
                          first_scanned_at TEXT NOT NULL,
                          PRIMARY KEY (email, payload_hash))''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS consent_logs
+                        (id TEXT PRIMARY KEY, user_id TEXT, ip_hash TEXT NOT NULL,
+                         consent_given INTEGER NOT NULL, consent_type TEXT NOT NULL,
+                         banner_version TEXT NOT NULL, timestamp TEXT NOT NULL,
+                         user_agent TEXT, locale TEXT, expiry_date TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS data_requests
+                        (id TEXT PRIMARY KEY, email TEXT NOT NULL, region TEXT,
+                         request_type TEXT NOT NULL, details TEXT, status TEXT NOT NULL,
+                         submitted_at TEXT NOT NULL, completed_at TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS breach_reports
+                        (id TEXT PRIMARY KEY, discovery_date TEXT NOT NULL,
+                         data_categories TEXT NOT NULL, users_affected TEXT NOT NULL,
+                         likely_consequences TEXT NOT NULL, measures_taken TEXT NOT NULL,
+                         created_at TEXT NOT NULL, template TEXT NOT NULL)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS age_confirmations
+                        (email TEXT PRIMARY KEY, threshold INTEGER NOT NULL,
+                         locale TEXT, confirmed_at TEXT NOT NULL)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS privacy_opt_outs
+                        (id TEXT PRIMARY KEY, email TEXT NOT NULL, region TEXT,
+                         opt_out_type TEXT NOT NULL, timestamp TEXT NOT NULL)''')
     cursor.execute("PRAGMA table_info(scans)")
     scan_columns = {row[1] for row in cursor.fetchall()}
     if "airdrop_eligible" not in scan_columns:
@@ -138,6 +161,63 @@ def save_to_cache(target_url: str, status: str):
     cursor.execute("INSERT OR REPLACE INTO scan_results VALUES (?, ?, ?)", (target_url, status, datetime.now().isoformat()))
     conn.commit()
     conn.close()
+
+def make_id(prefix):
+    return f"{prefix}_{hashlib.sha256(f'{prefix}:{datetime.utcnow().isoformat()}:{os.urandom(8)}'.encode('utf-8')).hexdigest()[:24]}"
+
+def hash_ip(ip_value):
+    salt = os.getenv("PRIVACY_HASH_SALT", "safescan-dev-salt")
+    return hashlib.sha256(f"{salt}:{ip_value or 'unknown'}".encode("utf-8")).hexdigest()
+
+def request_ip(request: Request):
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+def locale_from_request(request: Request):
+    return (request.headers.get("accept-language") or "en-US").split(",")[0].strip()
+
+def is_eu_locale(locale):
+    return locale.lower().split("-")[-1] in {
+        "at", "be", "bg", "hr", "cy", "cz", "dk", "ee", "fi", "fr", "de", "gr",
+        "hu", "ie", "it", "lv", "lt", "lu", "mt", "nl", "pl", "pt", "ro", "sk",
+        "si", "es", "se", "is", "li", "no"
+    }
+
+def is_california_locale_or_region(request: Request, region: str = ""):
+    return region.lower() in ("ca", "california") or "california" in region.lower()
+
+def admin_authorized(secret):
+    return bool(AIRDROP_ADMIN_SECRET and secret == AIRDROP_ADMIN_SECRET)
+
+def legal_context(request: Request, title, body_html):
+    return {
+        "request": request,
+        "title": title,
+        "body_html": body_html,
+        "last_updated": LEGAL_LAST_UPDATED,
+        "version": LEGAL_VERSION,
+        "admin_email": ADMIN_EMAIL,
+        "google_client_id": CLIENT_ID
+    }
+
+def get_user_export(email):
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.row_factory = sqlite3.Row
+        scans = [dict(row) for row in conn.execute("SELECT * FROM scans WHERE email = ?", (email,))]
+        events = [dict(row) for row in conn.execute("SELECT * FROM scan_events WHERE email = ?", (email,))]
+        requests_ = [dict(row) for row in conn.execute("SELECT * FROM data_requests WHERE email = ?", (email,))]
+        age = [dict(row) for row in conn.execute("SELECT * FROM age_confirmations WHERE email = ?", (email,))]
+        opt_outs = [dict(row) for row in conn.execute("SELECT * FROM privacy_opt_outs WHERE email = ?", (email,))]
+    return {"email": email, "scans": scans, "scanEvents": events, "dataRequests": requests_, "ageConfirmations": age, "privacyOptOuts": opt_outs}
+
+def delete_user_data(email):
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.execute("DELETE FROM scans WHERE email = ?", (email,))
+        conn.execute("DELETE FROM scan_events WHERE email = ?", (email,))
+        conn.execute("DELETE FROM users WHERE email = ?", (email,))
+        conn.execute("DELETE FROM age_confirmations WHERE email = ?", (email,))
 
 def risk_reason(label, severity, detail):
     return {"label": label, "severity": severity, "detail": detail}
@@ -781,6 +861,105 @@ qr_app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
 )
 
+PRIVACY_POLICY_HTML = f"""
+<h2>1. What We Collect</h2>
+<p>SafeScan QR collects only what is needed to authenticate users, analyze QR payloads, prevent abuse, and operate the optional SQR airdrop program.</p>
+<ul>
+  <li>Google OAuth data: name, email, profile picture, Google ID, and login timestamp.</li>
+  <li>Optional Solana wallet address supplied by the user for airdrop eligibility.</li>
+  <li>QR scan payloads such as URLs analyzed for risk. Logged-in scans may be associated with the user's email for scan counts and fraud prevention.</li>
+  <li>Referral link usage and referral counts.</li>
+  <li>IP address hash, approximate region, browser type, device type, and session signals for fraud prevention and analytics.</li>
+  <li>Cookies and local storage values for authentication state, consent state, referral state, wallet state, and local report queues.</li>
+</ul>
+<h2>2. Why We Collect It and Legal Basis</h2>
+<ul>
+  <li>Authentication: contractual necessity.</li>
+  <li>Scan history and QR security delivery: legitimate interest in providing and improving security analysis.</li>
+  <li>Airdrop eligibility, scan tiers, referrals, and wallet address: contractual necessity for the tier program.</li>
+  <li>Analytics and abuse prevention: legitimate interest.</li>
+  <li>Marketing emails: explicit consent only.</li>
+</ul>
+<h2>3. How Long We Keep It</h2>
+<ul>
+  <li>Scan logs: targeted for deletion after 90 days.</li>
+  <li>Account data: until deletion is requested or after 2 years of inactivity.</li>
+  <li>Wallet address: until the user disconnects it or deletes the account.</li>
+  <li>Consent records: retained for 5 years to document legal compliance.</li>
+</ul>
+<h2>4. Who We Share It With</h2>
+<p>We do not sell personal data and do not use advertising networks. We may share limited data with service providers only as needed:</p>
+<ul>
+  <li>Google for OAuth authentication and Google Safe Browsing URL reputation checks.</li>
+  <li>VirusTotal for URL reputation checks. URL payloads may be sent, but user identity is not included.</li>
+  <li>Anthropic or OpenAI for AI analysis. URL payloads and risk signals may be sent, but direct personal identifiers are excluded.</li>
+  <li>Solana RPC providers for wallet interactions involving public blockchain data.</li>
+  <li>Render.com for hosting infrastructure.</li>
+</ul>
+<h2>5. Cookies and Tracking</h2>
+<p>SafeScan uses essential cookies/local storage for auth, consent, referral, wallet, and report state. Analytics is optional and should only run after consent where required.</p>
+<h2>6. Your Rights</h2>
+<p>EU/EEA users may exercise GDPR rights of access, erasure, rectification, restriction, portability, and objection. California users may exercise CCPA/CPRA rights to know, delete, correct, opt out of sale/sharing, limit sensitive personal information, and non-discrimination. Brazilian users may exercise LGPD rights including revoking consent and requesting information about public and private entities with whom data is shared. Canadian users are protected under PIPEDA principles: knowledge and consent, limited use, accuracy, safeguards, access, and the right to challenge compliance.</p>
+<p>Use the <a href="/legal/data-request">Data Request portal</a> to submit requests.</p>
+<h2>7. Children's Privacy</h2>
+<p>SafeScan is not directed to children under 13. EU users under 16 require parental consent under GDPR Article 8. If we discover an underage user, we will delete associated data promptly.</p>
+<h2>8. International Data Transfers</h2>
+<p>Data is hosted in the United States. For EU users, transfers are intended to be covered by Standard Contractual Clauses or other appropriate safeguards where required.</p>
+<h2>9. Security Measures</h2>
+<ul>
+  <li>TLS encryption in transit.</li>
+  <li>Wallet addresses should be hashed or encrypted at rest as the product matures.</li>
+  <li>OAuth tokens are not intentionally stored; SafeScan keeps only account/session references.</li>
+  <li>Security incidents are tracked for GDPR Article 33 72-hour supervisory authority review and Article 34 user notice if high risk.</li>
+</ul>
+<h2>10. Contact</h2>
+<p>Privacy requests: <a href="mailto:{ADMIN_EMAIL}">{ADMIN_EMAIL}</a>. A formal Data Protection Officer is not required at current scale but will be appointed upon reaching 5,000 EU users or when legally required.</p>
+"""
+
+TERMS_HTML = """
+<h2>1. Acceptance of Terms</h2>
+<p>By using SafeScan QR, you agree to these Terms. If you do not agree, do not use the service. You must be at least 13 globally, or 16 in the EU without parental consent.</p>
+<h2>2. Description of Service</h2>
+<p>SafeScan QR is an informational QR risk analysis tool. Risk verdicts are not guarantees of safety. The SQR airdrop program is discretionary, subject to change, and does not provide financial advice.</p>
+<h2>3. User Accounts</h2>
+<p>Google OAuth is used for authentication. You are responsible for account security. One account per person is allowed; multiple accounts for airdrop gaming may lead to disqualification. SafeScan may suspend accounts for abuse, fraud, bot activity, or security risk.</p>
+<h2>4. Acceptable Use</h2>
+<ul>
+  <li>No automated bots to inflate scan counts or referrals.</li>
+  <li>No intentional stress-testing or abuse of the risk engine.</li>
+  <li>No reverse-engineering, scraping, or resale of scan results.</li>
+  <li>No laundering, cloaking, or obscuring malicious URLs.</li>
+  <li>No impersonating SafeScan in referral campaigns.</li>
+</ul>
+<h2>5. Airdrop Program Terms</h2>
+<p>SQR has no guaranteed monetary value. Eligibility is tracked in SafeScan's database and may be checked against on-chain activity. SafeScan may disqualify fraudulent activity and may change timing or allocation at its sole discretion. Token receipt does not constitute investment advice or an offer of securities. The airdrop is unavailable where token distributions are prohibited or restricted, including jurisdictions where compliance cannot be satisfied.</p>
+<h2>6. Intellectual Property</h2>
+<p>The SafeScan name, UI, and product assets are proprietary. Users grant SafeScan a limited license to process submitted URLs and QR payloads for service delivery. SafeScan does not claim ownership of user scan data.</p>
+<h2>7. Disclaimers and Limitation of Liability</h2>
+<p>The service is provided as is, with no uptime guarantee at this stage. SafeScan is not liable for losses caused by acting on or ignoring a risk verdict. Liability is capped at $100 or the amount paid to SafeScan in the last 12 months, whichever is greater.</p>
+<h2>8. Governing Law and Dispute Resolution</h2>
+<p>These Terms are governed by Florida law. Disputes are resolved by binding arbitration under AAA rules, with a class action waiver. EU users retain the right to lodge complaints with their local supervisory authority.</p>
+<h2>9. Changes to Terms</h2>
+<p>SafeScan will provide 30 days notice before material changes where practical. Continued use means acceptance. Version history will be maintained at /legal/terms-history.</p>
+"""
+
+COOKIE_POLICY_HTML = """
+<h2>Cookie Table</h2>
+<table class="legal-table">
+  <thead><tr><th>Cookie Name</th><th>Provider</th><th>Purpose</th><th>Type</th><th>Duration</th></tr></thead>
+  <tbody>
+    <tr><td>session token</td><td>SafeScan</td><td>Authentication session reference</td><td>Essential</td><td>Session</td></tr>
+    <tr><td>consent-id</td><td>SafeScan</td><td>Stores consent record ID</td><td>Essential</td><td>12 months</td></tr>
+    <tr><td>phishproofAirdropProfile</td><td>SafeScan local storage</td><td>Stores local demo profile and wallet state</td><td>Functional</td><td>Until cleared</td></tr>
+    <tr><td>safeScanConsent</td><td>SafeScan local storage</td><td>Stores local consent choice so the banner does not reappear unnecessarily</td><td>Essential</td><td>12 months</td></tr>
+    <tr><td>safeScanReports</td><td>SafeScan local storage</td><td>Stores local Block & Report queue</td><td>Functional</td><td>Until cleared</td></tr>
+  </tbody>
+</table>
+<p>No third-party advertising cookies are used. If Google Analytics or similar analytics is added, it must be listed here before deployment and gated by consent where required.</p>
+<h2>Disable Cookies</h2>
+<p>You can manage cookies in <a href="https://support.google.com/chrome/answer/95647">Chrome</a>, <a href="https://support.mozilla.org/en-US/kb/clear-cookies-and-site-data-firefox">Firefox</a>, <a href="https://support.apple.com/guide/safari/manage-cookies-sfri11471/mac">Safari</a>, and <a href="https://support.microsoft.com/microsoft-edge">Edge</a>.</p>
+"""
+
 @qr_app.post("/api/analyze")
 async def api_analyze(payload: dict = Body(...)):
     target_url = (payload.get("url") or "").strip()
@@ -829,8 +1008,174 @@ async def api_check_crypto_patterns(payload: dict = Body(...)):
 @qr_app.get("/", response_class=HTMLResponse)
 async def read_index(request: Request):
     return templates.TemplateResponse("index.html", {
-        "request": request, "logged_in": False, "results_visible": False, "google_client_id": CLIENT_ID
+        "request": request, "logged_in": False, "results_visible": False, "google_client_id": CLIENT_ID,
+        "version": LEGAL_VERSION
     })
+
+@qr_app.get("/legal/privacy-policy", response_class=HTMLResponse)
+async def privacy_policy(request: Request):
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Privacy Policy", PRIVACY_POLICY_HTML))
+
+@qr_app.get("/legal/terms-of-use", response_class=HTMLResponse)
+async def terms_of_use(request: Request):
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Terms of Use", TERMS_HTML))
+
+@qr_app.get("/legal/cookie-policy", response_class=HTMLResponse)
+async def cookie_policy(request: Request):
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Cookie Policy", COOKIE_POLICY_HTML))
+
+@qr_app.get("/legal/terms-history", response_class=HTMLResponse)
+async def terms_history(request: Request):
+    body = "<h2>Version History</h2><p>v1.0 - May 2026: Initial SafeScan QR Terms of Use.</p>"
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Terms History", body))
+
+@qr_app.get("/legal/do-not-sell", response_class=HTMLResponse)
+async def do_not_sell(request: Request):
+    body = """
+    <h2>Do Not Sell or Share My Personal Information</h2>
+    <p>SafeScan does not sell personal information and does not use advertising networks. California residents can still submit a formal opt-out of sale/sharing or cross-context behavioral advertising.</p>
+    <form class="legal-form" action="/legal/data-request" method="post">
+      <input type="hidden" name="request_type" value="do_not_sell">
+      <input type="hidden" name="region" value="California">
+      <label>Email <input type="email" name="email" required placeholder="you@example.com"></label>
+      <label>Details <textarea name="details" rows="4">I opt out of sale or sharing of my personal information.</textarea></label>
+      <button class="primary-button" type="submit">Submit opt-out</button>
+    </form>
+    """
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Do Not Sell or Share", body))
+
+@qr_app.get("/legal/data-request", response_class=HTMLResponse)
+async def data_request_page(request: Request, email: str = Query("")):
+    return templates.TemplateResponse("data_request.html", {
+        "request": request, "email": email, "message": "", "export_data": "",
+        "version": LEGAL_VERSION, "last_updated": LEGAL_LAST_UPDATED
+    })
+
+@qr_app.post("/legal/data-request", response_class=HTMLResponse)
+async def submit_data_request(
+    request: Request,
+    email: str = Form(...),
+    region: str = Form(""),
+    request_type: str = Form(...),
+    details: str = Form("")
+):
+    request_id = make_id("dsr")
+    now = datetime.utcnow().isoformat() + "Z"
+    export_data = ""
+    status = "submitted"
+    if request_type in ("access", "portability"):
+        export_data = json.dumps(get_user_export(email), indent=2)
+        status = "completed"
+    elif request_type == "erasure":
+        delete_user_data(email)
+        status = "completed"
+    elif request_type in ("do_not_sell", "limit_sensitive", "object", "revoke_consent"):
+        with sqlite3.connect("qr_cache.db") as conn:
+            conn.execute(
+                "INSERT INTO privacy_opt_outs VALUES (?, ?, ?, ?, ?)",
+                (make_id("opt"), email, region, request_type, now)
+            )
+
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.execute(
+            "INSERT INTO data_requests VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (request_id, email, region, request_type, details, status, now, now if status == "completed" else None)
+        )
+
+    message = f"Request {request_id} recorded. Confirmation email hooks are documented; connect an email provider before production."
+    return templates.TemplateResponse("data_request.html", {
+        "request": request, "email": email, "message": message, "export_data": export_data,
+        "version": LEGAL_VERSION, "last_updated": LEGAL_LAST_UPDATED
+    })
+
+@qr_app.post("/api/consent")
+async def log_consent(request: Request, payload: dict = Body(...)):
+    consent_type = payload.get("consentType", "essential_only")
+    consent_given = consent_type != "essential_only"
+    now = datetime.utcnow()
+    consent_id = make_id("consent")
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.execute(
+            "INSERT INTO consent_logs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                consent_id,
+                payload.get("userId"),
+                hash_ip(request_ip(request)),
+                int(consent_given),
+                consent_type,
+                payload.get("bannerVersion", "consent-v1"),
+                now.isoformat() + "Z",
+                request.headers.get("user-agent", ""),
+                locale_from_request(request),
+                (now + timedelta(days=365)).isoformat() + "Z"
+            )
+        )
+    return {"id": consent_id, "expiresInDays": 365}
+
+@qr_app.get("/legal/consent-log", response_class=HTMLResponse)
+async def consent_log(request: Request, secret: str = Query("")):
+    if not admin_authorized(secret):
+        return HTMLResponse("Unauthorized", status_code=401)
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.row_factory = sqlite3.Row
+        rows = [dict(row) for row in conn.execute("SELECT * FROM consent_logs ORDER BY timestamp DESC LIMIT 200")]
+    body = "<table class='legal-table'><thead><tr><th>Time</th><th>User</th><th>Type</th><th>IP Hash</th><th>Locale</th></tr></thead><tbody>"
+    body += "".join(f"<tr><td>{row['timestamp']}</td><td>{row['user_id'] or ''}</td><td>{row['consent_type']}</td><td>{row['ip_hash'][:16]}...</td><td>{row['locale'] or ''}</td></tr>" for row in rows)
+    body += "</tbody></table>"
+    return templates.TemplateResponse("admin_table.html", {"request": request, "title": "Consent Log", "body_html": body, "message": ""})
+
+@qr_app.get("/admin/data-processing-log", response_class=HTMLResponse)
+async def data_processing_log(request: Request, secret: str = Query("")):
+    if not admin_authorized(secret):
+        return HTMLResponse("Unauthorized", status_code=401)
+    categories = [
+        ("OAuth profile", "Authentication", "Contractual necessity", "Google, Render", "Until deletion or 2 years inactivity"),
+        ("QR payload URLs", "Risk analysis", "Legitimate interest", "Google Safe Browsing, VirusTotal, AI provider", "90 days"),
+        ("Wallet address", "Airdrop eligibility", "Contractual necessity", "Solana RPC providers", "Until disconnect or deletion"),
+        ("Consent records", "Compliance evidence", "Legal obligation", "Internal only", "5 years"),
+        ("IP hash and user agent", "Fraud prevention", "Legitimate interest", "Render", "90 days unless tied to compliance record"),
+    ]
+    body = "<table class='legal-table'><thead><tr><th>Data</th><th>Purpose</th><th>Legal Basis</th><th>Shared With</th><th>Retention</th></tr></thead><tbody>"
+    body += "".join(f"<tr><td>{a}</td><td>{b}</td><td>{c}</td><td>{d}</td><td>{e}</td></tr>" for a, b, c, d, e in categories)
+    body += "</tbody></table><p>CCPA/CPRA threshold note: full statutory obligations may apply once SafeScan reaches $25M annual revenue or processes data of 100,000+ California consumers; these rights are implemented voluntarily now for trust and readiness.</p>"
+    return templates.TemplateResponse("admin_table.html", {"request": request, "title": "Data Processing Log", "body_html": body, "message": ""})
+
+@qr_app.get("/admin/report-breach", response_class=HTMLResponse)
+async def report_breach_form(request: Request, secret: str = Query("")):
+    if not admin_authorized(secret):
+        return HTMLResponse("Unauthorized", status_code=401)
+    body = """
+    <form class="legal-form" action="/admin/report-breach" method="post">
+      <input type="hidden" name="secret" value="{secret}">
+      <label>Breach discovery date <input name="discovery_date" required placeholder="2026-05-05T14:32:00Z"></label>
+      <label>Data categories affected <textarea name="data_categories" required rows="3"></textarea></label>
+      <label>Estimated users affected <input name="users_affected" required></label>
+      <label>Likely consequences <textarea name="likely_consequences" required rows="4"></textarea></label>
+      <label>Measures taken <textarea name="measures_taken" required rows="4"></textarea></label>
+      <button class="primary-button" type="submit">Generate breach template</button>
+    </form>
+    """.replace("{secret}", secret)
+    return templates.TemplateResponse("admin_table.html", {"request": request, "title": "Report Breach", "body_html": body, "message": ""})
+
+@qr_app.post("/admin/report-breach", response_class=HTMLResponse)
+async def report_breach(
+    request: Request,
+    secret: str = Form(...),
+    discovery_date: str = Form(...),
+    data_categories: str = Form(...),
+    users_affected: str = Form(...),
+    likely_consequences: str = Form(...),
+    measures_taken: str = Form(...)
+):
+    if not admin_authorized(secret):
+        return HTMLResponse("Unauthorized", status_code=401)
+    template = f"""GDPR Article 33/34 Breach Notification Draft\nDiscovery date: {discovery_date}\nData categories affected: {data_categories}\nEstimated users affected: {users_affected}\nLikely consequences: {likely_consequences}\nMeasures taken: {measures_taken}\nAdmin contact: {ADMIN_EMAIL}\nReview whether supervisory authority notice is required within 72 hours and whether user notice is required for high-risk impact."""
+    report_id = make_id("breach")
+    now = datetime.utcnow().isoformat() + "Z"
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.execute("INSERT INTO breach_reports VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (report_id, discovery_date, data_categories, users_affected, likely_consequences, measures_taken, now, template))
+    body = f"<h2>Breach Report {report_id}</h2><pre class='legal-json'>{template}</pre>"
+    return templates.TemplateResponse("admin_table.html", {"request": request, "title": "Breach Template", "body_html": body, "message": "Report logged. Connect email provider for live admin notifications."})
 
 @qr_app.post("/search_qr_api", response_class=HTMLResponse)
 async def scan_qr(
@@ -863,7 +1208,8 @@ async def scan_qr(
             "verdict_summary": "SafeScan could not decode a QR payload from this image.",
             "reputation": {"provider": "Scanner", "status": "ERROR", "matches": [], "detail": "No decodable payload was found."},
             "risk_reasons": [risk_reason("No QR payload decoded", "medium", "Upload a clearer QR image or paste the destination manually.")],
-            "email": user_email, "scan_count": get_scan_count(user_email), "google_client_id": CLIENT_ID
+            "email": user_email, "scan_count": get_scan_count(user_email), "google_client_id": CLIENT_ID,
+            "version": LEGAL_VERSION
         })
 
     payload_type, _, normalized_payload = detect_payload(url_qr)
@@ -883,7 +1229,8 @@ async def scan_qr(
         "verdict_summary": analysis.get("verdict", analysis["threat_class"]),
         "reputation": analysis.get("reputation"),
         "risk_reasons": analysis.get("reasons", []),
-        "email": user_email, "scan_count": get_scan_count(user_email), "google_client_id": CLIENT_ID
+        "email": user_email, "scan_count": get_scan_count(user_email), "google_client_id": CLIENT_ID,
+        "version": LEGAL_VERSION
     })
 
 @qr_app.post("/auth/google", response_class=HTMLResponse)
@@ -898,11 +1245,66 @@ async def auth_google(request: Request, credential: str = Form(None)):
     else:
         user_email = "guest@demo.com"
 
+    locale = locale_from_request(request)
+    threshold = 16 if is_eu_locale(locale) else 13
+    with sqlite3.connect("qr_cache.db") as conn:
+        confirmed = conn.execute("SELECT email FROM age_confirmations WHERE email = ?", (user_email,)).fetchone()
+    if not confirmed:
+        return RedirectResponse(f"/auth/confirm-age?email={user_email}&locale={locale}&threshold={threshold}", status_code=303)
+
     return templates.TemplateResponse("index.html", {
         "request": request, "logged_in": True, "results_visible": False,
         "email": user_email, "score": "0", "threat_class": "N/A",
-        "scan_count": get_scan_count(user_email), "google_client_id": CLIENT_ID
+        "scan_count": get_scan_count(user_email), "google_client_id": CLIENT_ID,
+        "version": LEGAL_VERSION
     })
+
+@qr_app.get("/auth/confirm-age", response_class=HTMLResponse)
+async def confirm_age_page(request: Request, email: str = Query(...), locale: str = Query("en-US"), threshold: int = Query(13)):
+    threshold = 16 if is_eu_locale(locale) else threshold
+    return templates.TemplateResponse("confirm_age.html", {
+        "request": request, "email": email, "locale": locale, "threshold": threshold, "blocked": False
+    })
+
+@qr_app.post("/auth/confirm-age", response_class=HTMLResponse)
+async def confirm_age_submit(
+    request: Request,
+    email: str = Form(...),
+    locale: str = Form("en-US"),
+    threshold: int = Form(13),
+    confirmed: str = Form("no")
+):
+    threshold = 16 if is_eu_locale(locale) else threshold
+    if confirmed != "yes":
+        return templates.TemplateResponse("confirm_age.html", {
+            "request": request, "email": email, "locale": locale, "threshold": threshold, "blocked": True
+        })
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO age_confirmations VALUES (?, ?, ?, ?)",
+            (email, threshold, locale, datetime.utcnow().isoformat() + "Z")
+        )
+    return templates.TemplateResponse("index.html", {
+        "request": request, "logged_in": True, "results_visible": False,
+        "email": email, "score": "0", "threat_class": "N/A",
+        "scan_count": get_scan_count(email), "google_client_id": CLIENT_ID,
+        "version": LEGAL_VERSION
+    })
+
+@qr_app.get("/account/settings", response_class=HTMLResponse)
+async def account_settings(request: Request, email: str = Query("")):
+    body = f"""
+    <h2>Account Settings</h2>
+    <p>Use this page to revoke non-essential consent with one click. This supports LGPD and general privacy readiness.</p>
+    <form class="legal-form" action="/legal/data-request" method="post">
+      <input type="hidden" name="request_type" value="revoke_consent">
+      <input type="hidden" name="region" value="">
+      <input type="hidden" name="details" value="One-click consent revocation from account settings.">
+      <label>Email <input type="email" name="email" required value="{email}" placeholder="you@example.com"></label>
+      <button class="danger-button" type="submit">Revoke Consent</button>
+    </form>
+    """
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Account Settings", body))
 
 @qr_app.get("/trigger-airdrop-secret")
 async def trigger_airdrop(

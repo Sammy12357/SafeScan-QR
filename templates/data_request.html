@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data Request | SafeScan QR</title>
+  <link rel="stylesheet" href="/static/styles.css?v=legal-v1">
+</head>
+<body>
+  <div class="page-shell legal-shell">
+    <a class="secondary-button legal-back" href="/">Back to SafeScan</a>
+    <section class="legal-document">
+      <p class="eyebrow">Privacy rights portal</p>
+      <h1>Data Request</h1>
+      <p class="legal-meta">Version {{ version }} - Last updated {{ last_updated }}</p>
+      {% if message %}<div class="request-message">{{ message }}</div>{% endif %}
+      <p>Use this portal to submit GDPR, CCPA/CPRA, LGPD, PIPEDA, or general privacy requests. SafeScan logs the request timestamp and targets completion within 30 days.</p>
+
+      <div class="rights-grid">
+        <article>
+          <h2>GDPR Rights</h2>
+          <p>EU/EEA users may request access, erasure, rectification, restriction, portability, or object to legitimate-interest processing.</p>
+        </article>
+        <article>
+          <h2>California Privacy Rights</h2>
+          <p>California residents may request to know, delete, correct, opt out of sale/sharing, limit sensitive personal information, and receive equal service after opting out.</p>
+        </article>
+        <article>
+          <h2>LGPD and PIPEDA</h2>
+          <p>Brazilian and Canadian users can access, correct, challenge, export, delete, and revoke consent using the same request handlers.</p>
+        </article>
+      </div>
+
+      <form class="legal-form" action="/legal/data-request" method="post">
+        <label>Email
+          <input type="email" name="email" required placeholder="you@example.com" value="{{ email | default('') }}">
+        </label>
+        <label>Region
+          <input type="text" name="region" placeholder="EU, California, Brazil, Canada, other">
+        </label>
+        <label>Request type
+          <select name="request_type" required>
+            <option value="access">Access / download my data</option>
+            <option value="erasure">Delete my account and data</option>
+            <option value="rectification">Correct inaccurate data</option>
+            <option value="restriction">Restrict processing</option>
+            <option value="portability">Portable machine-readable export</option>
+            <option value="object">Object to legitimate-interest processing</option>
+            <option value="do_not_sell">Do Not Sell or Share opt-out</option>
+            <option value="limit_sensitive">Limit sensitive personal information</option>
+            <option value="revoke_consent">Revoke consent</option>
+          </select>
+        </label>
+        <label>Details
+          <textarea name="details" rows="5" placeholder="Tell us what you want SafeScan to review or change."></textarea>
+        </label>
+        <button class="primary-button" type="submit">Submit request</button>
+      </form>
+
+      {% if export_data %}
+      <h2>Your Data Export</h2>
+      <pre class="legal-json">{{ export_data }}</pre>
+      {% endif %}
+    </section>
+    {% include "footer.html" %}
+  </div>
+  <script src="/static/app.js?v=legal-v1"></script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title }} | SafeScan QR</title>
+  <link rel="stylesheet" href="/static/styles.css?v=legal-v1">
+</head>
+<body>
+  <div class="page-shell legal-shell">
+    <section class="legal-document">
+      <p class="eyebrow">Internal admin</p>
+      <h1>{{ title }}</h1>
+      {% if message %}<div class="request-message">{{ message }}</div>{% endif %}
+      {{ body_html | safe }}
+    </section>
+  </div>
+</body>
+</html>
