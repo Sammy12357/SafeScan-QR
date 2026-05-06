@@ -1245,13 +1245,6 @@ async def auth_google(request: Request, credential: str = Form(None)):
     else:
         user_email = "guest@demo.com"
 
-    locale = locale_from_request(request)
-    threshold = 16 if is_eu_locale(locale) else 13
-    with sqlite3.connect("qr_cache.db") as conn:
-        confirmed = conn.execute("SELECT email FROM age_confirmations WHERE email = ?", (user_email,)).fetchone()
-    if not confirmed:
-        return RedirectResponse(f"/auth/confirm-age?email={user_email}&locale={locale}&threshold={threshold}", status_code=303)
-
     return templates.TemplateResponse("index.html", {
         "request": request, "logged_in": True, "results_visible": False,
         "email": user_email, "score": "0", "threat_class": "N/A",
