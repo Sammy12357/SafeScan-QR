@@ -242,6 +242,19 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
 .report-status { min-height: 22px; margin: 12px 0 0; color: var(--muted); font-weight: 700; }
 @keyframes modalSlideUp { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: translateY(0); } }
 
+.wallet-modal { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 18px; background: rgba(3, 8, 15, 0.78); backdrop-filter: blur(16px); }
+.wallet-modal-card { width: min(430px, 100%); padding: 24px; border: 1px solid rgba(124, 58, 237, 0.42); border-radius: 8px; background: #0b1019; box-shadow: 0 28px 90px rgba(0, 0, 0, 0.5); animation: modalSlideUp 0.26s ease-out; }
+.wallet-modal-card h3 { margin: 0 0 10px; font-family: var(--display-font); font-size: 1.25rem; }
+.wallet-modal-card p { margin: 0 0 16px; color: var(--muted); line-height: 1.55; }
+.wallet-choice-list, .wallet-install-links { display: grid; gap: 10px; }
+.wallet-choice-button, .wallet-install-links a, .wallet-close-button, .wallet-retry-button { width: 100%; text-align: center; }
+.wallet-install-links a { display: block; padding: 13px 16px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); text-decoration: none; background: rgba(255, 255, 255, 0.04); }
+.wallet-success { color: var(--safe) !important; font-weight: 800; }
+.wallet-error { color: var(--danger) !important; font-weight: 800; }
+.wallet-spinner { width: 34px; height: 34px; border: 3px solid rgba(255, 255, 255, 0.13); border-top-color: var(--accent); border-radius: 50%; animation: walletSpin 0.8s linear infinite; }
+.wallet-status a { color: var(--accent); text-decoration: none; font-weight: 800; }
+@keyframes walletSpin { to { transform: rotate(360deg); } }
+
 .site-footer { margin-top: 42px; margin-left: calc(50% - 50vw); width: 100vw; background-color: #07070a; border-top: 1px solid #1e293b; padding-top: 46px; overflow: visible; }
 .footer-newsletter { width: min(864px, calc(100% - 48px)); min-height: 292px; margin: 0 auto 92px; padding: 42px 56px 54px; border: 1px solid #334155; border-radius: 10px; background: #10151d; text-align: center; overflow: visible; }
 .footer-newsletter h2 { margin: 0 0 16px; color: #f8fafc; font-size: 1.45rem; line-height: 1.2; }

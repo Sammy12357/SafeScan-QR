@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SafeScan QR Demo</title>
-  <link rel="stylesheet" href="/static/styles.css?v=risk-modal-layout-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=wallet-signature-v1">
   <style>
     .google-signin-wrap { position: relative; display: inline-flex; width: 240px; height: 44px; border-radius: 12px; background: #05070b; overflow: hidden; }
     .google-visual-button { position: absolute; inset: 0; z-index: 1; display: inline-flex; justify-content: center; align-items: center; gap: 12px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.18); background: #05070b; color: #f8fafc; font-family: "Roboto", sans-serif; pointer-events: none; }
@@ -120,7 +120,6 @@
           <div class="wallet-actions">
             <button id="connectWalletButton" class="primary-button" type="button">Connect wallet</button>
             <button id="disconnectWalletButton" class="secondary-button hidden" type="button">Disconnect wallet</button>
-            <button id="demoWalletButton" class="secondary-button" type="button">Use demo wallet</button>
           </div>
         </div>
 
@@ -266,6 +265,6 @@
     {% include "footer.html" %}
   </div>
   <script type="module" src="/static/safescan-3d.js?v=full-hero-3d-v1"></script>
-  <script src="/static/app.js?v=full-hero-3d-v1"></script>
+  <script src="/static/app.js?v=wallet-signature-v1"></script>
 </body>
 </html>

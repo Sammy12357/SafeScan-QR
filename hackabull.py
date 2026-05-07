@@ -23,6 +23,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
@@ -52,9 +54,11 @@ safe_browsing_url = f"https://safebrowsing.googleapis.com/v4/threatMatches:find?
 VIRUSTOTAL_API_KEY = os.getenv("VIRUSTOTAL_API_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+SOLANA_RPC_URL = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
 MOCK_MODE = os.getenv("MOCK_MODE", "false").lower() in ("1", "true", "yes", "on")
 HIGH_RISK_TLDS = {".xyz", ".top", ".click", ".gq", ".tk", ".ml", ".cf"}
 URL_SHORTENERS = {"bit.ly", "t.co", "tinyurl.com", "goo.gl", "ow.ly", "is.gd", "buff.ly", "cutt.ly", "rebrand.ly", "shorturl.at"}
+BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 MALICIOUS_CONTRACT_BLOCKLIST = {
     "11111111111111111111111111111111",
     "drainwallet111111111111111111111111111111",
@@ -156,6 +160,17 @@ def init_db():
                         (id TEXT PRIMARY KEY, referrer_email TEXT NOT NULL, referred_email TEXT NOT NULL,
                          counted INTEGER DEFAULT 0, created_at TEXT NOT NULL,
                          UNIQUE(referred_email))''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS wallets
+                        (id TEXT PRIMARY KEY, user_id TEXT NOT NULL UNIQUE,
+                         address TEXT NOT NULL UNIQUE, verified INTEGER NOT NULL DEFAULT 1,
+                         connected_at TEXT NOT NULL, sol_balance REAL, tx_count INTEGER,
+                         wallet_age_days INTEGER, onchain_verified_at TEXT,
+                         disconnected_at TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS wallet_nonces
+                        (user_id TEXT PRIMARY KEY, wallet_address TEXT NOT NULL,
+                         nonce TEXT NOT NULL, message TEXT NOT NULL,
+                         issued_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+                         used INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL)''')
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sessions_google_id ON sessions(google_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_logs(created_at)")
@@ -169,6 +184,8 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_fraud_user ON fraud_flags(user_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_fraud_reviewed ON fraud_flags(reviewed)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_device_fingerprint ON device_fingerprints(fingerprint)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_wallets_address ON wallets(address)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_wallet_nonces_wallet ON wallet_nonces(wallet_address)")
     cursor.execute("PRAGMA table_info(users)")
     user_columns = {row[1] for row in cursor.fetchall()}
     user_migrations = {
@@ -410,11 +427,138 @@ def validate_wallet_address(address):
     clean = (address or "").strip()
     if not clean:
         return "", None
-    if not re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{32,44}", clean):
+    if not is_valid_solana_address(clean):
         raise SafeScanError("Invalid Solana wallet address.", 400)
     with sqlite3.connect("qr_cache.db") as conn:
-        row = conn.execute("SELECT email FROM scans WHERE wallet_address = ? LIMIT 1", (clean,)).fetchone()
+        row = conn.execute(
+            """
+            SELECT user_id FROM wallets WHERE address = ? AND verified = 1
+            UNION
+            SELECT email FROM scans WHERE wallet_address = ?
+            LIMIT 1
+            """,
+            (clean, clean)
+        ).fetchone()
     return clean, row[0] if row else None
+
+def decode_base58(value):
+    number = 0
+    for char in value:
+        number *= 58
+        if char not in BASE58_ALPHABET:
+            raise ValueError("Invalid base58 character")
+        number += BASE58_ALPHABET.index(char)
+    encoded = number.to_bytes((number.bit_length() + 7) // 8, "big") if number else b""
+    leading_zeroes = len(value) - len(value.lstrip("1"))
+    return b"\x00" * leading_zeroes + encoded
+
+def is_valid_solana_address(address):
+    clean = (address or "").strip()
+    if not re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{32,44}", clean):
+        return False
+    try:
+        return len(decode_base58(clean)) == 32
+    except ValueError:
+        return False
+
+def wallet_verification_message(nonce, email, issued_at, expires_at):
+    return "\n".join([
+        "SafeScan QR - Wallet Verification",
+        "",
+        "Sign this message to connect your wallet.",
+        "This request will not trigger a blockchain transaction",
+        "or cost any fees.",
+        "",
+        f"Nonce: {nonce}",
+        f"Account: {email}",
+        f"Issued: {issued_at}",
+        f"Expires: {expires_at}",
+    ])
+
+def cleanup_wallet_nonces():
+    cutoff = (datetime.utcnow() - timedelta(hours=1)).isoformat()
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.execute(
+            "DELETE FROM wallet_nonces WHERE expires_at < ? OR (used = 1 AND created_at < ?)",
+            (now_iso(), cutoff)
+        )
+
+def get_verified_wallet(user_id):
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM wallets WHERE user_id = ? AND verified = 1",
+            (user_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+def verify_solana_signature(wallet_address, signature, message):
+    public_key_bytes = decode_base58(wallet_address)
+    signature_bytes = decode_base58(signature)
+    if len(public_key_bytes) != 32 or len(signature_bytes) != 64:
+        raise ValueError("Invalid signature or public key length")
+    Ed25519PublicKey.from_public_bytes(public_key_bytes).verify(
+        signature_bytes,
+        message.encode("utf-8")
+    )
+
+async def verify_wallet_on_chain(wallet_address, user_id):
+    try:
+        public_key = wallet_address
+        balance_payload = {
+            "jsonrpc": "2.0",
+            "id": "safescan-balance",
+            "method": "getBalance",
+            "params": [public_key, {"commitment": "confirmed"}],
+        }
+        sig_payload = {
+            "jsonrpc": "2.0",
+            "id": "safescan-signatures",
+            "method": "getSignaturesForAddress",
+            "params": [public_key, {"limit": 5}],
+        }
+        balance_response, sig_response = await asyncio.gather(
+            asyncio.to_thread(requests.post, SOLANA_RPC_URL, json=balance_payload, timeout=8),
+            asyncio.to_thread(requests.post, SOLANA_RPC_URL, json=sig_payload, timeout=8),
+        )
+        balance_lamports = ((balance_response.json().get("result") or {}).get("value") or 0)
+        signatures = sig_response.json().get("result") or []
+        tx_count = len(signatures)
+        wallet_age_days = None
+        oldest = signatures[-1] if signatures else None
+        if oldest and oldest.get("blockTime"):
+            wallet_age_days = int((time.time() - int(oldest["blockTime"])) // (24 * 60 * 60))
+        with sqlite3.connect("qr_cache.db") as conn:
+            conn.execute(
+                """
+                UPDATE wallets
+                SET sol_balance = ?, tx_count = ?, wallet_age_days = ?, onchain_verified_at = ?
+                WHERE address = ? AND user_id = ?
+                """,
+                (balance_lamports / 1_000_000_000, tx_count, wallet_age_days, now_iso(), wallet_address, user_id)
+            )
+        audit_log(
+            "wallet.onchain_verified",
+            actor_user_id=user_id,
+            target_type="wallet",
+            target_id=wallet_address[:8] + "...",
+            metadata={"txCount": tx_count, "walletAgeDays": wallet_age_days}
+        )
+        if tx_count == 0 or (wallet_age_days is not None and wallet_age_days < 7):
+            run_fraud_checks(
+                "wallet_connect",
+                user_id,
+                None,
+                {
+                    "walletAddress": wallet_address,
+                    "ip": "background_job",
+                    "userAgent": "system",
+                    "txCount": tx_count,
+                    "walletAgeDays": wallet_age_days,
+                }
+            )
+    except Exception as exc:
+        print({"warning": "wallet_onchain_verification_failed", "error": str(exc)})
 
 def severity_points(severity):
     return {"low": 5, "medium": 20, "high": 50, "critical": 100}.get(severity, 0)
@@ -520,11 +664,23 @@ def run_fraud_checks(event_type, user_id, request=None, metadata=None):
     if event_type == "wallet_connect" and metadata.get("walletAddress"):
         wallet = metadata["walletAddress"]
         with sqlite3.connect("qr_cache.db") as conn:
-            existing = conn.execute("SELECT email FROM scans WHERE wallet_address = ? AND email != ? LIMIT 1", (wallet, user_id)).fetchone()
+            existing = conn.execute(
+                """
+                SELECT user_id FROM wallets WHERE address = ? AND user_id != ? AND verified = 1
+                UNION
+                SELECT email FROM scans WHERE wallet_address = ? AND email != ?
+                LIMIT 1
+                """,
+                (wallet, user_id, wallet, user_id)
+            ).fetchone()
         if existing:
             signals.append({"checkName": "wallet_reuse", "severity": "critical", "autoDisqualify": True, "reason": f"Wallet {wallet[:8]}... already linked to another account.", "metadata": {"walletAddress": wallet, "existingUser": existing[0]}})
         elif wallet.lower() in {item.lower() for item in MALICIOUS_CONTRACT_BLOCKLIST}:
             signals.append({"checkName": "wallet_blocklist", "severity": "high", "autoDisqualify": False, "reason": "Wallet appears on the SafeScan blocklist.", "metadata": {"walletAddress": wallet}})
+        if metadata.get("txCount") == 0:
+            signals.append({"checkName": "wallet_zero_activity", "severity": "medium", "autoDisqualify": False, "reason": "Wallet has no recent Solana mainnet activity.", "metadata": {"walletAddress": wallet}})
+        if metadata.get("walletAgeDays") is not None and int(metadata.get("walletAgeDays") or 0) < 7:
+            signals.append({"checkName": "new_wallet", "severity": "medium", "autoDisqualify": False, "reason": "Wallet appears to be less than 7 days old.", "metadata": {"walletAddress": wallet, "walletAgeDays": metadata.get("walletAgeDays")}})
 
     if signals:
         new_points = sum(severity_points(item["severity"]) for item in signals)
@@ -561,6 +717,11 @@ def plain_action(action):
         "auth.failed": "Authentication failed",
         "auth.permission_denied": "Permission denied",
         "qr.scanned": "QR scan recorded",
+        "wallet.nonce_issued": "Wallet challenge issued",
+        "wallet.verification_failed": "Wallet verification failed",
+        "wallet.connected": "Wallet connected",
+        "wallet.disconnected": "Wallet disconnected",
+        "wallet.onchain_verified": "Wallet on-chain metadata refreshed",
         "fraud.flags_added": "Fraud signals added",
         "admin.user_suspended": "Admin suspended user",
         "admin.user_unsuspended": "Admin unsuspended user",
@@ -1372,9 +1533,18 @@ qr_app.add_middleware(
     CORSMiddleware,
     allow_origins=[APP_URL, "http://localhost:3000", "http://127.0.0.1:3000"],
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["content-type", "authorization", "x-airdrop-secret"],
+    allow_headers=["content-type", "authorization", "x-airdrop-secret", "x-device-fingerprint"],
     allow_credentials=True,
 )
+
+async def wallet_nonce_cleanup_loop():
+    while True:
+        cleanup_wallet_nonces()
+        await asyncio.sleep(15 * 60)
+
+@qr_app.on_event("startup")
+async def start_wallet_nonce_cleanup():
+    asyncio.create_task(wallet_nonce_cleanup_loop())
 
 @qr_app.middleware("http")
 async def security_headers_and_rate_limits(request: Request, call_next):
@@ -1457,11 +1627,15 @@ def fetch_admin_users(search="", status="", role="", tier="", page=1, limit=25):
         total = conn.execute(f"SELECT COUNT(*) FROM users u {where}", params).fetchone()[0]
         rows = [dict(row) for row in conn.execute(
             f"""
-            SELECT u.*, COALESCE(s.scan_count, 0) AS scan_count, s.wallet_address,
+            SELECT u.*, COALESCE(s.scan_count, 0) AS scan_count,
+                   COALESCE(w.address, s.wallet_address) AS wallet_address,
+                   w.verified AS wallet_verified, w.sol_balance, w.tx_count,
+                   w.wallet_age_days, w.onchain_verified_at,
                    COALESCE((SELECT COUNT(*) FROM referrals r WHERE r.referrer_email = u.email AND r.counted = 1), 0) AS referral_count,
                    COALESCE((SELECT COUNT(*) FROM fraud_flags f WHERE f.user_id = u.email AND f.reviewed = 0), 0) AS fraud_flags
             FROM users u
             LEFT JOIN scans s ON s.email = u.email
+            LEFT JOIN wallets w ON w.user_id = u.email AND w.verified = 1
             {where}
             ORDER BY COALESCE(u.last_login_at, u.last_login, u.created_at) DESC
             LIMIT ? OFFSET ?
@@ -1480,7 +1654,16 @@ def fetch_user_detail(email):
     with sqlite3.connect("qr_cache.db") as conn:
         conn.row_factory = sqlite3.Row
         user = conn.execute(
-            "SELECT u.*, s.wallet_address, COALESCE(s.scan_count, 0) AS scan_count FROM users u LEFT JOIN scans s ON s.email = u.email WHERE u.email = ? OR u.google_id = ?",
+            """
+            SELECT u.*, COALESCE(w.address, s.wallet_address) AS wallet_address,
+                   w.verified AS wallet_verified, w.sol_balance, w.tx_count,
+                   w.wallet_age_days, w.onchain_verified_at,
+                   COALESCE(s.scan_count, 0) AS scan_count
+            FROM users u
+            LEFT JOIN scans s ON s.email = u.email
+            LEFT JOIN wallets w ON w.user_id = u.email AND w.verified = 1
+            WHERE u.email = ? OR u.google_id = ?
+            """,
             (email, email)
         ).fetchone()
         flags = [dict(row) for row in conn.execute("SELECT * FROM fraud_flags WHERE user_id = ? ORDER BY created_at DESC LIMIT 50", (email,))]
@@ -1497,7 +1680,7 @@ def dashboard_data():
         scans_today = conn.execute("SELECT COUNT(*) FROM scan_history WHERE created_at >= ?", (today,)).fetchone()[0]
         blocked = conn.execute("SELECT COUNT(*) FROM scan_history WHERE verdict IN ('MALICIOUS', 'HIGH') OR risk_score >= 80").fetchone()[0]
         fraud_flags = conn.execute("SELECT COUNT(*) FROM fraud_flags WHERE reviewed = 0").fetchone()[0]
-        recent_users = [dict(row) for row in conn.execute("SELECT u.*, s.wallet_address, COALESCE(s.scan_count, 0) AS scan_count FROM users u LEFT JOIN scans s ON s.email = u.email ORDER BY COALESCE(u.created_at, u.last_login) DESC LIMIT 10")]
+        recent_users = [dict(row) for row in conn.execute("SELECT u.*, COALESCE(w.address, s.wallet_address) AS wallet_address, COALESCE(s.scan_count, 0) AS scan_count FROM users u LEFT JOIN scans s ON s.email = u.email LEFT JOIN wallets w ON w.user_id = u.email AND w.verified = 1 ORDER BY COALESCE(u.created_at, u.last_login) DESC LIMIT 10")]
         recent_reports = [dict(row) for row in conn.execute("SELECT * FROM url_reports ORDER BY created_at DESC LIMIT 10")]
         activity = [dict(row) for row in conn.execute("SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 20")]
         chart_rows = [dict(row) for row in conn.execute(
@@ -1563,10 +1746,11 @@ def fetch_fraud_data():
         rows = [dict(row) for row in conn.execute(
             """
             SELECT u.email, u.role, u.airdrop_status, COALESCE(u.fraud_score, 0) AS fraud_score,
-                   s.wallet_address, COALESCE(s.scan_count, 0) AS scan_count,
+                   COALESCE(w.address, s.wallet_address) AS wallet_address, COALESCE(s.scan_count, 0) AS scan_count,
                    COUNT(f.id) AS signal_count, MAX(f.severity) AS highest_severity, MAX(f.created_at) AS flag_date
             FROM users u
             LEFT JOIN scans s ON s.email = u.email
+            LEFT JOIN wallets w ON w.user_id = u.email AND w.verified = 1
             JOIN fraud_flags f ON f.user_id = u.email AND f.reviewed = 0
             GROUP BY u.email
             ORDER BY fraud_score DESC, flag_date DESC
@@ -1920,6 +2104,182 @@ async def api_report_url(request: Request, payload: dict = Body(...)):
     audit_log("url.reported", request=request, actor_user_id=user.get("google_id") if user else None, target_type="url_report", target_id=report_id, metadata={"reason": reason, "url": target_url})
     return {"id": report_id, "status": "pending"}
 
+@qr_app.get("/api/wallet")
+async def api_wallet_status(request: Request):
+    user = require_user(request)
+    wallet = get_verified_wallet(user["email"])
+    if not wallet:
+        return {"connected": False}
+    return {
+        "connected": True,
+        "walletAddress": wallet["address"],
+        "verified": bool(wallet["verified"]),
+        "connectedAt": wallet["connected_at"],
+        "onchain": {
+            "solBalance": wallet.get("sol_balance"),
+            "txCount": wallet.get("tx_count"),
+            "walletAgeDays": wallet.get("wallet_age_days"),
+            "verifiedAt": wallet.get("onchain_verified_at"),
+        },
+    }
+
+@qr_app.post("/api/wallet/nonce")
+async def api_wallet_nonce(request: Request, payload: dict = Body(...)):
+    user = require_user(request)
+    cleanup_wallet_nonces()
+    validate_strict_payload(payload, {"walletAddress"})
+    wallet_address = (payload.get("walletAddress") or "").strip()
+    if not is_valid_solana_address(wallet_address):
+        raise SafeScanError("Invalid Solana address format.", 400)
+    rate_limit = enforce_rate_limit(request, "wallet_nonce", 5, 60 * 60, user_key=wallet_address.lower())
+    if rate_limit:
+        with sqlite3.connect("qr_cache.db") as conn:
+            conn.execute(
+                "INSERT INTO fraud_flags VALUES (?, ?, 'wallet_nonce_rate_limit', 'medium', ?, ?, 0, 0, NULL, NULL, NULL, ?)",
+                (
+                    make_id("fraud"),
+                    user["email"],
+                    "Too many wallet verification challenges requested for one wallet.",
+                    json.dumps({"walletAddress": wallet_address[:8] + "..."}),
+                    now_iso(),
+                )
+            )
+            conn.execute(
+                "UPDATE users SET fraud_score = COALESCE(fraud_score, 0) + 20, airdrop_status = 'flagged' WHERE email = ?",
+                (user["email"],)
+            )
+        return rate_limit
+    with sqlite3.connect("qr_cache.db") as conn:
+        existing = conn.execute(
+            """
+            SELECT user_id FROM wallets WHERE address = ? AND user_id != ? AND verified = 1
+            UNION
+            SELECT email FROM scans WHERE wallet_address = ? AND email != ?
+            LIMIT 1
+            """,
+            (wallet_address, user["email"], wallet_address, user["email"])
+        ).fetchone()
+    if existing:
+        raise HTTPException(status_code=409, detail="This wallet is already linked to another account.")
+    nonce = secrets.token_hex(32)
+    issued_at = now_iso()
+    expires_at = (datetime.utcnow() + timedelta(minutes=5)).isoformat() + "Z"
+    message = wallet_verification_message(nonce, user["email"], issued_at, expires_at)
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.execute(
+            """
+            INSERT INTO wallet_nonces (user_id, wallet_address, nonce, message, issued_at, expires_at, used, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+              wallet_address=excluded.wallet_address,
+              nonce=excluded.nonce,
+              message=excluded.message,
+              issued_at=excluded.issued_at,
+              expires_at=excluded.expires_at,
+              used=0,
+              created_at=excluded.created_at
+            """,
+            (user["email"], wallet_address, nonce, message, issued_at, expires_at, issued_at)
+        )
+    audit_log("wallet.nonce_issued", request=request, actor_user_id=user.get("google_id"), target_type="wallet", target_id=wallet_address[:8] + "...")
+    return {"nonce": nonce, "message": message, "expiresAt": expires_at}
+
+@qr_app.post("/api/wallet/verify")
+async def api_wallet_verify(request: Request, payload: dict = Body(...)):
+    user = require_user(request)
+    cleanup_wallet_nonces()
+    validate_strict_payload(payload, {"walletAddress", "signature"})
+    wallet_address = (payload.get("walletAddress") or "").strip()
+    signature = (payload.get("signature") or "").strip()
+    if not is_valid_solana_address(wallet_address):
+        raise SafeScanError("Invalid Solana address format.", 400)
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.row_factory = sqlite3.Row
+        stored = conn.execute(
+            "SELECT * FROM wallet_nonces WHERE user_id = ? AND wallet_address = ? AND used = 0",
+            (user["email"], wallet_address)
+        ).fetchone()
+    if not stored:
+        raise SafeScanError("No pending verification for this wallet.", 400)
+    try:
+        issued_at = datetime.fromisoformat(str(stored["issued_at"]).replace("Z", ""))
+        expires_at = datetime.fromisoformat(str(stored["expires_at"]).replace("Z", ""))
+    except ValueError:
+        raise SafeScanError("Verification expired. Please try again.", 400)
+    if datetime.utcnow() > expires_at or datetime.utcnow() - issued_at > timedelta(minutes=5):
+        with sqlite3.connect("qr_cache.db") as conn:
+            conn.execute("DELETE FROM wallet_nonces WHERE user_id = ?", (user["email"],))
+        raise SafeScanError("Verification expired. Please try again.", 400)
+    message = wallet_verification_message(stored["nonce"], user["email"], stored["issued_at"], stored["expires_at"])
+    try:
+        verify_solana_signature(wallet_address, signature, message)
+    except (ValueError, InvalidSignature):
+        with sqlite3.connect("qr_cache.db") as conn:
+            conn.execute("UPDATE wallet_nonces SET used = 1 WHERE user_id = ?", (user["email"],))
+        audit_log(
+            "wallet.verification_failed",
+            request=request,
+            actor_user_id=user.get("google_id"),
+            target_type="wallet",
+            target_id=wallet_address[:8] + "...",
+            metadata={"reason": "signature_invalid"}
+        )
+        raise SafeScanError("Signature verification failed. Request a new challenge and try again.", 400)
+    with sqlite3.connect("qr_cache.db") as conn:
+        existing = conn.execute(
+            "SELECT user_id FROM wallets WHERE address = ? AND user_id != ? AND verified = 1 LIMIT 1",
+            (wallet_address, user["email"])
+        ).fetchone()
+    if existing:
+        raise HTTPException(status_code=409, detail="This wallet is already linked to another account.")
+    signals = run_fraud_checks(
+        "wallet_connect",
+        user["email"],
+        request,
+        {"walletAddress": wallet_address, "deviceFingerprint": request.headers.get("x-device-fingerprint", "")}
+    )
+    if any(signal.get("autoDisqualify") for signal in signals):
+        raise HTTPException(status_code=403, detail="Wallet connection could not be completed. Contact support.")
+    connected_at = now_iso()
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.execute("UPDATE wallet_nonces SET used = 1 WHERE user_id = ?", (user["email"],))
+        conn.execute(
+            """
+            INSERT INTO wallets (id, user_id, address, verified, connected_at, disconnected_at)
+            VALUES (?, ?, ?, 1, ?, NULL)
+            ON CONFLICT(user_id) DO UPDATE SET
+              address=excluded.address,
+              verified=1,
+              connected_at=excluded.connected_at,
+              disconnected_at=NULL
+            """,
+            (make_id("wallet"), user["email"], wallet_address, connected_at)
+        )
+        conn.execute(
+            """
+            INSERT INTO scans (email, wallet_address)
+            VALUES (?, ?)
+            ON CONFLICT(email) DO UPDATE SET wallet_address=excluded.wallet_address
+            """,
+            (user["email"], wallet_address)
+        )
+    audit_log("wallet.connected", request=request, actor_user_id=user.get("google_id"), target_type="wallet", target_id=wallet_address[:8] + "...")
+    asyncio.create_task(verify_wallet_on_chain(wallet_address, user["email"]))
+    return {"success": True, "walletAddress": wallet_address, "verified": True, "connectedAt": connected_at}
+
+@qr_app.delete("/api/wallet")
+async def api_wallet_disconnect(request: Request):
+    user = require_user(request)
+    wallet = get_verified_wallet(user["email"])
+    if not wallet:
+        raise HTTPException(status_code=404, detail="No connected wallet found.")
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.execute("DELETE FROM wallets WHERE user_id = ?", (user["email"],))
+        conn.execute("DELETE FROM wallet_nonces WHERE user_id = ?", (user["email"],))
+        conn.execute("UPDATE scans SET wallet_address = NULL WHERE email = ?", (user["email"],))
+    audit_log("wallet.disconnected", request=request, actor_user_id=user.get("google_id"), target_type="wallet", target_id=wallet["address"][:8] + "...")
+    return {"success": True, "message": "Wallet disconnected successfully"}
+
 @qr_app.get("/api/admin/stats/users")
 async def api_admin_stats_users(request: Request):
     require_role_user(request, "admin")
@@ -2234,14 +2594,10 @@ async def scan_qr(
 ):
     user = require_user(request)
     user_email = user["email"]
-    wallet_address, wallet_owner = validate_wallet_address(wallet_address)
-    if wallet_owner and wallet_owner != user_email:
-        flag_abuse(user_email, "wallet_reuse", f"Wallet already associated with {wallet_owner}")
-        raise HTTPException(status_code=409, detail="Wallet already linked to another active account.")
+    verified_wallet = get_verified_wallet(user_email)
+    wallet_address = verified_wallet["address"] if verified_wallet else ""
     if device_fingerprint:
         register_device_fingerprint(user_email, device_fingerprint)
-    if wallet_address:
-        run_fraud_checks("wallet_connect", user_email, request, {"walletAddress": wallet_address, "deviceFingerprint": device_fingerprint})
     url_qr = None
 
     if manual_url and manual_url.strip():

@@ -94,79 +94,269 @@ function hydrateSplineShowcase() {
   splineShowcase?.classList.add("spline-loaded");
 }
 
-function getStoredAirdropProfile() { 
-  try { return JSON.parse(window.localStorage.getItem(AIRDROP_STORAGE_KEY)); } catch { return null; } 
+function getStoredAirdropProfile() {
+  try { return JSON.parse(window.localStorage.getItem(AIRDROP_STORAGE_KEY)); } catch { return null; }
 }
 
-function renderWalletState(profile = getStoredAirdropProfile()) {
-  const walletAddr = profile?.walletAddress || "";
-  
-  // Update hidden field for backend recording
-  if (dom.hiddenWalletInput) dom.hiddenWalletInput.value = walletAddr;
+function setStoredAirdropProfile(profile) {
+  if (!profile) {
+    window.localStorage.removeItem(AIRDROP_STORAGE_KEY);
+    return;
+  }
+  window.localStorage.setItem(AIRDROP_STORAGE_KEY, JSON.stringify(profile));
+}
 
-  if (!profile || !walletAddr) {
-    if (dom.walletStatus) dom.walletStatus.textContent = "Sign in to unlock wallet connection.";
+function getCurrentProfile() {
+  const stored = getStoredAirdropProfile() || {};
+  const email = document.querySelector(".profile-email")?.textContent?.trim();
+  if (!email) return null;
+  const profile = { ...stored, email };
+  setStoredAirdropProfile(profile);
+  return profile;
+}
+
+function truncateAddress(address) {
+  return address ? `${address.slice(0, 4)}...${address.slice(-4)}` : "";
+}
+
+function escapeHtml(value) {
+  const div = document.createElement("div");
+  div.textContent = value || "";
+  return div.innerHTML;
+}
+
+const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+function base58Encode(bytes) {
+  const digits = [0];
+  for (const byte of bytes) {
+    let carry = byte;
+    for (let i = 0; i < digits.length; i += 1) {
+      const value = digits[i] * 256 + carry;
+      digits[i] = value % 58;
+      carry = Math.floor(value / 58);
+    }
+    while (carry) {
+      digits.push(carry % 58);
+      carry = Math.floor(carry / 58);
+    }
+  }
+  let output = "";
+  for (const byte of bytes) {
+    if (byte === 0) output += "1";
+    else break;
+  }
+  for (let i = digits.length - 1; i >= 0; i -= 1) {
+    output += BASE58_ALPHABET[digits[i]];
+  }
+  return output;
+}
+
+function detectedSolanaWallets() {
+  const wallets = [];
+  const seen = new Set();
+  const add = (name, provider, url) => {
+    if (!provider || seen.has(provider)) return;
+    seen.add(provider);
+    wallets.push({ name, provider, url });
+  };
+  add("Phantom", window.phantom?.solana || (window.solana?.isPhantom ? window.solana : null), "https://phantom.app/");
+  add("Solflare", window.solflare || (window.solana?.isSolflare ? window.solana : null), "https://solflare.com/");
+  add("Backpack", window.backpack?.solana, "https://backpack.app/");
+  add("Solana Wallet", window.solana, "https://phantom.app/");
+  return wallets;
+}
+
+function removeWalletModal() {
+  document.querySelector(".wallet-modal")?.remove();
+}
+
+function showWalletModal(content) {
+  removeWalletModal();
+  const modal = document.createElement("div");
+  modal.className = "wallet-modal";
+  modal.innerHTML = `<div class="wallet-modal-card">${content}</div>`;
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) removeWalletModal();
+  });
+  document.body.appendChild(modal);
+  return modal;
+}
+
+function setWalletBusy(message) {
+  if (dom.walletStatus) dom.walletStatus.textContent = message;
+  if (dom.connectWalletButton) dom.connectWalletButton.disabled = true;
+  if (dom.topConnectWalletButton) dom.topConnectWalletButton.disabled = true;
+}
+
+function clearWalletBusy() {
+  if (dom.connectWalletButton) dom.connectWalletButton.disabled = false;
+  if (dom.topConnectWalletButton) dom.topConnectWalletButton.disabled = false;
+}
+
+function renderWalletState(profile = getCurrentProfile()) {
+  const walletAddr = profile?.walletAddress || "";
+  const verified = Boolean(profile?.walletVerified);
+
+  if (dom.hiddenWalletInput) dom.hiddenWalletInput.value = verified ? walletAddr : "";
+
+  if (!profile) {
+    if (dom.walletStatus) dom.walletStatus.textContent = "Sign in to unlock verified wallet connection.";
     dom.connectWalletButton?.classList.remove("hidden");
     dom.topConnectWalletButton?.classList.remove("hidden");
     dom.disconnectWalletButton?.classList.add("hidden");
     if (dom.topConnectWalletButton) {
-        dom.topConnectWalletButton.textContent = "Connect wallet";
-        dom.topConnectWalletButton.disabled = false;
+      dom.topConnectWalletButton.textContent = "Connect wallet";
+      dom.topConnectWalletButton.disabled = false;
     }
     return;
   }
 
-  if (dom.walletStatus) dom.walletStatus.textContent = `Connected: ${walletAddr}`;
+  if (!walletAddr || !verified) {
+    if (dom.walletStatus) dom.walletStatus.textContent = "Connect and sign a wallet message to verify ownership.";
+    dom.connectWalletButton?.classList.remove("hidden");
+    dom.topConnectWalletButton?.classList.remove("hidden");
+    dom.disconnectWalletButton?.classList.add("hidden");
+    if (dom.topConnectWalletButton) {
+      dom.topConnectWalletButton.textContent = "Connect wallet";
+      dom.topConnectWalletButton.disabled = false;
+    }
+    return;
+  }
+
+  if (dom.walletStatus) {
+    dom.walletStatus.innerHTML = `Verified: <a href="https://solscan.io/account/${walletAddr}" target="_blank" rel="noopener">${truncateAddress(walletAddr)}</a>`;
+  }
   dom.connectWalletButton?.classList.add("hidden");
   dom.disconnectWalletButton?.classList.remove("hidden");
-  
+
   if (dom.topConnectWalletButton) {
-    dom.topConnectWalletButton.textContent = "Wallet connected";
+    dom.topConnectWalletButton.textContent = "Wallet verified";
     dom.topConnectWalletButton.disabled = true;
   }
 }
 
-async function connectWallet() {
-  const profile = getStoredAirdropProfile();
-  if (!profile) { window.alert("Sign in with Google first."); return; }
-  
-  const detectedWallet = window.phantom?.solana || window.solana;
-  if (!detectedWallet) { window.alert("No Solana wallet detected."); return; }
-
+async function syncWalletFromServer() {
+  const profile = getCurrentProfile();
+  if (!profile) {
+    renderWalletState(null);
+    return;
+  }
   try {
-    const response = await detectedWallet.connect();
-    const publicKey = response?.publicKey || detectedWallet.publicKey;
-    
-    const updatedProfile = { ...profile, walletAddress: publicKey.toString() };
-    window.localStorage.setItem(AIRDROP_STORAGE_KEY, JSON.stringify(updatedProfile));
+    const response = await fetch("/api/wallet");
+    if (!response.ok) throw new Error("wallet status unavailable");
+    const body = await response.json();
+    const updatedProfile = { ...profile };
+    if (body.connected && body.walletAddress) {
+      updatedProfile.walletAddress = body.walletAddress;
+      updatedProfile.walletVerified = true;
+    } else {
+      delete updatedProfile.walletAddress;
+      delete updatedProfile.walletVerified;
+    }
+    setStoredAirdropProfile(updatedProfile);
     renderWalletState(updatedProfile);
-  } catch { window.alert("Connection failed."); }
+  } catch {
+    renderWalletState(profile);
+  }
+}
+
+async function verifySelectedWallet(wallet) {
+  const profile = getCurrentProfile();
+  if (!profile) { window.alert("Sign in with Google first."); return; }
+  try {
+    setWalletBusy("Requesting verification challenge...");
+    showWalletModal("<h3>Connecting wallet</h3><p>Requesting verification challenge...</p><div class='wallet-spinner'></div>");
+    const connectResponse = await wallet.provider.connect();
+    const publicKey = connectResponse?.publicKey || wallet.provider.publicKey;
+    const walletAddress = publicKey?.toString();
+    if (!walletAddress) throw new Error("Wallet did not return a public key.");
+
+    const nonceResponse = await fetch("/api/wallet/nonce", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ walletAddress })
+    });
+    const nonceBody = await nonceResponse.json();
+    if (!nonceResponse.ok) throw new Error(nonceBody.error || "Could not create wallet challenge.");
+
+    setWalletBusy("Check your wallet and approve the signature request.");
+    showWalletModal("<h3>Approve signature</h3><p>Check your wallet. This is free and does not send a transaction.</p><div class='wallet-spinner'></div>");
+    if (typeof wallet.provider.signMessage !== "function") {
+      throw new Error("This wallet does not support message signing.");
+    }
+    const messageBytes = new TextEncoder().encode(nonceBody.message);
+    const signed = await wallet.provider.signMessage(messageBytes, "utf8");
+    const signatureBytes = signed?.signature || signed;
+    const signature = base58Encode(signatureBytes);
+
+    setWalletBusy("Verifying signature...");
+    showWalletModal("<h3>Verifying wallet</h3><p>SafeScan is checking the signature server-side...</p><div class='wallet-spinner'></div>");
+    const verifyResponse = await fetch("/api/wallet/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ walletAddress, signature })
+    });
+    const verifyBody = await verifyResponse.json();
+    if (!verifyResponse.ok) throw new Error(verifyBody.error || "Wallet verification failed.");
+
+    const updatedProfile = { ...profile, walletAddress: verifyBody.walletAddress, walletVerified: true };
+    setStoredAirdropProfile(updatedProfile);
+    renderWalletState(updatedProfile);
+    showWalletModal(`<h3>Wallet verified</h3><p class="wallet-success">Connected ${truncateAddress(verifyBody.walletAddress)}</p><a href="https://solscan.io/account/${verifyBody.walletAddress}" target="_blank" rel="noopener">View on Solscan</a><button class="primary-button wallet-close-button" type="button">Done</button>`);
+    document.querySelector(".wallet-close-button")?.addEventListener("click", removeWalletModal);
+  } catch (error) {
+    renderWalletState(getCurrentProfile());
+    showWalletModal(`<h3>Wallet verification failed</h3><p class="wallet-error">${escapeHtml(error.message || "Signature rejected. Try again.")}</p><button class="primary-button wallet-retry-button" type="button">Try Again</button>`);
+    document.querySelector(".wallet-retry-button")?.addEventListener("click", connectWallet);
+  } finally {
+    clearWalletBusy();
+  }
+}
+
+async function connectWallet() {
+  const profile = getCurrentProfile();
+  if (!profile) { window.alert("Sign in with Google first."); return; }
+  const wallets = detectedSolanaWallets();
+  if (!wallets.length) {
+    showWalletModal("<h3>No Solana wallet detected</h3><p>Install Phantom or Solflare to continue.</p><div class='wallet-install-links'><a href='https://phantom.app/' target='_blank' rel='noopener'>Install Phantom</a><a href='https://solflare.com/' target='_blank' rel='noopener'>Install Solflare</a></div>");
+    return;
+  }
+  const modal = showWalletModal(`<h3>Select wallet</h3><div class="wallet-choice-list">${wallets.map((wallet, index) => `<button class="secondary-button wallet-choice-button" data-wallet-index="${index}" type="button">${wallet.name}</button>`).join("")}</div>`);
+  modal.querySelectorAll("[data-wallet-index]").forEach((button) => {
+    button.addEventListener("click", () => verifySelectedWallet(wallets[Number(button.dataset.walletIndex)]));
+  });
 }
 
 dom.connectWalletButton?.addEventListener("click", connectWallet);
 dom.topConnectWalletButton?.addEventListener("click", connectWallet);
 
-dom.disconnectWalletButton?.addEventListener("click", () => {
-  const profile = getStoredAirdropProfile();
+dom.disconnectWalletButton?.addEventListener("click", async () => {
+  const profile = getCurrentProfile();
   if (!profile) return;
-  const updatedProfile = { ...profile };
-  delete updatedProfile.walletAddress;
-  window.localStorage.setItem(AIRDROP_STORAGE_KEY, JSON.stringify(updatedProfile));
-  renderWalletState(updatedProfile);
-  window.alert("Wallet disconnected.");
+  try {
+    const response = await fetch("/api/wallet", { method: "DELETE" });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || "Wallet disconnect failed.");
+    const updatedProfile = { ...profile };
+    delete updatedProfile.walletAddress;
+    delete updatedProfile.walletVerified;
+    setStoredAirdropProfile(updatedProfile);
+    renderWalletState(updatedProfile);
+    window.alert("Wallet disconnected.");
+  } catch (error) {
+    window.alert(error.message || "Wallet disconnect failed.");
+  }
 });
 
 dom.demoWalletButton?.addEventListener("click", () => {
-  const profile = getStoredAirdropProfile();
-  const updatedProfile = { ...profile, walletAddress: "DemoSQRWallet111111111111111111111" };
-  window.localStorage.setItem(AIRDROP_STORAGE_KEY, JSON.stringify(updatedProfile));
-  renderWalletState(updatedProfile);
+  window.alert("Demo wallets cannot be used for airdrop verification. Connect a real wallet and approve the signature request.");
 });
 
 dom.qrForm?.addEventListener("submit", (e) => {
   if (!dom.hiddenWalletInput.value) {
     e.preventDefault();
-    window.alert("Please connect your wallet first to track scan rewards!");
+    window.alert("Please verify your wallet signature first to track scan rewards.");
     return;
   }
 
@@ -192,7 +382,8 @@ function renderAirdropProfile(profile) {
   renderWalletState(profile);
 }
 
-renderAirdropProfile(getStoredAirdropProfile());
+renderAirdropProfile(getCurrentProfile());
+syncWalletFromServer();
 hydrateSplineShowcase();
 
 if (riskModal) {

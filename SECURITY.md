@@ -15,7 +15,10 @@ SafeScan QR currently runs as a FastAPI/Python application with SQLite storage i
 - Scan submission no longer trusts the hidden `user_email` form field; the server derives the email from the session.
 - URL analysis validates URL shape, max length, scheme, hostname, and blocks localhost/private/internal Render targets before reputation checks or redirects.
 - Redirect tracing follows redirects manually and validates every hop before requesting it.
-- Wallet addresses are format-checked and reuse across accounts is rejected.
+- Wallet connection now uses a server-issued 5-minute nonce and Ed25519 message-signature verification before a wallet is stored.
+- Wallet nonces are single-use, rotated after failed verification, rate-limited per wallet address, and cleaned up by a background task.
+- Verified wallets are stored in the `wallets` table; scan submission no longer trusts client-submitted wallet addresses.
+- Verified wallets are checked asynchronously against Solana RPC for balance, transaction count, and approximate wallet age.
 - Scan count increments are server-side only, deduplicated by user and payload, and same-payload repeats inside 60 seconds do not increment.
 - Device fingerprint hashes are collected on the frontend and sent to the backend for exact-match anti-fraud clustering.
 - Fraud checks now run after signup, scan, and wallet submission events. Signals are stored in `fraud_flags` and roll up into `users.fraud_score` / `users.airdrop_status`.
@@ -28,7 +31,7 @@ SafeScan QR currently runs as a FastAPI/Python application with SQLite storage i
 
 - Public: `GET /`, legal/product/resource pages, `POST /waitlist`, `POST /api/consent`.
 - Optional auth: `POST /api/analyze`.
-- Active session required: `POST /search_qr_api`, `GET /account/settings`, `POST /auth/logout`.
+- Active session required: `GET /api/wallet`, `POST /api/wallet/nonce`, `POST /api/wallet/verify`, `DELETE /api/wallet`, `POST /search_qr_api`, `GET /account/settings`, `POST /auth/logout`.
 - Admin session required: `GET /legal/consent-log`, `GET /admin/data-processing-log`, `GET /admin/report-breach`, `POST /admin/report-breach`.
 - Admin session required: `GET /admin`, `/admin/activity`, `/admin/users`, `/admin/scans`, `/admin/reports`, `/admin/risk-logs`, `/admin/airdrop`, `/admin/airdrop/fraud`, `/admin/airdrop/wallets`, `/admin/logs`.
 - Owner session required: `GET/POST /admin/api-keys`, `POST /admin/api-keys/{id}/revoke`, `GET /admin/settings`, `GET /admin/export/users`, owner role changes and deletes.
@@ -42,6 +45,11 @@ SafeScan QR currently runs as a FastAPI/Python application with SQLite storage i
 - `auth.permission_denied`
 - `auth.rate_limited`
 - `qr.scanned`
+- `wallet.nonce_issued`
+- `wallet.verification_failed`
+- `wallet.connected`
+- `wallet.disconnected`
+- `wallet.onchain_verified`
 - `account.deleted`
 - `admin.view_logs`
 - `admin.breach_report_created`
@@ -53,6 +61,7 @@ SafeScan QR currently runs as a FastAPI/Python application with SQLite storage i
 - Public pages: 300 requests per 15 minutes per IP.
 - General API: 100 requests per 15 minutes per IP.
 - Analyze API: 30 requests per hour per authenticated user, falling back to IP for guests.
+- Wallet nonce API: 5 nonce requests per hour per wallet address. Exceeding this creates a medium fraud flag.
 
 ## Remaining Gaps Before Production
 
@@ -60,9 +69,7 @@ SafeScan QR currently runs as a FastAPI/Python application with SQLite storage i
 - Add a complete permission constants module if the app is split into packages; current checks live in `hackabull.py`.
 - Add CSRF tokens for every state-changing form.
 - Replace shared-secret fallback on `/trigger-airdrop-secret` with owner-only session access once operational automation is updated.
-- Implement signed Solana wallet-message verification with a server nonce before storing wallets.
 - Complete referral counting UX and referral tree visualization once real referral events exist. The database table exists, but public referral flows are still minimal.
-- Add Solana RPC wallet age/activity checks for new-wallet fraud scoring.
 - Add a persistent distributed rate limiter, such as Redis, before scaling beyond one Render instance.
 - Add a full automated security test suite.
 - Rotate any secrets that were ever committed before this hardening pass.
