@@ -8,12 +8,16 @@ import traceback
 import re
 import asyncio
 import base64
-from urllib.parse import urlparse, parse_qsl
+import ipaddress
+import secrets
+import socket
+import time
+from urllib.parse import urljoin, urlparse, parse_qsl
 from datetime import datetime, timedelta
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 from pyzbar.pyzbar import decode
 
-from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body
+from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,6 +36,15 @@ CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID") or os.getenv("googe_client_id")
 api_key = os.getenv("GOOGLE_SAFE_BROWSING_API_KEY") or os.getenv("googe_api_key")
 AIRDROP_ADMIN_SECRET = os.getenv("AIRDROP_ADMIN_SECRET")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "privacy@safescan-qr.onrender.com")
+ADMIN_EMAILS = {email.strip().lower() for email in os.getenv("ADMIN_EMAILS", ADMIN_EMAIL).split(",") if email.strip()}
+OWNER_EMAILS = {email.strip().lower() for email in os.getenv("OWNER_EMAILS", "").split(",") if email.strip()} or set(list(ADMIN_EMAILS)[:1])
+APP_URL = os.getenv("APP_URL", "https://safescan-qr.onrender.com").rstrip("/")
+SESSION_COOKIE_NAME = "safescan_session"
+SESSION_TTL_SECONDS = 24 * 60 * 60
+SESSION_IDLE_SECONDS = 7 * 24 * 60 * 60
+VALID_ROLES = ("user", "admin", "owner")
+VALID_STATUSES = ("active", "suspended", "deleted")
+RATE_LIMITS = {}
 LEGAL_VERSION = "v1.0"
 LEGAL_LAST_UPDATED = "May 2026"
 safe_browsing_url = f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={api_key}"
@@ -52,7 +65,17 @@ def init_db():
     conn = sqlite3.connect("qr_cache.db")
     cursor = conn.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS scan_results (url TEXT PRIMARY KEY, status TEXT, timestamp TEXT)''')
-    cursor.execute('''CREATE TABLE IF NOT EXISTS users (google_id TEXT PRIMARY KEY, email TEXT, last_login TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS users (
+                        google_id TEXT PRIMARY KEY,
+                        email TEXT,
+                        last_login TEXT,
+                        role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('user', 'admin', 'owner')),
+                        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'suspended', 'deleted')),
+                        last_login_at TEXT,
+                        login_ip TEXT,
+                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        deleted_at TEXT
+                    )''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS scans (email TEXT PRIMARY KEY, url_found TEXT, scan_count INTEGER DEFAULT 0, wallet_address TEXT, tokens_sent INTEGER DEFAULT 0)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS scan_events
                         (email TEXT NOT NULL, payload_hash TEXT NOT NULL, url_found TEXT NOT NULL,
@@ -80,6 +103,36 @@ def init_db():
                          opt_out_type TEXT NOT NULL, timestamp TEXT NOT NULL)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS waitlist_signups
                         (email TEXT PRIMARY KEY, source TEXT, created_at TEXT NOT NULL)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS sessions
+                        (id TEXT PRIMARY KEY, google_id TEXT NOT NULL,
+                         created_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+                         last_active TEXT NOT NULL, revoked_at TEXT,
+                         ip_hash TEXT, user_agent TEXT,
+                         FOREIGN KEY(google_id) REFERENCES users(google_id))''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS audit_logs
+                        (id TEXT PRIMARY KEY, actor_user_id TEXT, action TEXT NOT NULL,
+                         target_type TEXT, target_id TEXT, metadata TEXT,
+                         ip_address TEXT, user_agent TEXT, created_at TEXT NOT NULL)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS abuse_flags
+                        (id TEXT PRIMARY KEY, email TEXT, flag_type TEXT NOT NULL,
+                         detail TEXT NOT NULL, created_at TEXT NOT NULL)''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sessions_google_id ON sessions(google_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_logs(created_at)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_abuse_email ON abuse_flags(email)")
+    cursor.execute("PRAGMA table_info(users)")
+    user_columns = {row[1] for row in cursor.fetchall()}
+    user_migrations = {
+        "role": "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('user', 'admin', 'owner'))",
+        "status": "ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'suspended', 'deleted'))",
+        "last_login_at": "ALTER TABLE users ADD COLUMN last_login_at TEXT",
+        "login_ip": "ALTER TABLE users ADD COLUMN login_ip TEXT",
+        "created_at": "ALTER TABLE users ADD COLUMN created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP",
+        "deleted_at": "ALTER TABLE users ADD COLUMN deleted_at TEXT",
+    }
+    for column, ddl in user_migrations.items():
+        if column not in user_columns:
+            cursor.execute(ddl)
     cursor.execute("PRAGMA table_info(scans)")
     scan_columns = {row[1] for row in cursor.fetchall()}
     if "airdrop_eligible" not in scan_columns:
@@ -90,9 +143,228 @@ def init_db():
 
 init_db()
 
+class SafeScanError(Exception):
+    def __init__(self, message, status_code=400):
+        super().__init__(message)
+        self.status_code = status_code
+
+def now_iso():
+    return datetime.utcnow().isoformat() + "Z"
+
+def role_for_email(email):
+    normalized = (email or "").strip().lower()
+    if normalized in OWNER_EMAILS:
+        return "owner"
+    if normalized in ADMIN_EMAILS:
+        return "admin"
+    return "user"
+
+def sanitize_metadata(value):
+    blocked = ("password", "token", "secret", "key", "hash", "credential")
+    if isinstance(value, dict):
+        return {
+            key: sanitize_metadata(item)
+            for key, item in value.items()
+            if not any(term in str(key).lower() for term in blocked)
+        }
+    if isinstance(value, list):
+        return [sanitize_metadata(item) for item in value]
+    return value
+
+def audit_log(action, request=None, actor_user_id=None, target_type=None, target_id=None, metadata=None):
+    try:
+        with sqlite3.connect("qr_cache.db") as conn:
+            conn.execute(
+                "INSERT INTO audit_logs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    make_id("audit"),
+                    actor_user_id,
+                    action,
+                    target_type,
+                    target_id,
+                    json.dumps(sanitize_metadata(metadata or {})),
+                    request_ip(request) if request else None,
+                    request.headers.get("user-agent", "") if request else None,
+                    now_iso(),
+                )
+            )
+    except sqlite3.Error:
+        pass
+
+def set_session_cookie(response, session_id):
+    response.set_cookie(
+        SESSION_COOKIE_NAME,
+        session_id,
+        max_age=SESSION_TTL_SECONDS,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+        path="/",
+    )
+
+def clear_session_cookie(response):
+    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+
+def create_session(google_id, request):
+    session_id = secrets.token_urlsafe(32)
+    created = datetime.utcnow()
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.execute(
+            "INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                session_id,
+                google_id,
+                created.isoformat() + "Z",
+                (created + timedelta(seconds=SESSION_TTL_SECONDS)).isoformat() + "Z",
+                created.isoformat() + "Z",
+                None,
+                hash_ip(request_ip(request)),
+                request.headers.get("user-agent", ""),
+            )
+        )
+    return session_id
+
+def get_session_user(request):
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if not session_id:
+        return None
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            """
+            SELECT s.id AS session_id, s.expires_at, s.last_active, s.revoked_at,
+                   u.google_id, u.email, u.role, u.status, u.last_login_at, u.login_ip
+            FROM sessions s
+            JOIN users u ON u.google_id = s.google_id
+            WHERE s.id = ?
+            """,
+            (session_id,)
+        ).fetchone()
+        if not row:
+            return None
+        try:
+            expires_at = datetime.fromisoformat(str(row["expires_at"]).replace("Z", ""))
+            last_active = datetime.fromisoformat(str(row["last_active"]).replace("Z", ""))
+        except ValueError:
+            return None
+        if row["revoked_at"] or expires_at < datetime.utcnow() or datetime.utcnow() - last_active > timedelta(seconds=SESSION_IDLE_SECONDS):
+            conn.execute("UPDATE sessions SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ?", (now_iso(), session_id))
+            return None
+        if row["status"] != "active":
+            return None
+        conn.execute("UPDATE sessions SET last_active = ? WHERE id = ?", (now_iso(), session_id))
+        return dict(row)
+
+def require_user(request):
+    user = get_session_user(request)
+    if not user:
+        audit_log("auth.failed", request=request)
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    return user
+
+def require_user_from_google_id(google_id):
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT google_id, email, role, status FROM users WHERE google_id = ?", (google_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    return dict(row)
+
+def has_role(user, role):
+    hierarchy = ["guest", "user", "admin", "owner"]
+    return hierarchy.index(user.get("role", "guest")) >= hierarchy.index(role)
+
+def require_role_user(request, role):
+    user = require_user(request)
+    if not has_role(user, role):
+        audit_log("auth.permission_denied", request=request, actor_user_id=user.get("google_id"), metadata={"requiredRole": role})
+        raise HTTPException(status_code=403, detail="You do not have permission to do this.")
+    return user
+
+def enforce_rate_limit(request, bucket, limit, window_seconds, user_key=None):
+    identity = user_key or request_ip(request)
+    key = f"{bucket}:{identity}"
+    now = time.time()
+    hits = [stamp for stamp in RATE_LIMITS.get(key, []) if now - stamp < window_seconds]
+    if len(hits) >= limit:
+        retry_after = max(1, int(window_seconds - (now - hits[0])))
+        audit_log("auth.rate_limited", request=request, metadata={"bucket": bucket, "retryAfter": retry_after})
+        return JSONResponse(
+            {"error": "Too many requests", "retryAfter": retry_after},
+            status_code=429,
+            headers={"Retry-After": str(retry_after)}
+        )
+    hits.append(now)
+    RATE_LIMITS[key] = hits
+    return None
+
+def validate_strict_payload(payload, allowed_fields):
+    if not isinstance(payload, dict):
+        raise SafeScanError("Invalid request.", 400)
+    unexpected = set(payload.keys()) - set(allowed_fields)
+    if unexpected:
+        raise SafeScanError("Unexpected fields: " + ", ".join(sorted(unexpected)), 400)
+
+def is_private_hostname(hostname):
+    host = (hostname or "").strip().lower().rstrip(".")
+    if not host:
+        return True
+    if host in ("localhost",) or host.endswith(".localhost") or "render-internal" in host:
+        return True
+    try:
+        ip_values = [ipaddress.ip_address(host)]
+    except ValueError:
+        try:
+            ip_values = [ipaddress.ip_address(info[4][0]) for info in socket.getaddrinfo(host, None)]
+        except socket.gaierror:
+            return False
+    return any(ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast for ip in ip_values)
+
+def validate_public_url(target_url):
+    if not isinstance(target_url, str) or len(target_url.strip()) > 2048:
+        raise SafeScanError("URL is required and must be 2048 characters or fewer.", 400)
+    normalized = normalize_url(target_url)
+    parsed = urlparse(normalized)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise SafeScanError("Only valid http and https URLs are supported.", 400)
+    if is_private_hostname(parsed.hostname):
+        raise SafeScanError("Private, localhost, and internal service URLs are blocked.", 400)
+    return normalized
+
+def follow_safe_redirects(target_url, max_redirects=10):
+    current = validate_public_url(target_url)
+    chain = []
+    session = requests.Session()
+    for _ in range(max_redirects + 1):
+        response = session.get(current, timeout=6, allow_redirects=False, stream=True)
+        response.close()
+        chain.append(response)
+        if response.status_code not in (301, 302, 303, 307, 308):
+            return chain
+        location = response.headers.get("location")
+        if not location:
+            return chain
+        current = validate_public_url(urljoin(current, location))
+    raise requests.TooManyRedirects()
+
+def flag_abuse(email, flag_type, detail):
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.execute("INSERT INTO abuse_flags VALUES (?, ?, ?, ?, ?)", (make_id("flag"), email, flag_type, detail, now_iso()))
+
+def validate_wallet_address(address):
+    clean = (address or "").strip()
+    if not clean:
+        return "", None
+    if not re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{32,44}", clean):
+        raise SafeScanError("Invalid Solana wallet address.", 400)
+    with sqlite3.connect("qr_cache.db") as conn:
+        row = conn.execute("SELECT email FROM scans WHERE wallet_address = ? LIMIT 1", (clean,)).fetchone()
+    return clean, row[0] if row else None
+
 def record_unique_scan(email, url, wallet):
-    normalized_payload = url.strip()
+    normalized_payload = url.strip()[:2048]
     payload_hash = hashlib.sha256(normalized_payload.encode("utf-8")).hexdigest()
+    cutoff = (datetime.utcnow() - timedelta(seconds=60)).isoformat()
 
     with sqlite3.connect('qr_cache.db') as conn:
         cursor = conn.cursor()
@@ -112,6 +384,10 @@ def record_unique_scan(email, url, wallet):
         """, (email, payload_hash, normalized_payload, datetime.now().isoformat()))
 
         if cursor.rowcount == 0:
+            cursor.execute("SELECT first_scanned_at FROM scan_events WHERE email = ? AND payload_hash = ?", (email, payload_hash))
+            existing = cursor.fetchone()
+            if existing and str(existing[0]) >= cutoff:
+                return False
             return False
 
         # Existing rows may already have counted the last scanned payload before
@@ -279,6 +555,15 @@ def mock_analysis_response(target_url):
     }
 
 def check_url_reputation(target_url):
+    try:
+        target_url = validate_public_url(target_url)
+    except SafeScanError as exc:
+        return {
+            "provider": "SafeScan URL Guard",
+            "status": "BLOCKED",
+            "matches": ["SSRF_BLOCKED"],
+            "detail": str(exc)
+        }
     if not api_key:
         return {
             "provider": "Google Safe Browsing",
@@ -360,8 +645,14 @@ def virustotal_reputation_signal(target_url):
 
 def inspect_redirects(target_url):
     try:
-        response = requests.get(target_url, timeout=5, allow_redirects=True, stream=True)
-        response.close()
+        responses = follow_safe_redirects(target_url)
+    except SafeScanError as exc:
+        return {
+            "status": "BLOCKED",
+            "count": 0,
+            "final_url": target_url,
+            "detail": str(exc)
+        }
     except requests.RequestException as exc:
         return {
             "status": "ERROR",
@@ -370,19 +661,22 @@ def inspect_redirects(target_url):
             "detail": f"Redirect inspection failed: {type(exc).__name__}"
         }
 
+    response = responses[-1]
     return {
         "status": "OK",
-        "count": len(response.history),
+        "count": max(0, len(responses) - 1),
         "final_url": response.url,
         "detail": "Redirect chain inspected."
     }
 
 def trace_redirect_chain(target_url):
     try:
-        session = requests.Session()
-        session.max_redirects = 10
-        response = session.get(target_url, timeout=6, allow_redirects=True, stream=True)
-        response.close()
+        all_responses = follow_safe_redirects(target_url)
+    except SafeScanError as exc:
+        return {
+            "signal": signal("Redirect Chain", "Blocked internal redirect target", "high", str(exc), False),
+            "redirectChain": []
+        }
     except requests.TooManyRedirects:
         return {
             "signal": signal("Redirect Chain", "More than 10 redirects", "high", "The URL exceeded the 10-hop redirect limit.", False),
@@ -394,7 +688,6 @@ def trace_redirect_chain(target_url):
             "redirectChain": []
         }
 
-    all_responses = list(response.history) + [response]
     original_domain = urlparse(target_url).hostname or ""
     chain = []
     domain_changed = False
@@ -567,7 +860,7 @@ def generate_ai_verdict(signals):
     return fallback
 
 async def analyze_full_pipeline(target_url):
-    normalized = normalize_url(target_url)
+    normalized = validate_public_url(target_url)
     if MOCK_MODE:
         return mock_analysis_response(normalized)
 
@@ -707,7 +1000,7 @@ def analyze_non_url_payload(raw_payload):
     }
 
 def analyze_url_payload(raw_payload):
-    normalized = normalize_url(raw_payload)
+    normalized = validate_public_url(raw_payload)
     parsed = urlparse(normalized)
     lower_url = normalized.lower()
     score = 0
@@ -860,8 +1153,57 @@ qr_app = FastAPI()
 qr_app.mount("/static", StaticFiles(directory="static"), name="static")
 
 qr_app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
+    CORSMiddleware,
+    allow_origins=[APP_URL, "http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["content-type", "authorization", "x-airdrop-secret"],
+    allow_credentials=True,
 )
+
+@qr_app.middleware("http")
+async def security_headers_and_rate_limits(request: Request, call_next):
+    public_limit = enforce_rate_limit(request, "public", 300, 15 * 60)
+    if public_limit:
+        return public_limit
+    if request.url.path.startswith("/api/"):
+        api_limit = enforce_rate_limit(request, "api", 100, 15 * 60)
+        if api_limit:
+            return api_limit
+    response = await call_next(request)
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' https://accounts.google.com https://apis.google.com; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data: https://lh3.googleusercontent.com; "
+        "connect-src 'self' https://safescan-qr.onrender.com https://api.virustotal.com https://api.anthropic.com https://api.openai.com; "
+        "frame-src https://accounts.google.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+    )
+    return response
+
+@qr_app.exception_handler(SafeScanError)
+async def safe_scan_error_handler(request: Request, exc: SafeScanError):
+    return JSONResponse({"error": str(exc)}, status_code=exc.status_code)
+
+@qr_app.exception_handler(HTTPException)
+async def http_error_handler(request: Request, exc: HTTPException):
+    safe_messages = {
+        400: "Invalid request.",
+        401: "Authentication required.",
+        403: "You do not have permission to do this.",
+        404: "Not found.",
+        429: "Too many requests. Please slow down.",
+    }
+    return JSONResponse({"error": safe_messages.get(exc.status_code, exc.detail)}, status_code=exc.status_code)
+
+@qr_app.exception_handler(Exception)
+async def unhandled_error_handler(request: Request, exc: Exception):
+    print({"error": str(exc), "path": request.url.path})
+    return JSONResponse({"error": "Something went wrong on our end."}, status_code=500)
 
 PRIVACY_POLICY_HTML = f"""
 <h2>1. What We Collect</h2>
@@ -963,18 +1305,20 @@ COOKIE_POLICY_HTML = """
 """
 
 @qr_app.post("/api/analyze")
-async def api_analyze(payload: dict = Body(...)):
-    target_url = (payload.get("url") or "").strip()
-    if not target_url:
-        return JSONResponse({"error": "url is required"}, status_code=400)
+async def api_analyze(request: Request, payload: dict = Body(...)):
+    user = get_session_user(request)
+    rate_limit = enforce_rate_limit(request, "analyze", 30, 60 * 60, user_key=user.get("google_id") if user else None)
+    if rate_limit:
+        return rate_limit
+    validate_strict_payload(payload, {"url"})
+    target_url = validate_public_url((payload.get("url") or "").strip())
+    audit_log("qr.scanned", request=request, actor_user_id=user.get("google_id") if user else None, target_type="url", metadata={"url": target_url})
     return await analyze_full_pipeline(target_url)
 
 @qr_app.post("/api/check-reputation")
 async def api_check_reputation(payload: dict = Body(...)):
-    target_url = (payload.get("url") or "").strip()
-    if not target_url:
-        return JSONResponse({"error": "url is required"}, status_code=400)
-    normalized = normalize_url(target_url)
+    validate_strict_payload(payload, {"url"})
+    normalized = validate_public_url((payload.get("url") or "").strip())
     google_task = asyncio.to_thread(google_reputation_signal, normalized)
     virustotal_task = asyncio.to_thread(virustotal_reputation_signal, normalized)
     results = await asyncio.gather(google_task, virustotal_task)
@@ -982,35 +1326,32 @@ async def api_check_reputation(payload: dict = Body(...)):
 
 @qr_app.post("/api/trace-redirects")
 async def api_trace_redirects(payload: dict = Body(...)):
-    target_url = (payload.get("url") or "").strip()
-    if not target_url:
-        return JSONResponse({"error": "url is required"}, status_code=400)
-    normalized = normalize_url(target_url)
+    validate_strict_payload(payload, {"url"})
+    normalized = validate_public_url((payload.get("url") or "").strip())
     result = await asyncio.to_thread(trace_redirect_chain, normalized)
     return {"url": normalized, **result, "scannedAt": datetime.utcnow().isoformat() + "Z"}
 
 @qr_app.post("/api/check-domain")
 async def api_check_domain(payload: dict = Body(...)):
-    target_url = (payload.get("url") or "").strip()
-    if not target_url:
-        return JSONResponse({"error": "url is required"}, status_code=400)
-    normalized = normalize_url(target_url)
+    validate_strict_payload(payload, {"url"})
+    normalized = validate_public_url((payload.get("url") or "").strip())
     signals = await asyncio.to_thread(check_domain_intelligence, normalized)
     return {"url": normalized, "signals": signals, "scannedAt": datetime.utcnow().isoformat() + "Z"}
 
 @qr_app.post("/api/check-crypto-patterns")
 async def api_check_crypto_patterns(payload: dict = Body(...)):
-    target_url = (payload.get("url") or "").strip()
-    if not target_url:
-        return JSONResponse({"error": "url is required"}, status_code=400)
-    normalized = normalize_url(target_url)
+    validate_strict_payload(payload, {"url"})
+    normalized = validate_public_url((payload.get("url") or "").strip())
     signals = await asyncio.to_thread(check_crypto_pattern_signals, normalized)
     return {"url": normalized, "signals": signals, "scannedAt": datetime.utcnow().isoformat() + "Z"}
 
 @qr_app.get("/", response_class=HTMLResponse)
 async def read_index(request: Request):
+    user = get_session_user(request)
+    email = user["email"] if user else ""
     return templates.TemplateResponse("index.html", {
-        "request": request, "logged_in": False, "results_visible": False, "google_client_id": CLIENT_ID,
+        "request": request, "logged_in": bool(user), "results_visible": False, "google_client_id": CLIENT_ID,
+        "email": email, "scan_count": get_scan_count(email) if email else 0,
         "version": LEGAL_VERSION
     })
 
@@ -1141,12 +1482,17 @@ async def submit_data_request(
     now = datetime.utcnow().isoformat() + "Z"
     export_data = ""
     status = "submitted"
+    session_user = get_session_user(request)
+    verified_self_request = session_user and session_user.get("email") == email.strip().lower()
     if request_type in ("access", "portability"):
-        export_data = json.dumps(get_user_export(email), indent=2)
-        status = "completed"
+        if verified_self_request:
+            export_data = json.dumps(get_user_export(email), indent=2)
+            status = "completed"
     elif request_type == "erasure":
-        delete_user_data(email)
-        status = "completed"
+        if verified_self_request:
+            delete_user_data(email)
+            status = "completed"
+            audit_log("account.deleted", request=request, actor_user_id=session_user.get("google_id"), target_type="user", target_id=email)
     elif request_type in ("do_not_sell", "limit_sensitive", "object", "revoke_consent"):
         with sqlite3.connect("qr_cache.db") as conn:
             conn.execute(
@@ -1192,11 +1538,11 @@ async def log_consent(request: Request, payload: dict = Body(...)):
 
 @qr_app.get("/legal/consent-log", response_class=HTMLResponse)
 async def consent_log(request: Request, secret: str = Query("")):
-    if not admin_authorized(secret):
-        return HTMLResponse("Unauthorized", status_code=401)
+    admin_user = require_role_user(request, "admin")
     with sqlite3.connect("qr_cache.db") as conn:
         conn.row_factory = sqlite3.Row
         rows = [dict(row) for row in conn.execute("SELECT * FROM consent_logs ORDER BY timestamp DESC LIMIT 200")]
+    audit_log("admin.view_logs", request=request, actor_user_id=admin_user.get("google_id"), target_type="consent_logs")
     body = "<table class='legal-table'><thead><tr><th>Time</th><th>User</th><th>Type</th><th>IP Hash</th><th>Locale</th></tr></thead><tbody>"
     body += "".join(f"<tr><td>{row['timestamp']}</td><td>{row['user_id'] or ''}</td><td>{row['consent_type']}</td><td>{row['ip_hash'][:16]}...</td><td>{row['locale'] or ''}</td></tr>" for row in rows)
     body += "</tbody></table>"
@@ -1204,8 +1550,7 @@ async def consent_log(request: Request, secret: str = Query("")):
 
 @qr_app.get("/admin/data-processing-log", response_class=HTMLResponse)
 async def data_processing_log(request: Request, secret: str = Query("")):
-    if not admin_authorized(secret):
-        return HTMLResponse("Unauthorized", status_code=401)
+    admin_user = require_role_user(request, "admin")
     categories = [
         ("OAuth profile", "Authentication", "Contractual necessity", "Google, Render", "Until deletion or 2 years inactivity"),
         ("QR payload URLs", "Risk analysis", "Legitimate interest", "Google Safe Browsing, VirusTotal, AI provider", "90 days"),
@@ -1216,15 +1561,14 @@ async def data_processing_log(request: Request, secret: str = Query("")):
     body = "<table class='legal-table'><thead><tr><th>Data</th><th>Purpose</th><th>Legal Basis</th><th>Shared With</th><th>Retention</th></tr></thead><tbody>"
     body += "".join(f"<tr><td>{a}</td><td>{b}</td><td>{c}</td><td>{d}</td><td>{e}</td></tr>" for a, b, c, d, e in categories)
     body += "</tbody></table><p>CCPA/CPRA threshold note: full statutory obligations may apply once SafeScan reaches $25M annual revenue or processes data of 100,000+ California consumers; these rights are implemented voluntarily now for trust and readiness.</p>"
+    audit_log("admin.view_logs", request=request, actor_user_id=admin_user.get("google_id"), target_type="data_processing_log")
     return templates.TemplateResponse("admin_table.html", {"request": request, "title": "Data Processing Log", "body_html": body, "message": ""})
 
 @qr_app.get("/admin/report-breach", response_class=HTMLResponse)
 async def report_breach_form(request: Request, secret: str = Query("")):
-    if not admin_authorized(secret):
-        return HTMLResponse("Unauthorized", status_code=401)
+    require_role_user(request, "admin")
     body = """
     <form class="legal-form" action="/admin/report-breach" method="post">
-      <input type="hidden" name="secret" value="{secret}">
       <label>Breach discovery date <input name="discovery_date" required placeholder="2026-05-05T14:32:00Z"></label>
       <label>Data categories affected <textarea name="data_categories" required rows="3"></textarea></label>
       <label>Estimated users affected <input name="users_affected" required></label>
@@ -1232,26 +1576,25 @@ async def report_breach_form(request: Request, secret: str = Query("")):
       <label>Measures taken <textarea name="measures_taken" required rows="4"></textarea></label>
       <button class="primary-button" type="submit">Generate breach template</button>
     </form>
-    """.replace("{secret}", secret)
+    """
     return templates.TemplateResponse("admin_table.html", {"request": request, "title": "Report Breach", "body_html": body, "message": ""})
 
 @qr_app.post("/admin/report-breach", response_class=HTMLResponse)
 async def report_breach(
     request: Request,
-    secret: str = Form(...),
     discovery_date: str = Form(...),
     data_categories: str = Form(...),
     users_affected: str = Form(...),
     likely_consequences: str = Form(...),
     measures_taken: str = Form(...)
 ):
-    if not admin_authorized(secret):
-        return HTMLResponse("Unauthorized", status_code=401)
+    admin_user = require_role_user(request, "admin")
     template = f"""GDPR Article 33/34 Breach Notification Draft\nDiscovery date: {discovery_date}\nData categories affected: {data_categories}\nEstimated users affected: {users_affected}\nLikely consequences: {likely_consequences}\nMeasures taken: {measures_taken}\nAdmin contact: {ADMIN_EMAIL}\nReview whether supervisory authority notice is required within 72 hours and whether user notice is required for high-risk impact."""
     report_id = make_id("breach")
     now = datetime.utcnow().isoformat() + "Z"
     with sqlite3.connect("qr_cache.db") as conn:
         conn.execute("INSERT INTO breach_reports VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (report_id, discovery_date, data_categories, users_affected, likely_consequences, measures_taken, now, template))
+    audit_log("admin.breach_report_created", request=request, actor_user_id=admin_user.get("google_id"), target_type="breach_report", target_id=report_id)
     body = f"<h2>Breach Report {report_id}</h2><pre class='legal-json'>{template}</pre>"
     return templates.TemplateResponse("admin_table.html", {"request": request, "title": "Breach Template", "body_html": body, "message": "Report logged. Connect email provider for live admin notifications."})
 
@@ -1263,6 +1606,12 @@ async def scan_qr(
     file: UploadFile = File(None),
     manual_url: str = Form(None)
 ):
+    user = require_user(request)
+    user_email = user["email"]
+    wallet_address, wallet_owner = validate_wallet_address(wallet_address)
+    if wallet_owner and wallet_owner != user_email:
+        flag_abuse(user_email, "wallet_reuse", f"Wallet already associated with {wallet_owner}")
+        raise HTTPException(status_code=409, detail="Wallet already linked to another active account.")
     url_qr = None
 
     if manual_url and manual_url.strip():
@@ -1292,11 +1641,23 @@ async def scan_qr(
 
     payload_type, _, normalized_payload = detect_payload(url_qr)
     if payload_type == "URL":
-        pipeline_response = await analyze_full_pipeline(normalized_payload)
+        try:
+            normalized_payload = validate_public_url(normalized_payload)
+            pipeline_response = await analyze_full_pipeline(normalized_payload)
+        except SafeScanError as exc:
+            pipeline_response = {
+                "url": normalized_payload,
+                "overallRisk": "high",
+                "confidenceScore": 95,
+                "verdict": str(exc),
+                "signals": [signal("URL Guard", "Blocked", "high", str(exc), False)],
+                "scannedAt": now_iso()
+            }
         analysis = pipeline_response_to_template_analysis(pipeline_response)
     else:
         analysis = analyze_qr_payload(url_qr)
-    record_unique_scan(user_email, url_qr, wallet_address)
+    counted = record_unique_scan(user_email, url_qr, wallet_address)
+    audit_log("qr.scanned", request=request, actor_user_id=user.get("google_id"), target_type="scan", metadata={"counted": counted, "payloadType": payload_type})
 
     return templates.TemplateResponse("index.html", {
         "request": request, "logged_in": True, "results_visible": True,
@@ -1314,21 +1675,47 @@ async def scan_qr(
 @qr_app.post("/auth/google", response_class=HTMLResponse)
 @qr_app.get("/auth/google", response_class=HTMLResponse)
 async def auth_google(request: Request, credential: str = Form(None)):
-    if credential:
-        try:
-            idinfo = id_token.verify_oauth2_token(credential, google_requests.Request(), CLIENT_ID)
-            user_email = idinfo['email']
-        except ValueError:
-            user_email = "error@invalid-token.com"
-    else:
-        user_email = "guest@demo.com"
+    if not credential:
+        return templates.TemplateResponse("index.html", {
+            "request": request, "logged_in": False, "results_visible": False,
+            "email": "", "score": "0", "threat_class": "N/A",
+            "scan_count": 0, "google_client_id": CLIENT_ID,
+            "version": LEGAL_VERSION
+        })
+    try:
+        idinfo = id_token.verify_oauth2_token(credential, google_requests.Request(), CLIENT_ID)
+        google_id = idinfo["sub"]
+        user_email = idinfo["email"].strip().lower()
+    except ValueError:
+        audit_log("auth.failed", request=request, metadata={"provider": "google"})
+        raise HTTPException(status_code=401, detail="Authentication required.")
 
-    return templates.TemplateResponse("index.html", {
+    save_user_to_db(google_id, user_email, request)
+    user = require_user_from_google_id(google_id)
+    if user["status"] != "active":
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    session_id = create_session(google_id, request)
+    audit_log("user.login", request=request, actor_user_id=google_id)
+    response = templates.TemplateResponse("index.html", {
         "request": request, "logged_in": True, "results_visible": False,
         "email": user_email, "score": "0", "threat_class": "N/A",
         "scan_count": get_scan_count(user_email), "google_client_id": CLIENT_ID,
         "version": LEGAL_VERSION
     })
+    set_session_cookie(response, session_id)
+    return response
+
+@qr_app.post("/auth/logout")
+async def logout(request: Request):
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    user = get_session_user(request)
+    if session_id:
+        with sqlite3.connect("qr_cache.db") as conn:
+            conn.execute("UPDATE sessions SET revoked_at = ? WHERE id = ?", (now_iso(), session_id))
+    audit_log("user.logout", request=request, actor_user_id=user.get("google_id") if user else None)
+    response = RedirectResponse("/", status_code=303)
+    clear_session_cookie(response)
+    return response
 
 @qr_app.get("/auth/confirm-age", response_class=HTMLResponse)
 async def confirm_age_page(request: Request, email: str = Query(...), locale: str = Query("en-US"), threshold: int = Query(13)):
@@ -1364,6 +1751,8 @@ async def confirm_age_submit(
 
 @qr_app.get("/account/settings", response_class=HTMLResponse)
 async def account_settings(request: Request, email: str = Query("")):
+    user = require_user(request)
+    email = user["email"]
     body = f"""
     <h2>Account Settings</h2>
     <p>Use this page to revoke non-essential consent with one click. This supports LGPD and general privacy readiness.</p>
@@ -1379,46 +1768,51 @@ async def account_settings(request: Request, email: str = Query("")):
 
 @qr_app.get("/trigger-airdrop-secret")
 async def trigger_airdrop(
+    request: Request,
     secret: str = Query(None),
     x_airdrop_secret: str = Header(None)
 ):
+    admin_user = get_session_user(request)
     provided_secret = x_airdrop_secret or secret
-    if not AIRDROP_ADMIN_SECRET:
-        return {
-            "status": "Blocked",
-            "error": "AIRDROP_ADMIN_SECRET is not set on the server."
-        }
-
-    if provided_secret != AIRDROP_ADMIN_SECRET:
-        return {
-            "status": "Blocked",
-            "error": "Invalid or missing airdrop admin secret."
-        }
+    if admin_user:
+        require_role_user(request, "admin")
+    elif not (AIRDROP_ADMIN_SECRET and provided_secret == AIRDROP_ADMIN_SECRET):
+        audit_log("auth.permission_denied", request=request, target_type="airdrop")
+        raise HTTPException(status_code=403, detail="You do not have permission to do this.")
 
     try:
         result = await airdrop_sweep()
+        audit_log("airdrop.sweep_executed", request=request, actor_user_id=admin_user.get("google_id") if admin_user else None, target_type="airdrop")
         return {
             "status": result.get("status", "ok"),
             "message": "Airdrop sweep executed.",
             "result": result
         }
     except Exception as e:
+        audit_log("airdrop.sweep_failed", request=request, actor_user_id=admin_user.get("google_id") if admin_user else None, target_type="airdrop", metadata={"error": type(e).__name__})
         return {
             "status": "Failed",
-            "error": str(e) or repr(e),
-            "error_type": type(e).__name__,
-            "traceback": traceback.format_exc(limit=3)
+            "error": "Airdrop sweep failed.",
+            "error_type": type(e).__name__
         }
 
-def save_user_to_db(google_id, email):
+def save_user_to_db(google_id, email, request=None):
+    normalized_email = email.strip().lower()
+    role = role_for_email(normalized_email)
     with sqlite3.connect("qr_cache.db") as conn:
         conn.execute("""
-            INSERT INTO users (google_id, email, last_login)
-            VALUES (?, ?, ?)
+            INSERT INTO users (google_id, email, last_login, role, status, last_login_at, login_ip, created_at)
+            VALUES (?, ?, ?, ?, 'active', ?, ?, ?)
             ON CONFLICT(google_id) DO UPDATE SET
                 email=excluded.email,
-                last_login=excluded.last_login
-        """, (google_id, email, datetime.now().isoformat()))
+                last_login=excluded.last_login,
+                last_login_at=excluded.last_login_at,
+                login_ip=excluded.login_ip,
+                role=CASE
+                    WHEN users.role IN ('owner', 'admin') THEN users.role
+                    ELSE excluded.role
+                END
+        """, (google_id, normalized_email, datetime.now().isoformat(), role, now_iso(), request_ip(request) if request else None, now_iso()))
 
 
 

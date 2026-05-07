@@ -36,7 +36,7 @@ This checklist documents compliance-oriented controls implemented for audit, inv
 - [x] Cookie Policy with cookie table - `/legal/cookie-policy`
 - [x] Footer links on every page - `templates/footer.html`
 - [x] Internal consent log - `/legal/consent-log`
-- [x] Admin routes protected by `AIRDROP_ADMIN_SECRET`
+- [x] Admin routes protected by active admin/owner session; airdrop automation still supports `AIRDROP_ADMIN_SECRET` fallback
 
 ### Production Follow-Ups
 - [ ] Attorney review before public launch or token distribution.
@@ -44,3 +44,4 @@ This checklist documents compliance-oriented controls implemented for audit, inv
 - [ ] Add scheduled deletion job for 90-day scan log retention.
 - [ ] Encrypt or hash stored wallet addresses before production scale.
 - [ ] Replace email query parameters with signed session state.
+- [ ] Remove the remaining airdrop shared-secret fallback after automation has an owner session or signed job token.
