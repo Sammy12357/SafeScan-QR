@@ -45,7 +45,7 @@ body {
 .hero::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(110deg, rgba(90, 140, 255, 0.18), transparent 34%), linear-gradient(260deg, rgba(103, 242, 200, 0.12), transparent 40%); }
 .hero-copy, .spline-showcase { position: relative; z-index: 1; }
 .hero-kicker { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-.brand-mark { width: 56px; height: 56px; border-radius: 16px; display: block; filter: drop-shadow(0 0 18px rgba(103, 242, 200, 0.22)); }
+.brand-mark { width: 56px; height: 56px; border-radius: 12px; display: block; filter: drop-shadow(0 0 12px rgba(103, 242, 200, 0.16)); }
 .hero-copy h1 { font-family: var(--display-font); margin: 10px 0 14px; font-size: clamp(3.35rem, 7vw, 6.6rem); line-height: 0.9; letter-spacing: 0; font-variant: normal; max-width: 760px; }
 .hero-problem { font-family: var(--display-font); margin: 0 0 12px; color: var(--text); font-size: 1.25rem; font-weight: 800; line-height: 1.35; max-width: 680px; }
 .eyebrow { font-family: var(--display-font); margin: 0; color: var(--accent); text-transform: uppercase; letter-spacing: 0.18em; font-size: 0.74rem; }
@@ -89,7 +89,7 @@ body {
 .device-orbit::before { content: ""; position: absolute; width: 72%; aspect-ratio: 1; border: 1px solid rgba(103, 242, 200, 0.2); border-radius: 50%; transform: rotateX(68deg); box-shadow: inset 0 0 36px rgba(103, 242, 200, 0.08); }
 .phone-model { position: relative; width: min(68%, 300px); aspect-ratio: 0.52; padding: 22px 18px 18px; border: 1px solid rgba(255, 255, 255, 0.24); border-radius: 36px; background: linear-gradient(145deg, #111b2b, #05080d); box-shadow: 0 48px 90px rgba(0, 0, 0, 0.45), inset 0 0 0 8px rgba(255, 255, 255, 0.035); transform: rotateY(-18deg) rotateX(10deg); animation: modelFloat 7s ease-in-out infinite; }
 .phone-sensor { width: 72px; height: 7px; margin: 0 auto 18px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); }
-.screen-grid { display: grid; place-items: center; height: 68%; padding: 22px; border: 1px solid rgba(103, 242, 200, 0.18); border-radius: 24px; background: linear-gradient(160deg, rgba(103, 242, 200, 0.12), rgba(90, 140, 255, 0.14)); }
+.screen-grid { display: grid; place-items: center; height: 68%; padding: 22px; border: 1px solid rgba(103, 242, 200, 0.08); border-radius: 24px; background: #02060b; }
 .screen-grid img { width: 100%; max-width: 210px; border-radius: 20px; display: block; }
 .screen-verdict { margin-top: 18px; padding: 12px; border-radius: 8px; background: rgba(80, 227, 164, 0.13); border: 1px solid rgba(80, 227, 164, 0.32); color: var(--safe); font-family: var(--display-font); font-weight: 800; text-align: center; letter-spacing: 0.08em; }
 .scan-beam { position: absolute; width: 76%; height: 2px; top: 46%; background: linear-gradient(90deg, transparent, var(--accent), #ffffff, var(--accent), transparent); box-shadow: 0 0 28px rgba(103, 242, 200, 0.75); animation: showcaseSweep 3.8s ease-in-out infinite; }
