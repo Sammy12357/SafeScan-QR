@@ -3,6 +3,7 @@ const AIRDROP_STORAGE_KEY = "phishproofAirdropProfile";
 
 const dom = {
   hiddenWalletInput: document.getElementById("hiddenWalletInput"),
+  deviceFingerprintInput: document.getElementById("deviceFingerprintInput"),
   qrForm: document.getElementById("qrForm"),
   walletStatus: document.getElementById("walletStatus"),
   connectWalletButton: document.getElementById("connectWalletButton"),
@@ -28,6 +29,57 @@ const loadingSteps = [
   "Running reputation scan...",
   "Consulting AI analyst..."
 ];
+
+async function sha256(value) {
+  if (!crypto?.subtle) return "";
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function getCanvasFingerprint() {
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = 160;
+    canvas.height = 40;
+    const ctx = canvas.getContext("2d");
+    ctx.textBaseline = "top";
+    ctx.font = "16px Arial";
+    ctx.fillStyle = "#7c3aed";
+    ctx.fillText("SafeScan QR", 4, 4);
+    return canvas.toDataURL();
+  } catch {
+    return "canvas-unavailable";
+  }
+}
+
+async function getDeviceFingerprint() {
+  const fingerprint = {
+    userAgent: navigator.userAgent,
+    language: navigator.language,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    screenRes: `${screen.width}x${screen.height}`,
+    colorDepth: screen.colorDepth,
+    platform: navigator.platform,
+    hardwareConcurrency: navigator.hardwareConcurrency,
+    deviceMemory: navigator.deviceMemory || "",
+    canvas: getCanvasFingerprint()
+  };
+  return sha256(JSON.stringify(fingerprint));
+}
+
+let deviceFingerprint = "";
+getDeviceFingerprint().then((hash) => {
+  deviceFingerprint = hash;
+  if (dom.deviceFingerprintInput) dom.deviceFingerprintInput.value = hash;
+}).catch(() => {});
+
+const nativeFetch = window.fetch.bind(window);
+window.fetch = (input, init = {}) => {
+  const headers = new Headers(init.headers || {});
+  if (deviceFingerprint) headers.set("X-Device-Fingerprint", deviceFingerprint);
+  return nativeFetch(input, { ...init, headers });
+};
 
 function hydrateSplineShowcase() {
   const sceneUrl = splineShowcase?.dataset.splineSrc?.trim();
@@ -180,12 +232,21 @@ if (riskModal) {
   }, 0);
 }
 
-blockReportButton?.addEventListener("click", () => {
+blockReportButton?.addEventListener("click", async () => {
   const payload = document.querySelector(".decoded-box .mono")?.textContent?.trim() || "";
   const reports = JSON.parse(window.localStorage.getItem("safeScanReports") || "[]");
   reports.push({ payload, reportedAt: new Date().toISOString(), verdict: riskModal?.dataset.verdict || "UNKNOWN" });
   window.localStorage.setItem("safeScanReports", JSON.stringify(reports.slice(-25)));
-  if (reportStatus) reportStatus.textContent = "Blocked locally and added to your report queue.";
+  try {
+    await fetch("/api/report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: payload, reason: "phishing" })
+    });
+    if (reportStatus) reportStatus.textContent = "Blocked and sent to the SafeScan review queue.";
+  } catch {
+    if (reportStatus) reportStatus.textContent = "Blocked locally and added to your report queue.";
+  }
 });
 
 continueSafelyButton?.addEventListener("click", () => {

@@ -12,13 +12,14 @@ import ipaddress
 import secrets
 import socket
 import time
+import csv
 from urllib.parse import urljoin, urlparse, parse_qsl
 from datetime import datetime, timedelta
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 from pyzbar.pyzbar import decode
 
 from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -116,10 +117,58 @@ def init_db():
     cursor.execute('''CREATE TABLE IF NOT EXISTS abuse_flags
                         (id TEXT PRIMARY KEY, email TEXT, flag_type TEXT NOT NULL,
                          detail TEXT NOT NULL, created_at TEXT NOT NULL)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS scan_history
+                        (id TEXT PRIMARY KEY, email TEXT NOT NULL, url TEXT NOT NULL,
+                         risk_score INTEGER, verdict TEXT, signals TEXT,
+                         reported INTEGER DEFAULT 0, created_at TEXT NOT NULL)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS url_reports
+                        (id TEXT PRIMARY KEY, url TEXT NOT NULL, reporter_email TEXT,
+                         reason TEXT NOT NULL, risk_score INTEGER, status TEXT NOT NULL DEFAULT 'pending',
+                         created_at TEXT NOT NULL, reviewed_at TEXT, reviewed_by TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS url_blocklist
+                        (id TEXT PRIMARY KEY, url TEXT NOT NULL UNIQUE, reason TEXT,
+                         added_by TEXT, created_at TEXT NOT NULL, removed_at TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS ip_registry
+                        (id TEXT PRIMARY KEY, ip_address TEXT NOT NULL, user_id TEXT NOT NULL,
+                         event_type TEXT NOT NULL, created_at TEXT NOT NULL)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS scan_velocity
+                        (user_id TEXT PRIMARY KEY, scans_last_hour INTEGER DEFAULT 0,
+                         scans_last_day INTEGER DEFAULT 0, last_scan_at TEXT,
+                         last_scan_url TEXT, duplicate_count INTEGER DEFAULT 0,
+                         fast_scan_count INTEGER DEFAULT 0, updated_at TEXT NOT NULL)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS fraud_flags
+                        (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, check_name TEXT NOT NULL,
+                         severity TEXT NOT NULL CHECK(severity IN ('low','medium','high','critical')),
+                         reason TEXT NOT NULL, metadata TEXT, auto_disqualify INTEGER DEFAULT 0,
+                         reviewed INTEGER DEFAULT 0, reviewed_by TEXT, reviewed_at TEXT,
+                         review_outcome TEXT CHECK(review_outcome IN ('cleared','disqualified','escalated') OR review_outcome IS NULL),
+                         created_at TEXT NOT NULL)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS device_fingerprints
+                        (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, fingerprint TEXT NOT NULL,
+                         first_seen TEXT NOT NULL, last_seen TEXT NOT NULL,
+                         UNIQUE(user_id, fingerprint))''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS api_keys
+                        (id TEXT PRIMARY KEY, name TEXT NOT NULL, key_hint TEXT NOT NULL,
+                         key_hash TEXT NOT NULL, scopes TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active',
+                         created_by TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT,
+                         last_used_at TEXT, revoked_at TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS referrals
+                        (id TEXT PRIMARY KEY, referrer_email TEXT NOT NULL, referred_email TEXT NOT NULL,
+                         counted INTEGER DEFAULT 0, created_at TEXT NOT NULL,
+                         UNIQUE(referred_email))''')
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sessions_google_id ON sessions(google_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_logs(created_at)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_abuse_email ON abuse_flags(email)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_scan_history_email ON scan_history(email)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_scan_history_created ON scan_history(created_at)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_reports_status ON url_reports(status)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_blocklist_url ON url_blocklist(url)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_ip_registry_ip ON ip_registry(ip_address)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_ip_registry_user ON ip_registry(user_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_fraud_user ON fraud_flags(user_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_fraud_reviewed ON fraud_flags(reviewed)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_device_fingerprint ON device_fingerprints(fingerprint)")
     cursor.execute("PRAGMA table_info(users)")
     user_columns = {row[1] for row in cursor.fetchall()}
     user_migrations = {
@@ -127,12 +176,18 @@ def init_db():
         "status": "ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'suspended', 'deleted'))",
         "last_login_at": "ALTER TABLE users ADD COLUMN last_login_at TEXT",
         "login_ip": "ALTER TABLE users ADD COLUMN login_ip TEXT",
-        "created_at": "ALTER TABLE users ADD COLUMN created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP",
+        "created_at": "ALTER TABLE users ADD COLUMN created_at TEXT",
         "deleted_at": "ALTER TABLE users ADD COLUMN deleted_at TEXT",
+        "airdrop_status": "ALTER TABLE users ADD COLUMN airdrop_status TEXT NOT NULL DEFAULT 'eligible' CHECK(airdrop_status IN ('eligible','flagged','disqualified','cleared'))",
+        "fraud_score": "ALTER TABLE users ADD COLUMN fraud_score INTEGER DEFAULT 0",
+        "display_name": "ALTER TABLE users ADD COLUMN display_name TEXT",
+        "picture": "ALTER TABLE users ADD COLUMN picture TEXT",
+        "referral_code": "ALTER TABLE users ADD COLUMN referral_code TEXT",
     }
     for column, ddl in user_migrations.items():
         if column not in user_columns:
             cursor.execute(ddl)
+    cursor.execute("UPDATE users SET created_at = COALESCE(created_at, last_login, ?)", (datetime.utcnow().isoformat() + "Z",))
     cursor.execute("PRAGMA table_info(scans)")
     scan_columns = {row[1] for row in cursor.fetchall()}
     if "airdrop_eligible" not in scan_columns:
@@ -360,6 +415,167 @@ def validate_wallet_address(address):
     with sqlite3.connect("qr_cache.db") as conn:
         row = conn.execute("SELECT email FROM scans WHERE wallet_address = ? LIMIT 1", (clean,)).fetchone()
     return clean, row[0] if row else None
+
+def severity_points(severity):
+    return {"low": 5, "medium": 20, "high": 50, "critical": 100}.get(severity, 0)
+
+def register_ip_event(user_id, request, event_type):
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.execute(
+            "INSERT INTO ip_registry VALUES (?, ?, ?, ?, ?)",
+            (make_id("ip"), request_ip(request), user_id, event_type, now_iso())
+        )
+
+def register_device_fingerprint(user_id, fingerprint):
+    clean = (fingerprint or "").strip()
+    if not re.fullmatch(r"[a-f0-9]{64}", clean):
+        return
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.execute(
+            """
+            INSERT INTO device_fingerprints VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, fingerprint) DO UPDATE SET last_seen=excluded.last_seen
+            """,
+            (make_id("fp"), user_id, clean, now_iso(), now_iso())
+        )
+
+def run_fraud_checks(event_type, user_id, request=None, metadata=None):
+    metadata = metadata or {}
+    signals = []
+    ip_value = request_ip(request) if request else metadata.get("ip", "")
+    user_agent = request.headers.get("user-agent", "") if request else metadata.get("userAgent", "")
+    fingerprint = request.headers.get("x-device-fingerprint", "") if request else metadata.get("deviceFingerprint", "")
+    fingerprint = fingerprint or metadata.get("deviceFingerprint", "")
+
+    if ip_value:
+        register_ip_event(user_id, request, event_type) if request else None
+        with sqlite3.connect("qr_cache.db") as conn:
+            since_24h = (datetime.utcnow() - timedelta(hours=24)).isoformat()
+            since_1h = (datetime.utcnow() - timedelta(hours=1)).isoformat()
+            recent_signups = conn.execute(
+                "SELECT COUNT(*) FROM ip_registry WHERE ip_address = ? AND event_type = 'signup' AND created_at >= ?",
+                (ip_value, since_24h)
+            ).fetchone()[0]
+            active_scan_accounts = conn.execute(
+                "SELECT COUNT(DISTINCT user_id) FROM ip_registry WHERE ip_address = ? AND event_type = 'scan' AND created_at >= ?",
+                (ip_value, since_1h)
+            ).fetchone()[0]
+            lifetime_accounts = conn.execute(
+                "SELECT COUNT(DISTINCT user_id) FROM ip_registry WHERE ip_address = ?",
+                (ip_value,)
+            ).fetchone()[0]
+        if lifetime_accounts > 10:
+            signals.append({"checkName": "ip_clustering", "severity": "critical", "autoDisqualify": True, "reason": f"IP has {lifetime_accounts} accounts registered.", "metadata": {"ip": ip_value, "accountCount": lifetime_accounts}})
+        elif recent_signups > 3:
+            signals.append({"checkName": "ip_clustering", "severity": "high", "autoDisqualify": False, "reason": f"{recent_signups} signups from same IP in 24 hours.", "metadata": {"ip": ip_value, "recentSignups": recent_signups}})
+        elif event_type == "scan" and active_scan_accounts > 2:
+            signals.append({"checkName": "ip_scan_cluster", "severity": "medium", "autoDisqualify": False, "reason": f"{active_scan_accounts} active scan accounts share one IP in the last hour.", "metadata": {"ip": ip_value, "activeScanAccounts": active_scan_accounts}})
+
+    if event_type == "scan":
+        with sqlite3.connect("qr_cache.db") as conn:
+            conn.row_factory = sqlite3.Row
+            velocity = conn.execute("SELECT * FROM scan_velocity WHERE user_id = ?", (user_id,)).fetchone()
+            now = datetime.utcnow()
+            last_scan_at = None
+            if velocity and velocity["last_scan_at"]:
+                try:
+                    last_scan_at = datetime.fromisoformat(str(velocity["last_scan_at"]).replace("Z", ""))
+                except ValueError:
+                    last_scan_at = None
+            seconds_since = (now - last_scan_at).total_seconds() if last_scan_at else 999
+            scans_last_hour = (velocity["scans_last_hour"] if velocity else 0) + 1
+            scans_last_day = (velocity["scans_last_day"] if velocity else 0) + 1
+            duplicate_count = ((velocity["duplicate_count"] if velocity else 0) + 1) if metadata.get("url") and velocity and metadata.get("url") == velocity["last_scan_url"] else 0
+            fast_count = ((velocity["fast_scan_count"] if velocity else 0) + 1) if seconds_since < 3 else 0
+            conn.execute(
+                """
+                INSERT INTO scan_velocity VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                  scans_last_hour=excluded.scans_last_hour,
+                  scans_last_day=excluded.scans_last_day,
+                  last_scan_at=excluded.last_scan_at,
+                  last_scan_url=excluded.last_scan_url,
+                  duplicate_count=excluded.duplicate_count,
+                  fast_scan_count=excluded.fast_scan_count,
+                  updated_at=excluded.updated_at
+                """,
+                (user_id, scans_last_hour, scans_last_day, now_iso(), metadata.get("url"), duplicate_count, fast_count, now_iso())
+            )
+        if scans_last_hour > 60 or fast_count >= 10:
+            signals.append({"checkName": "scan_velocity", "severity": "critical" if fast_count >= 10 else "high", "autoDisqualify": fast_count >= 10, "reason": "Bot-like scan velocity detected.", "metadata": {"scansLastHour": scans_last_hour, "secondsSinceLastScan": seconds_since, "fastScanCount": fast_count}})
+        elif scans_last_hour > 20:
+            signals.append({"checkName": "scan_velocity", "severity": "medium", "autoDisqualify": False, "reason": f"{scans_last_hour} scans in the last hour.", "metadata": {"scansLastHour": scans_last_hour}})
+        if duplicate_count > 3:
+            signals.append({"checkName": "duplicate_url_scans", "severity": "medium", "autoDisqualify": False, "reason": "Same URL scanned repeatedly.", "metadata": {"duplicateCount": duplicate_count, "url": metadata.get("url")}})
+
+    if fingerprint:
+        register_device_fingerprint(user_id, fingerprint)
+        with sqlite3.connect("qr_cache.db") as conn:
+            shared_users = conn.execute("SELECT COUNT(DISTINCT user_id) FROM device_fingerprints WHERE fingerprint = ?", (fingerprint,)).fetchone()[0]
+        if shared_users > 5:
+            signals.append({"checkName": "device_fingerprint", "severity": "critical", "autoDisqualify": True, "reason": f"Device fingerprint is shared by {shared_users} accounts.", "metadata": {"sharedUsers": shared_users}})
+        elif shared_users > 2:
+            signals.append({"checkName": "device_fingerprint", "severity": "high", "autoDisqualify": False, "reason": f"Device fingerprint is shared by {shared_users} accounts.", "metadata": {"sharedUsers": shared_users}})
+
+    if event_type == "wallet_connect" and metadata.get("walletAddress"):
+        wallet = metadata["walletAddress"]
+        with sqlite3.connect("qr_cache.db") as conn:
+            existing = conn.execute("SELECT email FROM scans WHERE wallet_address = ? AND email != ? LIMIT 1", (wallet, user_id)).fetchone()
+        if existing:
+            signals.append({"checkName": "wallet_reuse", "severity": "critical", "autoDisqualify": True, "reason": f"Wallet {wallet[:8]}... already linked to another account.", "metadata": {"walletAddress": wallet, "existingUser": existing[0]}})
+        elif wallet.lower() in {item.lower() for item in MALICIOUS_CONTRACT_BLOCKLIST}:
+            signals.append({"checkName": "wallet_blocklist", "severity": "high", "autoDisqualify": False, "reason": "Wallet appears on the SafeScan blocklist.", "metadata": {"walletAddress": wallet}})
+
+    if signals:
+        new_points = sum(severity_points(item["severity"]) for item in signals)
+        with sqlite3.connect("qr_cache.db") as conn:
+            for item in signals:
+                conn.execute(
+                    "INSERT INTO fraud_flags VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, NULL, ?)",
+                    (make_id("fraud"), user_id, item["checkName"], item["severity"], item["reason"], json.dumps(item["metadata"]), int(item["autoDisqualify"]), now_iso())
+                )
+            conn.execute("UPDATE users SET fraud_score = COALESCE(fraud_score, 0) + ?, airdrop_status = CASE WHEN COALESCE(fraud_score, 0) + ? >= 40 THEN 'flagged' ELSE airdrop_status END WHERE email = ? OR google_id = ?", (new_points, new_points, user_id, user_id))
+        audit_log("fraud.flags_added", request=request, actor_user_id=user_id, target_type="user", target_id=user_id, metadata={"signalCount": len(signals), "points": new_points})
+    return signals
+
+def save_scan_history(email, url, analysis, reported=False):
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.execute(
+            "INSERT INTO scan_history VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                make_id("scan"),
+                email,
+                url[:2048],
+                int(analysis.get("score") or analysis.get("confidenceScore") or 0),
+                analysis.get("status") or status_from_risk(analysis.get("overallRisk")),
+                json.dumps(analysis.get("reasons") or analysis.get("signals") or []),
+                int(reported),
+                now_iso()
+            )
+        )
+
+def plain_action(action):
+    labels = {
+        "user.login": "User logged in",
+        "user.logout": "User signed out",
+        "auth.failed": "Authentication failed",
+        "auth.permission_denied": "Permission denied",
+        "qr.scanned": "QR scan recorded",
+        "fraud.flags_added": "Fraud signals added",
+        "admin.user_suspended": "Admin suspended user",
+        "admin.user_unsuspended": "Admin unsuspended user",
+        "admin.user_deleted": "Owner deleted user",
+        "admin.role_changed": "Owner changed user role",
+        "admin.export": "Admin exported data",
+        "admin.report_reviewed": "Admin reviewed URL report",
+        "api_key.created": "Owner created API key",
+        "api_key.revoked": "Owner revoked API key",
+    }
+    return labels.get(action, action.replace("_", " ").replace(".", " ").title())
+
+def admin_avatar(email):
+    initials = "".join(part[:1].upper() for part in (email or "A").split("@")[0].split(".")[:2]) or "A"
+    return initials
 
 def record_unique_scan(email, url, wallet):
     normalized_payload = url.strip()[:2048]
@@ -1205,6 +1421,178 @@ async def unhandled_error_handler(request: Request, exc: Exception):
     print({"error": str(exc), "path": request.url.path})
     return JSONResponse({"error": "Something went wrong on our end."}, status_code=500)
 
+def admin_context(request, title, page, data=None, owner_only=False):
+    admin_user = get_session_user(request)
+    if not admin_user or not has_role(admin_user, "admin"):
+        return RedirectResponse("/", status_code=303)
+    if owner_only and not has_role(admin_user, "owner"):
+        return RedirectResponse("/", status_code=303)
+    context = {
+        "request": request,
+        "title": title,
+        "page": page,
+        "data": data or {},
+        "admin_user": admin_user,
+        "is_owner": has_role(admin_user, "owner"),
+        "avatar": admin_avatar(admin_user.get("email")),
+    }
+    return templates.TemplateResponse("admin_shell.html", context)
+
+def fetch_admin_users(search="", status="", role="", tier="", page=1, limit=25):
+    clauses = []
+    params = []
+    if search:
+        clauses.append("(u.email LIKE ? OR u.google_id LIKE ? OR COALESCE(u.display_name, '') LIKE ?)")
+        params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
+    if status:
+        clauses.append("u.status = ?")
+        params.append(status)
+    if role:
+        clauses.append("u.role = ?")
+        params.append(role)
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    offset = max(0, page - 1) * limit
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.row_factory = sqlite3.Row
+        total = conn.execute(f"SELECT COUNT(*) FROM users u {where}", params).fetchone()[0]
+        rows = [dict(row) for row in conn.execute(
+            f"""
+            SELECT u.*, COALESCE(s.scan_count, 0) AS scan_count, s.wallet_address,
+                   COALESCE((SELECT COUNT(*) FROM referrals r WHERE r.referrer_email = u.email AND r.counted = 1), 0) AS referral_count,
+                   COALESCE((SELECT COUNT(*) FROM fraud_flags f WHERE f.user_id = u.email AND f.reviewed = 0), 0) AS fraud_flags
+            FROM users u
+            LEFT JOIN scans s ON s.email = u.email
+            {where}
+            ORDER BY COALESCE(u.last_login_at, u.last_login, u.created_at) DESC
+            LIMIT ? OFFSET ?
+            """,
+            params + [limit, offset]
+        )]
+    for row in rows:
+        scan_count = int(row.get("scan_count") or 0)
+        referrals = int(row.get("referral_count") or 0)
+        row["tier"] = "Guardian" if scan_count >= 50 and referrals >= 3 else ("Referrer" if referrals else ("Scanner" if scan_count >= 5 else "Registered"))
+    if tier:
+        rows = [row for row in rows if row["tier"].lower() == tier.lower()]
+    return {"rows": rows, "total": total, "page": page, "limit": limit, "pages": max(1, (total + limit - 1) // limit)}
+
+def fetch_user_detail(email):
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.row_factory = sqlite3.Row
+        user = conn.execute(
+            "SELECT u.*, s.wallet_address, COALESCE(s.scan_count, 0) AS scan_count FROM users u LEFT JOIN scans s ON s.email = u.email WHERE u.email = ? OR u.google_id = ?",
+            (email, email)
+        ).fetchone()
+        flags = [dict(row) for row in conn.execute("SELECT * FROM fraud_flags WHERE user_id = ? ORDER BY created_at DESC LIMIT 50", (email,))]
+        logs = [dict(row) for row in conn.execute("SELECT * FROM audit_logs WHERE actor_user_id = ? OR target_id = ? ORDER BY created_at DESC LIMIT 50", (email, email))]
+        scans = [dict(row) for row in conn.execute("SELECT * FROM scan_history WHERE email = ? ORDER BY created_at DESC LIMIT 50", (email,))]
+    return {"user": dict(user) if user else None, "flags": flags, "logs": logs, "scans": scans}
+
+def dashboard_data():
+    today = datetime.utcnow().date().isoformat()
+    since_30 = (datetime.utcnow() - timedelta(days=30)).isoformat()
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.row_factory = sqlite3.Row
+        total_users = conn.execute("SELECT COUNT(*) FROM users WHERE status != 'deleted'").fetchone()[0]
+        scans_today = conn.execute("SELECT COUNT(*) FROM scan_history WHERE created_at >= ?", (today,)).fetchone()[0]
+        blocked = conn.execute("SELECT COUNT(*) FROM scan_history WHERE verdict IN ('MALICIOUS', 'HIGH') OR risk_score >= 80").fetchone()[0]
+        fraud_flags = conn.execute("SELECT COUNT(*) FROM fraud_flags WHERE reviewed = 0").fetchone()[0]
+        recent_users = [dict(row) for row in conn.execute("SELECT u.*, s.wallet_address, COALESCE(s.scan_count, 0) AS scan_count FROM users u LEFT JOIN scans s ON s.email = u.email ORDER BY COALESCE(u.created_at, u.last_login) DESC LIMIT 10")]
+        recent_reports = [dict(row) for row in conn.execute("SELECT * FROM url_reports ORDER BY created_at DESC LIMIT 10")]
+        activity = [dict(row) for row in conn.execute("SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 20")]
+        chart_rows = [dict(row) for row in conn.execute(
+            "SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS total, SUM(CASE WHEN risk_score >= 80 THEN 1 ELSE 0 END) AS flagged FROM scan_history WHERE created_at >= ? GROUP BY day ORDER BY day",
+            (since_30,)
+        )]
+        verdict_rows = [dict(row) for row in conn.execute("SELECT COALESCE(verdict, 'SAFE') AS verdict, COUNT(*) AS count FROM scan_history GROUP BY verdict")]
+    return {
+        "stats": [
+            {"label": "Total Users", "value": total_users, "trend": "+0%", "icon": "users"},
+            {"label": "QR Scans Today", "value": scans_today, "trend": "+0%", "icon": "scan"},
+            {"label": "Malicious Blocked", "value": blocked, "trend": "+0%", "icon": "shield"},
+            {"label": "Active Fraud Flags", "value": fraud_flags, "trend": "+0%", "icon": "flag", "danger": fraud_flags > 0},
+        ],
+        "recent_users": recent_users,
+        "recent_reports": recent_reports,
+        "activity": activity,
+        "chart_rows": chart_rows,
+        "verdict_rows": verdict_rows,
+    }
+
+def fetch_scans(search="", verdict="", user="", limit=100):
+    clauses = []
+    params = []
+    if search:
+        clauses.append("url LIKE ?")
+        params.append(f"%{search}%")
+    if verdict:
+        clauses.append("verdict = ?")
+        params.append(verdict)
+    if user:
+        clauses.append("email LIKE ?")
+        params.append(f"%{user}%")
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.row_factory = sqlite3.Row
+        rows = [dict(row) for row in conn.execute(f"SELECT * FROM scan_history {where} ORDER BY created_at DESC LIMIT ?", params + [limit])]
+        total = conn.execute("SELECT COUNT(*) FROM scan_history").fetchone()[0]
+        flagged_today = conn.execute("SELECT COUNT(*) FROM scan_history WHERE risk_score >= 80 AND created_at >= ?", (datetime.utcnow().date().isoformat(),)).fetchone()[0]
+        avg_risk = conn.execute("SELECT AVG(risk_score) FROM scan_history WHERE created_at >= ?", ((datetime.utcnow() - timedelta(days=7)).isoformat(),)).fetchone()[0] or 0
+    return {"rows": rows, "stats": {"total": total, "flagged_today": flagged_today, "avg_risk": round(avg_risk, 1), "common_tld": "n/a"}}
+
+def fetch_reports(tab="reports"):
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.row_factory = sqlite3.Row
+        reports = [dict(row) for row in conn.execute("SELECT * FROM url_reports ORDER BY created_at DESC LIMIT 200")]
+        blocklist = [dict(row) for row in conn.execute("SELECT * FROM url_blocklist WHERE removed_at IS NULL ORDER BY created_at DESC LIMIT 200")]
+    return {"reports": reports, "blocklist": blocklist, "tab": tab}
+
+def fetch_airdrop_data():
+    users = fetch_admin_users(limit=500)["rows"]
+    wallet_users = [row for row in users if row.get("wallet_address")]
+    tier_counts = {"Registered": 0, "Scanner": 0, "Referrer": 0, "Guardian": 0}
+    for row in wallet_users:
+        tier_counts[row["tier"]] = tier_counts.get(row["tier"], 0) + 1
+        row["estimated_sqr"] = {"Registered": 100, "Scanner": 250, "Referrer": 500, "Guardian": 1000}.get(row["tier"], 100)
+    flagged = [row for row in users if row.get("airdrop_status") == "flagged" or row.get("fraud_flags")]
+    return {"wallet_users": wallet_users, "tier_counts": tier_counts, "flagged": flagged, "estimated_total": sum(row.get("estimated_sqr", 0) for row in wallet_users)}
+
+def fetch_fraud_data():
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.row_factory = sqlite3.Row
+        rows = [dict(row) for row in conn.execute(
+            """
+            SELECT u.email, u.role, u.airdrop_status, COALESCE(u.fraud_score, 0) AS fraud_score,
+                   s.wallet_address, COALESCE(s.scan_count, 0) AS scan_count,
+                   COUNT(f.id) AS signal_count, MAX(f.severity) AS highest_severity, MAX(f.created_at) AS flag_date
+            FROM users u
+            LEFT JOIN scans s ON s.email = u.email
+            JOIN fraud_flags f ON f.user_id = u.email AND f.reviewed = 0
+            GROUP BY u.email
+            ORDER BY fraud_score DESC, flag_date DESC
+            """
+        )]
+    return {"rows": rows}
+
+def fetch_audit_logs(search="", action="", target_type=""):
+    clauses = []
+    params = []
+    if search:
+        clauses.append("actor_user_id LIKE ?")
+        params.append(f"%{search}%")
+    if action:
+        clauses.append("action = ?")
+        params.append(action)
+    if target_type:
+        clauses.append("target_type = ?")
+        params.append(target_type)
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.row_factory = sqlite3.Row
+        rows = [dict(row) for row in conn.execute(f"SELECT * FROM audit_logs {where} ORDER BY created_at DESC LIMIT 300", params)]
+        actions = [row[0] for row in conn.execute("SELECT DISTINCT action FROM audit_logs ORDER BY action")]
+    return {"rows": rows, "actions": actions}
+
 PRIVACY_POLICY_HTML = f"""
 <h2>1. What We Collect</h2>
 <p>SafeScan QR collects only what is needed to authenticate users, analyze QR payloads, prevent abuse, and operate the optional SQR airdrop program.</p>
@@ -1304,6 +1692,202 @@ COOKIE_POLICY_HTML = """
 <p>You can manage cookies in <a href="https://support.google.com/chrome/answer/95647">Chrome</a>, <a href="https://support.mozilla.org/en-US/kb/clear-cookies-and-site-data-firefox">Firefox</a>, <a href="https://support.apple.com/guide/safari/manage-cookies-sfri11471/mac">Safari</a>, and <a href="https://support.microsoft.com/microsoft-edge">Edge</a>.</p>
 """
 
+@qr_app.get("/admin", response_class=HTMLResponse)
+async def admin_dashboard(request: Request):
+    return admin_context(request, "Dashboard", "dashboard", dashboard_data())
+
+@qr_app.get("/admin/activity", response_class=HTMLResponse)
+async def admin_activity(request: Request):
+    return admin_context(request, "Activity Feed", "logs", fetch_audit_logs())
+
+@qr_app.get("/admin/users", response_class=HTMLResponse)
+async def admin_users(request: Request, search: str = Query(""), status: str = Query(""), role: str = Query(""), tier: str = Query(""), page: int = Query(1), flag: str = Query("")):
+    data = fetch_admin_users(search=search, status=status, role=role, tier=tier, page=page)
+    data.update({"filters": {"search": search, "status": status, "role": role, "tier": tier, "flag": flag}})
+    if flag == "review":
+        data["rows"] = [row for row in data["rows"] if row.get("fraud_flags")]
+    return admin_context(request, "All Users", "users", data)
+
+@qr_app.get("/admin/users/{email}/drawer", response_class=HTMLResponse)
+async def admin_user_drawer(request: Request, email: str):
+    require_role_user(request, "admin")
+    data = fetch_user_detail(email)
+    if not data["user"]:
+        raise HTTPException(status_code=404, detail="Not found.")
+    return templates.TemplateResponse("admin_shell.html", {"request": request, "page": "user_drawer", "title": "User Detail", "data": data, "admin_user": get_session_user(request), "is_owner": has_role(get_session_user(request), "owner"), "avatar": admin_avatar(get_session_user(request).get("email"))})
+
+@qr_app.post("/admin/users/{email}/suspend")
+async def admin_suspend_user(request: Request, email: str, action: str = Form("suspend")):
+    admin_user = require_role_user(request, "admin")
+    new_status = "active" if action == "unsuspend" else "suspended"
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.execute("UPDATE users SET status = ? WHERE email = ?", (new_status, email))
+    audit_log("admin.user_unsuspended" if new_status == "active" else "admin.user_suspended", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=email)
+    return RedirectResponse("/admin/users", status_code=303)
+
+@qr_app.post("/admin/users/{email}/role")
+async def admin_change_role(request: Request, email: str, role: str = Form(...)):
+    admin_user = require_role_user(request, "owner")
+    if role not in VALID_ROLES:
+        raise HTTPException(status_code=400, detail="Invalid request.")
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.execute("UPDATE users SET role = ? WHERE email = ?", (role, email))
+    audit_log("admin.role_changed", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=email, metadata={"role": role})
+    return RedirectResponse("/admin/users", status_code=303)
+
+@qr_app.post("/admin/users/{email}/delete")
+async def admin_delete_user(request: Request, email: str, confirm: str = Form("")):
+    admin_user = require_role_user(request, "owner")
+    if confirm != "DELETE":
+        raise HTTPException(status_code=400, detail="Invalid request.")
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.execute("UPDATE users SET status = 'deleted', deleted_at = ?, airdrop_status = 'disqualified' WHERE email = ?", (now_iso(), email))
+    audit_log("admin.user_deleted", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=email)
+    return RedirectResponse("/admin/users", status_code=303)
+
+@qr_app.get("/admin/export/users")
+async def admin_export_users(request: Request):
+    admin_user = require_role_user(request, "owner")
+    users = fetch_admin_users(limit=10000)["rows"]
+    out = io.StringIO()
+    writer = csv.DictWriter(out, fieldnames=["email", "role", "status", "tier", "scan_count", "referral_count", "wallet_address", "created_at", "last_login_at"])
+    writer.writeheader()
+    for row in users:
+        writer.writerow({key: row.get(key, "") for key in writer.fieldnames})
+    audit_log("admin.export", request=request, actor_user_id=admin_user.get("google_id"), target_type="users")
+    return Response(out.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=safescan-users.csv"})
+
+@qr_app.get("/admin/scans", response_class=HTMLResponse)
+async def admin_scans(request: Request, search: str = Query(""), verdict: str = Query(""), user: str = Query("")):
+    return admin_context(request, "All Scans", "scans", fetch_scans(search=search, verdict=verdict, user=user))
+
+@qr_app.post("/admin/scans/{scan_id}/flag")
+async def admin_flag_scan(request: Request, scan_id: str):
+    admin_user = require_role_user(request, "admin")
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.row_factory = sqlite3.Row
+        scan = conn.execute("SELECT * FROM scan_history WHERE id = ?", (scan_id,)).fetchone()
+        if not scan:
+            raise HTTPException(status_code=404, detail="Not found.")
+        conn.execute("UPDATE scan_history SET verdict = 'MALICIOUS', risk_score = 100 WHERE id = ?", (scan_id,))
+        conn.execute("INSERT OR IGNORE INTO url_blocklist VALUES (?, ?, ?, ?, ?, NULL)", (make_id("block"), scan["url"], "Admin confirmed malicious scan", admin_user.get("email"), now_iso()))
+    audit_log("admin.url_flagged", request=request, actor_user_id=admin_user.get("google_id"), target_type="scan", target_id=scan_id)
+    return RedirectResponse("/admin/scans", status_code=303)
+
+@qr_app.get("/admin/reports", response_class=HTMLResponse)
+async def admin_reports(request: Request, tab: str = Query("reports")):
+    return admin_context(request, "Reported URLs", "reports", fetch_reports(tab=tab))
+
+@qr_app.post("/admin/reports/{report_id}/action")
+async def admin_report_action(request: Request, report_id: str, action: str = Form(...)):
+    admin_user = require_role_user(request, "admin")
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.row_factory = sqlite3.Row
+        report = conn.execute("SELECT * FROM url_reports WHERE id = ?", (report_id,)).fetchone()
+        if not report:
+            raise HTTPException(status_code=404, detail="Not found.")
+        if action == "confirm":
+            conn.execute("UPDATE url_reports SET status = 'confirmed_malicious', reviewed_at = ?, reviewed_by = ? WHERE id = ?", (now_iso(), admin_user.get("email"), report_id))
+            conn.execute("INSERT OR IGNORE INTO url_blocklist VALUES (?, ?, ?, ?, ?, NULL)", (make_id("block"), report["url"], report["reason"], admin_user.get("email"), now_iso()))
+        elif action == "dismiss":
+            conn.execute("UPDATE url_reports SET status = 'dismissed', reviewed_at = ?, reviewed_by = ? WHERE id = ?", (now_iso(), admin_user.get("email"), report_id))
+        elif action == "reanalyze":
+            analysis = await analyze_full_pipeline(report["url"])
+            conn.execute("UPDATE url_reports SET risk_score = ?, status = 'pending' WHERE id = ?", (int(analysis.get("confidenceScore") or 0), report_id))
+        else:
+            raise HTTPException(status_code=400, detail="Invalid request.")
+    audit_log("admin.report_reviewed", request=request, actor_user_id=admin_user.get("google_id"), target_type="url_report", target_id=report_id, metadata={"action": action})
+    return RedirectResponse("/admin/reports", status_code=303)
+
+@qr_app.post("/admin/blocklist/{block_id}/remove")
+async def admin_remove_block(request: Request, block_id: str):
+    admin_user = require_role_user(request, "admin")
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.execute("UPDATE url_blocklist SET removed_at = ? WHERE id = ?", (now_iso(), block_id))
+    audit_log("admin.blocklist_removed", request=request, actor_user_id=admin_user.get("google_id"), target_type="blocklist", target_id=block_id)
+    return RedirectResponse("/admin/reports?tab=blocklist", status_code=303)
+
+@qr_app.get("/admin/risk-logs", response_class=HTMLResponse)
+async def admin_risk_logs(request: Request):
+    return admin_context(request, "Risk Engine Logs", "scans", fetch_scans(verdict="MALICIOUS"))
+
+@qr_app.get("/admin/airdrop", response_class=HTMLResponse)
+async def admin_airdrop(request: Request):
+    return admin_context(request, "Tier Overview", "airdrop", fetch_airdrop_data())
+
+@qr_app.get("/admin/airdrop/fraud", response_class=HTMLResponse)
+async def admin_airdrop_fraud(request: Request):
+    return admin_context(request, "Fraud Flags", "fraud", fetch_fraud_data())
+
+@qr_app.get("/admin/airdrop/wallets", response_class=HTMLResponse)
+async def admin_airdrop_wallets(request: Request):
+    return admin_context(request, "Wallet Registry", "airdrop", fetch_airdrop_data())
+
+@qr_app.post("/admin/airdrop/{email}/status")
+async def admin_airdrop_status(request: Request, email: str, status: str = Form(...), reason: str = Form("")):
+    admin_user = require_role_user(request, "admin")
+    if status not in ("eligible", "flagged", "disqualified", "cleared"):
+        raise HTTPException(status_code=400, detail="Invalid request.")
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.execute("UPDATE users SET airdrop_status = ? WHERE email = ?", (status, email))
+    audit_log("admin.airdrop_status_changed", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=email, metadata={"status": status, "reason": reason})
+    return RedirectResponse("/admin/airdrop", status_code=303)
+
+@qr_app.post("/admin/fraud/{email}/review")
+async def admin_fraud_review(request: Request, email: str, outcome: str = Form(...), reason: str = Form("")):
+    admin_user = require_role_user(request, "admin")
+    if outcome not in ("cleared", "disqualified", "escalated"):
+        raise HTTPException(status_code=400, detail="Invalid request.")
+    status = "cleared" if outcome == "cleared" else ("disqualified" if outcome == "disqualified" else "flagged")
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.execute("UPDATE fraud_flags SET reviewed = 1, reviewed_by = ?, reviewed_at = ?, review_outcome = ? WHERE user_id = ? AND reviewed = 0", (admin_user.get("email"), now_iso(), outcome, email))
+        conn.execute("UPDATE users SET airdrop_status = ? WHERE email = ?", (status, email))
+    audit_log("admin.fraud_reviewed", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=email, metadata={"outcome": outcome, "reason": reason})
+    return RedirectResponse("/admin/airdrop/fraud", status_code=303)
+
+@qr_app.get("/admin/logs", response_class=HTMLResponse)
+async def admin_logs(request: Request, search: str = Query(""), action: str = Query(""), target_type: str = Query(""), export: str = Query("")):
+    data = fetch_audit_logs(search=search, action=action, target_type=target_type)
+    if export == "csv":
+        owner = require_role_user(request, "owner")
+        out = io.StringIO()
+        writer = csv.DictWriter(out, fieldnames=["created_at", "actor_user_id", "action", "target_type", "target_id", "ip_address", "user_agent", "metadata"])
+        writer.writeheader()
+        for row in data["rows"]:
+            writer.writerow({key: row.get(key, "") for key in writer.fieldnames})
+        audit_log("admin.export", request=request, actor_user_id=owner.get("google_id"), target_type="audit_logs")
+        return Response(out.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=safescan-audit-logs.csv"})
+    return admin_context(request, "Audit Logs", "logs", data)
+
+@qr_app.get("/admin/api-keys", response_class=HTMLResponse)
+async def admin_api_keys(request: Request):
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.row_factory = sqlite3.Row
+        keys = [dict(row) for row in conn.execute("SELECT * FROM api_keys ORDER BY created_at DESC")]
+    return admin_context(request, "API Keys", "api_keys", {"keys": keys}, owner_only=True)
+
+@qr_app.post("/admin/api-keys")
+async def admin_create_api_key(request: Request, name: str = Form(...), scopes: list[str] = Form([]), expires_at: str = Form("")):
+    owner = require_role_user(request, "owner")
+    raw_key = "sk_live_" + secrets.token_urlsafe(32)
+    hint = raw_key[:14] + "..."
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.execute("INSERT INTO api_keys VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, NULL, NULL)", (make_id("key"), name[:80], hint, hashlib.sha256(raw_key.encode()).hexdigest(), json.dumps(scopes), owner.get("email"), now_iso(), expires_at or None))
+    audit_log("api_key.created", request=request, actor_user_id=owner.get("google_id"), target_type="api_key", metadata={"name": name, "scopes": scopes})
+    return admin_context(request, "API Keys", "api_key_created", {"raw_key": raw_key}, owner_only=True)
+
+@qr_app.post("/admin/api-keys/{key_id}/revoke")
+async def admin_revoke_api_key(request: Request, key_id: str):
+    owner = require_role_user(request, "owner")
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.execute("UPDATE api_keys SET status = 'revoked', revoked_at = ? WHERE id = ?", (now_iso(), key_id))
+    audit_log("api_key.revoked", request=request, actor_user_id=owner.get("google_id"), target_type="api_key", target_id=key_id)
+    return RedirectResponse("/admin/api-keys", status_code=303)
+
+@qr_app.get("/admin/settings", response_class=HTMLResponse)
+async def admin_settings(request: Request):
+    return admin_context(request, "Settings", "settings", {"app_url": APP_URL, "admin_emails": sorted(ADMIN_EMAILS), "owner_emails": sorted(OWNER_EMAILS)}, owner_only=True)
+
 @qr_app.post("/api/analyze")
 async def api_analyze(request: Request, payload: dict = Body(...)):
     user = get_session_user(request)
@@ -1314,6 +1898,47 @@ async def api_analyze(request: Request, payload: dict = Body(...)):
     target_url = validate_public_url((payload.get("url") or "").strip())
     audit_log("qr.scanned", request=request, actor_user_id=user.get("google_id") if user else None, target_type="url", metadata={"url": target_url})
     return await analyze_full_pipeline(target_url)
+
+@qr_app.post("/api/report")
+async def api_report_url(request: Request, payload: dict = Body(...)):
+    user = get_session_user(request)
+    rate_limit = enforce_rate_limit(request, "report", 10, 60 * 60, user_key=user.get("google_id") if user else None)
+    if rate_limit:
+        return rate_limit
+    validate_strict_payload(payload, {"url", "reason"})
+    reason = payload.get("reason")
+    if reason not in ("phishing", "wallet_drain", "malware", "spam", "other"):
+        raise SafeScanError("Invalid report reason.", 400)
+    target_url = validate_public_url(payload.get("url", ""))
+    analysis = await analyze_full_pipeline(target_url)
+    report_id = make_id("report")
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.execute(
+            "INSERT INTO url_reports VALUES (?, ?, ?, ?, ?, 'pending', ?, NULL, NULL)",
+            (report_id, target_url, user.get("email") if user else "", reason, int(analysis.get("confidenceScore") or 0), now_iso())
+        )
+    audit_log("url.reported", request=request, actor_user_id=user.get("google_id") if user else None, target_type="url_report", target_id=report_id, metadata={"reason": reason, "url": target_url})
+    return {"id": report_id, "status": "pending"}
+
+@qr_app.get("/api/admin/stats/users")
+async def api_admin_stats_users(request: Request):
+    require_role_user(request, "admin")
+    return {"value": dashboard_data()["stats"][0]["value"]}
+
+@qr_app.get("/api/admin/stats/scans-today")
+async def api_admin_stats_scans_today(request: Request):
+    require_role_user(request, "admin")
+    return {"value": dashboard_data()["stats"][1]["value"]}
+
+@qr_app.get("/api/admin/stats/blocked")
+async def api_admin_stats_blocked(request: Request):
+    require_role_user(request, "admin")
+    return {"value": dashboard_data()["stats"][2]["value"]}
+
+@qr_app.get("/api/admin/stats/fraud-flags")
+async def api_admin_stats_fraud_flags(request: Request):
+    require_role_user(request, "admin")
+    return {"value": dashboard_data()["stats"][3]["value"]}
 
 @qr_app.post("/api/check-reputation")
 async def api_check_reputation(payload: dict = Body(...)):
@@ -1603,6 +2228,7 @@ async def scan_qr(
     request: Request,
     user_email: str = Form(...),
     wallet_address: str = Form(""),
+    device_fingerprint: str = Form(""),
     file: UploadFile = File(None),
     manual_url: str = Form(None)
 ):
@@ -1612,6 +2238,10 @@ async def scan_qr(
     if wallet_owner and wallet_owner != user_email:
         flag_abuse(user_email, "wallet_reuse", f"Wallet already associated with {wallet_owner}")
         raise HTTPException(status_code=409, detail="Wallet already linked to another active account.")
+    if device_fingerprint:
+        register_device_fingerprint(user_email, device_fingerprint)
+    if wallet_address:
+        run_fraud_checks("wallet_connect", user_email, request, {"walletAddress": wallet_address, "deviceFingerprint": device_fingerprint})
     url_qr = None
 
     if manual_url and manual_url.strip():
@@ -1657,6 +2287,8 @@ async def scan_qr(
     else:
         analysis = analyze_qr_payload(url_qr)
     counted = record_unique_scan(user_email, url_qr, wallet_address)
+    save_scan_history(user_email, analysis["normalized"], analysis)
+    run_fraud_checks("scan", user_email, request, {"url": analysis["normalized"], "deviceFingerprint": device_fingerprint})
     audit_log("qr.scanned", request=request, actor_user_id=user.get("google_id"), target_type="scan", metadata={"counted": counted, "payloadType": payload_type})
 
     return templates.TemplateResponse("index.html", {
@@ -1694,6 +2326,7 @@ async def auth_google(request: Request, credential: str = Form(None)):
     user = require_user_from_google_id(google_id)
     if user["status"] != "active":
         raise HTTPException(status_code=401, detail="Authentication required.")
+    run_fraud_checks("signup", user_email, request, {"googleId": google_id})
     session_id = create_session(google_id, request)
     audit_log("user.login", request=request, actor_user_id=google_id)
     response = templates.TemplateResponse("index.html", {

@@ -37,6 +37,9 @@ This checklist documents compliance-oriented controls implemented for audit, inv
 - [x] Footer links on every page - `templates/footer.html`
 - [x] Internal consent log - `/legal/consent-log`
 - [x] Admin routes protected by active admin/owner session; airdrop automation still supports `AIRDROP_ADMIN_SECRET` fallback
+- [x] Internal admin dashboard - `/admin`
+- [x] Audit log table and admin audit viewer - `/admin/logs`
+- [x] Airdrop fraud flags and review queue - `/admin/airdrop/fraud`
 
 ### Production Follow-Ups
 - [ ] Attorney review before public launch or token distribution.

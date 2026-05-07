@@ -155,6 +155,7 @@
             <form id="qrForm" action="/search_qr_api" method="post" enctype="multipart/form-data">
               <input type="hidden" name="user_email" value="{{ email }}">
               <input type="hidden" id="hiddenWalletInput" name="wallet_address">
+              <input type="hidden" id="deviceFingerprintInput" name="device_fingerprint">
               <label class="upload-chip" for="qrImageInput">Use mobile camera/photo</label>
               <input id="qrImageInput" name="file" type="file" accept="image/*" onchange="this.form.submit()" hidden>
               <label for="urlInput" style="margin-top:20px; display:block;">Or paste a URL manually</label>

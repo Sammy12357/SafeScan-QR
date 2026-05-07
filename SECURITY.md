@@ -10,11 +10,15 @@ SafeScan QR currently runs as a FastAPI/Python application with SQLite storage i
 - Server-side sessions in the `sessions` table, issued as HTTP-only, Secure, SameSite=Strict cookies.
 - Suspended or deleted users are rejected when loading sessions.
 - Admin pages now require an active session with `admin` or `owner` role.
+- `/admin/*` dashboard pages now include users, scans, reports, airdrop, fraud flags, audit logs, owner API keys, and owner settings.
+- API keys are generated server-side, shown once, and stored only as SHA-256 hashes with a short hint.
 - Scan submission no longer trusts the hidden `user_email` form field; the server derives the email from the session.
 - URL analysis validates URL shape, max length, scheme, hostname, and blocks localhost/private/internal Render targets before reputation checks or redirects.
 - Redirect tracing follows redirects manually and validates every hop before requesting it.
 - Wallet addresses are format-checked and reuse across accounts is rejected.
 - Scan count increments are server-side only, deduplicated by user and payload, and same-payload repeats inside 60 seconds do not increment.
+- Device fingerprint hashes are collected on the frontend and sent to the backend for exact-match anti-fraud clustering.
+- Fraud checks now run after signup, scan, and wallet submission events. Signals are stored in `fraud_flags` and roll up into `users.fraud_score` / `users.airdrop_status`.
 - Audit logs are stored for login, logout, permission denial, QR scans, airdrop sweeps, account deletion, and rate limit hits.
 - Basic in-memory rate limiting is active for public pages, `/api/*`, and `/api/analyze`.
 - Security headers are added on every response, including HSTS, CSP, Referrer-Policy, Permissions-Policy, and X-Content-Type-Options.
@@ -26,6 +30,8 @@ SafeScan QR currently runs as a FastAPI/Python application with SQLite storage i
 - Optional auth: `POST /api/analyze`.
 - Active session required: `POST /search_qr_api`, `GET /account/settings`, `POST /auth/logout`.
 - Admin session required: `GET /legal/consent-log`, `GET /admin/data-processing-log`, `GET /admin/report-breach`, `POST /admin/report-breach`.
+- Admin session required: `GET /admin`, `/admin/activity`, `/admin/users`, `/admin/scans`, `/admin/reports`, `/admin/risk-logs`, `/admin/airdrop`, `/admin/airdrop/fraud`, `/admin/airdrop/wallets`, `/admin/logs`.
+- Owner session required: `GET/POST /admin/api-keys`, `POST /admin/api-keys/{id}/revoke`, `GET /admin/settings`, `GET /admin/export/users`, owner role changes and deletes.
 - Admin session or valid `AIRDROP_ADMIN_SECRET`: `GET /trigger-airdrop-secret`.
 
 ## Audit-Logged Actions
@@ -55,7 +61,8 @@ SafeScan QR currently runs as a FastAPI/Python application with SQLite storage i
 - Add CSRF tokens for every state-changing form.
 - Replace shared-secret fallback on `/trigger-airdrop-secret` with owner-only session access once operational automation is updated.
 - Implement signed Solana wallet-message verification with a server nonce before storing wallets.
-- Add referral tables and abuse rules. Current repo does not contain a real referral backend.
+- Complete referral counting UX and referral tree visualization once real referral events exist. The database table exists, but public referral flows are still minimal.
+- Add Solana RPC wallet age/activity checks for new-wallet fraud scoring.
 - Add a persistent distributed rate limiter, such as Redis, before scaling beyond one Render instance.
 - Add a full automated security test suite.
 - Rotate any secrets that were ever committed before this hardening pass.
