@@ -147,7 +147,9 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
 .profile-name { font-weight: 800; }
 .profile-email { color: var(--muted); font-size: 0.86rem; word-break: break-word; }
 .profile-tier { display: inline-block; }
-.sign-out-button { padding: 9px 12px; border-radius: 999px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.04); color: var(--text); font: inherit; font-size: 0.86rem; cursor: pointer; }
+.sign-out-button, .admin-dashboard-button { padding: 9px 12px; border-radius: 999px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.04); color: var(--text); font: inherit; font-size: 0.86rem; cursor: pointer; text-decoration: none; }
+.admin-dashboard-button { border-color: rgba(124, 58, 237, 0.5); background: rgba(124, 58, 237, 0.15); color: #f7f2ff; font-weight: 800; }
+.admin-role-badge { padding: 7px 9px; border-radius: 999px; border: 1px solid rgba(255, 187, 85, 0.45); background: rgba(255, 187, 85, 0.13); color: var(--warning); font-size: 0.7rem; font-weight: 900; letter-spacing: 0.08em; }
 
 .tier-card { display: flex; flex-direction: column; min-height: 230px; position: relative; transition: border-color 0.18s ease, transform 0.18s ease, opacity 0.18s ease; }
 .tier-card::after { content: "Locked"; position: absolute; top: 16px; right: 16px; padding: 7px 10px; border-radius: 999px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05); color: var(--muted); font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; }

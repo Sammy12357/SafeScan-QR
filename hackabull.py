@@ -751,6 +751,14 @@ def admin_avatar(email):
     initials = "".join(part[:1].upper() for part in (email or "A").split("@")[0].split(".")[:2]) or "A"
     return initials
 
+def index_user_context(user):
+    role = user.get("role", "guest") if user else "guest"
+    return {
+        "user_role": role,
+        "is_admin": role in ("admin", "owner"),
+        "is_owner": role == "owner",
+    }
+
 def record_unique_scan(email, url, wallet):
     normalized_payload = url.strip()[:2048]
     payload_hash = hashlib.sha256(normalized_payload.encode("utf-8")).hexdigest()
@@ -1575,11 +1583,11 @@ async def security_headers_and_rate_limits(request: Request, call_next):
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "script-src 'self' https://accounts.google.com https://apis.google.com; "
+        "script-src 'self' https://accounts.google.com https://apis.google.com https://cdn.jsdelivr.net; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' data: https://lh3.googleusercontent.com; "
-        "connect-src 'self' https://safescan-qr.onrender.com https://api.virustotal.com https://api.anthropic.com https://api.openai.com; "
+        "connect-src 'self' https://safescan-qr.onrender.com https://api.virustotal.com https://api.anthropic.com https://api.openai.com https://cdn.jsdelivr.net; "
         "frame-src https://accounts.google.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
     )
     return response
@@ -2350,7 +2358,8 @@ async def read_index(request: Request):
     return templates.TemplateResponse("index.html", {
         "request": request, "logged_in": bool(user), "results_visible": False, "google_client_id": CLIENT_ID,
         "email": email, "scan_count": get_scan_count(email) if email else 0,
-        "version": LEGAL_VERSION
+        "version": LEGAL_VERSION,
+        **index_user_context(user)
     })
 
 @qr_app.get("/legal/privacy-policy", response_class=HTMLResponse)
@@ -2635,7 +2644,8 @@ async def scan_qr(
             "reputation": {"provider": "Scanner", "status": "ERROR", "matches": [], "detail": "No decodable payload was found."},
             "risk_reasons": [risk_reason("No QR payload decoded", "medium", "Upload a clearer QR image or paste the destination manually.")],
             "email": user_email, "scan_count": get_scan_count(user_email), "google_client_id": CLIENT_ID,
-            "version": LEGAL_VERSION
+            "version": LEGAL_VERSION,
+            **index_user_context(user)
         })
 
     payload_type, _, normalized_payload = detect_payload(url_qr)
@@ -2670,7 +2680,8 @@ async def scan_qr(
         "reputation": analysis.get("reputation"),
         "risk_reasons": analysis.get("reasons", []),
         "email": user_email, "scan_count": get_scan_count(user_email), "google_client_id": CLIENT_ID,
-        "version": LEGAL_VERSION
+        "version": LEGAL_VERSION,
+        **index_user_context(user)
     })
 
 @qr_app.post("/auth/google", response_class=HTMLResponse)
@@ -2681,7 +2692,8 @@ async def auth_google(request: Request, credential: str = Form(None)):
             "request": request, "logged_in": False, "results_visible": False,
             "email": "", "score": "0", "threat_class": "N/A",
             "scan_count": 0, "google_client_id": CLIENT_ID,
-            "version": LEGAL_VERSION
+            "version": LEGAL_VERSION,
+            **index_user_context(None)
         })
     try:
         idinfo = id_token.verify_oauth2_token(credential, google_requests.Request(), CLIENT_ID)
@@ -2702,7 +2714,8 @@ async def auth_google(request: Request, credential: str = Form(None)):
         "request": request, "logged_in": True, "results_visible": False,
         "email": user_email, "score": "0", "threat_class": "N/A",
         "scan_count": get_scan_count(user_email), "google_client_id": CLIENT_ID,
-        "version": LEGAL_VERSION
+        "version": LEGAL_VERSION,
+        **index_user_context(user)
     })
     set_session_cookie(response, session_id)
     return response
@@ -2748,7 +2761,8 @@ async def confirm_age_submit(
         "request": request, "logged_in": True, "results_visible": False,
         "email": email, "score": "0", "threat_class": "N/A",
         "scan_count": get_scan_count(email), "google_client_id": CLIENT_ID,
-        "version": LEGAL_VERSION
+        "version": LEGAL_VERSION,
+        **index_user_context(get_session_user(request))
     })
 
 @qr_app.get("/account/settings", response_class=HTMLResponse)
