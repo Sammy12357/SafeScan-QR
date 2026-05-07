@@ -1792,6 +1792,24 @@ def fetch_airdrop_data():
     flagged = [row for row in users if row.get("airdrop_status") == "flagged" or row.get("fraud_flags")]
     return {"wallet_users": wallet_users, "tier_counts": tier_counts, "flagged": flagged, "estimated_total": sum(row.get("estimated_sqr", 0) for row in wallet_users)}
 
+def airdrop_tier(scan_count, referrals):
+    if scan_count >= 50 and referrals >= 3:
+        return "Guardian"
+    if scan_count >= 5 and referrals >= 1:
+        return "Referrer"
+    if scan_count >= 5:
+        return "Scanner"
+    return "Pending"
+
+def next_airdrop_milestone(scan_count, referrals):
+    if scan_count < 5:
+        return f"Scan {5 - scan_count} more QR code{'s' if 5 - scan_count != 1 else ''} to unlock Scanner."
+    if referrals < 1:
+        return "Invite 1 user with your referral link to unlock Referrer."
+    if scan_count < 50 or referrals < 3:
+        return "Scan 50 QR codes and invite 3 people to unlock Guardian."
+    return "Guardian tier unlocked."
+
 def fetch_fraud_data():
     with sqlite3.connect("qr_cache.db") as conn:
         conn.row_factory = sqlite3.Row
@@ -2155,6 +2173,47 @@ async def api_report_url(request: Request, payload: dict = Body(...)):
         )
     audit_log("url.reported", request=request, actor_user_id=user.get("google_id") if user else None, target_type="url_report", target_id=report_id, metadata={"reason": reason, "url": target_url})
     return {"id": report_id, "status": "pending"}
+
+@qr_app.get("/api/user/profile")
+async def api_user_profile(request: Request):
+    user = require_user(request)
+    email = user["email"]
+    scan_count = get_scan_count(email)
+    with sqlite3.connect("qr_cache.db") as conn:
+        referral_count = conn.execute("SELECT COUNT(*) FROM referrals WHERE referrer_email = ? AND counted = 1", (email,)).fetchone()[0]
+    wallet = get_verified_wallet(email)
+    return {
+        "id": user.get("google_id"),
+        "name": "Safe scanner",
+        "email": email,
+        "role": user.get("role", "user"),
+        "scanCount": scan_count,
+        "referrals": referral_count,
+        "tier": airdrop_tier(scan_count, referral_count),
+        "walletConnected": bool(wallet),
+    }
+
+@qr_app.get("/api/airdrop/status")
+async def api_airdrop_status(request: Request):
+    user = require_user(request)
+    email = user["email"]
+    scan_count = get_scan_count(email)
+    with sqlite3.connect("qr_cache.db") as conn:
+        row = conn.execute("SELECT airdrop_status, COALESCE(fraud_score, 0), referral_code FROM users WHERE email = ?", (email,)).fetchone()
+        referrals = conn.execute("SELECT COUNT(*) FROM referrals WHERE referrer_email = ? AND counted = 1", (email,)).fetchone()[0]
+    wallet = get_verified_wallet(email)
+    current_tier = airdrop_tier(scan_count, referrals)
+    return {
+        "scanCount": scan_count,
+        "referrals": referrals,
+        "currentTier": current_tier,
+        "walletConnected": bool(wallet),
+        "walletAddress": wallet.get("address") if wallet else None,
+        "airdropStatus": row[0] if row else "eligible",
+        "fraudScore": int(row[1]) if row else 0,
+        "referralCode": row[2] if row and row[2] else None,
+        "nextMilestone": next_airdrop_milestone(scan_count, referrals),
+    }
 
 @qr_app.get("/api/wallet")
 async def api_wallet_status(request: Request):
