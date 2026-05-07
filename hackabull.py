@@ -4,7 +4,6 @@ import warnings
 import io
 import sqlite3
 import hashlib
-import traceback
 import re
 import asyncio
 import base64
@@ -15,8 +14,6 @@ import time
 import csv
 from urllib.parse import urljoin, urlparse, parse_qsl
 from datetime import datetime, timedelta
-from PIL import Image, ImageEnhance, ImageFilter, ImageOps
-from pyzbar.pyzbar import decode
 
 from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -25,12 +22,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-
-from google.oauth2 import id_token
-from google.auth.transport import requests as google_requests
 import os
 from dotenv import load_dotenv
-from distribute import airdrop_sweep
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 
 warnings.filterwarnings("ignore", category=ImportWarning)
 load_dotenv()
@@ -46,6 +41,7 @@ APP_URL = os.getenv("APP_URL", "https://safescan-qr.onrender.com").rstrip("/")
 SESSION_COOKIE_NAME = "safescan_session"
 SESSION_TTL_SECONDS = 24 * 60 * 60
 SESSION_IDLE_SECONDS = 7 * 24 * 60 * 60
+MAX_QR_UPLOAD_BYTES = int(os.getenv("MAX_QR_UPLOAD_BYTES", str(8 * 1024 * 1024)))
 VALID_ROLES = ("user", "admin", "owner")
 VALID_STATUSES = ("active", "suspended", "deleted")
 RATE_LIMITS = {}
@@ -66,6 +62,15 @@ MALICIOUS_CONTRACT_BLOCKLIST = {
 }
 
 templates = Jinja2Templates(directory="templates")
+_IMAGE_LIBS = None
+
+def image_libs():
+    global _IMAGE_LIBS
+    if _IMAGE_LIBS is None:
+        from PIL import Image, ImageEnhance, ImageFilter, ImageOps
+        from pyzbar.pyzbar import decode
+        _IMAGE_LIBS = (Image, ImageEnhance, ImageFilter, ImageOps, decode)
+    return _IMAGE_LIBS
 
 def init_db():
     conn = sqlite3.connect("qr_cache.db")
@@ -310,9 +315,17 @@ def create_session(google_id, request):
     return session_id
 
 def get_session_user(request):
+    if getattr(request.state, "session_user_loaded", False):
+        return getattr(request.state, "session_user", None)
+
+    def cache_session_user(user):
+        request.state.session_user_loaded = True
+        request.state.session_user = user
+        return user
+
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
     if not session_id:
-        return None
+        return cache_session_user(None)
     with sqlite3.connect("qr_cache.db") as conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
@@ -326,19 +339,19 @@ def get_session_user(request):
             (session_id,)
         ).fetchone()
         if not row:
-            return None
+            return cache_session_user(None)
         try:
             expires_at = datetime.fromisoformat(str(row["expires_at"]).replace("Z", ""))
             last_active = datetime.fromisoformat(str(row["last_active"]).replace("Z", ""))
         except ValueError:
-            return None
+            return cache_session_user(None)
         if row["revoked_at"] or expires_at < datetime.utcnow() or datetime.utcnow() - last_active > timedelta(seconds=SESSION_IDLE_SECONDS):
             conn.execute("UPDATE sessions SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ?", (now_iso(), session_id))
-            return None
+            return cache_session_user(None)
         if row["status"] != "active":
-            return None
+            return cache_session_user(None)
         conn.execute("UPDATE sessions SET last_active = ? WHERE id = ?", (now_iso(), session_id))
-        return dict(row)
+        return cache_session_user(dict(row))
 
 def require_user(request):
     user = get_session_user(request)
@@ -1502,6 +1515,7 @@ def pipeline_response_to_template_analysis(pipeline_response):
     }
 
 def decode_qr_image(image):
+    Image, ImageEnhance, ImageFilter, ImageOps, decode = image_libs()
     image = ImageOps.exif_transpose(image)
     candidates = []
 
@@ -1569,10 +1583,12 @@ async def start_wallet_nonce_cleanup():
 
 @qr_app.middleware("http")
 async def security_headers_and_rate_limits(request: Request, call_next):
-    public_limit = enforce_rate_limit(request, "public", 300, 15 * 60)
-    if public_limit:
-        return public_limit
-    if request.url.path.startswith("/api/"):
+    path = request.url.path
+    if not path.startswith("/static/"):
+        public_limit = enforce_rate_limit(request, "public", 300, 15 * 60)
+        if public_limit:
+            return public_limit
+    if path.startswith("/api/"):
         api_limit = enforce_rate_limit(request, "api", 100, 15 * 60)
         if api_limit:
             return api_limit
@@ -1590,6 +1606,8 @@ async def security_headers_and_rate_limits(request: Request, call_next):
         "connect-src 'self' https://safescan-qr.onrender.com https://api.virustotal.com https://api.anthropic.com https://api.openai.com https://cdn.jsdelivr.net; "
         "frame-src https://accounts.google.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
     )
+    if path.startswith("/static/"):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     return response
 
 @qr_app.exception_handler(SafeScanError)
@@ -1915,11 +1933,11 @@ async def admin_users(request: Request, search: str = Query(""), status: str = Q
 
 @qr_app.get("/admin/users/{email}/drawer", response_class=HTMLResponse)
 async def admin_user_drawer(request: Request, email: str):
-    require_role_user(request, "admin")
+    admin_user = require_role_user(request, "admin")
     data = fetch_user_detail(email)
     if not data["user"]:
         raise HTTPException(status_code=404, detail="Not found.")
-    return templates.TemplateResponse("admin_shell.html", {"request": request, "page": "user_drawer", "title": "User Detail", "data": data, "admin_user": get_session_user(request), "is_owner": has_role(get_session_user(request), "owner"), "avatar": admin_avatar(get_session_user(request).get("email"))})
+    return templates.TemplateResponse("admin_shell.html", {"request": request, "page": "user_drawer", "title": "User Detail", "data": data, "admin_user": admin_user, "is_owner": has_role(admin_user, "owner"), "avatar": admin_avatar(admin_user.get("email"))})
 
 @qr_app.post("/admin/users/{email}/suspend")
 async def admin_suspend_user(request: Request, email: str, action: str = Form("suspend")):
@@ -2304,22 +2322,30 @@ async def api_wallet_disconnect(request: Request):
 @qr_app.get("/api/admin/stats/users")
 async def api_admin_stats_users(request: Request):
     require_role_user(request, "admin")
-    return {"value": dashboard_data()["stats"][0]["value"]}
+    with sqlite3.connect("qr_cache.db") as conn:
+        value = conn.execute("SELECT COUNT(*) FROM users WHERE status != 'deleted'").fetchone()[0]
+    return {"value": value}
 
 @qr_app.get("/api/admin/stats/scans-today")
 async def api_admin_stats_scans_today(request: Request):
     require_role_user(request, "admin")
-    return {"value": dashboard_data()["stats"][1]["value"]}
+    with sqlite3.connect("qr_cache.db") as conn:
+        value = conn.execute("SELECT COUNT(*) FROM scan_history WHERE created_at >= ?", (datetime.utcnow().date().isoformat(),)).fetchone()[0]
+    return {"value": value}
 
 @qr_app.get("/api/admin/stats/blocked")
 async def api_admin_stats_blocked(request: Request):
     require_role_user(request, "admin")
-    return {"value": dashboard_data()["stats"][2]["value"]}
+    with sqlite3.connect("qr_cache.db") as conn:
+        value = conn.execute("SELECT COUNT(*) FROM scan_history WHERE verdict IN ('MALICIOUS', 'HIGH') OR risk_score >= 80").fetchone()[0]
+    return {"value": value}
 
 @qr_app.get("/api/admin/stats/fraud-flags")
 async def api_admin_stats_fraud_flags(request: Request):
     require_role_user(request, "admin")
-    return {"value": dashboard_data()["stats"][3]["value"]}
+    with sqlite3.connect("qr_cache.db") as conn:
+        value = conn.execute("SELECT COUNT(*) FROM fraud_flags WHERE reviewed = 0").fetchone()[0]
+    return {"value": value}
 
 @qr_app.post("/api/check-reputation")
 async def api_check_reputation(payload: dict = Body(...)):
@@ -2618,19 +2644,34 @@ async def scan_qr(
     user_email = user["email"]
     verified_wallet = get_verified_wallet(user_email)
     wallet_address = verified_wallet["address"] if verified_wallet else ""
-    if device_fingerprint:
-        register_device_fingerprint(user_email, device_fingerprint)
     url_qr = None
 
     if manual_url and manual_url.strip():
         url_qr = manual_url.strip()
     elif file and file.filename:
         contents = await file.read()
+        if len(contents) > MAX_QR_UPLOAD_BYTES:
+            return templates.TemplateResponse("index.html", {
+                "request": request, "logged_in": True, "results_visible": True,
+                "status": "ERROR", "url_found": "Uploaded image is too large.",
+                "source": "Scanner", "score": "0", "threat_class": "N/A",
+                "overall_risk": "suspicious",
+                "verdict_summary": "SafeScan limits QR image uploads to keep scans fast and memory usage stable.",
+                "reputation": {"provider": "Scanner", "status": "ERROR", "matches": [], "detail": "Upload a smaller image."},
+                "risk_reasons": [risk_reason("Upload too large", "medium", f"Use an image under {MAX_QR_UPLOAD_BYTES // (1024 * 1024)} MB.")],
+                "email": user_email, "scan_count": get_scan_count(user_email), "google_client_id": CLIENT_ID,
+                "version": LEGAL_VERSION,
+                **index_user_context(user)
+            })
         try:
+            Image, _, _, _, _ = image_libs()
             image = Image.open(io.BytesIO(contents))
-            decoded_qr = decode_qr_image(image)
-            if decoded_qr:
-                url_qr = decoded_qr[0].data.decode("utf-8")
+            try:
+                decoded_qr = decode_qr_image(image)
+                if decoded_qr:
+                    url_qr = decoded_qr[0].data.decode("utf-8")
+            finally:
+                image.close()
         except Exception:
             pass
 
@@ -2797,6 +2838,7 @@ async def trigger_airdrop(
         raise HTTPException(status_code=403, detail="You do not have permission to do this.")
 
     try:
+        from distribute import airdrop_sweep
         result = await airdrop_sweep()
         audit_log("airdrop.sweep_executed", request=request, actor_user_id=admin_user.get("google_id") if admin_user else None, target_type="airdrop")
         return {
