@@ -301,6 +301,13 @@ def clear_session_cookie(response):
         samesite="strict",
     )
 
+def request_session_id(request):
+    auth_header = request.headers.get("authorization", "")
+    scheme, _, token = auth_header.partition(" ")
+    if scheme.lower() == "bearer" and token.strip():
+        return token.strip()
+    return request.cookies.get(SESSION_COOKIE_NAME)
+
 def create_session(google_id, request):
     session_id = secrets.token_urlsafe(32)
     created = datetime.utcnow()
@@ -329,7 +336,7 @@ def get_session_user(request):
         request.state.session_user = user
         return user
 
-    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    session_id = request_session_id(request)
     if not session_id:
         return cache_session_user(None)
     with sqlite3.connect("qr_cache.db") as conn:
@@ -2767,9 +2774,41 @@ async def auth_google(request: Request, credential: str = Form(None)):
     set_session_cookie(response, session_id)
     return response
 
+@qr_app.post("/auth/verify")
+async def auth_verify(request: Request, payload: dict = Body(...)):
+    validate_strict_payload(payload, {"token"})
+    credential = (payload.get("token") or "").strip()
+    if not credential:
+        raise HTTPException(status_code=400, detail="Invalid request.")
+    try:
+        idinfo = id_token.verify_oauth2_token(credential, google_requests.Request(), CLIENT_ID)
+        google_id = idinfo["sub"]
+        user_email = idinfo["email"].strip().lower()
+    except ValueError:
+        audit_log("auth.failed", request=request, metadata={"provider": "google_mobile"})
+        raise HTTPException(status_code=401, detail="Authentication required.")
+
+    save_user_to_db(google_id, user_email, request)
+    user = require_user_from_google_id(google_id)
+    if user["status"] != "active":
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    run_fraud_checks("signup", user_email, request, {"googleId": google_id, "client": "mobile"})
+    session_id = create_session(google_id, request)
+    audit_log("user.login", request=request, actor_user_id=google_id, metadata={"client": "mobile"})
+    return {
+        "session": session_id,
+        "user": {
+            "id": google_id,
+            "name": idinfo.get("name") or "Safe scanner",
+            "email": user_email,
+            "avatarUrl": idinfo.get("picture"),
+            "role": user.get("role", "user"),
+        },
+    }
+
 @qr_app.post("/auth/logout")
 async def logout(request: Request):
-    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    session_id = request_session_id(request)
     user = get_session_user(request)
     if session_id:
         with sqlite3.connect("qr_cache.db") as conn:
