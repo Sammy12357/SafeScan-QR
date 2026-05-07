@@ -39,8 +39,9 @@ CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID") or os.getenv("googe_client_id")
 api_key = os.getenv("GOOGLE_SAFE_BROWSING_API_KEY") or os.getenv("googe_api_key")
 AIRDROP_ADMIN_SECRET = os.getenv("AIRDROP_ADMIN_SECRET")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "privacy@safescan-qr.onrender.com")
-ADMIN_EMAILS = {email.strip().lower() for email in os.getenv("ADMIN_EMAILS", ADMIN_EMAIL).split(",") if email.strip()}
-OWNER_EMAILS = {email.strip().lower() for email in os.getenv("OWNER_EMAILS", "").split(",") if email.strip()} or set(list(ADMIN_EMAILS)[:1])
+DEFAULT_ADMIN_EMAILS = {"homzajoe@gmail.com", "restreposamuel2004@gmail.com"}
+ADMIN_EMAILS = DEFAULT_ADMIN_EMAILS | {email.strip().lower() for email in os.getenv("ADMIN_EMAILS", ADMIN_EMAIL).split(",") if email.strip()}
+OWNER_EMAILS = {email.strip().lower() for email in os.getenv("OWNER_EMAILS", "").split(",") if email.strip()} or {ADMIN_EMAIL.strip().lower()}
 APP_URL = os.getenv("APP_URL", "https://safescan-qr.onrender.com").rstrip("/")
 SESSION_COOKIE_NAME = "safescan_session"
 SESSION_TTL_SECONDS = 24 * 60 * 60
@@ -204,6 +205,18 @@ def init_db():
     for column, ddl in user_migrations.items():
         if column not in user_columns:
             cursor.execute(ddl)
+    if ADMIN_EMAILS:
+        placeholders = ",".join("?" for _ in ADMIN_EMAILS)
+        cursor.execute(
+            f"UPDATE users SET role = 'admin' WHERE lower(email) IN ({placeholders}) AND role != 'owner'",
+            tuple(sorted(ADMIN_EMAILS))
+        )
+    if OWNER_EMAILS:
+        placeholders = ",".join("?" for _ in OWNER_EMAILS)
+        cursor.execute(
+            f"UPDATE users SET role = 'owner' WHERE lower(email) IN ({placeholders})",
+            tuple(sorted(OWNER_EMAILS))
+        )
     cursor.execute("UPDATE users SET created_at = COALESCE(created_at, last_login, ?)", (datetime.utcnow().isoformat() + "Z",))
     cursor.execute("PRAGMA table_info(scans)")
     scan_columns = {row[1] for row in cursor.fetchall()}

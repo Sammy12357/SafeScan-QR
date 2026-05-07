@@ -7,6 +7,7 @@ SafeScan QR currently runs as a FastAPI/Python application with SQLite storage i
 ## Implemented Controls
 
 - Server-side user roles and status fields on `users`: `user`, `admin`, `owner`; `active`, `suspended`, `deleted`.
+- Built-in admin allowlist includes `homzajoe@gmail.com` and `restreposamuel2004@gmail.com`; set `ADMIN_EMAILS` in Render to keep this explicit.
 - Server-side sessions in the `sessions` table, issued as HTTP-only, Secure, SameSite=Strict cookies.
 - Suspended or deleted users are rejected when loading sessions.
 - Admin pages now require an active session with `admin` or `owner` role.
