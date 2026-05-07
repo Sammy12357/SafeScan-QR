@@ -43,7 +43,9 @@
             <span class="admin-role-badge">{{ user_role | upper }}</span>
             <a href="/admin" class="admin-dashboard-button">Admin dashboard</a>
           {% endif %}
-          <a href="/" class="sign-out-button" style="text-decoration: none;">Sign out</a>
+          <form class="sign-out-form" action="/auth/logout" method="post">
+            <button class="sign-out-button" type="submit">Sign out</button>
+          </form>
         </div>
       {% endif %}
     </div>

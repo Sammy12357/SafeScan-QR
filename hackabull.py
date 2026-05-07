@@ -293,7 +293,13 @@ def set_session_cookie(response, session_id):
     )
 
 def clear_session_cookie(response):
-    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+    response.delete_cookie(
+        SESSION_COOKIE_NAME,
+        path="/",
+        httponly=True,
+        secure=True,
+        samesite="strict",
+    )
 
 def create_session(google_id, request):
     session_id = secrets.token_urlsafe(32)
