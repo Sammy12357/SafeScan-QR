@@ -202,7 +202,7 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
 .engine-grid { display: grid; grid-template-columns: 0.55fr 1fr 0.75fr 0.7fr; gap: 18px; margin-top: 18px; }
 .score-value { margin: 0; font-size: 3rem; line-height: 1; font-weight: 700; letter-spacing: -0.05em; }
 
-.risk-modal { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 18px; background: rgba(3, 8, 15, 0.82); backdrop-filter: blur(18px); }
+.risk-modal { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; width: 100vw; height: 100vh; height: 100dvh; padding: 18px; overflow: auto; background: rgba(3, 8, 15, 0.82); backdrop-filter: blur(18px); }
 .risk-modal-card { width: min(760px, 100%); max-height: min(92vh, 860px); overflow: auto; padding: 22px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; background: rgba(8, 16, 29, 0.98); box-shadow: 0 28px 90px rgba(0, 0, 0, 0.52); animation: modalSlideUp 0.32s ease-out; }
 .risk-modal-safe { border-color: rgba(80, 227, 164, 0.38); }
 .risk-modal-caution { border-color: rgba(255, 187, 85, 0.38); }
