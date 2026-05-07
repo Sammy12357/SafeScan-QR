@@ -785,6 +785,18 @@ def index_user_context(user):
         "is_owner": role == "owner",
     }
 
+def referral_code_for_user(email):
+    normalized_email = (email or "").strip().lower()
+    if not normalized_email:
+        return ""
+    with sqlite3.connect("qr_cache.db") as conn:
+        row = conn.execute("SELECT referral_code FROM users WHERE email = ?", (normalized_email,)).fetchone()
+        if row and row[0]:
+            return row[0]
+        code = hashlib.sha256(f"{normalized_email}:{APP_URL}".encode("utf-8")).hexdigest()[:10]
+        conn.execute("UPDATE users SET referral_code = ? WHERE email = ?", (code, normalized_email))
+        return code
+
 def record_unique_scan(email, url, wallet):
     normalized_payload = url.strip()[:2048]
     payload_hash = hashlib.sha256(normalized_payload.encode("utf-8")).hexdigest()
@@ -2153,6 +2165,60 @@ async def api_analyze(request: Request, payload: dict = Body(...)):
     audit_log("qr.scanned", request=request, actor_user_id=user.get("google_id") if user else None, target_type="url", metadata={"url": target_url})
     return await analyze_full_pipeline(target_url)
 
+@qr_app.post("/api/scan")
+async def api_scan(request: Request, payload: dict = Body(...)):
+    user = require_user(request)
+    rate_limit = enforce_rate_limit(request, "scan", 30, 60 * 60, user_key=user.get("google_id"))
+    if rate_limit:
+        return rate_limit
+    validate_strict_payload(payload, {"payload"})
+    raw_payload = (payload.get("payload") or "").strip()
+    if not raw_payload:
+        raise SafeScanError("No QR payload supplied.", 400)
+    if len(raw_payload) > 4096:
+        raise SafeScanError("QR payload is too large.", 400)
+
+    email = user["email"]
+    verified_wallet = get_verified_wallet(email)
+    wallet_address = verified_wallet["address"] if verified_wallet else ""
+    payload_type, _, normalized_payload = detect_payload(raw_payload)
+
+    if payload_type == "URL":
+        try:
+            analysis = await analyze_full_pipeline(normalized_payload)
+        except SafeScanError as exc:
+            analysis = {
+                "url": normalized_payload,
+                "overallRisk": "high",
+                "confidenceScore": 95,
+                "verdict": str(exc),
+                "signals": [signal("URL Guard", "Blocked", "high", str(exc), False)],
+                "scannedAt": now_iso()
+            }
+        history_analysis = pipeline_response_to_template_analysis(analysis)
+    else:
+        template_analysis = analyze_qr_payload(raw_payload)
+        history_analysis = template_analysis
+        score = int(template_analysis.get("score") or 0)
+        overall_risk = "high" if score >= 80 else ("suspicious" if score >= 40 else "safe")
+        analysis = {
+            "url": template_analysis["normalized"],
+            "overallRisk": template_analysis.get("overallRisk", overall_risk),
+            "confidenceScore": score,
+            "verdict": template_analysis.get("verdict", template_analysis["threat_class"]),
+            "signals": [
+                signal(reason.get("label", "Payload Pattern"), template_analysis["status"], reason.get("severity", "low"), reason.get("detail", ""), score < 40)
+                for reason in template_analysis.get("reasons", [])
+            ],
+            "scannedAt": now_iso(),
+        }
+
+    counted = record_unique_scan(email, raw_payload, wallet_address)
+    save_scan_history(email, history_analysis["normalized"], history_analysis)
+    run_fraud_checks("scan", email, request, {"url": history_analysis["normalized"], "deviceFingerprint": request.headers.get("x-device-fingerprint", "")})
+    audit_log("qr.scanned", request=request, actor_user_id=user.get("google_id"), target_type="scan", metadata={"counted": counted, "payloadType": payload_type})
+    return {**analysis, "counted": counted, "scanCount": get_scan_count(email), "payloadType": payload_type}
+
 @qr_app.post("/api/report")
 async def api_report_url(request: Request, payload: dict = Body(...)):
     user = get_session_user(request)
@@ -2193,6 +2259,19 @@ async def api_user_profile(request: Request):
         "walletConnected": bool(wallet),
     }
 
+@qr_app.get("/api/referral")
+async def api_referral_status(request: Request):
+    user = require_user(request)
+    email = user["email"]
+    code = referral_code_for_user(email)
+    with sqlite3.connect("qr_cache.db") as conn:
+        referral_count = conn.execute("SELECT COUNT(*) FROM referrals WHERE referrer_email = ? AND counted = 1", (email,)).fetchone()[0]
+    return {
+        "code": code,
+        "link": f"{APP_URL}/?ref={code}",
+        "referrals": referral_count,
+    }
+
 @qr_app.get("/api/airdrop/status")
 async def api_airdrop_status(request: Request):
     user = require_user(request)
@@ -2201,6 +2280,7 @@ async def api_airdrop_status(request: Request):
     with sqlite3.connect("qr_cache.db") as conn:
         row = conn.execute("SELECT airdrop_status, COALESCE(fraud_score, 0), referral_code FROM users WHERE email = ?", (email,)).fetchone()
         referrals = conn.execute("SELECT COUNT(*) FROM referrals WHERE referrer_email = ? AND counted = 1", (email,)).fetchone()[0]
+    referral_code = row[2] if row and row[2] else referral_code_for_user(email)
     wallet = get_verified_wallet(email)
     current_tier = airdrop_tier(scan_count, referrals)
     return {
@@ -2211,7 +2291,8 @@ async def api_airdrop_status(request: Request):
         "walletAddress": wallet.get("address") if wallet else None,
         "airdropStatus": row[0] if row else "eligible",
         "fraudScore": int(row[1]) if row else 0,
-        "referralCode": row[2] if row and row[2] else None,
+        "referralCode": referral_code,
+        "referralLink": f"{APP_URL}/?ref={referral_code}" if referral_code else None,
         "nextMilestone": next_airdrop_milestone(scan_count, referrals),
     }
 
@@ -2961,20 +3042,22 @@ async def trigger_airdrop(
 def save_user_to_db(google_id, email, request=None):
     normalized_email = email.strip().lower()
     role = role_for_email(normalized_email)
+    referral_code = hashlib.sha256(f"{normalized_email}:{APP_URL}".encode("utf-8")).hexdigest()[:10]
     with sqlite3.connect("qr_cache.db") as conn:
         conn.execute("""
-            INSERT INTO users (google_id, email, last_login, role, status, last_login_at, login_ip, created_at)
-            VALUES (?, ?, ?, ?, 'active', ?, ?, ?)
+            INSERT INTO users (google_id, email, last_login, role, status, last_login_at, login_ip, created_at, referral_code)
+            VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?)
             ON CONFLICT(google_id) DO UPDATE SET
                 email=excluded.email,
                 last_login=excluded.last_login,
                 last_login_at=excluded.last_login_at,
                 login_ip=excluded.login_ip,
+                referral_code=COALESCE(users.referral_code, excluded.referral_code),
                 role=CASE
                     WHEN users.role IN ('owner', 'admin') THEN users.role
                     ELSE excluded.role
                 END
-        """, (google_id, normalized_email, datetime.now().isoformat(), role, now_iso(), request_ip(request) if request else None, now_iso()))
+        """, (google_id, normalized_email, datetime.now().isoformat(), role, now_iso(), request_ip(request) if request else None, now_iso(), referral_code))
 
 
 
