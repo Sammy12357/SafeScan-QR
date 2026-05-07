@@ -12,6 +12,7 @@ import secrets
 import socket
 import time
 import csv
+import threading
 from urllib.parse import urljoin, urlparse, parse_qsl
 from datetime import datetime, timedelta
 
@@ -53,6 +54,10 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SOLANA_RPC_URL = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
 MOCK_MODE = os.getenv("MOCK_MODE", "false").lower() in ("1", "true", "yes", "on")
+ML_MODEL_ENABLED = os.getenv("SAFESCAN_ML_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+ML_MODEL_PATH = os.getenv("SAFESCAN_ML_MODEL_PATH", os.path.join(os.path.dirname(__file__), "models", "safescan_qr_model.keras"))
+ML_MODEL_WEIGHT = max(0.0, min(1.0, float(os.getenv("SAFESCAN_ML_WEIGHT", "0.4"))))
+ML_MALICIOUS_CLASS_INDEX = int(os.getenv("SAFESCAN_ML_MALICIOUS_CLASS_INDEX", "1"))
 HIGH_RISK_TLDS = {".xyz", ".top", ".click", ".gq", ".tk", ".ml", ".cf"}
 URL_SHORTENERS = {"bit.ly", "t.co", "tinyurl.com", "goo.gl", "ow.ly", "is.gd", "buff.ly", "cutt.ly", "rebrand.ly", "shorturl.at"}
 BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
@@ -63,6 +68,9 @@ MALICIOUS_CONTRACT_BLOCKLIST = {
 
 templates = Jinja2Templates(directory="templates")
 _IMAGE_LIBS = None
+_ML_MODEL = None
+_ML_MODEL_ERROR = None
+_ML_MODEL_LOCK = threading.Lock()
 
 def image_libs():
     global _IMAGE_LIBS
@@ -971,6 +979,165 @@ def status_from_risk(overall_risk):
 def severity_rank(item):
     return {"high": 0, "medium": 1, "low": 2}.get(item.get("severity"), 3)
 
+def clamp_score(score):
+    return max(0, min(100, int(round(float(score or 0)))))
+
+def softmax(values):
+    if not values:
+        return []
+    largest = max(values)
+    exponentials = [pow(2.718281828459045, value - largest) for value in values]
+    total = sum(exponentials) or 1.0
+    return [value / total for value in exponentials]
+
+def load_ml_model():
+    global _ML_MODEL, _ML_MODEL_ERROR
+    if not ML_MODEL_ENABLED:
+        return None
+    if _ML_MODEL is not None:
+        return _ML_MODEL
+    if _ML_MODEL_ERROR is not None:
+        return None
+
+    with _ML_MODEL_LOCK:
+        if _ML_MODEL is not None:
+            return _ML_MODEL
+        if _ML_MODEL_ERROR is not None:
+            return None
+        try:
+            os.environ.setdefault("KERAS_BACKEND", "tensorflow")
+            try:
+                import keras
+            except ImportError:
+                from tensorflow import keras
+            _ML_MODEL = keras.models.load_model(ML_MODEL_PATH, compile=False)
+            return _ML_MODEL
+        except Exception as exc:
+            _ML_MODEL_ERROR = f"{type(exc).__name__}: {exc}"
+            return None
+
+def qr_image_from_payload(payload):
+    import qrcode
+    qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, border=2, box_size=4)
+    qr.add_data(payload)
+    qr.make(fit=True)
+    return qr.make_image(fill_color="black", back_color="white").convert("RGB")
+
+def ml_input_from_image(image):
+    import numpy as np
+    Image, _, _, ImageOps, _ = image_libs()
+    image = ImageOps.exif_transpose(image).convert("RGB").resize((32, 32), Image.Resampling.BILINEAR)
+    return np.asarray(image, dtype="float32")[None, ...] / 255.0
+
+def classify_qr_with_ml(payload, image=None, input_source="generated_qr"):
+    if not ML_MODEL_ENABLED:
+        return {"enabled": False, "reason": "disabled"}
+
+    model = load_ml_model()
+    if model is None:
+        return {"enabled": False, "reason": _ML_MODEL_ERROR or "model_unavailable"}
+
+    generated_image = None
+    try:
+        if image is None:
+            generated_image = qr_image_from_payload(payload)
+            image = generated_image
+            input_source = "generated_qr"
+
+        prediction = model.predict(ml_input_from_image(image), verbose=0)
+        raw_values = [float(value) for value in prediction[0].tolist()]
+        if len(raw_values) == 1:
+            malicious_probability = 1.0 / (1.0 + pow(2.718281828459045, -raw_values[0]))
+            probabilities = [1.0 - malicious_probability, malicious_probability]
+        else:
+            probabilities = softmax(raw_values)
+            class_index = min(max(ML_MALICIOUS_CLASS_INDEX, 0), len(probabilities) - 1)
+            malicious_probability = probabilities[class_index]
+
+        benign_probability = max(0.0, min(1.0, 1.0 - malicious_probability))
+        malicious_probability = max(0.0, min(1.0, malicious_probability))
+        score = clamp_score(malicious_probability * 100)
+        label = "Malicious" if score >= 80 else ("Suspicious" if score >= 40 else "Benign")
+        return {
+            "enabled": True,
+            "model": os.path.basename(ML_MODEL_PATH),
+            "inputSource": input_source,
+            "score": score,
+            "label": label,
+            "benignProbability": round(benign_probability, 4),
+            "maliciousProbability": round(malicious_probability, 4),
+            "raw": [round(value, 6) for value in raw_values],
+        }
+    except Exception as exc:
+        return {"enabled": False, "reason": f"{type(exc).__name__}: {exc}"}
+    finally:
+        if generated_image is not None:
+            generated_image.close()
+
+def ml_signal_from_result(ml_result):
+    if not ml_result or not ml_result.get("enabled"):
+        return None
+    score = clamp_score(ml_result["score"])
+    severity = "high" if score >= 80 else ("medium" if score >= 40 else "low")
+    model_signal = signal(
+        "ML Risk Model",
+        f"{score}/100 continuous risk",
+        severity,
+        f"Keras QR classifier distribution: {round(ml_result['benignProbability'] * 100)}% benign, {round(ml_result['maliciousProbability'] * 100)}% malicious.",
+        score < 40
+    )
+    model_signal["distribution"] = {
+        "benign": ml_result["benignProbability"],
+        "malicious": ml_result["maliciousProbability"]
+    }
+    model_signal["model"] = ml_result.get("model")
+    return model_signal
+
+def blend_ml_score(rule_score, ml_result, signals):
+    rule_score = clamp_score(rule_score)
+    if not ml_result or not ml_result.get("enabled"):
+        return rule_score
+
+    ml_score = clamp_score(ml_result["score"])
+    blended = clamp_score((rule_score * (1.0 - ML_MODEL_WEIGHT)) + (ml_score * ML_MODEL_WEIGHT))
+    non_ml_high = any(item.get("severity") == "high" and item.get("check") != "ML Risk Model" for item in signals)
+    if non_ml_high and blended < 75:
+        blended = 75
+    if ml_score >= 90:
+        blended = max(blended, 85)
+    if ml_score <= 15 and not non_ml_high:
+        blended = min(blended, max(rule_score, 34))
+    return clamp_score(blended)
+
+def verdict_with_ml(base_verdict, final_score, ml_result, signals):
+    overall_risk = risk_from_score(final_score)
+    high_checks = [item["check"] for item in signals if item["severity"] == "high"]
+    medium_checks = [item["check"] for item in signals if item["severity"] == "medium"]
+    ml_phrase = ""
+    if ml_result and ml_result.get("enabled"):
+        ml_phrase = f" The ML model estimates {ml_result['score']}/100 risk with {round(ml_result['maliciousProbability'] * 100)}% malicious probability."
+
+    if overall_risk == "high":
+        if high_checks:
+            return f"This QR code shows high-risk indicators in {', '.join(high_checks[:3])}.{ml_phrase} Do not continue unless you can independently verify the destination and sender."
+        return f"This QR code lands in SafeScan's high-risk range.{ml_phrase} Do not continue unless you can independently verify the destination and sender."
+    if overall_risk == "suspicious":
+        checks = medium_checks or high_checks
+        if checks:
+            return f"This QR code looks suspicious because {', '.join(checks[:3])} need review.{ml_phrase} Continue only after confirming the domain, redirect path, and wallet action."
+        return f"This QR code lands in SafeScan's review range.{ml_phrase} Confirm the destination before taking action."
+    return f"SafeScan did not find strong phishing or wallet-drain indicators in this QR payload.{ml_phrase} Still verify the destination before connecting a wallet or sending funds."
+
+def threat_type_for_analysis(overall_risk, signals, ml_result=None):
+    if overall_risk == "safe":
+        return "Benign"
+    if ml_result and ml_result.get("enabled") and ml_result.get("label") == "Malicious":
+        return "Malicious QR"
+    first_high = next((item for item in signals if item["severity"] == "high" and item["check"] != "ML Risk Model"), None)
+    if first_high:
+        return first_high["check"]
+    return "Suspicious QR"
+
 def mock_analysis_response(target_url):
     normalized = normalize_url(target_url)
     signals = [
@@ -1295,7 +1462,7 @@ def generate_ai_verdict(signals):
 
     return fallback
 
-async def analyze_full_pipeline(target_url):
+async def analyze_full_pipeline(target_url, qr_image=None):
     normalized = validate_public_url(target_url)
     if MOCK_MODE:
         return mock_analysis_response(normalized)
@@ -1304,21 +1471,30 @@ async def analyze_full_pipeline(target_url):
     redirect_task = asyncio.to_thread(trace_redirect_chain, normalized)
     reputation_task = asyncio.to_thread(check_reputation_signals, normalized)
     crypto_task = asyncio.to_thread(check_crypto_pattern_signals, normalized)
-    domain_result, redirect_result, reputation_signals, crypto_signals = await asyncio.gather(domain_task, redirect_task, reputation_task, crypto_task)
+    ml_task = asyncio.to_thread(classify_qr_with_ml, normalized, qr_image, "uploaded_qr" if qr_image is not None else "generated_qr")
+    domain_result, redirect_result, reputation_signals, crypto_signals, ml_result = await asyncio.gather(domain_task, redirect_task, reputation_task, crypto_task, ml_task)
 
     signals = []
     signals.extend(domain_result if isinstance(domain_result, list) else [domain_result])
     signals.append(redirect_result["signal"])
     signals.extend(reputation_signals)
     signals.extend(crypto_signals)
+    ml_signal = ml_signal_from_result(ml_result)
+    if ml_signal:
+        signals.append(ml_signal)
     signals = sorted(signals, key=severity_rank)
     ai_verdict = generate_ai_verdict(signals)
+    final_score = blend_ml_score(ai_verdict["confidenceScore"], ml_result, signals)
+    overall_risk = risk_from_score(final_score)
 
     return {
         "url": normalized,
-        "overallRisk": ai_verdict["overallRisk"],
-        "confidenceScore": ai_verdict["confidenceScore"],
-        "verdict": ai_verdict["verdict"],
+        "overallRisk": overall_risk,
+        "confidenceScore": final_score,
+        "ruleScore": clamp_score(ai_verdict["confidenceScore"]),
+        "mlRisk": ml_result,
+        "threatType": threat_type_for_analysis(overall_risk, signals, ml_result),
+        "verdict": verdict_with_ml(ai_verdict["verdict"], final_score, ml_result, signals),
         "signals": signals,
         "redirectChain": redirect_result.get("redirectChain", []),
         "scannedAt": datetime.utcnow().isoformat() + "Z"
@@ -1529,14 +1705,16 @@ def pipeline_response_to_template_analysis(pipeline_response):
     return {
         "status": status_from_risk(overall_risk),
         "score": str(pipeline_response["confidenceScore"]),
-        "threat_class": first_signal["check"] if first_signal else "SafeScan Risk Engine",
+        "threat_class": pipeline_response.get("threatType") or threat_type_for_analysis(overall_risk, signals, pipeline_response.get("mlRisk")) or (first_signal["check"] if first_signal else "SafeScan Risk Engine"),
         "source": "SafeScan Core Risk Engine",
         "normalized": pipeline_response["url"],
         "payload_type": "URL",
         "overallRisk": overall_risk,
         "verdict": pipeline_response["verdict"],
         "reputation": {"provider": "SafeScan Core Risk Engine", "status": overall_risk.upper(), "matches": [], "detail": pipeline_response["verdict"]},
-        "reasons": signals
+        "reasons": signals,
+        "mlRisk": pipeline_response.get("mlRisk"),
+        "ruleScore": pipeline_response.get("ruleScore")
     }
 
 def decode_qr_image(image):
@@ -2798,6 +2976,7 @@ async def scan_qr(
     verified_wallet = get_verified_wallet(user_email)
     wallet_address = verified_wallet["address"] if verified_wallet else ""
     url_qr = None
+    qr_image_for_ml = None
 
     if manual_url and manual_url.strip():
         url_qr = manual_url.strip()
@@ -2823,6 +3002,7 @@ async def scan_qr(
                 decoded_qr = decode_qr_image(image)
                 if decoded_qr:
                     url_qr = decoded_qr[0].data.decode("utf-8")
+                    qr_image_for_ml = image.copy()
             finally:
                 image.close()
         except Exception:
@@ -2846,7 +3026,7 @@ async def scan_qr(
     if payload_type == "URL":
         try:
             normalized_payload = validate_public_url(normalized_payload)
-            pipeline_response = await analyze_full_pipeline(normalized_payload)
+            pipeline_response = await analyze_full_pipeline(normalized_payload, qr_image_for_ml)
         except SafeScanError as exc:
             pipeline_response = {
                 "url": normalized_payload,
@@ -2859,6 +3039,8 @@ async def scan_qr(
         analysis = pipeline_response_to_template_analysis(pipeline_response)
     else:
         analysis = analyze_qr_payload(url_qr)
+    if qr_image_for_ml is not None:
+        qr_image_for_ml.close()
     counted = record_unique_scan(user_email, url_qr, wallet_address)
     save_scan_history(user_email, analysis["normalized"], analysis)
     run_fraud_checks("scan", user_email, request, {"url": analysis["normalized"], "deviceFingerprint": device_fingerprint})

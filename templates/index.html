@@ -208,6 +208,7 @@
               <p class="engine-label">Scan verdict</p>
               <h2 id="riskVerdictTitle">{{ status }}</h2>
               <p class="result-support">{{ verdict_summary | default("SafeScan decoded the QR and checked the payload before any wallet, browser, or payment flow opened.") }}</p>
+              <p class="threat-type-line"><strong>Threat type:</strong> {{ threat_class }}</p>
             </div>
           </div>
 

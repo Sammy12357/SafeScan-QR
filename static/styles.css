@@ -213,6 +213,8 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
 .risk-warning-banner { margin-bottom: 16px; padding: 13px 14px; border-radius: 8px; border: 1px solid rgba(255, 110, 127, 0.38); background: rgba(255, 110, 127, 0.16); color: #ffd7dc; font-weight: 900; line-height: 1.45; }
 .risk-verdict-top { display: grid; grid-template-columns: 112px 1fr; gap: 18px; align-items: center; }
 .risk-verdict-top h2 { margin: 4px 0 8px; font-family: var(--display-font); font-size: 2.6rem; line-height: 1; letter-spacing: 0; }
+.threat-type-line { margin-top: 18px; color: var(--accent); font-weight: 900; }
+.threat-type-line strong { color: var(--text); }
 .risk-indicator { display: grid; place-items: center; width: 112px; aspect-ratio: 1; border-radius: 50%; font-family: var(--display-font); font-weight: 900; font-size: 1.55rem; color: #031017; background: var(--safe); box-shadow: 0 0 46px rgba(80, 227, 164, 0.38); }
 .risk-modal-caution .risk-indicator { background: var(--warning); box-shadow: 0 0 46px rgba(255, 187, 85, 0.32); }
 .risk-modal-dangerous .risk-indicator { background: var(--danger); box-shadow: 0 0 46px rgba(255, 110, 127, 0.36); }
