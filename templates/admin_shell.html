@@ -116,8 +116,31 @@
       {% endif %}
 
       {% elif page == 'airdrop' %}
-      <div class="stat-grid small"><article>Registered Wallets <b>{{ data.wallet_users|length }}</b></article><article>T1/T2/T3 <b>{{ data.tier_counts.Scanner }}/{{ data.tier_counts.Referrer }}/{{ data.tier_counts.Guardian }}</b></article><article class="{% if data.flagged|length %}danger-glow{% endif %}">Fraud Flags <b>{{ data.flagged|length }}</b></article><article>Est. SQR <b>{{ data.estimated_total }}</b></article></div>
-      <section class="admin-card"><table class="admin-table"><thead><tr><th>Email</th><th>Wallet</th><th>Tier</th><th>Scans</th><th>Referrals</th><th>Est. SQR</th><th>Fraud</th><th>Actions</th></tr></thead><tbody>{% for user in data.wallet_users %}<tr><td>{{ user.email }}</td><td class="truncate"><a href="https://solscan.io/account/{{ user.wallet_address }}">{{ user.wallet_address }}</a></td><td>{{ user.tier }}</td><td>{{ user.scan_count }}</td><td>{{ user.referral_count }}</td><td>{{ user.estimated_sqr }}</td><td>{{ 'yes' if user.fraud_flags else 'no' }}</td><td><form action="/admin/airdrop/{{ user.email }}/status" method="post"><input name="reason" placeholder="Reason"><button name="status" value="disqualified">Disqualify</button><button name="status" value="cleared">Verify Manually</button></form></td></tr>{% endfor %}</tbody></table></section>
+      <div class="stat-grid small">
+        <article>Registered Wallets <b>{{ data.wallet_users|length }}</b></article>
+        <article>Qualified Members <b>{{ data.qualified|length }}</b></article>
+        <article>Total SQR To Distribute <b>{{ data.estimated_total }}</b></article>
+        <article>Total SQR Sent <b>{{ data.distributed_total }}</b></article>
+        <article>T1/T2/T3 <b>{{ data.tier_counts.Scanner }}/{{ data.tier_counts.Referrer }}/{{ data.tier_counts.Guardian }}</b></article>
+        <article class="{% if data.flagged|length %}danger-glow{% endif %}">Fraud Flags <b>{{ data.flagged|length }}</b></article>
+      </div>
+      <section class="admin-card">
+        <h2>Qualified Airdrop Queue</h2>
+        <p>Base allocation: {{ data.base_allocation }} SQR. Referrer receives 2x and Guardian receives 5x. No wallet receives tokens until an admin runs this distribution.</p>
+        {% if data.distribution_result %}
+        <div class="request-message">
+          Distribution status: {{ data.distribution_result.status }} · sent {{ data.distribution_result.sent|length if data.distribution_result.sent else 0 }} wallet(s) · {{ data.distribution_result.total_tokens_sent or 0 }} SQR.
+          {% if data.distribution_result.error %}{{ data.distribution_result.error }} {{ data.distribution_result.error_type }}{% endif %}
+        </div>
+        {% endif %}
+        <form action="/admin/airdrop/distribute" method="post">
+          <button class="danger-button" type="submit" data-confirm="Distribute {{ data.estimated_total }} SQR to {{ data.qualified|length }} qualified member(s) now?" {% if not data.qualified %}disabled{% endif %}>Distribute {{ data.estimated_total }} SQR to {{ data.qualified|length }} Qualified Members</button>
+        </form>
+        <table class="admin-table">
+          <thead><tr><th>Email</th><th>Wallet</th><th>Tier</th><th>Scans</th><th>Referrals</th><th>SQR Allocation</th><th>Status</th><th>Fraud</th><th>Actions</th></tr></thead>
+          <tbody>{% for user in data.wallet_users %}<tr><td>{{ user.email }}</td><td class="truncate"><a href="https://solscan.io/account/{{ user.wallet_address }}">{{ user.wallet_address }}</a></td><td>{{ user.tier }}</td><td>{{ user.scan_count }}</td><td>{{ user.referral_count }}</td><td>{{ user.estimated_sqr }}</td><td>{{ user.distribution_status }}</td><td>{{ 'yes' if user.fraud_flags else 'no' }}</td><td><form action="/admin/airdrop/{{ user.email }}/status" method="post"><input name="reason" placeholder="Reason"><button name="status" value="disqualified">Disqualify</button><button name="status" value="cleared">Verify Manually</button></form></td></tr>{% endfor %}</tbody>
+        </table>
+      </section>
 
       {% elif page == 'fraud' %}
       <section class="admin-card"><table class="admin-table"><thead><tr><th>Email</th><th>Fraud Score</th><th>Signals</th><th>Highest</th><th>Wallet</th><th>Status</th><th>Flag Date</th><th>Review</th></tr></thead><tbody>{% for row in data.rows %}<tr><td>{{ row.email }}</td><td class="fraud-score">{{ row.fraud_score }}</td><td>{{ row.signal_count }}</td><td>{{ row.highest_severity }}</td><td class="truncate">{{ row.wallet_address }}</td><td>{{ row.airdrop_status }}</td><td>{{ row.flag_date }}</td><td><details><summary>Review</summary><p>Referral tree placeholder: node graph data appears after referral backend records exist.</p><form action="/admin/fraud/{{ row.email }}/review" method="post"><input name="reason" placeholder="Review reason"><button name="outcome" value="cleared">Clear</button><button name="outcome" value="disqualified">Disqualify</button><button name="outcome" value="escalated">Escalate to Owner</button></form></details></td></tr>{% endfor %}</tbody></table></section>

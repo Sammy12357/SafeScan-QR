@@ -3,6 +3,7 @@ import os
 import asyncio
 import base58
 import json
+from datetime import datetime
 from dotenv import load_dotenv
 from solana.rpc.async_api import AsyncClient
 from solders.pubkey import Pubkey
@@ -26,7 +27,12 @@ load_dotenv()
 
 # SQR Configuration
 MINT_ADDRESS = Pubkey.from_string("Bpdt7Hey78HeEEr9Q6x19gYAns5n6w44LdjJhxN3pump")
-AIRDROP_AMOUNT = 10  # Low amount for safety test
+AIRDROP_BASE_ALLOCATION = int(os.getenv("SQR_BASE_ALLOCATION", "100"))
+AIRDROP_TOKEN_ALLOCATIONS = {
+    "Scanner": AIRDROP_BASE_ALLOCATION,
+    "Referrer": AIRDROP_BASE_ALLOCATION * 2,
+    "Guardian": AIRDROP_BASE_ALLOCATION * 5,
+}
 RPC_URL = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
 
 
@@ -114,8 +120,68 @@ async def get_token_balance(client, token_account):
         return 0
     return int(balance.value.amount)
 
+
+def airdrop_tier(scan_count, referrals):
+    if scan_count >= 50 and referrals >= 2:
+        return "Guardian"
+    if scan_count >= 5 and referrals >= 1:
+        return "Referrer"
+    if scan_count >= 5:
+        return "Scanner"
+    return "Pending"
+
+
+def fetch_qualified_recipients(cursor):
+    cursor.execute("""
+        SELECT u.email,
+               COALESCE(w.address, s.wallet_address) AS wallet_address,
+               COALESCE(s.scan_count, 0) AS scan_count,
+               COALESCE(s.tokens_sent, 0) AS tokens_sent,
+               u.airdrop_status,
+               u.status,
+               COALESCE((SELECT COUNT(*) FROM referrals r WHERE r.referrer_email = u.email AND r.counted = 1), 0) AS referrals,
+               COALESCE((SELECT COUNT(*) FROM fraud_flags f WHERE f.user_id = u.email AND f.reviewed = 0), 0) AS fraud_flags
+        FROM users u
+        LEFT JOIN scans s ON s.email = u.email
+        LEFT JOIN wallets w ON w.user_id = u.email AND w.verified = 1 AND w.disconnected_at IS NULL
+        WHERE u.status = 'active'
+          AND u.airdrop_status IN ('eligible', 'cleared')
+          AND COALESCE(s.tokens_sent, 0) = 0
+          AND COALESCE((SELECT COUNT(*) FROM fraud_flags f WHERE f.user_id = u.email AND f.reviewed = 0), 0) = 0
+          AND COALESCE(w.address, s.wallet_address) IS NOT NULL
+          AND TRIM(COALESCE(w.address, s.wallet_address)) != ''
+    """)
+
+    recipients = []
+    skipped = []
+    for row in cursor.fetchall():
+        email, wallet_address, scan_count, tokens_sent, status, account_status, referrals, fraud_flags = row
+        tier = airdrop_tier(int(scan_count or 0), int(referrals or 0))
+        amount = AIRDROP_TOKEN_ALLOCATIONS.get(tier, 0)
+        if amount <= 0:
+            skipped.append({"email": email, "reason": "Tier is not qualified for distribution.", "tier": tier})
+            continue
+        recipients.append({
+            "email": email,
+            "wallet": wallet_address,
+            "tier": tier,
+            "amount": amount,
+            "scan_count": int(scan_count or 0),
+            "referrals": int(referrals or 0),
+        })
+    return recipients, skipped
+
+
+def ensure_distribution_columns(cursor):
+    cursor.execute("PRAGMA table_info(scans)")
+    columns = {row[1] for row in cursor.fetchall()}
+    if "airdrop_tokens_sent" not in columns:
+        cursor.execute("ALTER TABLE scans ADD COLUMN airdrop_tokens_sent INTEGER DEFAULT 0")
+    if "airdrop_sent_at" not in columns:
+        cursor.execute("ALTER TABLE scans ADD COLUMN airdrop_sent_at TEXT")
+
 async def airdrop_sweep():
-    print("\n--- SafeScan Airdrop Sweep (MAINNET TEST) ---")
+    print("\n--- SafeScan Airdrop Sweep ---")
     client = AsyncClient(RPC_URL)
     conn = None
 
@@ -125,7 +191,6 @@ async def airdrop_sweep():
         token_program_id = await get_token_program_id(client)
         server_ata = associated_token_address(server_wallet.pubkey(), token_program_id)
         decimals = await get_mint_decimals(client)
-        amount_raw = AIRDROP_AMOUNT * (10 ** decimals)
 
         server_info = await client.get_account_info(server_ata)
         if server_info.value is None:
@@ -134,36 +199,34 @@ async def airdrop_sweep():
                 f"Send SQR to this ATA first: {server_ata}"
             )
 
-        server_balance = await get_token_balance(client, server_ata)
-        if server_balance < amount_raw:
-            raise RuntimeError(
-                f"Server SQR balance is too low. Need {amount_raw} raw units, found {server_balance}."
-            )
-
         # 1. Connect to Database
         conn = sqlite3.connect('qr_cache.db')
         cursor = conn.cursor()
+        ensure_distribution_columns(cursor)
+        conn.commit()
 
-        # 2. Find eligible winners (5+ unique scans, not yet paid)
-        cursor.execute("""
-            SELECT email, wallet_address
-            FROM scans
-            WHERE scan_count >= 5
-              AND tokens_sent = 0
-              AND wallet_address IS NOT NULL
-              AND TRIM(wallet_address) != ''
-        """)
-        winners = cursor.fetchall()
+        winners, skipped = fetch_qualified_recipients(cursor)
+        total_tokens_to_send = sum(winner["amount"] for winner in winners)
+        total_required_raw = total_tokens_to_send * (10 ** decimals)
+
+        server_balance = await get_token_balance(client, server_ata)
+        if total_required_raw and server_balance < total_required_raw:
+            raise RuntimeError(
+                f"Server SQR balance is too low. Need {total_required_raw} raw units, found {server_balance}."
+            )
 
         summary = {
             "status": "ok",
             "eligible": len(winners),
             "sent": [],
-            "skipped": [],
+            "skipped": skipped,
             "failed": [],
             "mint": str(MINT_ADDRESS),
             "token_program": str(token_program_id),
-            "source_token_account": str(server_ata)
+            "source_token_account": str(server_ata),
+            "base_allocation": AIRDROP_BASE_ALLOCATION,
+            "total_tokens_to_send": total_tokens_to_send,
+            "total_tokens_sent": 0
         }
 
         if not winners:
@@ -172,7 +235,11 @@ async def airdrop_sweep():
 
         print(f"Found {len(winners)} winner(s). Starting transfer...")
 
-        for email, wallet_str in winners:
+        for winner in winners:
+            email = winner["email"]
+            wallet_str = winner["wallet"]
+            amount = int(winner["amount"])
+            amount_raw = amount * (10 ** decimals)
             try:
                 if not wallet_str:
                     print(f"SKIPPED {email}: no wallet address saved.")
@@ -211,14 +278,17 @@ async def airdrop_sweep():
                 await client.confirm_transaction(result.value, commitment="confirmed")
 
                 # 6. Update Database to mark as 'sent'
-                cursor.execute("UPDATE scans SET tokens_sent = 1 WHERE email = ?", (email,))
+                cursor.execute("UPDATE scans SET tokens_sent = 1, airdrop_tokens_sent = ?, airdrop_sent_at = ? WHERE email = ?", (amount, datetime.utcnow().isoformat() + "Z", email))
                 conn.commit()
 
-                print(f"SUCCESS: {AIRDROP_AMOUNT} SQR sent to {email}")
+                print(f"SUCCESS: {amount} SQR sent to {email}")
                 print(f"Tx URL: https://explorer.solana.com/tx/{result.value}")
+                summary["total_tokens_sent"] += amount
                 summary["sent"].append({
                     "email": email,
                     "wallet": wallet_str,
+                    "tier": winner["tier"],
+                    "amount": amount,
                     "signature": str(result.value),
                     "explorer_url": f"https://explorer.solana.com/tx/{result.value}"
                 })

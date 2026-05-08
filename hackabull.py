@@ -46,6 +46,12 @@ MAX_QR_UPLOAD_BYTES = int(os.getenv("MAX_QR_UPLOAD_BYTES", str(8 * 1024 * 1024))
 VALID_ROLES = ("user", "admin", "owner")
 VALID_STATUSES = ("active", "suspended", "deleted")
 RATE_LIMITS = {}
+AIRDROP_BASE_ALLOCATION = int(os.getenv("SQR_BASE_ALLOCATION", "100"))
+AIRDROP_TOKEN_ALLOCATIONS = {
+    "Scanner": AIRDROP_BASE_ALLOCATION,
+    "Referrer": AIRDROP_BASE_ALLOCATION * 2,
+    "Guardian": AIRDROP_BASE_ALLOCATION * 5,
+}
 LEGAL_VERSION = "v1.0"
 LEGAL_LAST_UPDATED = "May 2026"
 safe_browsing_url = f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={api_key}"
@@ -235,6 +241,10 @@ def init_db():
     scan_columns = {row[1] for row in cursor.fetchall()}
     if "airdrop_eligible" not in scan_columns:
         cursor.execute("ALTER TABLE scans ADD COLUMN airdrop_eligible INTEGER DEFAULT 0")
+    if "airdrop_tokens_sent" not in scan_columns:
+        cursor.execute("ALTER TABLE scans ADD COLUMN airdrop_tokens_sent INTEGER DEFAULT 0")
+    if "airdrop_sent_at" not in scan_columns:
+        cursor.execute("ALTER TABLE scans ADD COLUMN airdrop_sent_at TEXT")
     cursor.execute("UPDATE scans SET airdrop_eligible = 1 WHERE scan_count >= 5")
     conn.commit()
     conn.close()
@@ -1873,6 +1883,9 @@ def fetch_admin_users(search="", status="", role="", tier="", page=1, limit=25):
                    COALESCE(w.address, s.wallet_address) AS wallet_address,
                    w.verified AS wallet_verified, w.sol_balance, w.tx_count,
                    w.wallet_age_days, w.onchain_verified_at,
+                   COALESCE(s.tokens_sent, 0) AS tokens_sent,
+                   COALESCE(s.airdrop_tokens_sent, 0) AS airdrop_tokens_sent,
+                   s.airdrop_sent_at,
                    COALESCE((SELECT COUNT(*) FROM referrals r WHERE r.referrer_email = u.email AND r.counted = 1), 0) AS referral_count,
                    COALESCE((SELECT COUNT(*) FROM fraud_flags f WHERE f.user_id = u.email AND f.reviewed = 0), 0) AS fraud_flags
             FROM users u
@@ -1887,7 +1900,8 @@ def fetch_admin_users(search="", status="", role="", tier="", page=1, limit=25):
     for row in rows:
         scan_count = int(row.get("scan_count") or 0)
         referrals = int(row.get("referral_count") or 0)
-        row["tier"] = "Guardian" if scan_count >= 50 and referrals >= 3 else ("Referrer" if referrals else ("Scanner" if scan_count >= 5 else "Registered"))
+        tier_name = airdrop_tier(scan_count, referrals)
+        row["tier"] = "Registered" if tier_name == "Pending" else tier_name
     if tier:
         rows = [row for row in rows if row["tier"].lower() == tier.lower()]
     return {"rows": rows, "total": total, "page": page, "limit": limit, "pages": max(1, (total + limit - 1) // limit)}
@@ -1973,17 +1987,33 @@ def fetch_reports(tab="reports"):
     return {"reports": reports, "blocklist": blocklist, "tab": tab}
 
 def fetch_airdrop_data():
-    users = fetch_admin_users(limit=500)["rows"]
+    users = fetch_admin_users(limit=10000)["rows"]
     wallet_users = [row for row in users if row.get("wallet_address")]
     tier_counts = {"Registered": 0, "Scanner": 0, "Referrer": 0, "Guardian": 0}
     for row in wallet_users:
         tier_counts[row["tier"]] = tier_counts.get(row["tier"], 0) + 1
-        row["estimated_sqr"] = {"Registered": 100, "Scanner": 250, "Referrer": 500, "Guardian": 1000}.get(row["tier"], 100)
+        row["estimated_sqr"] = AIRDROP_TOKEN_ALLOCATIONS.get(row["tier"], 0)
+        row["distribution_status"] = "sent" if row.get("tokens_sent") else ("blocked" if row.get("airdrop_status") in ("flagged", "disqualified") or row.get("fraud_flags") else ("qualified" if row["estimated_sqr"] > 0 else "pending"))
     flagged = [row for row in users if row.get("airdrop_status") == "flagged" or row.get("fraud_flags")]
-    return {"wallet_users": wallet_users, "tier_counts": tier_counts, "flagged": flagged, "estimated_total": sum(row.get("estimated_sqr", 0) for row in wallet_users)}
+    qualified = [
+        row for row in wallet_users
+        if row.get("distribution_status") == "qualified"
+        and row.get("status") == "active"
+        and row.get("airdrop_status") in ("eligible", "cleared")
+    ]
+    distributed_total = sum(int(row.get("airdrop_tokens_sent") or 0) for row in wallet_users)
+    return {
+        "wallet_users": wallet_users,
+        "qualified": qualified,
+        "tier_counts": tier_counts,
+        "flagged": flagged,
+        "estimated_total": sum(row.get("estimated_sqr", 0) for row in qualified),
+        "distributed_total": distributed_total,
+        "base_allocation": AIRDROP_BASE_ALLOCATION,
+    }
 
 def airdrop_tier(scan_count, referrals):
-    if scan_count >= 50 and referrals >= 3:
+    if scan_count >= 50 and referrals >= 2:
         return "Guardian"
     if scan_count >= 5 and referrals >= 1:
         return "Referrer"
@@ -1996,8 +2026,8 @@ def next_airdrop_milestone(scan_count, referrals):
         return f"Scan {5 - scan_count} more QR code{'s' if 5 - scan_count != 1 else ''} to unlock Scanner."
     if referrals < 1:
         return "Invite 1 user with your referral link to unlock Referrer."
-    if scan_count < 50 or referrals < 3:
-        return "Scan 50 QR codes and invite 3 people to unlock Guardian."
+    if scan_count < 50 or referrals < 2:
+        return "Scan 50 QR codes and invite multiple people to unlock Guardian."
     return "Guardian tier unlocked."
 
 def fetch_fraud_data():
@@ -2259,6 +2289,33 @@ async def admin_risk_logs(request: Request):
 async def admin_airdrop(request: Request):
     return admin_context(request, "Tier Overview", "airdrop", fetch_airdrop_data())
 
+@qr_app.post("/admin/airdrop/distribute", response_class=HTMLResponse)
+async def admin_airdrop_distribute(request: Request):
+    admin_user = require_role_user(request, "admin")
+    try:
+        from distribute import airdrop_sweep
+        result = await airdrop_sweep()
+        audit_log(
+            "airdrop.sweep_executed",
+            request=request,
+            actor_user_id=admin_user.get("google_id"),
+            target_type="airdrop",
+            metadata={
+                "qualified": result.get("eligible", 0),
+                "sent": len(result.get("sent", [])),
+                "totalTokens": result.get("total_tokens_sent", 0),
+                "status": result.get("status")
+            }
+        )
+        data = fetch_airdrop_data()
+        data["distribution_result"] = result
+        return admin_context(request, "Tier Overview", "airdrop", data)
+    except Exception as exc:
+        audit_log("airdrop.sweep_failed", request=request, actor_user_id=admin_user.get("google_id"), target_type="airdrop", metadata={"error": type(exc).__name__})
+        data = fetch_airdrop_data()
+        data["distribution_result"] = {"status": "failed", "error": "Airdrop sweep failed.", "error_type": type(exc).__name__}
+        return admin_context(request, "Tier Overview", "airdrop", data)
+
 @qr_app.get("/admin/airdrop/fraud", response_class=HTMLResponse)
 async def admin_airdrop_fraud(request: Request):
     return admin_context(request, "Fraud Flags", "fraud", fetch_fraud_data())
@@ -2396,6 +2453,47 @@ async def api_scan(request: Request, payload: dict = Body(...)):
     run_fraud_checks("scan", email, request, {"url": history_analysis["normalized"], "deviceFingerprint": request.headers.get("x-device-fingerprint", "")})
     audit_log("qr.scanned", request=request, actor_user_id=user.get("google_id"), target_type="scan", metadata={"counted": counted, "payloadType": payload_type})
     return {**analysis, "counted": counted, "scanCount": get_scan_count(email), "payloadType": payload_type}
+
+@qr_app.get("/api/scan/history")
+async def api_scan_history(request: Request):
+    user = require_user(request)
+    try:
+        limit = int(request.query_params.get("limit", "50"))
+    except ValueError:
+        limit = 50
+    limit = max(1, min(limit, 100))
+
+    with sqlite3.connect("qr_cache.db") as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT id, url, risk_score, verdict, signals, reported, created_at
+            FROM scan_history
+            WHERE email = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (user["email"], limit),
+        ).fetchall()
+
+    history = []
+    for row in rows:
+        try:
+            signals = json.loads(row["signals"] or "[]")
+        except (TypeError, json.JSONDecodeError):
+            signals = []
+        history.append({
+            "scanId": row["id"],
+            "id": row["id"],
+            "url": row["url"],
+            "verdict": row["verdict"] or "safe",
+            "riskScore": int(row["risk_score"] or 0),
+            "signals": signals if isinstance(signals, list) else [],
+            "reported": bool(row["reported"]),
+            "analyzedAt": row["created_at"],
+            "scannedAt": row["created_at"],
+        })
+    return history
 
 @qr_app.post("/api/report")
 async def api_report_url(request: Request, payload: dict = Body(...)):
@@ -3207,7 +3305,18 @@ async def trigger_airdrop(
     try:
         from distribute import airdrop_sweep
         result = await airdrop_sweep()
-        audit_log("airdrop.sweep_executed", request=request, actor_user_id=admin_user.get("google_id") if admin_user else None, target_type="airdrop")
+        audit_log(
+            "airdrop.sweep_executed",
+            request=request,
+            actor_user_id=admin_user.get("google_id") if admin_user else None,
+            target_type="airdrop",
+            metadata={
+                "qualified": result.get("eligible", 0),
+                "sent": len(result.get("sent", [])),
+                "totalTokens": result.get("total_tokens_sent", 0),
+                "status": result.get("status")
+            }
+        )
         return {
             "status": result.get("status", "ok"),
             "message": "Airdrop sweep executed.",
