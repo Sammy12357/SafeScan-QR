@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title }} | SafeScan QR</title>
+  <link rel="stylesheet" href="/static/styles.css?v=legal-v1">
+</head>
+<body>
+  <div class="page-shell legal-shell">
+    <a class="secondary-button legal-back" href="/">Back to SafeScan</a>
+    <article class="legal-document">
+      <p class="eyebrow">SafeScan QR Legal</p>
+      <h1>{{ title }}</h1>
+      <p class="legal-meta">Version {{ version }} - Last updated {{ last_updated }}</p>
+      {{ body_html | safe }}
+    </article>
+    {% include "footer.html" %}
+  </div>
+  <script src="/static/app.js?v=legal-v1"></script>
+</body>
+</html>

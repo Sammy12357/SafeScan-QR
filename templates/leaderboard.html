@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Leaderboard | SafeScan QR</title>
+  <link rel="stylesheet" href="/static/styles.css?v=leaderboard-v1">
+  <style>
+    :root {
+      --bg: #09111f;
+      --text: #edf4ff;
+      --muted: #98a9c2;
+      --accent: #67f2c8;
+      --line: rgba(255,255,255,0.09);
+    }
+    body { background: linear-gradient(145deg,#060b12 0%,#0a1420 46%,#111827 100%); color: var(--text); font-family: "Space Grotesk","Aptos","Segoe UI",sans-serif; margin: 0; }
+    .lb-shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 80px; }
+    .lb-back { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 28px; font-size: 0.85rem; color: var(--muted); text-decoration: none; }
+    .lb-back:hover { color: var(--text); }
+    .lb-eyebrow { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.16em; color: var(--accent); margin: 0 0 6px; }
+    .lb-shell h1 { margin: 0 0 6px; font-size: 2rem; font-weight: 700; }
+    .lb-sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 32px; }
+    .lb-table { width: 100%; border-collapse: collapse; }
+    .lb-table thead th {
+      text-align: left; font-size: 0.72rem; text-transform: uppercase;
+      letter-spacing: 0.1em; color: var(--muted);
+      padding: 0 16px 12px; border-bottom: 1px solid var(--line);
+    }
+    .lb-table tbody tr {
+      border-bottom: 1px solid var(--line);
+      transition: background 0.15s;
+    }
+    .lb-table tbody tr:hover { background: rgba(255,255,255,0.03); }
+    .lb-table tbody tr.current-user { background: rgba(103,242,200,0.06); }
+    .lb-table td { padding: 14px 16px; font-size: 0.9rem; }
+    .lb-rank { color: var(--muted); font-weight: 700; width: 48px; }
+    .lb-rank-top { color: var(--accent); }
+    .lb-username { font-weight: 600; }
+    .lb-username-you::after { content: " (you)"; color: var(--accent); font-size: 0.78rem; font-weight: 400; }
+    .lb-num { color: var(--text); }
+    .lb-date { color: var(--muted); font-size: 0.82rem; }
+    .lb-empty { color: var(--muted); text-align: center; padding: 60px 0; font-size: 0.95rem; }
+    .medal { margin-right: 4px; }
+  </style>
+</head>
+<body>
+  <div class="lb-shell">
+    <a class="lb-back" href="/">&#8592; Back to Scanner</a>
+    <p class="lb-eyebrow">SafeScan QR</p>
+    <h1>Global Leaderboard</h1>
+    <p class="lb-sub">Ranked by unique QR scans. <span data-runtime-timer>Runtime: loading</span></p>
+
+    {% if leaders %}
+    <table class="lb-table">
+      <thead>
+        <tr>
+          <th>Rank</th>
+          <th>Username</th>
+          <th>Unique scans</th>
+          <th>Total saved</th>
+          <th>Last scan</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in leaders %}
+        <tr class="{{ 'current-user' if row.username == username else '' }}">
+          <td class="lb-rank {{ 'lb-rank-top' if loop.index <= 3 else '' }}">
+            {% if loop.index == 1 %}<span class="medal">🥇</span>{% elif loop.index == 2 %}<span class="medal">🥈</span>{% elif loop.index == 3 %}<span class="medal">🥉</span>{% else %}{{ row.rank }}{% endif %}
+          </td>
+          <td class="lb-username {{ 'lb-username-you' if row.username == username else '' }}">{{ row.username }}</td>
+          <td class="lb-num">{{ row.scan_count }}</td>
+          <td class="lb-num">{{ row.total_saved_scans }}</td>
+          <td class="lb-date">{{ row.last_scanned_at or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="lb-empty">No scans yet. Be the first scanner on the board.</p>
+    {% endif %}
+  </div>
+  {% include "footer.html" %}
+  <script src="/static/global_timer.js?v=runtime-v1"></script>
+</body>
+</html>

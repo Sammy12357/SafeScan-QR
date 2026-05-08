@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+.env
+qr_cache.db
+.claude/
+.codex_server_*.log
+.codex_tmp_deps/
+.codex_tmp_deps2/

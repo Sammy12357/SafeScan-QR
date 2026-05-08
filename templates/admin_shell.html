@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title }} | SafeScan Admin</title>
+  <link rel="stylesheet" href="/static/admin.css?v=admin-build-v1">
+</head>
+<body class="admin-body">
+  {% set owner_pages = ['/admin/api-keys', '/admin/settings'] %}
+  <aside class="admin-sidebar">
+    <a class="admin-brand" href="/" aria-label="Back to SafeScan QR home"><span>SafeScan QR</span><b>ADMIN</b></a>
+    <nav class="admin-nav">
+      <a class="admin-home-link" href="/">Back to Home</a>
+      <p>Overview</p>
+      <a href="/admin">Dashboard</a>
+      <a href="/admin/activity">Activity Feed</a>
+      <p>Users</p>
+      <a href="/admin/users">All Users</a>
+      <a href="/admin/users?status=suspended">Suspended</a>
+      <a href="/admin/users?flag=review">Pending Review</a>
+      <p>Scanning</p>
+      <a href="/admin/scans">All Scans</a>
+      <a href="/admin/reports">Reported URLs</a>
+      <a href="/admin/risk-logs">Risk Engine Logs</a>
+      <p>Airdrop</p>
+      <a href="/admin/airdrop">Tier Overview</a>
+      <a href="/admin/airdrop/fraud">Fraud Flags</a>
+      <a href="/admin/airdrop/wallets">Wallet Registry</a>
+      <p>System</p>
+      <a href="/admin/logs">Audit Logs</a>
+      {% if is_owner %}
+      <a href="/admin/api-keys">API Keys</a>
+      <a href="/admin/settings">Settings</a>
+      {% endif %}
+    </nav>
+    <div class="admin-user">
+      <div class="avatar">{{ avatar }}</div>
+      <div><strong>{{ admin_user.email }}</strong><span>{{ admin_user.role }}</span></div>
+      <form action="/auth/logout" method="post"><button type="submit">Sign Out</button></form>
+    </div>
+  </aside>
+
+  <main class="admin-main">
+    <header class="admin-topbar">
+      <h1>{% if title in ['API Keys', 'Settings'] %}<span class="crown">♛</span>{% endif %}{{ title }}</h1>
+      <form class="global-search" action="/admin/users" method="get">
+        <input name="search" placeholder="Search users by email or ID">
+      </form>
+      <div class="bell">● <span>{{ data.get('stats', [])|length if page == 'dashboard' else 0 }}</span></div>
+    </header>
+
+    <section class="admin-content">
+      {% if page == 'dashboard' %}
+      <div class="stat-grid">
+        {% for card in data.stats %}
+        <article class="admin-card stat-card {% if card.danger %}danger-glow{% endif %}">
+          <div class="stat-icon">{{ card.icon }}</div>
+          <strong>{{ card.value }}</strong>
+          <span>{{ card.label }}</span>
+          <em>{{ card.trend }} vs last 7 days</em>
+        </article>
+        {% endfor %}
+      </div>
+      <div class="two-grid">
+        <section class="admin-card"><h2>Scans Over Time</h2><div class="line-chart">
+          {% for row in data.chart_rows %}
+          <div title="{{ row.day }}: {{ row.total }}"><span style="height: {{ [8, row.total * 8]|max }}px"></span><b style="height: {{ [4, row.flagged * 10]|max }}px"></b></div>
+          {% endfor %}
+        </div></section>
+        <section class="admin-card"><h2>Risk Verdict Breakdown</h2><div class="donut-list">
+          {% for row in data.verdict_rows %}<p><span class="dot {{ row.verdict|lower }}"></span>{{ row.verdict }} <b>{{ row.count }}</b></p>{% endfor %}
+        </div></section>
+      </div>
+      <div class="two-grid">
+        <section class="admin-card"><h2>Recent Signups</h2><table><tbody>
+          {% for user in data.recent_users %}<tr><td><div class="mini-avatar">{{ user.email[:1]|upper }}</div></td><td>{{ user.email }}</td><td>{{ user.created_at or user.last_login }}</td><td>{{ 'yes' if user.wallet_address else 'no' }}</td><td><a href="/admin/users?search={{ user.email }}">View</a></td></tr>{% endfor %}
+        </tbody></table></section>
+        <section class="admin-card"><h2>Recent Reports</h2><table><tbody>
+          {% for report in data.recent_reports %}<tr><td class="truncate">{{ report.url }}</td><td>{{ report.reporter_email }}</td><td>{{ report.risk_score }}</td><td><a href="/admin/reports">Review</a></td></tr>{% endfor %}
+        </tbody></table></section>
+      </div>
+      <section class="admin-card"><h2>Live Activity Feed</h2><div class="activity-feed">
+        {% for log in data.activity %}<p class="activity {{ log.action }}"><b>{{ log.actor_user_id or 'system' }}</b> {{ log.action.replace('.', ' ') }} <span>{{ log.created_at }}</span></p>{% endfor %}
+      </div></section>
+
+      {% elif page == 'users' %}
+      <form class="filters" method="get">
+        <input name="search" value="{{ data.filters.search }}" placeholder="Search email, name, or ID">
+        <select name="status"><option value="">All Statuses</option>{% for value in ['active','suspended','deleted'] %}<option value="{{ value }}" {% if data.filters.status == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select>
+        <select name="role"><option value="">All Roles</option>{% for value in ['user','admin','owner'] %}<option value="{{ value }}" {% if data.filters.role == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select>
+        <select name="tier"><option value="">All Tiers</option>{% for value in ['Registered','Scanner','Referrer','Guardian'] %}<option value="{{ value }}" {% if data.filters.tier == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select>
+        <button>Filter</button>{% if is_owner %}<a class="button-link" href="/admin/export/users">Export</a>{% endif %}
+      </form>
+      <section class="admin-card"><table class="admin-table">
+        <thead><tr><th></th><th>Email</th><th>Display Name</th><th>Role</th><th>Status</th><th>Tier</th><th>Scans</th><th>Referrals</th><th>Wallet</th><th>Joined</th><th>Last Active</th><th>Actions</th></tr></thead>
+        <tbody>{% for user in data.rows %}<tr>
+          <td><input type="checkbox"></td><td>{{ user.email }}</td><td>{{ user.display_name or 'Safe scanner' }}</td><td><span class="badge role">{{ user.role }}</span></td><td><span class="badge {{ user.status }}">{{ user.status }}</span></td><td>{{ user.tier }}</td><td>{{ user.scan_count }}</td><td>{{ user.referral_count }}</td><td class="truncate">{{ user.wallet_address or 'None' }}</td><td>{{ user.created_at }}</td><td>{{ user.last_login_at or user.last_login }}</td>
+          <td class="row-actions"><a href="/admin/users?search={{ user.email }}">View</a><form action="/admin/users/{{ user.email }}/suspend" method="post"><button>{{ 'Unsuspend' if user.status == 'suspended' else 'Suspend' }}</button><input type="hidden" name="action" value="{{ 'unsuspend' if user.status == 'suspended' else 'suspend' }}"></form>{% if is_owner %}<form action="/admin/users/{{ user.email }}/role" method="post"><select name="role" onchange="this.form.submit()"><option>{{ user.role }}</option><option>user</option><option>admin</option><option>owner</option></select></form><form action="/admin/users/{{ user.email }}/delete" method="post"><input name="confirm" placeholder="DELETE"><button>Delete</button></form>{% endif %}</td>
+        </tr>{% endfor %}</tbody>
+      </table><p>Page {{ data.page }} of {{ data.pages }} · {{ data.total }} users</p></section>
+
+      {% elif page == 'scans' %}
+      <div class="stat-grid small"><article>Total Scans <b>{{ data.stats.total }}</b></article><article>Flagged Today <b>{{ data.stats.flagged_today }}</b></article><article>Avg Risk 7d <b>{{ data.stats.avg_risk }}</b></article><article>Common TLD <b>{{ data.stats.common_tld }}</b></article></div>
+      <form class="filters" method="get"><input name="search" placeholder="URL keyword"><input name="user" placeholder="User email"><select name="verdict"><option value="">All verdicts</option><option>SAFE</option><option>CAUTION</option><option>MALICIOUS</option></select><button>Filter</button></form>
+      <section class="admin-card"><table class="admin-table"><thead><tr><th>Scan ID</th><th>User</th><th>URL</th><th>Risk</th><th>Verdict</th><th>Signals</th><th>Date</th><th>Actions</th></tr></thead><tbody>
+        {% for scan in data.rows %}<tr><td>{{ scan.id[:12] }}</td><td>{{ scan.email }}</td><td class="truncate" title="{{ scan.url }}">{{ scan.url }}</td><td class="risk">{{ scan.risk_score }}</td><td><span class="badge {{ scan.verdict|lower }}">{{ scan.verdict }}</span></td><td>{{ (scan.signals or '[]')|length }}</td><td>{{ scan.created_at }}</td><td><details><summary>View Details</summary><pre>{{ scan.signals }}</pre></details><form action="/admin/scans/{{ scan.id }}/flag" method="post"><button>Flag URL</button></form><a href="/admin/users?search={{ scan.email }}">View User</a></td></tr>{% endfor %}
+      </tbody></table></section>
+
+      {% elif page == 'reports' %}
+      <div class="tabs"><a href="/admin/reports">Reports</a><a href="/admin/reports?tab=blocklist">Blocklist</a></div>
+      {% if data.tab == 'blocklist' %}
+      <section class="admin-card"><table class="admin-table"><thead><tr><th>URL</th><th>Reason</th><th>Added By</th><th>Date</th><th></th></tr></thead><tbody>{% for item in data.blocklist %}<tr><td class="truncate">{{ item.url }}</td><td>{{ item.reason }}</td><td>{{ item.added_by }}</td><td>{{ item.created_at }}</td><td><form action="/admin/blocklist/{{ item.id }}/remove" method="post"><button>Remove</button></form></td></tr>{% endfor %}</tbody></table></section>
+      {% else %}
+      <section class="admin-card"><table class="admin-table"><thead><tr><th>URL</th><th>Reporter</th><th>Reason</th><th>Risk</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead><tbody>{% for report in data.reports %}<tr><td class="truncate">{{ report.url }}</td><td>{{ report.reporter_email }}</td><td>{{ report.reason }}</td><td>{{ report.risk_score }}</td><td><span class="badge">{{ report.status }}</span></td><td>{{ report.created_at }}</td><td><form action="/admin/reports/{{ report.id }}/action" method="post"><button name="action" value="confirm">Confirm Malicious</button><button name="action" value="dismiss">Dismiss</button><button name="action" value="reanalyze">Re-analyze</button></form></td></tr>{% endfor %}</tbody></table></section>
+      {% endif %}
+
+      {% elif page == 'airdrop' %}
+      <div class="stat-grid small">
+        <article>Registered Wallets <b>{{ data.wallet_users|length }}</b></article>
+        <article>Qualified Members <b>{{ data.qualified|length }}</b></article>
+        <article>Total SQR To Distribute <b>{{ data.estimated_total }}</b></article>
+        <article>Total SQR Sent <b>{{ data.distributed_total }}</b></article>
+        <article>T1/T2/T3 <b>{{ data.tier_counts.Scanner }}/{{ data.tier_counts.Referrer }}/{{ data.tier_counts.Guardian }}</b></article>
+        <article class="{% if data.flagged|length %}danger-glow{% endif %}">Fraud Flags <b>{{ data.flagged|length }}</b></article>
+      </div>
+      <section class="admin-card">
+        <h2>Qualified Airdrop Queue</h2>
+        <p>Base allocation: {{ data.base_allocation }} SQR. Referrer receives 2x and Guardian receives 5x. No wallet receives tokens until an admin runs this distribution.</p>
+        {% if data.distribution_result %}
+        <div class="request-message">
+          Distribution status: {{ data.distribution_result.status }} · sent {{ data.distribution_result.sent|length if data.distribution_result.sent else 0 }} wallet(s) · {{ data.distribution_result.total_tokens_sent or 0 }} SQR.
+          {% if data.distribution_result.error %}{{ data.distribution_result.error }} {{ data.distribution_result.error_type }}{% endif %}
+        </div>
+        {% endif %}
+        <form action="/admin/airdrop/distribute" method="post">
+          <button class="danger-button" type="submit" data-confirm="Distribute {{ data.estimated_total }} SQR to {{ data.qualified|length }} qualified member(s) now?" {% if not data.qualified %}disabled{% endif %}>Distribute {{ data.estimated_total }} SQR to {{ data.qualified|length }} Qualified Members</button>
+        </form>
+        <table class="admin-table">
+          <thead><tr><th>Email</th><th>Wallet</th><th>Tier</th><th>Scans</th><th>Referrals</th><th>SQR Allocation</th><th>Status</th><th>Fraud</th><th>Actions</th></tr></thead>
+          <tbody>{% for user in data.wallet_users %}<tr><td>{{ user.email }}</td><td class="truncate"><a href="https://solscan.io/account/{{ user.wallet_address }}">{{ user.wallet_address }}</a></td><td>{{ user.tier }}</td><td>{{ user.scan_count }}</td><td>{{ user.referral_count }}</td><td>{{ user.estimated_sqr }}</td><td>{{ user.distribution_status }}</td><td>{{ 'yes' if user.fraud_flags else 'no' }}</td><td><form action="/admin/airdrop/{{ user.email }}/status" method="post"><input name="reason" placeholder="Reason"><button name="status" value="disqualified">Disqualify</button><button name="status" value="cleared">Verify Manually</button></form></td></tr>{% endfor %}</tbody>
+        </table>
+      </section>
+
+      {% elif page == 'fraud' %}
+      <section class="admin-card"><table class="admin-table"><thead><tr><th>Email</th><th>Fraud Score</th><th>Signals</th><th>Highest</th><th>Wallet</th><th>Status</th><th>Flag Date</th><th>Review</th></tr></thead><tbody>{% for row in data.rows %}<tr><td>{{ row.email }}</td><td class="fraud-score">{{ row.fraud_score }}</td><td>{{ row.signal_count }}</td><td>{{ row.highest_severity }}</td><td class="truncate">{{ row.wallet_address }}</td><td>{{ row.airdrop_status }}</td><td>{{ row.flag_date }}</td><td><details><summary>Review</summary><p>Referral tree placeholder: node graph data appears after referral backend records exist.</p><form action="/admin/fraud/{{ row.email }}/review" method="post"><input name="reason" placeholder="Review reason"><button name="outcome" value="cleared">Clear</button><button name="outcome" value="disqualified">Disqualify</button><button name="outcome" value="escalated">Escalate to Owner</button></form></details></td></tr>{% endfor %}</tbody></table></section>
+
+      {% elif page == 'logs' %}
+      <form class="filters" method="get"><input name="search" placeholder="Actor"><select name="action"><option value="">All Actions</option>{% for action in data.actions %}<option>{{ action }}</option>{% endfor %}</select><input name="target_type" placeholder="Target type"><button>Filter</button>{% if is_owner %}<a class="button-link" href="/admin/logs?export=csv">Export Logs</a>{% endif %}</form>
+      <section class="admin-card"><table class="admin-table"><thead><tr><th>Timestamp</th><th>Actor</th><th>Action</th><th>Target</th><th>IP</th><th>User Agent</th><th>Details</th></tr></thead><tbody>{% for log in data.rows %}<tr><td>{{ log.created_at }}</td><td>{{ log.actor_user_id }}</td><td><span class="badge">{{ log.action }}</span></td><td>{{ log.target_type }} {{ log.target_id }}</td><td>{{ log.ip_address }}</td><td class="truncate">{{ log.user_agent }}</td><td><details><summary>Details</summary><pre>{{ log.metadata }}</pre></details></td></tr>{% endfor %}</tbody></table></section>
+
+      {% elif page == 'api_keys' %}
+      <section class="admin-card"><h2>Generate New Key</h2><form class="filters" action="/admin/api-keys" method="post"><input name="name" placeholder="Key name" required><label><input type="checkbox" name="scopes" value="risk:analyze"> risk:analyze</label><label><input type="checkbox" name="scopes" value="admin:export"> admin:export</label><label><input type="checkbox" name="scopes" value="admin:api_keys"> admin:api_keys</label><input name="expires_at" placeholder="Expiry ISO date optional"><button>Generate New Key</button></form></section>
+      <section class="admin-card"><table class="admin-table"><thead><tr><th>Name</th><th>Hint</th><th>Created By</th><th>Created</th><th>Last Used</th><th>Scopes</th><th>Status</th><th></th></tr></thead><tbody>{% for key in data['keys'] %}<tr><td>{{ key.name }}</td><td>{{ key.key_hint }}</td><td>{{ key.created_by }}</td><td>{{ key.created_at }}</td><td>{{ key.last_used_at }}</td><td>{{ key.scopes }}</td><td>{{ key.status }}</td><td><form action="/admin/api-keys/{{ key.id }}/revoke" method="post"><button>Revoke</button></form></td></tr>{% endfor %}</tbody></table></section>
+
+      {% elif page == 'api_key_created' %}
+      <section class="admin-card key-reveal"><h2>New API Key</h2><p>This key will not be shown again.</p><code>{{ data.raw_key }}</code><a class="button-link" href="/admin/api-keys">Back to API keys</a></section>
+
+      {% elif page == 'settings' %}
+      <section class="admin-card"><h2>System Settings</h2><p>App URL: {{ data.app_url }}</p><p>Admin emails: {{ data.admin_emails|join(', ') }}</p><p>Owner emails: {{ data.owner_emails|join(', ') }}</p></section>
+      {% endif %}
+    </section>
+  </main>
+  <script src="/static/admin.js?v=admin-build-v1"></script>
+</body>
+</html>

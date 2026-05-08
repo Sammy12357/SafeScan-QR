@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Confirm Age | SafeScan QR</title>
+  <link rel="stylesheet" href="/static/styles.css?v=legal-v1">
+</head>
+<body>
+  <div class="page-shell legal-shell">
+    <section class="legal-document age-gate">
+      <p class="eyebrow">SafeScan QR</p>
+      <h1>Confirm Age</h1>
+      {% if blocked %}
+      <p>SafeScan is not available for users under {{ threshold }} in your region. We did not create an account.</p>
+      <a class="secondary-button" href="/">Return home</a>
+      {% else %}
+      <p>Please confirm you are {{ threshold }} or older to use SafeScan.</p>
+      <form class="legal-form" action="/auth/confirm-age" method="post">
+        <input type="hidden" name="email" value="{{ email }}">
+        <input type="hidden" name="locale" value="{{ locale }}">
+        <input type="hidden" name="threshold" value="{{ threshold }}">
+        <label class="checkbox-row">
+          <input type="checkbox" name="confirmed" value="yes" required>
+          <span>I confirm I am {{ threshold }} or older and agree to SafeScan's Terms and Privacy Policy.</span>
+        </label>
+        <button class="primary-button" type="submit">Continue</button>
+      </form>
+      <form action="/auth/confirm-age" method="post">
+        <input type="hidden" name="email" value="{{ email }}">
+        <input type="hidden" name="locale" value="{{ locale }}">
+        <input type="hidden" name="threshold" value="{{ threshold }}">
+        <input type="hidden" name="confirmed" value="no">
+        <button class="secondary-button" type="submit">I am under {{ threshold }}</button>
+      </form>
+      {% endif %}
+    </section>
+  </div>
+</body>
+</html>

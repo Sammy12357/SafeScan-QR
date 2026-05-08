@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scan History | SafeScan QR</title>
+  <link rel="stylesheet" href="/static/styles.css?v=legal-v1">
+  <style>
+    :root {
+      --bg: #09111f; --text: #edf4ff; --muted: #98a9c2;
+      --accent: #67f2c8; --line: rgba(255,255,255,0.09);
+      --danger: #ff6e7f; --warn: #f59e0b;
+    }
+    body { background: linear-gradient(145deg,#060b12 0%,#0a1420 46%,#111827 100%); color: var(--text); font-family: "Space Grotesk","Aptos","Segoe UI",sans-serif; margin: 0; }
+    .history-shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 80px; }
+    .history-back { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 28px; font-size: 0.85rem; color: var(--muted); text-decoration: none; }
+    .history-back:hover { color: var(--text); }
+    .history-eyebrow { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.16em; color: var(--accent); margin: 0 0 6px; }
+    .history-shell h1 { margin: 0 0 6px; font-size: 2rem; font-weight: 700; }
+    .history-sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 32px; }
+    .history-list { display: flex; flex-direction: column; gap: 12px; }
+    .history-card {
+      background: rgba(13,24,43,0.9); border: 1px solid var(--line); border-radius: 12px;
+      padding: 16px 20px; display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; align-items: start;
+    }
+    .history-url { color: var(--accent); word-break: break-all; font-size: 0.9rem; text-decoration: none; grid-column: 1; }
+    .history-url:hover { text-decoration: underline; }
+    .history-meta { color: var(--muted); font-size: 0.78rem; grid-column: 1; }
+    .history-badge {
+      grid-column: 2; grid-row: 1 / 3; align-self: center;
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 700; white-space: nowrap;
+    }
+    .badge-safe    { background: rgba(103,242,200,0.12); color: var(--accent); border: 1px solid rgba(103,242,200,0.25); }
+    .badge-caution { background: rgba(245,158,11,0.12);  color: var(--warn);   border: 1px solid rgba(245,158,11,0.25); }
+    .badge-danger  { background: rgba(255,110,127,0.12); color: var(--danger); border: 1px solid rgba(255,110,127,0.25); }
+    .history-empty { color: var(--muted); text-align: center; padding: 60px 0; font-size: 0.95rem; }
+  </style>
+</head>
+<body>
+  <div class="history-shell">
+    <a class="history-back" href="/">&#8592; Back to Scanner</a>
+    <p class="history-eyebrow">SafeScan QR</p>
+    <h1>Your Scan History</h1>
+    <p class="history-sub">{{ email if email else "Sign in to view saved scans" }}</p>
+
+    {% if not email %}
+      <p class="history-empty">Please <a href="/login" style="color:var(--accent)">sign in</a> to view your scan history.</p>
+    {% elif not scans %}
+      <p class="history-empty">No scans yet. Scan a QR code to see history here.</p>
+    {% else %}
+      <div class="history-list">
+        {% for scan in scans %}
+        {% set verdict = (scan.verdict or 'SAFE') | upper %}
+        {% set badge = 'badge-safe' if verdict == 'SAFE' else ('badge-caution' if verdict == 'CAUTION' else 'badge-danger') %}
+        <div class="history-card">
+          <a class="history-url" href="{{ scan.url }}" target="_blank" rel="noopener noreferrer">{{ scan.url }}</a>
+          <div class="history-meta">Risk score: {{ scan.risk_score or 0 }}/100 &nbsp;·&nbsp; {{ scan.created_at[:16].replace('T', ' ') if scan.created_at else 'Unknown' }}</div>
+          <span class="history-badge {{ badge }}">{{ verdict }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+  {% include "footer.html" %}
+</body>
+</html>

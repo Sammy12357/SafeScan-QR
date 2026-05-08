@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Choose Username | SafeScan QR</title>
+  <link rel="stylesheet" href="/static/styles.css?v=wallet-signature-v2">
+</head>
+<body>
+  <div class="page-shell legal-shell">
+    <section class="legal-document">
+      <p class="eyebrow">SafeScan QR</p>
+      <h1>Choose your username</h1>
+      <p class="legal-meta">{{ email }}</p>
+      <p>Your username appears on the global leaderboard instead of your email.</p>
+      {% if error %}<p class="error-text">{{ error }}</p>{% endif %}
+      <form action="/onboarding/username" method="post" class="data-request-form">
+        <label>
+          Username
+          <input name="username" autocomplete="username" minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" placeholder="safescanner" required>
+        </label>
+        <button class="primary-button" type="submit">Continue</button>
+      </form>
+    </section>
+    {% include "footer.html" %}
+  </div>
+</body>
+</html>

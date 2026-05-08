@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">SafeScan QR logo</title>
+  <desc id="desc">A flat 2D version of the QR mark shown on the SafeScan interactive phone model.</desc>
+  <defs>
+    <filter id="tileGlow" x="-28%" y="-28%" width="156%" height="156%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.447 0 0 0 0 1 0 0 0 0 0.831 0 0 0 0.5 0"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="82" fill="#000307"/>
+  <g filter="url(#tileGlow)">
+    <rect x="70" y="70" width="36" height="36" rx="7" fill="#f7fffd"/>
+    <rect x="118" y="70" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="166" y="70" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="262" y="70" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="358" y="70" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="406" y="70" width="36" height="36" rx="7" fill="#b2fff4"/>
+    <rect x="70" y="118" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="166" y="118" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="310" y="118" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="406" y="118" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="70" y="166" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="118" y="166" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="166" y="166" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="214" y="166" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="310" y="166" width="36" height="36" rx="7" fill="#b2fff4"/>
+    <rect x="358" y="166" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="166" y="214" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="262" y="214" width="36" height="36" rx="7" fill="#b2fff4"/>
+    <rect x="310" y="214" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="406" y="214" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="70" y="262" width="36" height="36" rx="7" fill="#b2fff4"/>
+    <rect x="214" y="262" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="262" y="262" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="358" y="262" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="118" y="310" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="166" y="310" width="36" height="36" rx="7" fill="#b2fff4"/>
+    <rect x="310" y="310" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="406" y="310" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="70" y="358" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="166" y="358" width="36" height="36" rx="7" fill="#b2fff4"/>
+    <rect x="214" y="358" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="262" y="358" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="358" y="358" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="406" y="358" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="70" y="406" width="36" height="36" rx="7" fill="#b2fff4"/>
+    <rect x="118" y="406" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="262" y="406" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="310" y="406" width="36" height="36" rx="7" fill="#72ffd4"/>
+    <rect x="406" y="406" width="36" height="36" rx="7" fill="#b2fff4"/>
+  </g>
+</svg>
