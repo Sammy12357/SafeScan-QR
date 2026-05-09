@@ -384,17 +384,18 @@ dom.demoWalletButton?.addEventListener("click", () => {
 
 dom.copyTokenAddressButton?.addEventListener("click", async () => {
   const tokenAddress = dom.tokenAddress?.textContent?.trim() || "";
-  const originalLabel = dom.copyTokenAddressButton.textContent;
-  dom.copyTokenAddressButton.disabled = true;
+  window.clearTimeout(dom.copyTokenAddressButton.dataset.resetTimer);
   try {
     await copyTextToClipboard(tokenAddress);
     dom.copyTokenAddressButton.textContent = "Copied";
   } catch {
     dom.copyTokenAddressButton.textContent = tokenAddress ? "Copied" : "Copy failed";
   } finally {
-    window.setTimeout(() => {
-      dom.copyTokenAddressButton.textContent = originalLabel || "Copy";
-      dom.copyTokenAddressButton.disabled = false;
+    dom.tokenAddress?.classList.remove("token-address-copied");
+    void dom.tokenAddress?.offsetWidth;
+    dom.tokenAddress?.classList.add("token-address-copied");
+    dom.copyTokenAddressButton.dataset.resetTimer = window.setTimeout(() => {
+      dom.copyTokenAddressButton.textContent = "Copy";
     }, 1800);
   }
 });
