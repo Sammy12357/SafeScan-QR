@@ -1539,6 +1539,108 @@ def parse_rdap_creation_date(events):
                     return None
     return None
 
+def parse_rdap_event_date(events, actions):
+    actions = set(actions)
+    for event in events or []:
+        if event.get("eventAction") in actions:
+            return event.get("eventDate")
+    return None
+
+def extract_domain_for_age(target_url):
+    parsed = urlparse(normalize_url(target_url))
+    return (parsed.hostname or "").lower().removeprefix("www.")
+
+def domain_age_days(created_date):
+    created = datetime.fromisoformat(created_date.replace("Z", "+00:00")).replace(tzinfo=None)
+    return max(0, (datetime.utcnow() - created).days)
+
+def domain_age_risk_level(age_days):
+    if age_days is None:
+        return "unknown"
+    if age_days > 365:
+        return "established"
+    if age_days > 180:
+        return "recent"
+    return "new"
+
+def format_domain_age(age_days):
+    if age_days is None:
+        return "Age unknown"
+    years = age_days // 365
+    months = (age_days % 365) // 30
+    days = age_days % 30
+    if years:
+        return f"{years} year{'s' if years != 1 else ''}, {months} month{'s' if months != 1 else ''}"
+    if months:
+        return f"{months} month{'s' if months != 1 else ''}, {days} day{'s' if days != 1 else ''}"
+    return f"{age_days} day{'s' if age_days != 1 else ''}"
+
+def extract_rdap_registrar(rdap):
+    registrar = rdap.get("registrar")
+    if registrar:
+        return registrar if isinstance(registrar, str) else registrar.get("name") or registrar.get("handle")
+    for entity in rdap.get("entities", []) or []:
+        vcard = entity.get("vcardArray", [])
+        rows = vcard[1] if isinstance(vcard, list) and len(vcard) > 1 else []
+        for row in rows:
+            if isinstance(row, list) and len(row) > 3 and row[0] == "fn":
+                return row[3]
+        if entity.get("handle"):
+            return entity.get("handle")
+    return None
+
+def unknown_domain_age_result(domain):
+    return {
+        "domain": domain,
+        "registeredOn": None,
+        "expiresOn": None,
+        "registrar": None,
+        "ageInDays": None,
+        "ageLabel": "Age unknown",
+        "riskLevel": "unknown",
+        "riskLabel": "Age unknown",
+        "riskDetail": "WHOIS/RDAP data unavailable.",
+    }
+
+def lookup_domain_age_result(target_url):
+    domain = extract_domain_for_age(target_url)
+    if not domain:
+        return unknown_domain_age_result("")
+    try:
+        response = requests.get(f"https://rdap.org/domain/{domain}", timeout=6)
+        response.raise_for_status()
+        rdap = response.json()
+    except (requests.RequestException, ValueError):
+        return unknown_domain_age_result(domain)
+
+    events = rdap.get("events", [])
+    registered_on = parse_rdap_event_date(events, ("registration", "domain registration", "creation"))
+    expires_on = parse_rdap_event_date(events, ("expiration", "expiry"))
+    registrar = extract_rdap_registrar(rdap)
+    try:
+        age_days = domain_age_days(registered_on) if registered_on else None
+    except ValueError:
+        age_days = None
+    risk_level = domain_age_risk_level(age_days)
+    risk_copy = {
+        "established": ("Established domain", "Registered over a year ago."),
+        "recent": ("Relatively new", "Registered within the last year."),
+        "new": ("Very new domain", "High phishing risk - under 6 months old."),
+        "unknown": ("Age unknown", "WHOIS/RDAP data unavailable."),
+    }
+    risk_label, risk_detail = risk_copy[risk_level]
+    return {
+        "domain": domain,
+        "registeredOn": registered_on,
+        "expiresOn": expires_on,
+        "registrar": registrar,
+        "ageInDays": age_days,
+        "ageLabel": format_domain_age(age_days),
+        "riskLevel": risk_level,
+        "riskLabel": risk_label,
+        "riskDetail": risk_detail,
+    }
+
 def check_domain_intelligence(target_url):
     normalized = normalize_url(target_url)
     parsed = urlparse(normalized)
@@ -1551,31 +1653,25 @@ def check_domain_intelligence(target_url):
     if tld in HIGH_RISK_TLDS:
         tld_signal = signal("TLD Risk", f"High-risk TLD {tld}", "low", f"The domain uses {tld}, which appears often in disposable phishing campaigns.", False)
 
-    try:
-        response = requests.get(f"https://rdap.org/domain/{hostname}", timeout=6)
-        response.raise_for_status()
-        rdap = response.json()
-        created_at = parse_rdap_creation_date(rdap.get("events", []))
-        registrar = rdap.get("registrar") or rdap.get("entities", [{}])[0].get("handle", "Unknown")
-    except (requests.RequestException, ValueError, KeyError, IndexError):
+    domain_age = lookup_domain_age_result(normalized)
+    if domain_age["riskLevel"] == "unknown":
         base = signal("Domain Age", "Lookup unavailable", "low", "Domain registration lookup could not be completed.", True)
+        base["domainAge"] = domain_age
         return [base, tld_signal] if tld_signal else [base]
 
-    if not created_at:
-        base = signal("Domain Age", "Unknown", "low", f"WHOIS/RDAP lookup completed, but no creation date was returned. Registrar: {registrar}.", True)
-        return [base, tld_signal] if tld_signal else [base]
-
-    age_days = max(0, (datetime.utcnow() - created_at).days)
-    if age_days < 30:
+    age_days = domain_age["ageInDays"]
+    if domain_age["riskLevel"] == "new":
         severity = "high"
         passed = False
-    elif age_days <= 90:
+    elif domain_age["riskLevel"] == "recent":
         severity = "medium"
         passed = False
     else:
         severity = "low"
         passed = True
-    base = signal("Domain Age", f"{age_days} days old", severity, f"Domain age from RDAP. Registrar: {registrar}.", passed)
+    registrar = domain_age.get("registrar") or "Unknown"
+    base = signal("Domain Age", domain_age["ageLabel"], severity, f"Domain age from RDAP. Registrar: {registrar}.", passed)
+    base["domainAge"] = domain_age
     return [base, tld_signal] if tld_signal else [base]
 
 def check_crypto_pattern_signals(target_url):
@@ -1686,6 +1782,7 @@ async def analyze_full_pipeline(target_url, qr_image=None):
 
     signals = []
     signals.extend(domain_result if isinstance(domain_result, list) else [domain_result])
+    domain_age = next((item.get("domainAge") for item in signals if item.get("domainAge")), None)
     signals.append(redirect_result["signal"])
     signals.extend(reputation_signals)
     signals.append(virustotal_breakdown_signal(vt_result))
@@ -1708,6 +1805,7 @@ async def analyze_full_pipeline(target_url, qr_image=None):
         "verdict": verdict_with_ml(ai_verdict["verdict"], final_score, ml_result, signals),
         "signals": signals,
         "virusTotal": vt_result,
+        "domainAge": domain_age,
         "redirectChain": redirect_result.get("redirectChain", []),
         "scannedAt": datetime.utcnow().isoformat() + "Z"
     }
@@ -1926,6 +2024,7 @@ def pipeline_response_to_template_analysis(pipeline_response):
         "reputation": {"provider": "SafeScan Core Risk Engine", "status": overall_risk.upper(), "matches": [], "detail": pipeline_response["verdict"]},
         "reasons": signals,
         "virusTotal": pipeline_response.get("virusTotal"),
+        "domainAge": pipeline_response.get("domainAge"),
         "mlRisk": pipeline_response.get("mlRisk"),
         "ruleScore": pipeline_response.get("ruleScore")
     }
@@ -3432,6 +3531,7 @@ async def scan_qr(
                 "reputation": {"provider": "Scanner", "status": "ERROR", "matches": [], "detail": "Upload a smaller image."},
                 "risk_reasons": [risk_reason("Upload too large", "medium", f"Use an image under {MAX_QR_UPLOAD_BYTES // (1024 * 1024)} MB.")],
                 "virus_total": None,
+                "domain_age": None,
                 "email": user_email, "scan_count": get_scan_count(user_email) if user_email else 0, "google_client_id": CLIENT_ID,
                 "test_site": test_site,
                 "test_site_path": test_site_path,
@@ -3461,6 +3561,7 @@ async def scan_qr(
             "reputation": {"provider": "Scanner", "status": "ERROR", "matches": [], "detail": "No decodable payload was found."},
             "risk_reasons": [risk_reason("No QR payload decoded", "medium", "Upload a clearer QR image or paste the destination manually.")],
             "virus_total": None,
+            "domain_age": None,
             "email": user_email, "scan_count": get_scan_count(user_email) if user_email else 0, "google_client_id": CLIENT_ID,
             "test_site": test_site,
             "test_site_path": test_site_path,
@@ -3504,6 +3605,7 @@ async def scan_qr(
         "reputation": analysis.get("reputation"),
         "risk_reasons": analysis.get("reasons", []),
         "virus_total": analysis.get("virusTotal"),
+        "domain_age": analysis.get("domainAge"),
         "ml_risk": analysis.get("mlRisk"),
         "email": user_email, "scan_count": get_scan_count(user_email) if user_email else 0, "google_client_id": CLIENT_ID,
         "test_site": test_site,

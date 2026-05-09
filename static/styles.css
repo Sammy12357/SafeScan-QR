@@ -248,6 +248,19 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
 .severity-low { color: var(--safe); border-color: rgba(80, 227, 164, 0.28); background: rgba(80, 227, 164, 0.1); }
 .severity-medium { color: var(--warning); border-color: rgba(255, 187, 85, 0.28); background: rgba(255, 187, 85, 0.1); }
 .severity-high { color: var(--danger); border-color: rgba(255, 110, 127, 0.3); background: rgba(255, 110, 127, 0.11); }
+.domain-age-card { display: grid; gap: 12px; margin-bottom: 14px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.04); }
+.domain-age-top { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; }
+.domain-age-top h3 { margin: 4px 0 0; font-size: 1.2rem; overflow-wrap: anywhere; }
+.domain-age-badge { flex: 0 0 auto; padding: 8px 10px; border-radius: 999px; font-size: 0.74rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.06em; }
+.domain-age-established .domain-age-badge { color: var(--safe); border: 1px solid rgba(80, 227, 164, 0.28); background: rgba(80, 227, 164, 0.1); }
+.domain-age-recent .domain-age-badge { color: var(--warning); border: 1px solid rgba(255, 187, 85, 0.3); background: rgba(255, 187, 85, 0.1); }
+.domain-age-new .domain-age-badge { color: var(--danger); border: 1px solid rgba(255, 110, 127, 0.3); background: rgba(255, 110, 127, 0.12); }
+.domain-age-unknown .domain-age-badge { color: var(--muted); border: 1px solid var(--line); background: rgba(255, 255, 255, 0.04); }
+.domain-age-detail { margin: 0; color: var(--muted); line-height: 1.45; }
+.domain-age-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.domain-age-grid div { padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: rgba(0, 0, 0, 0.12); min-width: 0; }
+.domain-age-grid span { display: block; color: var(--muted); font-size: 0.72rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.08em; }
+.domain-age-grid strong { display: block; margin-top: 5px; color: var(--text); font-size: 0.86rem; overflow-wrap: anywhere; }
 .vt-panel { display: grid; gap: 14px; margin-bottom: 14px; padding: 16px; border: 1px solid rgba(103, 242, 200, 0.2); border-radius: 8px; background: rgba(103, 242, 200, 0.055); }
 .vt-panel-top { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; }
 .vt-panel-top h3 { margin: 4px 0 6px; font-size: 1.24rem; }
@@ -397,6 +410,8 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
   .risk-verdict-top { grid-template-columns: 1fr; text-align: center; }
   .risk-indicator { width: 118px; margin: 0 auto; }
   .confidence-header, .reputation-row { align-items: stretch; flex-direction: column; }
+  .domain-age-top { flex-direction: column; }
+  .domain-age-grid { grid-template-columns: 1fr 1fr; }
   .vt-panel-top { flex-direction: column; }
   .vt-mobile-toggle { display: block; }
   .vt-engine-groups { max-height: 0; overflow: hidden; transition: max-height 0.28s ease; }
@@ -420,6 +435,7 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
   .footer-grid { grid-template-columns: 1fr; padding: 40px 24px 32px 24px; gap: 32px 0; }
   .footer-divider { margin: 0 24px; }
   .footer-bottom { flex-direction: column; align-items: flex-start; padding: 20px 24px; gap: 6px; }
+  .domain-age-grid { grid-template-columns: 1fr; }
 }
 
 @media print {

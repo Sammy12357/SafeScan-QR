@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SafeScan QR Demo</title>
   <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=vt-results-v2">
+  <link rel="stylesheet" href="/static/styles.css?v=domain-age-v1">
 </head>
 <body class="{{ 'test-site-page' if test_site else '' }}">
   <div class="page-shell">
@@ -235,6 +235,28 @@
               <div class="verdict-badge {{ 'verdict-safe' if status == 'SAFE' else ('verdict-caution' if status == 'CAUTION' else 'verdict-dangerous') }}">{{ status }}</div>
             </div>
 
+            {% if domain_age %}
+            <div class="domain-age-card domain-age-{{ domain_age.riskLevel }}">
+              <div class="domain-age-top">
+                <div>
+                  <p class="engine-label">Domain age</p>
+                  <h3>{{ domain_age.domain or "Unknown domain" }}</h3>
+                </div>
+                <div class="domain-age-badge">
+                  {% if domain_age.riskLevel == 'established' %}OK{% elif domain_age.riskLevel == 'recent' %}!{% elif domain_age.riskLevel == 'new' %}X{% else %}-{% endif %}
+                  {{ domain_age.riskLabel }}
+                </div>
+              </div>
+              <p class="domain-age-detail">{{ domain_age.riskDetail }}</p>
+              <div class="domain-age-grid">
+                <div><span>Registered</span><strong>{{ domain_age.registeredOn[:10] if domain_age.registeredOn else "Unknown" }}</strong></div>
+                <div><span>Age</span><strong>{{ domain_age.ageLabel }}</strong></div>
+                <div><span>Expires</span><strong>{{ domain_age.expiresOn[:10] if domain_age.expiresOn else "Unknown" }}</strong></div>
+                <div><span>Registrar</span><strong>{{ domain_age.registrar or "Unknown" }}</strong></div>
+              </div>
+            </div>
+            {% endif %}
+
             {% if virus_total %}
             <div class="vt-panel">
               <div class="vt-panel-top">
@@ -313,6 +335,7 @@
               <div><p class="engine-label">Risk score</p><p class="score-value">{{ score }}</p></div>
               <div><p class="engine-label">Threat class</p><p>{{ threat_class }}</p></div>
               <div><p class="engine-label">Reputation</p><p>{{ reputation.status if reputation else source }}</p></div>
+              {% if domain_age %}<div><p class="engine-label">Domain age</p><p>{{ domain_age.ageLabel }} · {{ domain_age.riskLabel }}</p></div>{% endif %}
               {% if virus_total %}<div><p class="engine-label">VirusTotal</p><p>{{ virus_total.summary.clean }} clean · {{ virus_total.summary.unrated }} unrated · {{ virus_total.summary.malicious }} malicious</p></div>{% endif %}
             </div>
           </article>
