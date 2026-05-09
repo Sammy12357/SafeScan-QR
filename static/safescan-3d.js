@@ -345,25 +345,44 @@ if (canvas && showcase && !showcase.dataset.splineSrc?.trim()) {
   });
 
   function addRearLens(x, y, radius, raised = 0.035) {
+    const lensZ = -0.186 - raised;
+    const outerMaterial = new THREE.MeshBasicMaterial({
+      color: 0x020405,
+      side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2
+    });
     const outer = new THREE.Mesh(
       new THREE.CircleGeometry(radius, 48),
-      new THREE.MeshBasicMaterial({ color: 0x020405, side: THREE.DoubleSide })
+      outerMaterial
     );
-    outer.position.set(x, y, -0.186);
+    outer.position.set(x, y, lensZ);
     outer.rotation.set(0, Math.PI, 0);
+    outer.renderOrder = 6;
     phone.add(outer);
 
     const glass = new THREE.Mesh(new THREE.CircleGeometry(radius * 0.68, 40), lensGlassMaterial);
-    glass.position.set(x, y, -0.192);
+    glass.position.set(x, y, lensZ - 0.006);
     glass.rotation.set(0, Math.PI, 0);
+    glass.renderOrder = 7;
     phone.add(glass);
 
     const highlight = new THREE.Mesh(
       new THREE.CircleGeometry(radius * 0.16, 18),
-      new THREE.MeshBasicMaterial({ color: 0x6ef8ff, transparent: true, opacity: 0.34 })
+      new THREE.MeshBasicMaterial({
+        color: 0x6ef8ff,
+        transparent: true,
+        opacity: 0.34,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -4,
+        polygonOffsetUnits: -4
+      })
     );
-    highlight.position.set(x - radius * 0.16, y + radius * 0.12, -0.198);
+    highlight.position.set(x - radius * 0.16, y + radius * 0.12, lensZ - 0.012);
     highlight.rotation.set(0, Math.PI, 0);
+    highlight.renderOrder = 8;
     phone.add(highlight);
   }
 
