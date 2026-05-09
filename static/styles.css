@@ -317,7 +317,7 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
 .test-site-page .hero::before { background: linear-gradient(112deg, rgba(103, 242, 200, 0.16), transparent 32%), linear-gradient(238deg, rgba(90, 140, 255, 0.16), transparent 42%); }
 .test-site-page .hero-copy h1 { max-width: 840px; font-size: clamp(2.6rem, 4.2vw, 3.85rem); line-height: 0.95; }
 .test-site-page .hero-text { font-size: 1.12rem; }
-.test-site-page .spline-showcase { min-height: 390px; }
+.test-site-page .spline-showcase { min-height: 530px; }
 .test-site-page .hero-metrics { margin-top: 22px; }
 .test-site-page .hero-metrics div { padding: 12px 14px; }
 .test-section { margin-top: 20px; padding: 30px; border: 1px solid var(--line); border-radius: 8px; background: rgba(13, 24, 43, 0.78); box-shadow: var(--shadow); overflow: hidden; }
@@ -353,6 +353,7 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
   .test-section { padding: 22px; }
   .test-stat-row { grid-template-columns: 1fr; }
   .spline-showcase { min-height: 460px; }
+  .test-site-page .spline-showcase { min-height: 460px; }
   .model-caption { left: 12px; right: 12px; bottom: 12px; }
   .phone-model { width: min(74%, 260px); }
   .page-shell { width: min(100% - 20px, 1180px); }
