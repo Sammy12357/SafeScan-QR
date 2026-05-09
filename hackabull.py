@@ -2118,7 +2118,17 @@ def dashboard_data():
         fraud_flags = conn.execute("SELECT COUNT(*) FROM fraud_flags WHERE reviewed = 0").fetchone()[0]
         recent_users = [dict(row) for row in conn.execute("SELECT u.*, COALESCE(w.address, s.wallet_address) AS wallet_address, COALESCE(s.scan_count, 0) AS scan_count FROM users u LEFT JOIN scans s ON s.email = u.email LEFT JOIN wallets w ON w.user_id = u.email AND w.verified = 1 ORDER BY COALESCE(u.created_at, u.last_login) DESC LIMIT 10")]
         recent_reports = [dict(row) for row in conn.execute("SELECT * FROM url_reports ORDER BY created_at DESC LIMIT 10")]
-        activity = [dict(row) for row in conn.execute("SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 20")]
+        activity = [dict(row) for row in conn.execute(
+            """
+            SELECT a.*,
+                   COALESCE(actor_by_id.email, actor_by_email.email) AS actor_email
+            FROM audit_logs a
+            LEFT JOIN users actor_by_id ON actor_by_id.google_id = a.actor_user_id
+            LEFT JOIN users actor_by_email ON lower(actor_by_email.email) = lower(a.actor_user_id)
+            ORDER BY a.created_at DESC
+            LIMIT 20
+            """
+        )]
         chart_rows = [dict(row) for row in conn.execute(
             "SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS total, SUM(CASE WHEN risk_score >= 80 THEN 1 ELSE 0 END) AS flagged FROM scan_history WHERE created_at >= ? GROUP BY day ORDER BY day",
             (since_30,)
@@ -2232,8 +2242,8 @@ def fetch_audit_logs(search="", action="", target_type=""):
     clauses = []
     params = []
     if search:
-        clauses.append("actor_user_id LIKE ?")
-        params.append(f"%{search}%")
+        clauses.append("(a.actor_user_id LIKE ? OR actor_by_id.email LIKE ? OR actor_by_email.email LIKE ?)")
+        params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
     if action:
         clauses.append("action = ?")
         params.append(action)
@@ -2243,7 +2253,19 @@ def fetch_audit_logs(search="", action="", target_type=""):
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     with sqlite3.connect("qr_cache.db") as conn:
         conn.row_factory = sqlite3.Row
-        rows = [dict(row) for row in conn.execute(f"SELECT * FROM audit_logs {where} ORDER BY created_at DESC LIMIT 300", params)]
+        rows = [dict(row) for row in conn.execute(
+            f"""
+            SELECT a.*,
+                   COALESCE(actor_by_id.email, actor_by_email.email) AS actor_email
+            FROM audit_logs a
+            LEFT JOIN users actor_by_id ON actor_by_id.google_id = a.actor_user_id
+            LEFT JOIN users actor_by_email ON lower(actor_by_email.email) = lower(a.actor_user_id)
+            {where}
+            ORDER BY a.created_at DESC
+            LIMIT 300
+            """,
+            params,
+        )]
         actions = [row[0] for row in conn.execute("SELECT DISTINCT action FROM audit_logs ORDER BY action")]
     return {"rows": rows, "actions": actions}
 
