@@ -180,7 +180,7 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
 .qr-grid span { min-width: 0; min-height: 0; transform: translate3d(0, 0, 0); transition: background 0.25s ease, transform 0.25s ease; }
 .qr-tile { border-radius: 7px; background: #67f2c8; box-shadow: 0 0 14px rgba(103, 242, 200, 0.45); }
 .qr-tile.qr-light { background: #8ffff0; box-shadow: 0 0 16px rgba(143, 255, 240, 0.52); }
-.qr-grid .qr-tile:first-child { background: #dffdf7; box-shadow: 0 0 16px rgba(223, 253, 247, 0.46); }
+.qr-tile.qr-white { background: #dffdf7; box-shadow: 0 0 16px rgba(223, 253, 247, 0.52); }
 .qr-frame.scanning .qr-grid .qr-tile:nth-child(3n) { animation: qrPulse 3.6s infinite ease-in-out; }
 .scan-line { position: absolute; left: 8%; right: 8%; top: 9%; height: 3px; background: linear-gradient(90deg, transparent, var(--accent), transparent); box-shadow: 0 0 18px rgba(103, 242, 200, 0.7); will-change: transform, opacity; transform: translate3d(0, 0, 0); animation: sweep 2.6s infinite cubic-bezier(0.4, 0, 0.2, 1); }
 
