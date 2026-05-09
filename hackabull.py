@@ -14,7 +14,7 @@ import socket
 import time
 import csv
 import threading
-from urllib.parse import urljoin, urlparse, parse_qsl
+from urllib.parse import quote, urljoin, urlparse, parse_qsl
 from datetime import datetime, timedelta
 
 from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body, HTTPException
@@ -885,6 +885,9 @@ def sanitize_username(username):
 def set_user_username(user_id, username):
     cleaned = sanitize_username(username)
     with sqlite3.connect("qr_cache.db") as conn:
+        current = conn.execute("SELECT username FROM users WHERE google_id = ?", (user_id,)).fetchone()
+        if current and (current[0] or "").strip():
+            raise SafeScanError("Username is already set for this account.", 400)
         existing = conn.execute(
             "SELECT google_id FROM users WHERE lower(username) = lower(?) AND google_id != ?",
             (cleaned, user_id)
@@ -895,8 +898,7 @@ def set_user_username(user_id, username):
     return cleaned
 
 def response_after_login(user_id, request):
-    user = require_user_from_google_id(user_id)
-    return RedirectResponse("/onboarding/username" if username_required(user) else "/", status_code=303)
+    return RedirectResponse("/", status_code=303)
 
 def get_global_leaderboard(limit=50):
     bounded_limit = max(1, min(int(limit or 50), 100))
@@ -3476,8 +3478,6 @@ async def logout_get(request: Request):
 async def login_page(request: Request, error: str = Query(""), tab: str = Query("login")):
     user = get_session_user(request)
     if user:
-        if username_required(user):
-            return RedirectResponse("/onboarding/username", status_code=303)
         return RedirectResponse("/", status_code=303)
     return templates.TemplateResponse("login.html", {"request": request, "error": error, "tab": tab, "local_auth_enabled": LOCAL_AUTH_ENABLED, "google_client_id": CLIENT_ID or "", "auth_google_url": f"{APP_URL}/auth/google"})
 
@@ -3559,34 +3559,48 @@ async def auth_dev_google(request: Request):
 
 @qr_app.get("/onboarding/username", response_class=HTMLResponse)
 async def username_onboarding_page(request: Request, error: str = Query("")):
-    user = require_user(request)
-    if not username_required(user):
-        return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse("username_onboarding.html", {
-        "request": request,
-        "email": user.get("email"),
-        "error": error,
-    })
+    return RedirectResponse(f"/profile?error={quote(error)}" if error else "/profile", status_code=303)
 
 @qr_app.post("/onboarding/username", response_class=HTMLResponse)
 async def username_onboarding_submit(request: Request, username: str = Form(...)):
+    return await profile_username_submit(request, username)
+
+@qr_app.get("/profile", response_class=HTMLResponse)
+async def profile_page(request: Request, error: str = Query("")):
+    user = require_user(request)
+    email = user["email"]
+    username = (user.get("username") or "").strip()
+    return templates.TemplateResponse("profile.html", {
+        "request": request,
+        **index_user_context(user),
+        "email": email,
+        "username": username,
+        "scan_count": get_scan_count(email),
+        "leaderboard_status": "Live" if username else "Hidden",
+        "error": error,
+    })
+
+@qr_app.post("/profile/username", response_class=HTMLResponse)
+async def profile_username_submit(request: Request, username: str = Form(...)):
     user = require_user(request)
     try:
         set_user_username(user["google_id"], username)
     except SafeScanError as exc:
-        return templates.TemplateResponse("username_onboarding.html", {
+        return templates.TemplateResponse("profile.html", {
             "request": request,
+            **index_user_context(user),
             "email": user.get("email"),
+            "username": (user.get("username") or "").strip(),
+            "scan_count": get_scan_count(user.get("email")),
+            "leaderboard_status": "Live" if (user.get("username") or "").strip() else "Hidden",
             "error": str(exc),
         }, status_code=400)
     audit_log("user.username_set", request=request, actor_user_id=user["google_id"])
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse("/profile", status_code=303)
 
 @qr_app.get("/history", response_class=HTMLResponse)
 async def history_page(request: Request):
     user = get_session_user(request)
-    if username_required(user):
-        return RedirectResponse("/onboarding/username", status_code=303)
     email = user["email"] if user else ""
     scans = []
     if user:
@@ -3602,8 +3616,6 @@ async def history_page(request: Request):
 @qr_app.get("/leaderboard", response_class=HTMLResponse)
 async def leaderboard_page(request: Request):
     user = get_session_user(request)
-    if username_required(user):
-        return RedirectResponse("/onboarding/username", status_code=303)
     email = user["email"] if user else ""
     return templates.TemplateResponse("leaderboard.html", {
         "request": request,

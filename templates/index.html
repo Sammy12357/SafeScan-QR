@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SafeScan QR Demo</title>
   <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=mobile-dashboard-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=profile-tab-v1">
 </head>
 <body>
   <div class="page-shell">
@@ -22,6 +22,7 @@
       {% else %}
         <div id="airdropProfile" class="top-profile">
           <div><p class="profile-name">{{ profile_display_name }}</p><p class="profile-email" data-email="{{ email }}">{{ profile_subtitle }}</p></div>
+          <a href="/profile" class="profile-button">Profile</a>
           {% if is_admin %}
             <span class="admin-role-badge">{{ user_role | upper }}</span>
             <a href="/admin" class="admin-dashboard-button">Admin dashboard</a>

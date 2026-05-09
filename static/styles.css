@@ -148,7 +148,8 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
 .profile-email { color: var(--muted); font-size: 0.86rem; word-break: break-word; }
 .profile-tier { display: inline-block; }
 .sign-out-form { margin: 0; }
-.sign-out-button, .admin-dashboard-button { display: inline-grid; place-items: center; min-height: 38px; padding: 9px 12px; border-radius: 999px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.04); color: var(--text); font: inherit; font-size: 0.86rem; line-height: 1; text-align: center; cursor: pointer; text-decoration: none; }
+.sign-out-button, .admin-dashboard-button, .profile-button { display: inline-grid; place-items: center; min-height: 38px; padding: 9px 12px; border-radius: 999px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.04); color: var(--text); font: inherit; font-size: 0.86rem; line-height: 1; text-align: center; cursor: pointer; text-decoration: none; }
+.profile-button { border-color: rgba(103, 242, 200, 0.32); background: rgba(103, 242, 200, 0.09); color: var(--accent); font-weight: 800; }
 .admin-dashboard-button { border-color: rgba(124, 58, 237, 0.5); background: rgba(124, 58, 237, 0.15); color: #f7f2ff; font-weight: 800; }
 .admin-role-badge { padding: 7px 9px; border-radius: 999px; border: 1px solid rgba(255, 187, 85, 0.45); background: rgba(255, 187, 85, 0.13); color: var(--warning); font-size: 0.7rem; font-weight: 900; letter-spacing: 0.08em; }
 

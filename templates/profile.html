@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Profile | SafeScan QR</title>
+  <link rel="stylesheet" href="/static/styles.css?v=profile-tab-v1">
+  <style>
+    body { margin: 0; background: linear-gradient(145deg,#060b12 0%,#0a1420 46%,#111827 100%); color: var(--text); font-family: var(--body-font); }
+    .profile-shell { width: min(980px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 80px; }
+    .profile-back { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 28px; color: var(--muted); text-decoration: none; }
+    .profile-back:hover { color: var(--text); }
+    .profile-layout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr); gap: 18px; align-items: start; }
+    .profile-card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: var(--shadow); padding: 24px; }
+    .profile-card h1, .profile-card h2 { margin: 0 0 10px; }
+    .profile-muted { margin: 0 0 18px; color: var(--muted); line-height: 1.55; overflow-wrap: anywhere; }
+    .profile-form { display: grid; gap: 12px; margin-top: 18px; }
+    .profile-form label { display: grid; gap: 8px; font-weight: 800; }
+    .profile-form input { width: 100%; padding: 14px 16px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05); color: var(--text); font: inherit; }
+    .profile-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+    .profile-stat { padding: 14px; border: 1px solid rgba(103, 242, 200, 0.18); border-radius: 8px; background: rgba(103, 242, 200, 0.07); }
+    .profile-stat span { display: block; color: var(--accent); font-weight: 900; font-size: 1.4rem; }
+    .profile-stat p { margin: 4px 0 0; color: var(--muted); font-size: 0.86rem; }
+    .profile-link-list { display: grid; gap: 10px; margin-top: 16px; }
+    .profile-link-list a { display: grid; place-items: center; min-height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--line); color: var(--text); text-decoration: none; background: rgba(255, 255, 255, 0.04); font-weight: 800; }
+    .profile-link-list a:hover { border-color: rgba(103, 242, 200, 0.42); background: rgba(103, 242, 200, 0.08); }
+    .error-text { color: var(--danger); font-weight: 800; }
+    .success-text { color: var(--safe); font-weight: 800; }
+    @media (max-width: 760px) {
+      .profile-layout, .profile-stats { grid-template-columns: 1fr; }
+      .profile-shell { width: min(100% - 20px, 980px); padding-top: 28px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="profile-shell">
+    <a class="profile-back" href="/">&#8592; Back to Scanner</a>
+    <div class="profile-layout">
+      <section class="profile-card">
+        <p class="eyebrow">SafeScan QR</p>
+        <h1>Your Profile</h1>
+        <p class="profile-muted">{{ email }}</p>
+
+        {% if username %}
+          <p class="success-text">Username set: {{ username }}</p>
+          <p class="profile-muted">Your username appears on the leaderboard instead of your email.</p>
+        {% else %}
+          <h2>Choose a username</h2>
+          <p class="profile-muted">Set this once so the leaderboard can show a public name without exposing your email.</p>
+          {% if error %}<p class="error-text">{{ error }}</p>{% endif %}
+          <form action="/profile/username" method="post" class="profile-form">
+            <label>
+              Username
+              <input name="username" autocomplete="username" minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" placeholder="safescanner" required>
+            </label>
+            <button class="primary-button" type="submit">Save username</button>
+          </form>
+        {% endif %}
+      </section>
+
+      <aside class="profile-card">
+        <h2>Account</h2>
+        <div class="profile-stats">
+          <div class="profile-stat"><span>{{ scan_count }}</span><p>QR scans</p></div>
+          <div class="profile-stat"><span>{{ leaderboard_status }}</span><p>Leaderboard</p></div>
+        </div>
+        <div class="profile-link-list">
+          <a href="/history">Scan history</a>
+          <a href="/leaderboard">Leaderboard</a>
+          <a href="/account/settings">Privacy settings</a>
+          {% if is_admin %}<a href="/admin">Admin dashboard</a>{% endif %}
+        </div>
+      </aside>
+    </div>
+  </div>
+  {% include "footer.html" %}
+</body>
+</html>
