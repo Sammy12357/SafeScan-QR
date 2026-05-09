@@ -108,7 +108,8 @@ function setStoredAirdropProfile(profile) {
 
 function getCurrentProfile() {
   const stored = getStoredAirdropProfile() || {};
-  const email = document.querySelector(".profile-email")?.textContent?.trim();
+  const profileEmail = document.querySelector(".profile-email");
+  const email = profileEmail?.dataset?.email || profileEmail?.textContent?.trim();
   if (!email) return null;
   const profile = { ...stored, email };
   setStoredAirdropProfile(profile);

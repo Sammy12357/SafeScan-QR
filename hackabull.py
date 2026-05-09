@@ -391,7 +391,8 @@ def get_session_user(request):
         row = conn.execute(
             """
             SELECT s.id AS session_id, s.expires_at, s.last_active, s.revoked_at,
-                   u.google_id, u.email, u.username, u.role, u.status, u.last_login_at, u.login_ip
+                   u.google_id, u.email, u.username, u.display_name, u.picture,
+                   u.role, u.status, u.last_login_at, u.login_ip
             FROM sessions s
             JOIN users u ON u.google_id = s.google_id
             WHERE s.id = ?
@@ -423,7 +424,7 @@ def require_user(request):
 def require_user_from_google_id(google_id):
     with sqlite3.connect("qr_cache.db") as conn:
         conn.row_factory = sqlite3.Row
-        row = conn.execute("SELECT google_id, email, username, role, status, google_sub FROM users WHERE google_id = ?", (google_id,)).fetchone()
+        row = conn.execute("SELECT google_id, email, username, display_name, picture, role, status, google_sub FROM users WHERE google_id = ?", (google_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=401, detail="Authentication required.")
     return dict(row)
@@ -826,11 +827,15 @@ def admin_avatar(email):
 
 def index_user_context(user):
     role = user.get("role", "guest") if user else "guest"
+    email = user.get("email", "") if user else ""
+    display_name = (user.get("display_name") or "").strip() if user else ""
     return {
         "user_role": role,
         "is_admin": role in ("admin", "owner"),
         "is_owner": role == "owner",
         "username": user.get("username") if user else "",
+        "profile_display_name": "Safe scanner",
+        "profile_subtitle": (user.get("username") or "").strip() or display_name or email,
     }
 
 def local_user_id(email):
@@ -3389,7 +3394,7 @@ async def auth_google(request: Request, credential: str = Form(None)):
         audit_log("auth.failed", request=request, metadata={"provider": "google"})
         raise HTTPException(status_code=401, detail="Authentication required.")
 
-    save_user_to_db(google_id, user_email, request)
+    save_user_to_db(google_id, user_email, request, idinfo.get("name") or "", idinfo.get("picture") or "")
     user = require_user_from_google_id(google_id)
     if user["status"] != "active":
         raise HTTPException(status_code=401, detail="Authentication required.")
@@ -3420,7 +3425,7 @@ async def auth_verify(request: Request, payload: dict = Body(...)):
         audit_log("auth.failed", request=request, metadata={"provider": "google_mobile"})
         raise HTTPException(status_code=401, detail="Authentication required.")
 
-    save_user_to_db(google_id, user_email, request)
+    save_user_to_db(google_id, user_email, request, idinfo.get("name") or "", idinfo.get("picture") or "")
     user = require_user_from_google_id(google_id)
     if user["status"] != "active":
         raise HTTPException(status_code=401, detail="Authentication required.")
@@ -3431,7 +3436,7 @@ async def auth_verify(request: Request, payload: dict = Body(...)):
         "session": session_id,
         "user": {
             "id": google_id,
-            "name": idinfo.get("name") or "Safe scanner",
+            "name": user.get("display_name") or idinfo.get("name") or "Safe scanner",
             "email": user_email,
             "avatarUrl": idinfo.get("picture"),
             "role": user.get("role", "user"),
@@ -3681,16 +3686,20 @@ async def trigger_airdrop(
             "error_type": type(e).__name__
         }
 
-def save_user_to_db(google_id, email, request=None):
+def save_user_to_db(google_id, email, request=None, display_name="", picture=""):
     normalized_email = email.strip().lower()
+    normalized_display_name = (display_name or "").strip()[:120]
+    normalized_picture = (picture or "").strip()[:500]
     role = role_for_email(normalized_email)
     referral_code = hashlib.sha256(f"{normalized_email}:{APP_URL}".encode("utf-8")).hexdigest()[:10]
     with sqlite3.connect("qr_cache.db") as conn:
         conn.execute("""
-            INSERT INTO users (google_id, email, last_login, role, status, last_login_at, login_ip, created_at, referral_code)
-            VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?)
+            INSERT INTO users (google_id, email, display_name, picture, last_login, role, status, last_login_at, login_ip, created_at, referral_code)
+            VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
             ON CONFLICT(google_id) DO UPDATE SET
                 email=excluded.email,
+                display_name=COALESCE(NULLIF(users.display_name, ''), excluded.display_name),
+                picture=COALESCE(NULLIF(users.picture, ''), excluded.picture),
                 last_login=excluded.last_login,
                 last_login_at=excluded.last_login_at,
                 login_ip=excluded.login_ip,
@@ -3699,7 +3708,7 @@ def save_user_to_db(google_id, email, request=None):
                     WHEN users.role IN ('owner', 'admin') THEN users.role
                     ELSE excluded.role
                 END
-        """, (google_id, normalized_email, datetime.now().isoformat(), role, now_iso(), request_ip(request) if request else None, now_iso(), referral_code))
+        """, (google_id, normalized_email, normalized_display_name, normalized_picture, datetime.now().isoformat(), role, now_iso(), request_ip(request) if request else None, now_iso(), referral_code))
 
 
 

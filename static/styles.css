@@ -34,7 +34,7 @@ body {
 .page-shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0 44px; }
 .top-auth { display: flex; justify-content: flex-start; align-items: center; gap: 10px; flex-wrap: nowrap; min-height: 52px; margin-bottom: 14px; }
 .top-auth-spacer { flex: 1; min-width: 0; }
-.top-action-button { min-height: 44px; padding: 0 16px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255, 255, 255, 0.045); color: var(--text); font: inherit; font-weight: 800; cursor: pointer; transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease; }
+.top-action-button { display: inline-grid; place-items: center; min-height: 44px; padding: 0 16px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255, 255, 255, 0.045); color: var(--text); font: inherit; font-weight: 800; line-height: 1; text-align: center; cursor: pointer; transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease; }
 .top-action-button:hover:not(:disabled) { transform: translateY(-1px); border-color: rgba(103, 242, 200, 0.5); background: rgba(103, 242, 200, 0.1); }
 .top-action-button:disabled { cursor: default; color: var(--accent); border-color: rgba(103, 242, 200, 0.36); background: rgba(103, 242, 200, 0.08); }
 .signup-terms { flex-basis: 100%; margin: 0; color: var(--muted); font-size: 0.82rem; text-align: right; }
@@ -123,7 +123,7 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
 .airdrop-progress > div:first-child > h3 { margin-top: 0; font-size: 1.45rem; }
 .airdrop-progress > div:first-child > .airdrop-copy { margin: 0; }
 .progress-stats, .wallet-actions, .referral-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
-.progress-stats div { min-width: 112px; padding: 12px 14px; border: 1px solid rgba(103, 242, 200, 0.18); border-radius: 16px; background: rgba(103, 242, 200, 0.07); }
+.progress-stats div { display: grid; place-items: center; min-width: 112px; min-height: 72px; padding: 12px 14px; border: 1px solid rgba(103, 242, 200, 0.18); border-radius: 16px; background: rgba(103, 242, 200, 0.07); text-align: center; }
 .progress-stats span { display: block; color: var(--text); font-weight: 800; font-size: 1.15rem; }
 .progress-stats p { margin: 4px 0 0; color: var(--muted); font-size: 0.82rem; }
 .referral-link { margin: 0; color: var(--muted); font-size: 0.95rem; line-height: 1.5; }
@@ -148,7 +148,7 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
 .profile-email { color: var(--muted); font-size: 0.86rem; word-break: break-word; }
 .profile-tier { display: inline-block; }
 .sign-out-form { margin: 0; }
-.sign-out-button, .admin-dashboard-button { padding: 9px 12px; border-radius: 999px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.04); color: var(--text); font: inherit; font-size: 0.86rem; cursor: pointer; text-decoration: none; }
+.sign-out-button, .admin-dashboard-button { display: inline-grid; place-items: center; min-height: 38px; padding: 9px 12px; border-radius: 999px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.04); color: var(--text); font: inherit; font-size: 0.86rem; line-height: 1; text-align: center; cursor: pointer; text-decoration: none; }
 .admin-dashboard-button { border-color: rgba(124, 58, 237, 0.5); background: rgba(124, 58, 237, 0.15); color: #f7f2ff; font-weight: 800; }
 .admin-role-badge { padding: 7px 9px; border-radius: 999px; border: 1px solid rgba(255, 187, 85, 0.45); background: rgba(255, 187, 85, 0.13); color: var(--warning); font-size: 0.7rem; font-weight: 900; letter-spacing: 0.08em; }
 
