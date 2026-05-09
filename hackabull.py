@@ -3464,7 +3464,7 @@ async def login_page(request: Request, error: str = Query(""), tab: str = Query(
         if username_required(user):
             return RedirectResponse("/onboarding/username", status_code=303)
         return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse("login.html", {"request": request, "error": error, "tab": tab, "local_auth_enabled": LOCAL_AUTH_ENABLED, "google_client_id": os.getenv("GOOGLE_CLIENT_ID", ""), "auth_google_url": f"{APP_URL}/auth/google"})
+    return templates.TemplateResponse("login.html", {"request": request, "error": error, "tab": tab, "local_auth_enabled": LOCAL_AUTH_ENABLED, "google_client_id": CLIENT_ID or "", "auth_google_url": f"{APP_URL}/auth/google"})
 
 @qr_app.post("/auth/register", response_class=HTMLResponse)
 async def auth_register(request: Request, email: str = Form(...), password: str = Form(...)):
