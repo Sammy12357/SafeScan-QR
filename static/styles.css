@@ -248,6 +248,30 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
 .severity-low { color: var(--safe); border-color: rgba(80, 227, 164, 0.28); background: rgba(80, 227, 164, 0.1); }
 .severity-medium { color: var(--warning); border-color: rgba(255, 187, 85, 0.28); background: rgba(255, 187, 85, 0.1); }
 .severity-high { color: var(--danger); border-color: rgba(255, 110, 127, 0.3); background: rgba(255, 110, 127, 0.11); }
+.vt-panel { display: grid; gap: 14px; margin-bottom: 14px; padding: 16px; border: 1px solid rgba(103, 242, 200, 0.2); border-radius: 8px; background: rgba(103, 242, 200, 0.055); }
+.vt-panel-top { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; }
+.vt-panel-top h3 { margin: 4px 0 6px; font-size: 1.24rem; }
+.vt-panel-top p { margin: 0; color: var(--muted); line-height: 1.45; }
+.vt-powered { flex: 0 0 auto; color: var(--accent); font-size: 0.78rem; font-weight: 900; text-decoration: none; }
+.vt-score-bar { display: flex; gap: 2px; height: 11px; overflow: hidden; border-radius: 999px; background: rgba(255, 255, 255, 0.08); }
+.vt-score-bar span { display: block; min-width: 2px; }
+.vt-score-clean { background: var(--safe); }
+.vt-score-unrated { background: rgba(152, 169, 194, 0.68); }
+.vt-score-malicious { background: var(--danger); }
+.vt-badge-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.vt-tab { padding: 8px 10px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255, 255, 255, 0.04); color: var(--muted); font: inherit; font-size: 0.78rem; font-weight: 900; cursor: pointer; }
+.vt-tab.active { color: #031017; border-color: rgba(103, 242, 200, 0.72); background: var(--accent); }
+.vt-engine-search { width: 100%; padding: 11px 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(0, 0, 0, 0.16); color: var(--text); font: inherit; }
+.vt-mobile-toggle { display: none; width: 100%; padding: 11px 12px; border: 1px solid rgba(103, 242, 200, 0.24); border-radius: 8px; background: rgba(103, 242, 200, 0.08); color: var(--accent); font: inherit; font-weight: 900; cursor: pointer; }
+.vt-engine-groups { max-height: 230px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: rgba(0, 0, 0, 0.12); }
+.vt-engine-group { display: grid; }
+.vt-engine-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 10px 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); color: var(--text); font-size: 0.86rem; }
+.vt-engine-row:last-child { border-bottom: 0; }
+.vt-pill { flex: 0 0 auto; padding: 4px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 900; text-transform: uppercase; }
+.vt-pill-clean { color: var(--safe); background: rgba(80, 227, 164, 0.12); border: 1px solid rgba(80, 227, 164, 0.24); }
+.vt-pill-unrated { color: var(--muted); background: rgba(152, 169, 194, 0.12); border: 1px solid rgba(152, 169, 194, 0.2); }
+.vt-pill-malicious { color: var(--danger); background: rgba(255, 110, 127, 0.12); border: 1px solid rgba(255, 110, 127, 0.24); }
+.vt-empty { margin: 0; padding: 18px; color: var(--muted); }
 .modal-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
 .modal-actions .primary-button, .modal-actions .danger-button { display: inline-flex; align-items: center; justify-content: center; min-height: 52px; text-align: center; }
 .report-status { min-height: 22px; margin: 12px 0 0; color: var(--muted); font-weight: 700; }
@@ -373,6 +397,10 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
   .risk-verdict-top { grid-template-columns: 1fr; text-align: center; }
   .risk-indicator { width: 118px; margin: 0 auto; }
   .confidence-header, .reputation-row { align-items: stretch; flex-direction: column; }
+  .vt-panel-top { flex-direction: column; }
+  .vt-mobile-toggle { display: block; }
+  .vt-engine-groups { max-height: 0; overflow: hidden; transition: max-height 0.28s ease; }
+  .vt-panel.vt-mobile-open .vt-engine-groups { max-height: 230px; overflow: auto; }
   .modal-actions { grid-template-columns: 1fr; }
   .consent-banner, .rights-grid { grid-template-columns: 1fr; }
   .consent-actions { justify-content: stretch; }

@@ -1102,6 +1102,76 @@ def signal(check, result, severity, description, passed=True):
         "passed": passed
     }
 
+VIRUSTOTAL_ENGINE_ENTRIES = (
+    "AbusixClean", "AcronisClean", "ADMINUSLabsClean", "AILabs (MONITORAPP)Clean",
+    "AlienVaultClean", "Antiy-AVLClean", "BitDefenderClean", "BlockListClean",
+    "BluelivClean", "CertegoClean", "ChainPatrolClean", "CINS ArmyClean", "CRDFClean",
+    "Criminal IPClean", "CTX AIClean", "CybleClean", "CyRadarClean", "desenmascara.meClean",
+    "DNS8Clean", "Dr.WebClean", "EmergingThreatsClean", "EmsisoftClean", "ESETClean",
+    "ESTsecurityClean", "Forcepoint ThreatSeekerClean", "FortinetClean", "G-DataClean",
+    "Google SafebrowsingClean", "GreenSnowClean", "Heimdal SecurityClean", "IPsumClean",
+    "Juniper NetworksClean", "KasperskyClean", "LevelBlueClean", "LionicClean",
+    "MalwaredClean", "MalwarePatrolClean", "OpenPhishClean", "Phishing DatabaseClean",
+    "PhishtankClean", "PREBYTESClean", "Quick HealClean", "QutteraClean", "RisingClean",
+    "SangforClean", "ScantitanClean", "SCUMWARE.orgClean", "SeclookupClean",
+    "securolyticsClean", "SophosClean", "StopForumSpamClean", "Sucuri SiteCheckClean",
+    "ThreatHiveClean", "URLhausClean", "Viettel Threat IntelligenceClean", "ViriBackClean",
+    "VX VaultClean", "WebrootClean", "Yandex SafebrowsingClean", "ZeroCERTClean",
+    "0xSI_f33dUnrated", "alphaMountain.aiUnrated", "AlphaSOCUnrated",
+    "ArcSight Threat IntelligenceUnrated", "AutoShunUnrated", "Bfore.Ai PreCrimeUnrated",
+    "BkavUnrated", "Chong Lua DaoUnrated", "Cluster25Unrated", "CSIS Security GroupUnrated",
+    "CyanUnrated", "ErmesUnrated", "GCP Abuse IntelligenceUnrated", "GreyNoiseUnrated",
+    "GridinsoftUnrated", "GuardpotUnrated", "Hunt.io IntelligenceUnrated", "K7AntiVirusUnrated",
+    "LumuUnrated", "MalwareURLUnrated", "MimecastUnrated", "NetcraftUnrated", "PhishFortUnrated",
+    "PhishLabsUnrated", "PrecisionSecUnrated", "SafeToOpenUnrated", "Sansec eComscanUnrated",
+    "Snort IP sample listUnrated", "SOCRadarUnrated", "URLQueryUnrated", "VIPREUnrated",
+    "Xcitium Verdict CloudUnrated", "ZeroFoxUnrated", "Artists Against 419Unrated",
+    "benkow.ccUnrated", "CMC Threat IntelligenceUnrated",
+)
+
+def parse_virustotal_engine_entry(raw):
+    for suffix, verdict in (("Malicious", "malicious"), ("Unrated", "unrated"), ("Clean", "clean")):
+        if raw.endswith(suffix):
+            return {"name": raw[:-len(suffix)], "verdict": verdict}
+    return {"name": raw, "verdict": "unrated"}
+
+VIRUSTOTAL_SEEDED_ENGINES = [parse_virustotal_engine_entry(entry) for entry in VIRUSTOTAL_ENGINE_ENTRIES]
+
+def build_virustotal_summary(engines):
+    clean = sum(1 for engine in engines if engine["verdict"] == "clean")
+    unrated = sum(1 for engine in engines if engine["verdict"] == "unrated")
+    malicious = sum(1 for engine in engines if engine["verdict"] == "malicious")
+    return {"clean": clean, "unrated": unrated, "malicious": malicious, "total": len(engines)}
+
+def virustotal_seed_result(target_url):
+    engines = sorted(VIRUSTOTAL_SEEDED_ENGINES, key=lambda engine: engine["name"].lower())
+    groups = {
+        "clean": [engine for engine in engines if engine["verdict"] == "clean"],
+        "unrated": [engine for engine in engines if engine["verdict"] == "unrated"],
+        "malicious": [engine for engine in engines if engine["verdict"] == "malicious"],
+    }
+    return {
+        "url": target_url,
+        "scannedAt": now_iso(),
+        "engines": engines,
+        "groups": groups,
+        "summary": build_virustotal_summary(engines),
+        "provider": "VirusTotal",
+        "mode": "seeded",
+    }
+
+def virustotal_breakdown_signal(vt_result):
+    summary = vt_result["summary"]
+    flagged = summary["malicious"]
+    severity = "high" if flagged else "info"
+    return signal(
+        "VirusTotal Reputation",
+        f"{flagged}/{summary['total']} engines flagged",
+        severity,
+        f"VirusTotal vendor breakdown: {summary['clean']} clean, {summary['unrated']} unrated, {summary['malicious']} malicious.",
+        flagged == 0
+    )
+
 def score_from_signals(signals):
     high_count = sum(1 for item in signals if item["severity"] == "high")
     medium_count = sum(1 for item in signals if item["severity"] == "medium")
@@ -1606,6 +1676,7 @@ async def analyze_full_pipeline(target_url, qr_image=None):
     if MOCK_MODE:
         return mock_analysis_response(normalized)
 
+    vt_result = virustotal_seed_result(normalized)
     domain_task = asyncio.to_thread(check_domain_intelligence, normalized)
     redirect_task = asyncio.to_thread(trace_redirect_chain, normalized)
     reputation_task = asyncio.to_thread(check_reputation_signals, normalized)
@@ -1617,6 +1688,7 @@ async def analyze_full_pipeline(target_url, qr_image=None):
     signals.extend(domain_result if isinstance(domain_result, list) else [domain_result])
     signals.append(redirect_result["signal"])
     signals.extend(reputation_signals)
+    signals.append(virustotal_breakdown_signal(vt_result))
     signals.extend(crypto_signals)
     ml_signal = ml_signal_from_result(ml_result)
     if ml_signal:
@@ -1635,6 +1707,7 @@ async def analyze_full_pipeline(target_url, qr_image=None):
         "threatType": threat_type_for_analysis(overall_risk, signals, ml_result),
         "verdict": verdict_with_ml(ai_verdict["verdict"], final_score, ml_result, signals),
         "signals": signals,
+        "virusTotal": vt_result,
         "redirectChain": redirect_result.get("redirectChain", []),
         "scannedAt": datetime.utcnow().isoformat() + "Z"
     }
@@ -1852,6 +1925,7 @@ def pipeline_response_to_template_analysis(pipeline_response):
         "verdict": pipeline_response["verdict"],
         "reputation": {"provider": "SafeScan Core Risk Engine", "status": overall_risk.upper(), "matches": [], "detail": pipeline_response["verdict"]},
         "reasons": signals,
+        "virusTotal": pipeline_response.get("virusTotal"),
         "mlRisk": pipeline_response.get("mlRisk"),
         "ruleScore": pipeline_response.get("ruleScore")
     }
@@ -3357,6 +3431,7 @@ async def scan_qr(
                 "verdict_summary": "SafeScan limits QR image uploads to keep scans fast and memory usage stable.",
                 "reputation": {"provider": "Scanner", "status": "ERROR", "matches": [], "detail": "Upload a smaller image."},
                 "risk_reasons": [risk_reason("Upload too large", "medium", f"Use an image under {MAX_QR_UPLOAD_BYTES // (1024 * 1024)} MB.")],
+                "virus_total": None,
                 "email": user_email, "scan_count": get_scan_count(user_email), "google_client_id": CLIENT_ID,
                 "test_site": test_site,
                 "test_site_path": test_site_path,
@@ -3385,6 +3460,7 @@ async def scan_qr(
             "verdict_summary": "SafeScan could not decode a QR payload from this image.",
             "reputation": {"provider": "Scanner", "status": "ERROR", "matches": [], "detail": "No decodable payload was found."},
             "risk_reasons": [risk_reason("No QR payload decoded", "medium", "Upload a clearer QR image or paste the destination manually.")],
+            "virus_total": None,
             "email": user_email, "scan_count": get_scan_count(user_email), "google_client_id": CLIENT_ID,
             "test_site": test_site,
             "test_site_path": test_site_path,
@@ -3425,6 +3501,7 @@ async def scan_qr(
         "verdict_summary": analysis.get("verdict", analysis["threat_class"]),
         "reputation": analysis.get("reputation"),
         "risk_reasons": analysis.get("reasons", []),
+        "virus_total": analysis.get("virusTotal"),
         "ml_risk": analysis.get("mlRisk"),
         "email": user_email, "scan_count": get_scan_count(user_email), "google_client_id": CLIENT_ID,
         "test_site": test_site,

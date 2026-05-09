@@ -551,3 +551,38 @@ if (revealTargets.length) {
     revealTargets.forEach((target) => target.classList.add("is-visible"));
   }
 }
+
+document.querySelectorAll(".vt-panel").forEach((panel) => {
+  const tabs = panel.querySelectorAll("[data-vt-tab]");
+  const groups = panel.querySelectorAll("[data-vt-group]");
+  const search = panel.querySelector(".vt-engine-search");
+  const mobileToggle = panel.querySelector(".vt-mobile-toggle");
+
+  const applyFilter = () => {
+    const activeTab = panel.querySelector("[data-vt-tab].active")?.dataset.vtTab || "clean";
+    const query = search?.value?.trim().toLowerCase() || "";
+    groups.forEach((group) => {
+      const isActive = group.dataset.vtGroup === activeTab;
+      group.classList.toggle("hidden", !isActive);
+      if (!isActive) return;
+      group.querySelectorAll(".vt-engine-row").forEach((row) => {
+        const name = row.dataset.engineName || "";
+        row.classList.toggle("hidden", Boolean(query) && !name.includes(query));
+      });
+    });
+  };
+
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      tabs.forEach((item) => item.classList.remove("active"));
+      tab.classList.add("active");
+      applyFilter();
+    });
+  });
+  search?.addEventListener("input", applyFilter);
+  mobileToggle?.addEventListener("click", () => {
+    const isOpen = panel.classList.toggle("vt-mobile-open");
+    mobileToggle.textContent = isOpen ? "Hide engine details" : "Show engine details";
+  });
+  applyFilter();
+});

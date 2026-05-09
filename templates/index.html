@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SafeScan QR Demo</title>
   <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=token-copy-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=vt-results-v2">
 </head>
 <body class="{{ 'test-site-page' if test_site else '' }}">
   <div class="page-shell">
@@ -235,6 +235,47 @@
               <div class="verdict-badge {{ 'verdict-safe' if status == 'SAFE' else ('verdict-caution' if status == 'CAUTION' else 'verdict-dangerous') }}">{{ status }}</div>
             </div>
 
+            {% if virus_total %}
+            <div class="vt-panel">
+              <div class="vt-panel-top">
+                <div>
+                  <p class="engine-label">VirusTotal vendor scan</p>
+                  <h3>{{ "No threats detected" if virus_total.summary.malicious == 0 else virus_total.summary.malicious ~ " threats detected" }}</h3>
+                  <p>{{ virus_total.summary.clean }} clean engines and {{ virus_total.summary.unrated }} unrated engines support this SafeScan score.</p>
+                </div>
+                <a class="vt-powered" href="https://www.virustotal.com" target="_blank" rel="noopener noreferrer">Powered by VirusTotal</a>
+              </div>
+              <div class="vt-score-bar" aria-label="VirusTotal engine breakdown">
+                {% if virus_total.summary.clean %}<span class="vt-score-clean" style="width: {{ (virus_total.summary.clean / virus_total.summary.total * 100) | round(2) }}%;"></span>{% endif %}
+                {% if virus_total.summary.unrated %}<span class="vt-score-unrated" style="width: {{ (virus_total.summary.unrated / virus_total.summary.total * 100) | round(2) }}%;"></span>{% endif %}
+                {% if virus_total.summary.malicious %}<span class="vt-score-malicious" style="width: {{ (virus_total.summary.malicious / virus_total.summary.total * 100) | round(2) }}%;"></span>{% endif %}
+              </div>
+              <div class="vt-badge-row">
+                <button class="vt-tab active" type="button" data-vt-tab="clean">OK {{ virus_total.summary.clean }} Clean</button>
+                <button class="vt-tab" type="button" data-vt-tab="unrated">○ {{ virus_total.summary.unrated }} Unrated</button>
+                <button class="vt-tab" type="button" data-vt-tab="malicious">X {{ virus_total.summary.malicious }} Malicious</button>
+              </div>
+              <input class="vt-engine-search" type="search" placeholder="Search security engines" aria-label="Search VirusTotal engines">
+              <button class="vt-mobile-toggle" type="button">Show engine details</button>
+              <div class="vt-engine-groups">
+                {% for verdict, engines in virus_total.groups.items() %}
+                <div class="vt-engine-group {{ '' if verdict == 'clean' else 'hidden' }}" data-vt-group="{{ verdict }}">
+                  {% if engines %}
+                    {% for engine in engines %}
+                    <div class="vt-engine-row" data-engine-name="{{ engine.name | lower }}">
+                      <span>{{ engine.name }}</span>
+                      <span class="vt-pill vt-pill-{{ engine.verdict }}">{{ engine.verdict | title }}</span>
+                    </div>
+                    {% endfor %}
+                  {% else %}
+                    <p class="vt-empty">No {{ verdict }} engine results.</p>
+                  {% endif %}
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+            {% endif %}
+
             <div class="reason-accordion">
               {% for reason in risk_reasons %}
               {% if reason.check not in ('ML Risk Model', 'VirusTotal Reputation') %}
@@ -272,6 +313,7 @@
               <div><p class="engine-label">Risk score</p><p class="score-value">{{ score }}</p></div>
               <div><p class="engine-label">Threat class</p><p>{{ threat_class }}</p></div>
               <div><p class="engine-label">Reputation</p><p>{{ reputation.status if reputation else source }}</p></div>
+              {% if virus_total %}<div><p class="engine-label">VirusTotal</p><p>{{ virus_total.summary.clean }} clean · {{ virus_total.summary.unrated }} unrated · {{ virus_total.summary.malicious }} malicious</p></div>{% endif %}
             </div>
           </article>
         </div>
@@ -306,6 +348,6 @@
     {% include "footer.html" %}
   </div>
   <script type="module" src="/static/safescan-3d.js?v=full-hero-3d-v1"></script>
-  <script src="/static/app.js?v=token-copy-v3"></script>
+  <script src="/static/app.js?v=vt-results-v2"></script>
 </body>
 </html>
