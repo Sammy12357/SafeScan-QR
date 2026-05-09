@@ -828,6 +828,7 @@ def admin_avatar(email):
 def index_user_context(user):
     role = user.get("role", "guest") if user else "guest"
     email = user.get("email", "") if user else ""
+    username = (user.get("username") or "").strip() if user else ""
     display_name = (user.get("display_name") or "").strip() if user else ""
     return {
         "user_role": role,
@@ -835,7 +836,7 @@ def index_user_context(user):
         "is_owner": role == "owner",
         "username": user.get("username") if user else "",
         "profile_display_name": "Safe scanner",
-        "profile_subtitle": (user.get("username") or "").strip() or display_name or email,
+        "profile_subtitle": username or display_name or email,
     }
 
 def local_user_id(email):
