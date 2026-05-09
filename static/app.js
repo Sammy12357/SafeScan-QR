@@ -410,7 +410,15 @@ const qrImageInput = document.getElementById("qrImageInput");
 qrImageInput?.addEventListener("change", () => {
   if (qrImageInput.files && qrImageInput.files.length > 0) {
     const form = qrImageInput.form;
-    if (form) form.requestSubmit ? form.requestSubmit() : form.submit();
+    if (analysisLoadingState) {
+      analysisLoadingState.textContent = "Preparing image scan...";
+      analysisLoadingState.classList.remove("hidden");
+    }
+    if (form) {
+      window.setTimeout(() => {
+        form.requestSubmit ? form.requestSubmit() : form.submit();
+      }, 80);
+    }
   }
 });
 

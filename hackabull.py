@@ -3402,18 +3402,18 @@ async def report_breach(
 @qr_app.post("/search_qr_api", response_class=HTMLResponse)
 async def scan_qr(
     request: Request,
-    user_email: str = Form(...),
+    user_email: str = Form(""),
     wallet_address: str = Form(""),
     device_fingerprint: str = Form(""),
     file: UploadFile = File(None),
     manual_url: str = Form(None),
     template_variant: str = Form("")
 ):
-    user = require_user(request)
-    user_email = user["email"]
+    user = get_session_user(request)
+    user_email = user["email"] if user else ""
     test_site = template_variant in ("main_site", "test_site")
     test_site_path = template_variant == "test_site"
-    verified_wallet = get_verified_wallet(user_email)
+    verified_wallet = get_verified_wallet(user_email) if user_email else None
     wallet_address = verified_wallet["address"] if verified_wallet else ""
     url_qr = None
     qr_image_for_ml = None
@@ -3432,7 +3432,7 @@ async def scan_qr(
                 "reputation": {"provider": "Scanner", "status": "ERROR", "matches": [], "detail": "Upload a smaller image."},
                 "risk_reasons": [risk_reason("Upload too large", "medium", f"Use an image under {MAX_QR_UPLOAD_BYTES // (1024 * 1024)} MB.")],
                 "virus_total": None,
-                "email": user_email, "scan_count": get_scan_count(user_email), "google_client_id": CLIENT_ID,
+                "email": user_email, "scan_count": get_scan_count(user_email) if user_email else 0, "google_client_id": CLIENT_ID,
                 "test_site": test_site,
                 "test_site_path": test_site_path,
                 "version": LEGAL_VERSION,
@@ -3461,7 +3461,7 @@ async def scan_qr(
             "reputation": {"provider": "Scanner", "status": "ERROR", "matches": [], "detail": "No decodable payload was found."},
             "risk_reasons": [risk_reason("No QR payload decoded", "medium", "Upload a clearer QR image or paste the destination manually.")],
             "virus_total": None,
-            "email": user_email, "scan_count": get_scan_count(user_email), "google_client_id": CLIENT_ID,
+            "email": user_email, "scan_count": get_scan_count(user_email) if user_email else 0, "google_client_id": CLIENT_ID,
             "test_site": test_site,
             "test_site_path": test_site_path,
             "version": LEGAL_VERSION,
@@ -3487,10 +3487,12 @@ async def scan_qr(
         analysis = analyze_qr_payload(url_qr)
     if qr_image_for_ml is not None:
         qr_image_for_ml.close()
-    counted = record_unique_scan(user_email, url_qr, wallet_address)
-    save_scan_history(user_email, analysis["normalized"], analysis)
-    run_fraud_checks("scan", user_email, request, {"url": analysis["normalized"], "deviceFingerprint": device_fingerprint})
-    audit_log("qr.scanned", request=request, actor_user_id=user.get("google_id"), target_type="scan", metadata={"counted": counted, "payloadType": payload_type})
+    counted = False
+    if user_email:
+        counted = record_unique_scan(user_email, url_qr, wallet_address)
+        save_scan_history(user_email, analysis["normalized"], analysis)
+        run_fraud_checks("scan", user_email, request, {"url": analysis["normalized"], "deviceFingerprint": device_fingerprint})
+    audit_log("qr.scanned", request=request, actor_user_id=user.get("google_id") if user else None, target_type="scan", metadata={"counted": counted, "payloadType": payload_type, "guest": not bool(user_email)})
 
     return templates.TemplateResponse("index.html", {
         "request": request, "logged_in": True, "results_visible": True,
@@ -3503,7 +3505,7 @@ async def scan_qr(
         "risk_reasons": analysis.get("reasons", []),
         "virus_total": analysis.get("virusTotal"),
         "ml_risk": analysis.get("mlRisk"),
-        "email": user_email, "scan_count": get_scan_count(user_email), "google_client_id": CLIENT_ID,
+        "email": user_email, "scan_count": get_scan_count(user_email) if user_email else 0, "google_client_id": CLIENT_ID,
         "test_site": test_site,
         "test_site_path": test_site_path,
         "version": LEGAL_VERSION,
