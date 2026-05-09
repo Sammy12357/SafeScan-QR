@@ -3063,6 +3063,21 @@ async def read_index(request: Request):
     return templates.TemplateResponse("index.html", {
         "request": request, "logged_in": bool(user), "results_visible": False, "google_client_id": CLIENT_ID,
         "email": email, "scan_count": get_scan_count(email) if email else 0,
+        "test_site": True,
+        "test_site_path": False,
+        "version": LEGAL_VERSION,
+        **index_user_context(user)
+    })
+
+@qr_app.get("/test-site", response_class=HTMLResponse)
+async def read_test_site(request: Request):
+    user = get_session_user(request)
+    email = user["email"] if user else ""
+    return templates.TemplateResponse("index.html", {
+        "request": request, "logged_in": bool(user), "results_visible": False, "google_client_id": CLIENT_ID,
+        "email": email, "scan_count": get_scan_count(email) if email else 0,
+        "test_site": True,
+        "test_site_path": True,
         "version": LEGAL_VERSION,
         **index_user_context(user)
     })
@@ -3317,10 +3332,13 @@ async def scan_qr(
     wallet_address: str = Form(""),
     device_fingerprint: str = Form(""),
     file: UploadFile = File(None),
-    manual_url: str = Form(None)
+    manual_url: str = Form(None),
+    template_variant: str = Form("")
 ):
     user = require_user(request)
     user_email = user["email"]
+    test_site = template_variant in ("main_site", "test_site")
+    test_site_path = template_variant == "test_site"
     verified_wallet = get_verified_wallet(user_email)
     wallet_address = verified_wallet["address"] if verified_wallet else ""
     url_qr = None
@@ -3340,6 +3358,8 @@ async def scan_qr(
                 "reputation": {"provider": "Scanner", "status": "ERROR", "matches": [], "detail": "Upload a smaller image."},
                 "risk_reasons": [risk_reason("Upload too large", "medium", f"Use an image under {MAX_QR_UPLOAD_BYTES // (1024 * 1024)} MB.")],
                 "email": user_email, "scan_count": get_scan_count(user_email), "google_client_id": CLIENT_ID,
+                "test_site": test_site,
+                "test_site_path": test_site_path,
                 "version": LEGAL_VERSION,
                 **index_user_context(user)
             })
@@ -3366,6 +3386,8 @@ async def scan_qr(
             "reputation": {"provider": "Scanner", "status": "ERROR", "matches": [], "detail": "No decodable payload was found."},
             "risk_reasons": [risk_reason("No QR payload decoded", "medium", "Upload a clearer QR image or paste the destination manually.")],
             "email": user_email, "scan_count": get_scan_count(user_email), "google_client_id": CLIENT_ID,
+            "test_site": test_site,
+            "test_site_path": test_site_path,
             "version": LEGAL_VERSION,
             **index_user_context(user)
         })
@@ -3405,6 +3427,8 @@ async def scan_qr(
         "risk_reasons": analysis.get("reasons", []),
         "ml_risk": analysis.get("mlRisk"),
         "email": user_email, "scan_count": get_scan_count(user_email), "google_client_id": CLIENT_ID,
+        "test_site": test_site,
+        "test_site_path": test_site_path,
         "version": LEGAL_VERSION,
         **index_user_context(user)
     })

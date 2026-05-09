@@ -5,11 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SafeScan QR Demo</title>
   <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=profile-tab-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=test-site-v2">
 </head>
-<body>
+<body class="{{ 'test-site-page' if test_site else '' }}">
   <div class="page-shell">
     <div class="top-auth">
+      {% if test_site_path %}
+        <a href="/" class="top-action-button">Main site</a>
+      {% elif not test_site %}
+        <a href="/test-site" class="top-action-button">Test site</a>
+      {% endif %}
       <button id="topCopyReferralButton" class="top-action-button" type="button">Referral link</button>
       <button id="topConnectWalletButton" class="top-action-button" type="button">Connect wallet</button>
       {% if logged_in %}
@@ -37,13 +42,13 @@
     <header class="hero">
       <div class="hero-copy">
         <div class="hero-kicker">
-          <p class="eyebrow">Hackabull Demo</p>
+        <p class="eyebrow">{{ "Premium test build" if test_site else "Hackabull Demo" }}</p>
           <div class="powered-by-solana"><span>Powered By</span><svg viewBox="0 0 398 312"><defs><linearGradient id="solanaGradientTop" x1="360" y1="28" x2="62" y2="301" gradientUnits="userSpaceOnUse"><stop stop-color="#14F195"/><stop offset="0.5" stop-color="#55A6F8"/><stop offset="1" stop-color="#9945FF"/></linearGradient></defs><path fill="url(#solanaGradientTop)" d="M64.6 3.8C67 1.4 70.4 0 73.8 0h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1L64.6 3.8Z"/><path fill="url(#solanaGradientTop)" d="M333.1 120.1c-2.4-2.4-5.7-3.8-9.2-3.8H6.5c-5.8 0-8.7 7-4.6 11.1l62.7 62.7c2.4 2.4 5.7 3.8 9.2 3.8h317.4c5.8 0 8.7-7 4.6-11.1l-62.7-62.7Z"/><path fill="url(#solanaGradientTop)" d="M64.6 237.9c2.4-2.4 5.7-3.8 9.2-3.8h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1l62.7-62.7Z"/></svg></div>
         </div>
         <h1>SafeScan QR</h1>
-        <p class="hero-problem">Can you distinguish a malicious QR?</p>
-        <p class="hero-text">A trust layer for QR links, wallet prompts, and payment redirects. Decode the payload, score the risk, and keep the user in control before anything runs.</p>
-        <div class="hero-actions"><a class="primary-button" href="#scanner">Scan QR</a><a class="secondary-button" href="#airdrop">Airdrop</a></div>
+        <p class="hero-problem">{{ "Stop malicious QR links before they open." if test_site else "Can you distinguish a malicious QR?" }}</p>
+        <p class="hero-text">{{ "SafeScan turns every QR scan into a clear security decision: decode the payload, trace redirects, inspect wallet actions, score the risk, and let users continue only when they understand what is happening." if test_site else "A trust layer for QR links, wallet prompts, and payment redirects. Decode the payload, score the risk, and keep the user in control before anything runs." }}</p>
+        <div class="hero-actions"><a class="primary-button" href="#scanner">Scan QR</a><a class="secondary-button" href="{{ '#pricing-test' if test_site else '#airdrop' }}">{{ "Pricing" if test_site else "Airdrop" }}</a></div>
         <div class="hero-metrics" aria-label="SafeScan QR demo capabilities">
           <div><span>AI</span><p>Risk verdicts</p></div>
           <div><span>ZBar</span><p>QR decoding</p></div>
@@ -65,12 +70,38 @@
         </div>
         <div class="model-caption">
           <p class="model-caption-label">Solana Mobile 3D scan model</p>
-          <p>Cyber security inspired software, Solana Mobile branding, QR inspection, and threat shielding in one scene.</p>
+          <p>{{ "A premium test landing page wrapped around the same SafeScan scanner, wallet, airdrop, and admin-ready product surface." if test_site else "Cyber security inspired software, Solana Mobile branding, QR inspection, and threat shielding in one scene." }}</p>
         </div>
       </div>
     </header>
 
     <main>
+      {% if test_site %}
+      <section class="test-section test-proof" aria-label="SafeScan trust signals">
+        <div class="test-section-header reveal-on-scroll">
+          <p class="eyebrow">Risk intelligence</p>
+          <h2>QR security that feels instant, but thinks in layers.</h2>
+        </div>
+        <div class="test-proof-grid">
+          <article class="test-proof-card reveal-on-scroll"><span>01</span><h3>Payload decode</h3><p>Reads URLs, wallet prompts, redirects, and non-web QR payloads before the phone hands control to another app.</p></article>
+          <article class="test-proof-card reveal-on-scroll"><span>02</span><h3>Threat scoring</h3><p>Combines domain intelligence, reputation signals, redirect tracing, crypto patterns, and ML analysis into one verdict.</p></article>
+          <article class="test-proof-card reveal-on-scroll"><span>03</span><h3>User control</h3><p>Shows the destination, risk reasons, and next action so the user can block, report, or continue with context.</p></article>
+        </div>
+      </section>
+
+      <section class="test-section test-social reveal-on-scroll">
+        <div>
+          <p class="eyebrow">Built for the scan moment</p>
+          <h2>Designed for wallets, events, menus, payments, and public QR codes.</h2>
+        </div>
+        <div class="test-stat-row">
+          <div><strong>90+</strong><span>target Lighthouse score</span></div>
+          <div><strong>5</strong><span>risk signal families</span></div>
+          <div><strong>SQR</strong><span>airdrop-ready rewards</span></div>
+        </div>
+      </section>
+      {% endif %}
+
       {% if logged_in %}
       <section class="airdrop-panel" id="airdrop">
         <div class="panel-header">
@@ -139,6 +170,7 @@
         <div class="scanner-grid">
           <div class="scanner-card">
             <form id="qrForm" action="/search_qr_api" method="post" enctype="multipart/form-data">
+              <input type="hidden" name="template_variant" value="{{ 'test_site' if test_site_path else ('main_site' if test_site else '') }}">
               <input type="hidden" name="user_email" value="{{ email }}">
               <input type="hidden" id="hiddenWalletInput" name="wallet_address">
               <input type="hidden" id="deviceFingerprintInput" name="device_fingerprint">
@@ -225,7 +257,7 @@
           </div>
 
           <div class="modal-actions">
-            <a href="/" class="secondary-button">&#8592; Back</a>
+            <a href="{{ '/test-site' if test_site_path else '/' }}" class="secondary-button">&#8592; Back</a>
             <button id="blockReportButton" class="danger-button" type="button">Block &amp; Report</button>
             {% if url_found.startswith("http://") or url_found.startswith("https://") %}
             <a id="continueSafelyButton" class="primary-button" href="{{ url_found }}" target="_blank" rel="noopener noreferrer">Continue Safely</a>
@@ -252,10 +284,35 @@
       </section>
       {% endif %}
       {% endif %}
+      {% if test_site %}
+      <section class="test-section test-pricing" id="pricing-test">
+        <div class="test-section-header reveal-on-scroll">
+          <p class="eyebrow">Plans</p>
+          <h2>Start with free scans, grow into wallet and API protection.</h2>
+        </div>
+        <div class="test-pricing-grid">
+          <article class="test-price-card reveal-on-scroll"><p class="tier-rank">Demo</p><h3>Free</h3><p class="test-price">$0</p><p>Scan QR payloads, review risk reasons, and join the SafeScan airdrop.</p><a class="secondary-button" href="#scanner">Try scanner</a></article>
+          <article class="test-price-card featured reveal-on-scroll"><p class="tier-rank">Wallets</p><h3>Protection</h3><p class="test-price">Beta</p><p>Embedded QR checks for wallets, mobile apps, and Solana transaction surfaces.</p><a class="primary-button" href="/contact">Contact</a></article>
+          <article class="test-price-card reveal-on-scroll"><p class="tier-rank">API</p><h3>Threat Intel</h3><p class="test-price">Soon</p><p>Risk scoring endpoints for merchants, dApps, QR campaigns, and trust teams.</p><a class="secondary-button" href="/resources/docs">Docs</a></article>
+        </div>
+      </section>
+
+      <section class="test-section test-faq reveal-on-scroll">
+        <div class="test-section-header">
+          <p class="eyebrow">FAQ</p>
+          <h2>What SafeScan checks before a QR opens.</h2>
+        </div>
+        <div class="test-faq-list">
+          <details open><summary>Does the test site use the real scanner?</summary><p>Yes. It posts to the same SafeScan analysis route and shows the same verdict modal.</p></details>
+          <details><summary>Does it keep wallet and airdrop features?</summary><p>Yes. Signed-in users keep the same wallet verification, scan count, tier progress, profile, history, and leaderboard links.</p></details>
+          <details><summary>Is this replacing the main homepage?</summary><p>No. This is a separate test route so the current homepage can stay stable while the premium landing flow is reviewed.</p></details>
+        </div>
+      </section>
+      {% endif %}
     </main>
     {% include "footer.html" %}
   </div>
   <script type="module" src="/static/safescan-3d.js?v=full-hero-3d-v1"></script>
-  <script src="/static/app.js?v=profile-subtitle-v2"></script>
+  <script src="/static/app.js?v=test-site-v3"></script>
 </body>
 </html>

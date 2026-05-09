@@ -490,3 +490,24 @@ cookieConsentBanner?.addEventListener("click", async (event) => {
 });
 
 showConsentBannerIfNeeded();
+
+const revealTargets = document.querySelectorAll(".reveal-on-scroll");
+if (revealTargets.length) {
+  revealTargets.forEach((target, index) => {
+    target.style.setProperty("--reveal-delay", `${Math.min(index * 70, 280)}ms`);
+  });
+
+  if ("IntersectionObserver" in window) {
+    const revealObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add("is-visible");
+        revealObserver.unobserve(entry.target);
+      });
+    }, { threshold: 0.01, rootMargin: "0px 0px 32% 0px" });
+
+    revealTargets.forEach((target) => revealObserver.observe(target));
+  } else {
+    revealTargets.forEach((target) => target.classList.add("is-visible"));
+  }
+}
