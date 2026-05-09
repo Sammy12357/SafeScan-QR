@@ -9,6 +9,8 @@ const dom = {
   connectWalletButton: document.getElementById("connectWalletButton"),
   disconnectWalletButton: document.getElementById("disconnectWalletButton"),
   topConnectWalletButton: document.getElementById("topConnectWalletButton"),
+  tokenAddress: document.getElementById("tokenAddress"),
+  copyTokenAddressButton: document.getElementById("copyTokenAddressButton"),
   airdropProfile: document.getElementById("airdropProfile"),
   airdropStatus: document.getElementById("airdropStatus"),
   googleSignInButton: document.getElementById("googleSignInButton"),
@@ -124,6 +126,32 @@ function escapeHtml(value) {
   const div = document.createElement("div");
   div.textContent = value || "";
   return div.innerHTML;
+}
+
+async function copyTextToClipboard(value) {
+  if (!value) return false;
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return true;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.top = "-1000px";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  textarea.setSelectionRange(0, value.length);
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } finally {
+    textarea.remove();
+  }
+  return copied;
 }
 
 const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
@@ -352,6 +380,23 @@ dom.disconnectWalletButton?.addEventListener("click", async () => {
 
 dom.demoWalletButton?.addEventListener("click", () => {
   window.alert("Demo wallets cannot be used for airdrop verification. Connect a real wallet and approve the signature request.");
+});
+
+dom.copyTokenAddressButton?.addEventListener("click", async () => {
+  const tokenAddress = dom.tokenAddress?.textContent?.trim() || "";
+  const originalLabel = dom.copyTokenAddressButton.textContent;
+  dom.copyTokenAddressButton.disabled = true;
+  try {
+    await copyTextToClipboard(tokenAddress);
+    dom.copyTokenAddressButton.textContent = "Copied";
+  } catch {
+    dom.copyTokenAddressButton.textContent = tokenAddress ? "Copied" : "Copy failed";
+  } finally {
+    window.setTimeout(() => {
+      dom.copyTokenAddressButton.textContent = originalLabel || "Copy";
+      dom.copyTokenAddressButton.disabled = false;
+    }, 1800);
+  }
 });
 
 dom.qrForm?.addEventListener("submit", () => {
