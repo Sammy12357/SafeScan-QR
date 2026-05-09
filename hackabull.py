@@ -864,6 +864,15 @@ def save_local_user(email, request=None):
     save_user_to_db(uid, email, request)
     return uid
 
+def email_account_exists(email):
+    normalized_email = (email or "").strip().lower()
+    if not normalized_email:
+        return False
+    with sqlite3.connect("qr_cache.db") as conn:
+        existing_user = conn.execute("SELECT 1 FROM users WHERE lower(email) = ? LIMIT 1", (normalized_email,)).fetchone()
+        existing_local = conn.execute("SELECT 1 FROM local_credentials WHERE lower(email) = ? LIMIT 1", (normalized_email,)).fetchone()
+    return bool(existing_user or existing_local)
+
 def username_required(user):
     return bool(user) and not (user.get("username") or "").strip()
 
@@ -3482,10 +3491,19 @@ async def auth_register(request: Request, email: str = Form(...), password: str 
         return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid email address.", "tab": "register"})
     if len(password) < 8:
         return templates.TemplateResponse("login.html", {"request": request, "error": "Password must be at least 8 characters.", "tab": "register"})
-    with sqlite3.connect("qr_cache.db") as conn:
-        existing = conn.execute("SELECT email FROM local_credentials WHERE email = ?", (email,)).fetchone()
-        if existing:
-            return templates.TemplateResponse("login.html", {"request": request, "error": "An account with this email already exists.", "tab": "register"})
+    if email_account_exists(email):
+        return templates.TemplateResponse(
+            "login.html",
+            {
+                "request": request,
+                "error": "Email is already linked to account.",
+                "tab": "register",
+                "local_auth_enabled": LOCAL_AUTH_ENABLED,
+                "google_client_id": CLIENT_ID or "",
+                "auth_google_url": f"{APP_URL}/auth/google",
+            },
+            status_code=409,
+        )
     lid = save_local_user(email, request)
     with sqlite3.connect("qr_cache.db") as conn:
         conn.execute(
