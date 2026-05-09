@@ -385,13 +385,11 @@ dom.demoWalletButton?.addEventListener("click", () => {
 dom.copyTokenAddressButton?.addEventListener("click", async () => {
   const tokenAddress = dom.tokenAddress?.textContent?.trim() || "";
   window.clearTimeout(dom.copyTokenAddressButton.dataset.resetTimer);
-  dom.copyTokenAddressButton.textContent = tokenAddress ? "Copied" : "Copy failed";
+  const isCopied = dom.copyTokenAddressButton.textContent.trim() === "Copied";
+  dom.copyTokenAddressButton.textContent = tokenAddress ? (isCopied ? "Copy" : "Copied") : "Copy failed";
   dom.tokenAddress?.classList.remove("token-address-copied");
   void dom.tokenAddress?.offsetWidth;
   dom.tokenAddress?.classList.add("token-address-copied");
-  dom.copyTokenAddressButton.dataset.resetTimer = window.setTimeout(() => {
-    dom.copyTokenAddressButton.textContent = "Copy";
-  }, 1800);
 
   copyTextToClipboard(tokenAddress).catch(() => {});
 });
