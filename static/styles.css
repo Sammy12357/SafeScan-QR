@@ -319,8 +319,11 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
   .model-caption { left: 12px; right: 12px; bottom: 12px; }
   .phone-model { width: min(74%, 260px); }
   .page-shell { width: min(100% - 20px, 1180px); }
-  .top-auth { justify-content: stretch; }
-  .top-action-button, .top-profile { width: 100%; }
+  .top-auth { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); justify-content: stretch; align-items: stretch; gap: 8px; }
+  .top-auth-spacer { display: none; }
+  .top-action-button, .top-profile { width: 100%; min-width: 0; }
+  .top-profile { grid-column: 1 / -1; }
+  .profile-email { overflow-wrap: anywhere; }
   .signup-terms { text-align: left; }
   .progress-stats, .wallet-actions, .referral-actions { justify-content: stretch; }
   .progress-stats div, .token-address-row, .wallet-actions button, .referral-actions button { flex: 1 1 100%; }
@@ -335,6 +338,10 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
   .consent-actions { justify-content: stretch; }
   .consent-actions button { width: 100%; }
   .legal-document { padding: 20px; }
+}
+
+@media (max-width: 520px) {
+  .top-auth { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 768px) {
