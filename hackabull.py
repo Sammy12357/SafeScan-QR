@@ -3441,6 +3441,7 @@ async def auth_google(request: Request, credential: str = Form(None)):
             "request": request, "logged_in": False, "results_visible": False,
             "email": "", "score": "0", "threat_class": "N/A",
             "scan_count": 0, "google_client_id": CLIENT_ID,
+            "test_site": True, "test_site_path": False,
             "version": LEGAL_VERSION,
             **index_user_context(None)
         })
@@ -3463,6 +3464,7 @@ async def auth_google(request: Request, credential: str = Form(None)):
         "request": request, "logged_in": True, "results_visible": False,
         "email": user_email, "score": "0", "threat_class": "N/A",
         "scan_count": get_scan_count(user_email), "google_client_id": CLIENT_ID,
+        "test_site": True, "test_site_path": False,
         "version": LEGAL_VERSION,
         **index_user_context(user)
     })
@@ -3700,6 +3702,7 @@ async def confirm_age_submit(
         "request": request, "logged_in": True, "results_visible": False,
         "email": email, "score": "0", "threat_class": "N/A",
         "scan_count": get_scan_count(email), "google_client_id": CLIENT_ID,
+        "test_site": True, "test_site_path": False,
         "version": LEGAL_VERSION,
         **index_user_context(get_session_user(request))
     })

@@ -10,11 +10,6 @@
 <body class="{{ 'test-site-page' if test_site else '' }}">
   <div class="page-shell">
     <div class="top-auth">
-      {% if test_site_path %}
-        <a href="/" class="top-action-button">Main site</a>
-      {% elif not test_site %}
-        <a href="/test-site" class="top-action-button">Test site</a>
-      {% endif %}
       <button id="topCopyReferralButton" class="top-action-button" type="button">Referral link</button>
       <button id="topConnectWalletButton" class="top-action-button" type="button">Connect wallet</button>
       {% if logged_in %}
@@ -42,7 +37,7 @@
     <header class="hero">
       <div class="hero-copy">
         <div class="hero-kicker">
-        <p class="eyebrow">{{ "Premium test build" if test_site else "Hackabull Demo" }}</p>
+        <p class="eyebrow">{{ "Premium security build" if test_site else "Hackabull Demo" }}</p>
           <div class="powered-by-solana"><span>Powered By</span><svg viewBox="0 0 398 312"><defs><linearGradient id="solanaGradientTop" x1="360" y1="28" x2="62" y2="301" gradientUnits="userSpaceOnUse"><stop stop-color="#14F195"/><stop offset="0.5" stop-color="#55A6F8"/><stop offset="1" stop-color="#9945FF"/></linearGradient></defs><path fill="url(#solanaGradientTop)" d="M64.6 3.8C67 1.4 70.4 0 73.8 0h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1L64.6 3.8Z"/><path fill="url(#solanaGradientTop)" d="M333.1 120.1c-2.4-2.4-5.7-3.8-9.2-3.8H6.5c-5.8 0-8.7 7-4.6 11.1l62.7 62.7c2.4 2.4 5.7 3.8 9.2 3.8h317.4c5.8 0 8.7-7 4.6-11.1l-62.7-62.7Z"/><path fill="url(#solanaGradientTop)" d="M64.6 237.9c2.4-2.4 5.7-3.8 9.2-3.8h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1l62.7-62.7Z"/></svg></div>
         </div>
         <h1>SafeScan QR</h1>
@@ -70,7 +65,7 @@
         </div>
         <div class="model-caption">
           <p class="model-caption-label">Solana Mobile 3D scan model</p>
-          <p>{{ "A premium test landing page wrapped around the same SafeScan scanner, wallet, airdrop, and admin-ready product surface." if test_site else "Cyber security inspired software, Solana Mobile branding, QR inspection, and threat shielding in one scene." }}</p>
+          <p>{{ "A premium landing page wrapped around the same SafeScan scanner, wallet, airdrop, and admin-ready product surface." if test_site else "Cyber security inspired software, Solana Mobile branding, QR inspection, and threat shielding in one scene." }}</p>
         </div>
       </div>
     </header>
@@ -102,7 +97,6 @@
       </section>
       {% endif %}
 
-      {% if logged_in %}
       <section class="airdrop-panel" id="airdrop">
         <div class="panel-header">
           <div><p class="eyebrow">Community airdrop</p><h2>Register for Airdrop</h2></div>
@@ -283,7 +277,6 @@
         </div>
       </section>
       {% endif %}
-      {% endif %}
       {% if test_site %}
       <section class="test-section test-pricing" id="pricing-test">
         <div class="test-section-header reveal-on-scroll">
@@ -303,9 +296,9 @@
           <h2>What SafeScan checks before a QR opens.</h2>
         </div>
         <div class="test-faq-list">
-          <details open><summary>Does the test site use the real scanner?</summary><p>Yes. It posts to the same SafeScan analysis route and shows the same verdict modal.</p></details>
+          <details open><summary>Does the homepage use the real scanner?</summary><p>Yes. It posts to the same SafeScan analysis route and shows the same verdict modal.</p></details>
           <details><summary>Does it keep wallet and airdrop features?</summary><p>Yes. Signed-in users keep the same wallet verification, scan count, tier progress, profile, history, and leaderboard links.</p></details>
-          <details><summary>Is this replacing the main homepage?</summary><p>No. This is a separate test route so the current homepage can stay stable while the premium landing flow is reviewed.</p></details>
+          <details><summary>Is the airdrop still included?</summary><p>Yes. The community airdrop, tier cards, wallet verification, and QR scanner remain in the main homepage flow.</p></details>
         </div>
       </section>
       {% endif %}
