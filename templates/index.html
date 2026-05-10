@@ -170,6 +170,7 @@
               <input type="hidden" id="deviceFingerprintInput" name="device_fingerprint">
               <label class="upload-chip" for="qrImageInput">Upload QR file/photo</label>
               <input id="qrImageInput" name="file" type="file" accept="image/*,.svg,application/pdf,.pdf" hidden>
+              <button id="scanCameraButton" type="button" class="upload-chip" style="margin-top:10px;">Scan with camera</button>
               <label for="urlInput" style="margin-top:20px; display:block;">Or paste a URL manually</label>
               <input id="urlInput" name="manual_url" type="text" placeholder="https://example.com">
               <button type="submit" class="primary-button" style="margin-top:15px; width:100%;">Analyze Payload</button>
@@ -382,6 +383,7 @@
     {% include "footer.html" %}
   </div>
   <script type="module" src="/static/safescan-3d.js?v=stable-camera-lenses-v1"></script>
-  <script src="/static/app.js?v=guest-scan-v1"></script>
+  <script src="/static/qr-camera.js?v=qr-cam-v1" defer></script>
+  <script src="/static/app.js?v=guest-scan-v2"></script>
 </body>
 </html>

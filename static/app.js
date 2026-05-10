@@ -423,6 +423,35 @@ qrImageInput?.addEventListener("change", () => {
   }
 });
 
+// Live camera scan. The scanner module (qr-camera.js) handles camera
+// access, frame decoding, and cooldown; we just feed the decoded payload
+// into the existing manual-URL form so the same /search_qr_api pipeline
+// runs on the result.
+const scanCameraButton = document.getElementById("scanCameraButton");
+scanCameraButton?.addEventListener("click", () => {
+  if (!window.SafeScanQrCamera || typeof window.SafeScanQrCamera.open !== "function") {
+    window.alert("Camera scanner is still loading. Please try again in a moment.");
+    return;
+  }
+  window.SafeScanQrCamera.open({
+    onResult: (value) => {
+      const urlInput = document.getElementById("urlInput");
+      const form = document.getElementById("qrForm");
+      if (urlInput) urlInput.value = value;
+      if (analysisLoadingState) {
+        analysisLoadingState.textContent = "QR detected - analysing...";
+        analysisLoadingState.classList.remove("hidden");
+      }
+      if (form) {
+        form.requestSubmit ? form.requestSubmit() : form.submit();
+      }
+    },
+    onError: (message) => {
+      if (message) window.alert(message);
+    }
+  });
+});
+
 function renderAirdropProfile(profile) {
   if (!profile) {
     if (dom.airdropStatus) dom.airdropStatus.textContent = "Not signed in";

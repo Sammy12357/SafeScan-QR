@@ -34,6 +34,11 @@ warnings.filterwarnings("ignore", category=ImportWarning)
 load_dotenv()
 
 CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID") or os.getenv("googe_client_id")
+AUTH0_DOMAIN = (os.getenv("AUTH0_DOMAIN") or "dev-vnllaqnkkegs4xni.us.auth0.com").strip().rstrip("/")
+AUTH0_AUDIENCES = {audience.strip() for audience in (os.getenv("AUTH0_CLIENT_IDS") or os.getenv("AUTH0_CLIENT_ID") or "1XfWxWOtDtN18JCCztRehzcJ1jOSBBic").split(",") if audience.strip()}
+AUTH0_ISSUER = f"https://{AUTH0_DOMAIN}/"
+_AUTH0_JWKS_CACHE = {"keys": None, "fetched_at": 0.0}
+_AUTH0_JWKS_TTL_SECONDS = 60 * 60
 api_key = os.getenv("GOOGLE_SAFE_BROWSING_API_KEY") or os.getenv("googe_api_key")
 AIRDROP_ADMIN_SECRET = os.getenv("AIRDROP_ADMIN_SECRET")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "privacy@safescan-qr.onrender.com")
@@ -354,6 +359,72 @@ def clear_session_cookie(response):
         secure=_COOKIE_SECURE,
         samesite=_COOKIE_SAMESITE,
     )
+
+def _b64url_decode(value):
+    padding = "=" * (-len(value) % 4)
+    return base64.urlsafe_b64decode(value + padding)
+
+def _decode_jwt_unverified(token):
+    parts = token.split(".")
+    if len(parts) != 3:
+        raise ValueError("Malformed JWT.")
+    header = json.loads(_b64url_decode(parts[0]).decode("utf-8"))
+    payload = json.loads(_b64url_decode(parts[1]).decode("utf-8"))
+    return header, payload, parts
+
+def _fetch_auth0_jwks():
+    cached_keys = _AUTH0_JWKS_CACHE.get("keys")
+    if cached_keys and (time.time() - _AUTH0_JWKS_CACHE["fetched_at"]) < _AUTH0_JWKS_TTL_SECONDS:
+        return cached_keys
+    response = requests.get(f"{AUTH0_ISSUER}.well-known/jwks.json", timeout=5)
+    response.raise_for_status()
+    keys = response.json().get("keys") or []
+    _AUTH0_JWKS_CACHE["keys"] = keys
+    _AUTH0_JWKS_CACHE["fetched_at"] = time.time()
+    return keys
+
+def _rsa_public_key_from_jwk(jwk):
+    from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicNumbers
+    n = int.from_bytes(_b64url_decode(jwk["n"]), "big")
+    e = int.from_bytes(_b64url_decode(jwk["e"]), "big")
+    return RSAPublicNumbers(e, n).public_key()
+
+def verify_auth0_id_token(token):
+    """Validate an Auth0-signed RS256 idToken via tenant JWKS. Returns claims."""
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import padding
+    header, payload, parts = _decode_jwt_unverified(token)
+    if header.get("alg") != "RS256":
+        raise ValueError("Unsupported JWT algorithm.")
+    kid = header.get("kid")
+    if not kid:
+        raise ValueError("JWT missing kid.")
+    jwks = _fetch_auth0_jwks()
+    matching = next((key for key in jwks if key.get("kid") == kid), None)
+    if not matching:
+        # JWKS may have rotated; force refresh once.
+        _AUTH0_JWKS_CACHE["fetched_at"] = 0.0
+        jwks = _fetch_auth0_jwks()
+        matching = next((key for key in jwks if key.get("kid") == kid), None)
+    if not matching:
+        raise ValueError("No matching Auth0 signing key.")
+    public_key = _rsa_public_key_from_jwk(matching)
+    signing_input = f"{parts[0]}.{parts[1]}".encode("ascii")
+    signature = _b64url_decode(parts[2])
+    public_key.verify(signature, signing_input, padding.PKCS1v15(), hashes.SHA256())
+    issuer = payload.get("iss", "")
+    if issuer.rstrip("/") != AUTH0_ISSUER.rstrip("/"):
+        raise ValueError("JWT issuer mismatch.")
+    audience = payload.get("aud")
+    audiences = audience if isinstance(audience, list) else [audience]
+    if AUTH0_AUDIENCES and not any(aud in AUTH0_AUDIENCES for aud in audiences if aud):
+        raise ValueError("JWT audience mismatch.")
+    now = int(time.time())
+    if int(payload.get("exp", 0)) < now:
+        raise ValueError("JWT expired.")
+    if not payload.get("email"):
+        raise ValueError("JWT missing email claim.")
+    return payload
 
 def request_session_id(request):
     auth_header = request.headers.get("authorization", "")
@@ -2420,7 +2491,9 @@ async def security_headers_and_rate_limits(request: Request, call_next):
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    # Allow same-origin pages to request camera (for the live QR scanner). Mic
+    # and geolocation stay off because we do not use them.
+    response.headers["Permissions-Policy"] = "camera=(self), microphone=(), geolocation=()"
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
         "script-src 'self' https://accounts.google.com https://apis.google.com https://cdn.jsdelivr.net; "
@@ -4002,21 +4075,47 @@ async def auth_verify(request: Request, payload: dict = Body(...)):
     credential = (payload.get("token") or "").strip()
     if not credential:
         raise HTTPException(status_code=400, detail="Invalid request.")
+
+    # Mobile clients can present either a Google-signed idToken or an
+    # Auth0-signed idToken (when signing in via Auth0 Universal Login). Pick
+    # the verifier based on the JWT issuer.
+    provider = "google_mobile"
     try:
-        idinfo = id_token.verify_oauth2_token(credential, google_requests.Request(), CLIENT_ID)
-        google_id = idinfo["sub"]
-        user_email = idinfo["email"].strip().lower()
+        _, unverified_payload, _ = _decode_jwt_unverified(credential)
+        issuer = (unverified_payload.get("iss") or "").rstrip("/")
+    except (ValueError, KeyError, TypeError):
+        issuer = ""
+
+    try:
+        if issuer == AUTH0_ISSUER.rstrip("/"):
+            provider = "auth0_mobile"
+            idinfo = verify_auth0_id_token(credential)
+            # Auth0 user_id format for Google connection: "google-oauth2|<sub>".
+            raw_sub = idinfo.get("sub") or ""
+            if "|" in raw_sub:
+                google_id = raw_sub.split("|", 1)[1]
+            else:
+                google_id = raw_sub
+            if not google_id:
+                raise ValueError("Auth0 token missing subject.")
+            user_email = (idinfo.get("email") or "").strip().lower()
+            if not user_email:
+                raise ValueError("Auth0 token missing email.")
+        else:
+            idinfo = id_token.verify_oauth2_token(credential, google_requests.Request(), CLIENT_ID)
+            google_id = idinfo["sub"]
+            user_email = idinfo["email"].strip().lower()
     except ValueError:
-        audit_log("auth.failed", request=request, metadata={"provider": "google_mobile"})
+        audit_log("auth.failed", request=request, metadata={"provider": provider})
         raise HTTPException(status_code=401, detail="Authentication required.")
 
     save_user_to_db(google_id, user_email, request, idinfo.get("name") or "", idinfo.get("picture") or "")
     user = require_user_from_google_id(google_id)
     if user["status"] != "active":
         raise HTTPException(status_code=401, detail="Authentication required.")
-    run_fraud_checks("signup", user_email, request, {"googleId": google_id, "client": "mobile"})
+    run_fraud_checks("signup", user_email, request, {"googleId": google_id, "client": "mobile", "provider": provider})
     session_id = create_session(google_id, request)
-    audit_log("user.login", request=request, actor_user_id=google_id, metadata={"client": "mobile"})
+    audit_log("user.login", request=request, actor_user_id=google_id, metadata={"client": "mobile", "provider": provider})
     return {
         "session": session_id,
         "user": {

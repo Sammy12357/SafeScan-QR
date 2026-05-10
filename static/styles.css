@@ -301,6 +301,23 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
 .wallet-install-links a { display: block; padding: 13px 16px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); text-decoration: none; background: rgba(255, 255, 255, 0.04); }
 .wallet-success { color: var(--safe) !important; font-weight: 800; }
 .wallet-error { color: var(--danger) !important; font-weight: 800; }
+
+/* Live QR camera scanner modal. */
+body.qr-camera-open { overflow: hidden; }
+.qr-camera-modal { position: fixed; inset: 0; z-index: 95; display: grid; place-items: center; padding: 18px; background: rgba(3, 8, 15, 0.85); backdrop-filter: blur(18px); animation: modalSlideUp 0.22s ease-out; }
+.qr-camera-card { width: min(520px, 100%); border: 1px solid rgba(103, 242, 200, 0.35); border-radius: 12px; background: #0b1019; box-shadow: 0 28px 90px rgba(0, 0, 0, 0.55); overflow: hidden; }
+.qr-camera-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+.qr-camera-header h3 { margin: 0; font-family: var(--display-font); font-size: 1.1rem; }
+.qr-camera-close { width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.04); color: var(--text); font-size: 1.4rem; line-height: 1; cursor: pointer; }
+.qr-camera-close:hover { border-color: var(--accent); color: var(--accent); }
+.qr-camera-stage { position: relative; aspect-ratio: 4 / 5; background: #000; overflow: hidden; }
+.qr-camera-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.qr-camera-frame { position: absolute; top: 50%; left: 50%; width: min(64%, 280px); aspect-ratio: 1; transform: translate(-50%, -50%); border: 2px solid rgba(103, 242, 200, 0.85); border-radius: 18px; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45); pointer-events: none; }
+.qr-camera-frame::before, .qr-camera-frame::after { content: ""; position: absolute; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--accent), transparent); animation: qrCameraSweep 2.2s linear infinite; }
+.qr-camera-frame::after { animation-delay: 1.1s; }
+@keyframes qrCameraSweep { 0% { top: 0; opacity: 0; } 12% { opacity: 1; } 88% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
+.qr-camera-status { margin: 0; padding: 14px 18px 16px; color: var(--muted); font-size: 0.9rem; line-height: 1.45; text-align: center; }
+@media (max-width: 520px) { .qr-camera-stage { aspect-ratio: 3 / 4; } }
 .wallet-spinner { width: 34px; height: 34px; border: 3px solid rgba(255, 255, 255, 0.13); border-top-color: var(--accent); border-radius: 50%; animation: walletSpin 0.8s linear infinite; }
 .wallet-status a { color: var(--accent); text-decoration: none; font-weight: 800; }
 @keyframes walletSpin { to { transform: rotate(360deg); } }
