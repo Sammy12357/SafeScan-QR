@@ -50,6 +50,14 @@ def test_frontend_uses_sign_message_challenge_flow():
     assert "walletVerified" in CLIENT
 
 
+def test_frontend_offers_phantom_mobile_browser_handoff():
+    assert "https://phantom.app/ul/browse/" in CLIENT
+    assert "walletConnect" in CLIENT
+    assert "Open in Phantom" in CLIENT
+    assert "waitForSolanaWallets" in CLIENT
+    assert "window.phantom?.solana" in CLIENT
+
+
 def test_disconnect_is_server_side_and_idor_safe():
     body = function_body("api_wallet_disconnect")
     assert "wallet = get_verified_wallet(user[\"email\"])" in body

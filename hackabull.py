@@ -88,6 +88,21 @@ MALICIOUS_CONTRACT_BLOCKLIST = {
 }
 
 templates = Jinja2Templates(directory="templates")
+_template_response = templates.TemplateResponse
+
+
+def template_response_compat(*args, **kwargs):
+    if args and isinstance(args[0], str):
+        name = args[0]
+        context = args[1] if len(args) > 1 else kwargs.pop("context", {})
+        request = context.get("request") if isinstance(context, dict) else None
+        if request is None:
+            raise RuntimeError("TemplateResponse context must include request.")
+        return _template_response(request, name, context, *args[2:], **kwargs)
+    return _template_response(*args, **kwargs)
+
+
+templates.TemplateResponse = template_response_compat
 _IMAGE_LIBS = None
 _ML_MODEL = None
 _ML_MODEL_ERROR = None

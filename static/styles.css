@@ -299,6 +299,9 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
 .wallet-choice-list, .wallet-install-links { display: grid; gap: 10px; }
 .wallet-choice-button, .wallet-install-links a, .wallet-close-button, .wallet-retry-button { width: 100%; text-align: center; }
 .wallet-install-links a { display: block; padding: 13px 16px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); text-decoration: none; background: rgba(255, 255, 255, 0.04); }
+.wallet-install-links .wallet-open-phantom-link { border-color: rgba(103, 242, 200, 0.34); background: linear-gradient(135deg, var(--accent) 0%, #84d9ff 100%); color: #041019; font-weight: 900; }
+.wallet-modal-actions { display: grid; gap: 10px; margin-top: 12px; }
+.wallet-hint { color: var(--warning) !important; font-size: 0.9rem; }
 .wallet-success { color: var(--safe) !important; font-weight: 800; }
 .wallet-error { color: var(--danger) !important; font-weight: 800; }
 

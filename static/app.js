@@ -1,5 +1,7 @@
 const GOOGLE_CLIENT_ID = "230684501873-4aauu1triudaaopdcus2k7achvesr3el.apps.googleusercontent.com";
 const AIRDROP_STORAGE_KEY = "phishproofAirdropProfile";
+const PHANTOM_BROWSE_BASE = "https://phantom.app/ul/browse/";
+const PHANTOM_DOWNLOAD_URL = "https://phantom.app/download";
 
 const dom = {
   hiddenWalletInput: document.getElementById("hiddenWalletInput"),
@@ -182,6 +184,54 @@ function base58Encode(bytes) {
   return output;
 }
 
+function delay(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function isMobileDevice() {
+  const ua = navigator.userAgent || "";
+  const touchCapableMac = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || touchCapableMac;
+}
+
+function isIosDevice() {
+  const ua = navigator.userAgent || "";
+  return /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+function getWalletConnectTargetUrl() {
+  const target = new URL(window.location.href);
+  target.searchParams.set("walletConnect", "phantom");
+  target.hash = "airdrop";
+  return target.toString();
+}
+
+function getPhantomBrowseUrl() {
+  return `${PHANTOM_BROWSE_BASE}${encodeURIComponent(getWalletConnectTargetUrl())}?ref=${encodeURIComponent(window.location.origin)}`;
+}
+
+function walletInstallLinksHtml(includePhantomBrowse = false) {
+  const openPhantomLink = includePhantomBrowse
+    ? `<a class="wallet-open-phantom-link" href="${getPhantomBrowseUrl()}">Open in Phantom</a>`
+    : "";
+  return `<div class="wallet-install-links">${openPhantomLink}<a href="${PHANTOM_DOWNLOAD_URL}" target="_blank" rel="noopener">Install Phantom</a><a href="https://solflare.com/" target="_blank" rel="noopener">Install Solflare</a></div>`;
+}
+
+function mobileWalletHelpText() {
+  if (isIosDevice()) {
+    return "On iPhone, Phantom connects websites from its in-app browser. Open this page in Phantom, sign in there if needed, then connect again.";
+  }
+  return "On mobile, open this page inside your wallet browser, sign in there if needed, then connect again.";
+}
+
+function normalizeSignature(signatureBytes) {
+  if (typeof signatureBytes === "string") return signatureBytes;
+  if (signatureBytes instanceof Uint8Array) return base58Encode(signatureBytes);
+  if (Array.isArray(signatureBytes)) return base58Encode(new Uint8Array(signatureBytes));
+  if (signatureBytes?.data && Array.isArray(signatureBytes.data)) return base58Encode(new Uint8Array(signatureBytes.data));
+  return base58Encode(signatureBytes || []);
+}
+
 function detectedSolanaWallets() {
   const wallets = [];
   const seen = new Set();
@@ -194,6 +244,16 @@ function detectedSolanaWallets() {
   add("Solflare", window.solflare || (window.solana?.isSolflare ? window.solana : null), "https://solflare.com/");
   add("Backpack", window.backpack?.solana, "https://backpack.app/");
   add("Solana Wallet", window.solana, "https://phantom.app/");
+  return wallets;
+}
+
+async function waitForSolanaWallets(timeoutMs = 900) {
+  const started = performance.now();
+  let wallets = detectedSolanaWallets();
+  while (!wallets.length && performance.now() - started < timeoutMs) {
+    await delay(100);
+    wallets = detectedSolanaWallets();
+  }
   return wallets;
 }
 
@@ -211,6 +271,10 @@ function showWalletModal(content) {
   });
   document.body.appendChild(modal);
   return modal;
+}
+
+function showSignInWalletModal(message = "Sign in first to connect and verify a wallet.") {
+  showWalletModal(`<h3>Sign in required</h3><p>${escapeHtml(message)}</p><div class="wallet-modal-actions"><a class="primary-button" href="/login">Sign in / Sign up</a></div>`);
 }
 
 function setWalletBusy(message) {
@@ -293,7 +357,10 @@ async function syncWalletFromServer() {
 
 async function verifySelectedWallet(wallet) {
   const profile = getCurrentProfile();
-  if (!profile) { window.alert("Sign in with Google first."); return; }
+  if (!profile) {
+    showSignInWalletModal("Sign in in this browser first, then connect your wallet for airdrop verification.");
+    return;
+  }
   try {
     setWalletBusy("Requesting verification challenge...");
     showWalletModal("<h3>Connecting wallet</h3><p>Requesting verification challenge...</p><div class='wallet-spinner'></div>");
@@ -318,7 +385,7 @@ async function verifySelectedWallet(wallet) {
     const messageBytes = new TextEncoder().encode(nonceBody.message);
     const signed = await wallet.provider.signMessage(messageBytes, "utf8");
     const signatureBytes = signed?.signature || signed;
-    const signature = base58Encode(signatureBytes);
+    const signature = normalizeSignature(signatureBytes);
 
     setWalletBusy("Verifying signature...");
     showWalletModal("<h3>Verifying wallet</h3><p>SafeScan is checking the signature server-side...</p><div class='wallet-spinner'></div>");
@@ -346,10 +413,18 @@ async function verifySelectedWallet(wallet) {
 
 async function connectWallet() {
   const profile = getCurrentProfile();
-  if (!profile) { window.alert("Sign in with Google first."); return; }
-  const wallets = detectedSolanaWallets();
+  if (!profile) {
+    showSignInWalletModal("Sign in first. If you opened from iPhone Safari, open this page in Phantom and sign in there before connecting.");
+    return;
+  }
+  showWalletModal("<h3>Looking for wallet</h3><p>Checking for a Solana wallet provider...</p><div class='wallet-spinner'></div>");
+  const wallets = await waitForSolanaWallets();
   if (!wallets.length) {
-    showWalletModal("<h3>No Solana wallet detected</h3><p>Install Phantom or Solflare to continue.</p><div class='wallet-install-links'><a href='https://phantom.app/' target='_blank' rel='noopener'>Install Phantom</a><a href='https://solflare.com/' target='_blank' rel='noopener'>Install Solflare</a></div>");
+    const mobileCopy = isMobileDevice()
+      ? `<p>${mobileWalletHelpText()}</p>${!window.isSecureContext ? "<p class='wallet-hint'>Wallet browsers only inject providers on HTTPS, localhost, or 127.0.0.1.</p>" : ""}`
+      : "<p>Install a Solana wallet extension, then refresh this page and connect again.</p>";
+    showWalletModal(`<h3>No Solana wallet detected</h3>${mobileCopy}${walletInstallLinksHtml(isMobileDevice())}<button class="secondary-button wallet-retry-button" type="button">Check again</button>`);
+    document.querySelector(".wallet-retry-button")?.addEventListener("click", connectWallet);
     return;
   }
   const modal = showWalletModal(`<h3>Select wallet</h3><div class="wallet-choice-list">${wallets.map((wallet, index) => `<button class="secondary-button wallet-choice-button" data-wallet-index="${index}" type="button">${wallet.name}</button>`).join("")}</div>`);
@@ -466,6 +541,19 @@ function renderAirdropProfile(profile) {
 renderAirdropProfile(getCurrentProfile());
 syncWalletFromServer();
 hydrateSplineShowcase();
+
+if (new URLSearchParams(window.location.search).get("walletConnect") === "phantom") {
+  window.setTimeout(() => {
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.delete("walletConnect");
+    window.history.replaceState({}, "", `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`);
+    if (getCurrentProfile()) {
+      connectWallet();
+    } else {
+      showSignInWalletModal("You are in Phantom now. Sign in here, then tap Connect wallet to finish verification.");
+    }
+  }, 700);
+}
 
 if (riskModal) {
   document.body.style.overflow = "hidden";
