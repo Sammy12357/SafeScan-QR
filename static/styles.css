@@ -263,6 +263,15 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
 .domain-age-grid div { padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: rgba(0, 0, 0, 0.12); min-width: 0; }
 .domain-age-grid span { display: block; color: var(--muted); font-size: 0.72rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.08em; }
 .domain-age-grid strong { display: block; margin-top: 5px; color: var(--text); font-size: 0.86rem; overflow-wrap: anywhere; }
+.ml-panel { display: grid; gap: 14px; margin-bottom: 14px; padding: 16px; border: 1px solid rgba(124, 222, 255, 0.2); border-radius: 8px; background: rgba(124, 222, 255, 0.055); }
+.ml-panel-top { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; }
+.ml-panel-top h3 { margin: 4px 0 6px; font-size: 1.24rem; overflow-wrap: anywhere; }
+.ml-panel-top p { margin: 0; color: var(--muted); line-height: 1.45; }
+.ml-model-pill { flex: 0 0 auto; max-width: 180px; padding: 7px 9px; border: 1px solid rgba(124, 222, 255, 0.24); border-radius: 999px; color: #7cdeff; background: rgba(124, 222, 255, 0.08); font-size: 0.7rem; font-weight: 900; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ml-probability-bars { display: flex; gap: 2px; height: 11px; overflow: hidden; border-radius: 999px; background: rgba(255, 255, 255, 0.08); }
+.ml-probability-bars span { display: block; min-width: 2px; }
+.ml-safe-bar { background: var(--safe); }
+.ml-malicious-bar { background: var(--danger); }
 .vt-panel { display: grid; gap: 14px; margin-bottom: 14px; padding: 16px; border: 1px solid rgba(103, 242, 200, 0.2); border-radius: 8px; background: rgba(103, 242, 200, 0.055); }
 .vt-panel-top { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; }
 .vt-panel-top h3 { margin: 4px 0 6px; font-size: 1.24rem; }
@@ -442,6 +451,8 @@ body.qr-camera-open { overflow: hidden; }
   .confidence-header, .reputation-row { align-items: stretch; flex-direction: column; }
   .domain-age-top { flex-direction: column; }
   .domain-age-grid { grid-template-columns: 1fr 1fr; }
+  .ml-panel-top { flex-direction: column; }
+  .ml-model-pill { max-width: 100%; }
   .vt-panel-top { flex-direction: column; }
   .vt-mobile-toggle { display: block; }
   .vt-engine-groups { max-height: 0; overflow: hidden; transition: max-height 0.28s ease; }

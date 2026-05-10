@@ -2160,6 +2160,36 @@ def pipeline_response_to_template_analysis(pipeline_response):
         "ruleScore": pipeline_response.get("ruleScore")
     }
 
+async def analyze_embedded_url_payload(raw_payload, embedded_url, qr_image=None):
+    payload_type, _, normalized_payload = detect_payload(raw_payload)
+    pipeline_response = await analyze_full_pipeline(embedded_url, qr_image)
+    analysis = pipeline_response_to_template_analysis(pipeline_response)
+    pipeline_score = clamp_score(analysis.get("score"))
+    final_score = max(45, pipeline_score)
+    final_risk = risk_from_score(final_score)
+
+    embedded_reason = risk_reason(
+        "Embedded URL detected",
+        "medium",
+        "The QR payload is not a plain URL, but it contains a URL that SafeScan extracted and analyzed with the full URL pipeline."
+    )
+    analysis["score"] = str(final_score)
+    analysis["status"] = status_from_risk(final_risk)
+    analysis["overallRisk"] = final_risk
+    analysis["payload_type"] = payload_type
+    analysis["threat_class"] = f"{payload_type} containing embedded URL: {analysis['threat_class']}"
+    analysis["action_description"] = (
+        f"{describe_qr_action(payload_type, normalized_payload)} "
+        f"SafeScan extracted and analyzed the embedded URL: {analysis['normalized']}."
+    )
+    analysis["verdict"] = (
+        f"The QR contains an embedded URL inside a {payload_type.lower()} payload, so SafeScan analyzed "
+        f"{analysis['normalized']} before allowing navigation. {analysis.get('verdict', '')}"
+    ).strip()
+    analysis["reasons"] = [embedded_reason, *analysis.get("reasons", [])]
+    analysis["embeddedPayload"] = normalized_payload
+    return analysis
+
 def decode_qr_image(image):
     Image, ImageEnhance, ImageFilter, ImageOps, decode = image_libs()
     image = ImageOps.exif_transpose(image)
@@ -3155,7 +3185,15 @@ async def analyze_and_record_scan(request, user, raw_payload, device_fingerprint
             }
         history_analysis = pipeline_response_to_template_analysis(analysis)
     else:
-        template_analysis = analyze_qr_payload(raw_payload)
+        embedded_urls = extract_urls(normalized_payload)
+        if embedded_urls:
+            try:
+                history_analysis = await analyze_embedded_url_payload(raw_payload, embedded_urls[0], qr_image_for_ml)
+            except SafeScanError:
+                history_analysis = analyze_qr_payload(raw_payload)
+        else:
+            history_analysis = analyze_qr_payload(raw_payload)
+        template_analysis = history_analysis
         history_analysis = template_analysis
         score = int(template_analysis.get("score") or 0)
         overall_risk = "high" if score >= 80 else ("suspicious" if score >= 40 else "safe")
@@ -3169,6 +3207,10 @@ async def analyze_and_record_scan(request, user, raw_payload, device_fingerprint
                 signal(reason.get("label", "Payload Pattern"), template_analysis["status"], reason.get("severity", "low"), reason.get("detail", ""), score < 40)
                 for reason in template_analysis.get("reasons", [])
             ],
+            "virusTotal": template_analysis.get("virusTotal"),
+            "domainAge": template_analysis.get("domainAge"),
+            "mlRisk": template_analysis.get("mlRisk"),
+            "ruleScore": template_analysis.get("ruleScore"),
             "scannedAt": now_iso(),
         }
 
@@ -3991,7 +4033,14 @@ async def scan_qr(
             }
         analysis = pipeline_response_to_template_analysis(pipeline_response)
     else:
-        analysis = analyze_qr_payload(url_qr)
+        embedded_urls = extract_urls(normalized_payload)
+        if embedded_urls:
+            try:
+                analysis = await analyze_embedded_url_payload(url_qr, embedded_urls[0], qr_image_for_ml)
+            except SafeScanError:
+                analysis = analyze_qr_payload(url_qr)
+        else:
+            analysis = analyze_qr_payload(url_qr)
     if qr_image_for_ml is not None:
         qr_image_for_ml.close()
     counted = False

@@ -243,6 +243,30 @@
               <div class="verdict-badge {{ 'verdict-safe' if status == 'SAFE' else ('verdict-caution' if status == 'CAUTION' else 'verdict-dangerous') }}">{{ status }}</div>
             </div>
 
+            {% if ml_risk %}
+            <div class="ml-panel">
+              <div class="ml-panel-top">
+                <div>
+                  <p class="engine-label">ML model analysis</p>
+                  {% if ml_risk.enabled %}
+                  <h3>{{ ml_risk.label }} · {{ ml_risk.score | round(1) }}/100 risk</h3>
+                  <p>The local QR model estimated {{ (ml_risk.benignProbability * 100) | round(1) }}% safe and {{ (ml_risk.maliciousProbability * 100) | round(1) }}% malicious probability.</p>
+                  {% else %}
+                  <h3>Model unavailable</h3>
+                  <p>{{ ml_risk.reason or "The local QR model could not run for this scan." }}</p>
+                  {% endif %}
+                </div>
+                {% if ml_risk.model %}<span class="ml-model-pill">{{ ml_risk.model }}</span>{% endif %}
+              </div>
+              {% if ml_risk.enabled %}
+              <div class="ml-probability-bars" aria-label="ML model probability split">
+                <span class="ml-safe-bar" style="width: {{ (ml_risk.benignProbability * 100) | round(2) }}%;"></span>
+                <span class="ml-malicious-bar" style="width: {{ (ml_risk.maliciousProbability * 100) | round(2) }}%;"></span>
+              </div>
+              {% endif %}
+            </div>
+            {% endif %}
+
             {% if domain_age %}
             <div class="domain-age-card domain-age-{{ domain_age.riskLevel }}">
               <div class="domain-age-top">
@@ -348,6 +372,7 @@
               <div><p class="engine-label">Reputation</p><p>{{ reputation.status if reputation else source }}</p></div>
               {% if domain_age %}<div><p class="engine-label">Domain age</p><p>{{ domain_age.ageLabel }} · {{ domain_age.riskLabel }}</p></div>{% endif %}
               {% if virus_total %}<div><p class="engine-label">VirusTotal</p><p>{{ virus_total.summary.clean }} clean · {{ virus_total.summary.unrated }} unrated · {{ virus_total.summary.malicious }} malicious</p></div>{% endif %}
+              {% if ml_risk and ml_risk.enabled %}<div><p class="engine-label">ML model</p><p>{{ ml_risk.label }} · {{ ml_risk.score | round(1) }}/100</p></div>{% endif %}
             </div>
           </article>
         </div>

@@ -3,6 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVER = (ROOT / "hackabull.py").read_text(encoding="utf-8")
+INDEX = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
 REQUIREMENTS = (ROOT / "requirements.txt").read_text(encoding="utf-8")
 
 
@@ -28,3 +29,21 @@ def test_ml_runtime_dependencies_are_declared():
     assert "qrcode" in REQUIREMENTS
     assert "tensorflow-cpu" not in REQUIREMENTS
     assert "keras==" not in REQUIREMENTS
+
+
+def test_embedded_urls_use_full_pipeline_without_tensorflow():
+    assert "async def analyze_embedded_url_payload" in SERVER
+    assert "await analyze_full_pipeline(embedded_url, qr_image)" in SERVER
+    assert "embedded_urls = extract_urls(normalized_payload)" in SERVER
+    assert "await analyze_embedded_url_payload(url_qr, embedded_urls[0], qr_image_for_ml)" in SERVER
+    assert "virusTotal" in SERVER
+    assert "domainAge" in SERVER
+    assert "mlRisk" in SERVER
+    assert "tensorflow" not in SERVER
+
+
+def test_result_template_restores_analysis_panels():
+    assert "ML model analysis" in INDEX
+    assert "VirusTotal vendor scan" in INDEX
+    assert "Domain age" in INDEX
+    assert "ml-probability-bars" in INDEX
