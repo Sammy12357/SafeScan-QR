@@ -411,7 +411,7 @@ qrImageInput?.addEventListener("change", () => {
   if (qrImageInput.files && qrImageInput.files.length > 0) {
     const form = qrImageInput.form;
     if (analysisLoadingState) {
-      analysisLoadingState.textContent = "Preparing image scan...";
+      analysisLoadingState.textContent = "Preparing file scan...";
       analysisLoadingState.classList.remove("hidden");
     }
     if (form) {
