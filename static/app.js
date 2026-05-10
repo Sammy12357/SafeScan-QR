@@ -22,6 +22,7 @@ const splineEmbed = document.getElementById("splineEmbed");
 const riskModal = document.getElementById("riskVerdictModal");
 const blockReportButton = document.getElementById("blockReportButton");
 const continueSafelyButton = document.getElementById("continueSafelyButton");
+const riskModalCloseButton = document.getElementById("riskModalCloseButton");
 const reportStatus = document.getElementById("reportStatus");
 const analysisLoadingState = document.getElementById("analysisLoadingState");
 const cookieConsentBanner = document.getElementById("cookieConsentBanner");
@@ -465,13 +466,19 @@ if (riskModal) {
   riskModal.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       event.preventDefault();
-      if (reportStatus) reportStatus.textContent = "Use Block & Report or Continue Safely to leave this verdict.";
+      closeRiskModal();
     }
   });
 
   window.setTimeout(() => {
     blockReportButton?.focus();
   }, 0);
+}
+
+function closeRiskModal() {
+  document.body.style.overflow = "";
+  riskModal?.classList.add("hidden");
+  document.getElementById("resultsSection")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 blockReportButton?.addEventListener("click", async () => {
@@ -492,9 +499,10 @@ blockReportButton?.addEventListener("click", async () => {
 });
 
 continueSafelyButton?.addEventListener("click", () => {
-  document.body.style.overflow = "";
-  riskModal?.classList.add("hidden");
+  closeRiskModal();
 });
+
+riskModalCloseButton?.addEventListener("click", closeRiskModal);
 
 function storedConsentIsFresh(record) {
   if (!record?.timestamp) return false;
