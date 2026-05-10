@@ -16,6 +16,7 @@ import csv
 import threading
 from urllib.parse import quote, urljoin, urlparse, parse_qsl
 from datetime import datetime, timedelta
+from xml.etree import ElementTree
 
 from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -44,6 +45,7 @@ SESSION_COOKIE_NAME = "safescan_session"
 SESSION_TTL_SECONDS = 24 * 60 * 60
 SESSION_IDLE_SECONDS = 7 * 24 * 60 * 60
 MAX_QR_UPLOAD_BYTES = int(os.getenv("MAX_QR_UPLOAD_BYTES", str(8 * 1024 * 1024)))
+MAX_QR_PDF_PAGES = int(os.getenv("MAX_QR_PDF_PAGES", "5"))
 VALID_ROLES = ("user", "admin", "owner")
 VALID_STATUSES = ("active", "suspended", "deleted")
 RATE_LIMITS = {}
@@ -2079,6 +2081,183 @@ def decode_qr_image(image):
         return zxing_result
     return []
 
+def _decode_qr_from_pil_image(image):
+    decoded_qr = decode_qr_image(image)
+    if not decoded_qr:
+        return None, None
+    return decoded_qr[0].data.decode("utf-8", errors="replace"), image.copy()
+
+def _looks_like_svg(contents, filename="", content_type=""):
+    name = (filename or "").lower()
+    ctype = (content_type or "").lower()
+    if name.endswith(".svg") or "svg" in ctype:
+        return True
+    prefix = contents[:512].lstrip().lower()
+    return prefix.startswith(b"<svg") or b"<svg" in prefix
+
+def _looks_like_pdf(contents, filename="", content_type=""):
+    name = (filename or "").lower()
+    ctype = (content_type or "").lower()
+    return name.endswith(".pdf") or "pdf" in ctype or contents[:5] == b"%PDF-"
+
+def _svg_candidates(contents):
+    candidates = [contents]
+    try:
+        root = ElementTree.fromstring(contents)
+        namespace = {"svg": "http://www.w3.org/2000/svg"}
+        nested_svgs = root.findall(".//svg:svg", namespace)
+        if not nested_svgs:
+            nested_svgs = [node for node in root.iter() if str(node.tag).endswith("svg") and node is not root]
+        for nested in nested_svgs[:3]:
+            candidates.append(ElementTree.tostring(nested, encoding="utf-8"))
+    except Exception:
+        pass
+    return candidates
+
+def _local_name(tag):
+    return str(tag).split("}", 1)[-1]
+
+def _float_attr(element, name, default=0.0):
+    value = element.attrib.get(name)
+    if value is None:
+        return default
+    match = re.match(r"[-+]?\d*\.?\d+", str(value).strip())
+    return float(match.group(0)) if match else default
+
+def _parse_viewbox(element, fallback_width=100.0, fallback_height=100.0):
+    raw = element.attrib.get("viewBox") or element.attrib.get("viewbox")
+    if raw:
+        parts = [float(part) for part in re.split(r"[\s,]+", raw.strip()) if part]
+        if len(parts) == 4 and parts[2] and parts[3]:
+            return tuple(parts)
+    return (0.0, 0.0, fallback_width, fallback_height)
+
+def _render_basic_svg_qr(svg_bytes):
+    Image, _, _, _, _ = image_libs()
+    try:
+        root = ElementTree.fromstring(svg_bytes)
+    except Exception:
+        return None
+
+    root_width = _float_attr(root, "width", 2000.0)
+    root_height = _float_attr(root, "height", 2000.0)
+    _, _, view_width, view_height = _parse_viewbox(root, root_width, root_height)
+    output_size = 2000
+    image = Image.new("RGB", (output_size, output_size), "white")
+    from PIL import ImageDraw
+    draw = ImageDraw.Draw(image)
+
+    def map_point(transform, x, y):
+        origin_x, origin_y, min_x, min_y, scale_x, scale_y = transform
+        return (
+            origin_x + (x - min_x) * scale_x,
+            origin_y + (y - min_y) * scale_y,
+        )
+
+    root_transform = (0.0, 0.0, 0.0, 0.0, output_size / view_width, output_size / view_height)
+
+    def walk(element, transform):
+        tag = _local_name(element.tag)
+        fill = (element.attrib.get("fill") or "").lower()
+
+        if tag == "svg" and element is not root:
+            x = _float_attr(element, "x")
+            y = _float_attr(element, "y")
+            width = _float_attr(element, "width", 0.0)
+            height = _float_attr(element, "height", width)
+            min_x, min_y, child_view_width, child_view_height = _parse_viewbox(element, width, height)
+            child_x, child_y = map_point(transform, x, y)
+            child_right, child_bottom = map_point(transform, x + width, y + height)
+            child_transform = (
+                child_x,
+                child_y,
+                min_x,
+                min_y,
+                (child_right - child_x) / child_view_width,
+                (child_bottom - child_y) / child_view_height,
+            )
+
+            has_path = any(_local_name(child.tag) == "path" for child in element)
+            if has_path and width and height:
+                # QR finder patterns are often embedded as compound SVG paths.
+                # Draw the standard 7x7 finder ring so scanners see the anchor.
+                x0, y0 = child_x, child_y
+                x1, y1 = child_right, child_bottom
+                module_w = (x1 - x0) / 7
+                module_h = (y1 - y0) / 7
+                draw.rectangle([x0, y0, x1, y1], fill="black")
+                draw.rectangle([x0 + module_w, y0 + module_h, x1 - module_w, y1 - module_h], fill="white")
+
+            for child in element:
+                walk(child, child_transform)
+            return
+
+        if tag == "rect":
+            x = _float_attr(element, "x")
+            y = _float_attr(element, "y")
+            width = _float_attr(element, "width")
+            height = _float_attr(element, "height")
+            x0, y0 = map_point(transform, x, y)
+            x1, y1 = map_point(transform, x + width, y + height)
+            color = "white" if fill in ("#ffffff", "white") else "black" if fill in ("#000000", "black") else None
+            if color:
+                draw.rectangle([x0, y0, x1, y1], fill=color)
+
+        elif tag == "polygon" and fill in ("#000000", "black"):
+            raw_points = element.attrib.get("points", "")
+            values = [float(part) for part in re.split(r"[\s,]+", raw_points.strip()) if part]
+            points = [map_point(transform, values[index], values[index + 1]) for index in range(0, len(values) - 1, 2)]
+            if points:
+                draw.polygon(points, fill="black")
+
+        for child in element:
+            walk(child, transform)
+
+    walk(root, root_transform)
+    return image
+
+def decode_qr_upload(contents, filename="", content_type=""):
+    Image, _, _, _, _ = image_libs()
+
+    try:
+        with Image.open(io.BytesIO(contents)) as image:
+            payload, qr_image = _decode_qr_from_pil_image(image)
+            if payload:
+                return payload, qr_image
+    except Exception:
+        pass
+
+    if _looks_like_svg(contents, filename, content_type):
+        for svg_bytes in _svg_candidates(contents):
+            image = _render_basic_svg_qr(svg_bytes)
+            if image is None:
+                continue
+            try:
+                payload, qr_image = _decode_qr_from_pil_image(image)
+                if payload:
+                    return payload, qr_image
+            finally:
+                image.close()
+
+    if _looks_like_pdf(contents, filename, content_type):
+        try:
+            import fitz
+            document = fitz.open(stream=contents, filetype="pdf")
+            try:
+                for page_index in range(min(document.page_count, MAX_QR_PDF_PAGES)):
+                    page = document.load_page(page_index)
+                    pixmap = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5), alpha=False)
+                    with Image.open(io.BytesIO(pixmap.tobytes("png"))) as image:
+                        payload, qr_image = _decode_qr_from_pil_image(image)
+                        if payload:
+                            return payload, qr_image
+            finally:
+                document.close()
+        except Exception:
+            pass
+
+    return None, None
+
 class DecodedBarcode:
     def __init__(self, text, barcode_format="Unknown"):
         self.data = text.encode("utf-8", errors="replace")
@@ -2788,6 +2967,32 @@ async def api_scan(request: Request, payload: dict = Body(...)):
     if len(raw_payload) > 4096:
         raise SafeScanError("QR payload is too large.", 400)
 
+    return await analyze_and_record_scan(request, user, raw_payload, request.headers.get("x-device-fingerprint", ""))
+
+@qr_app.post("/api/scan/file")
+async def api_scan_file(request: Request, file: UploadFile = File(...)):
+    user = require_user(request)
+    rate_limit = enforce_rate_limit(request, "scan_file", 30, 60 * 60, user_key=user.get("google_id"))
+    if rate_limit:
+        return rate_limit
+    contents = await file.read()
+    if len(contents) > MAX_QR_UPLOAD_BYTES:
+        raise SafeScanError(f"Uploaded file is too large. Use a file under {MAX_QR_UPLOAD_BYTES // (1024 * 1024)} MB.", 400)
+
+    raw_payload, qr_image_for_ml = decode_qr_upload(contents, file.filename, file.content_type)
+    if not raw_payload:
+        raise SafeScanError("No QR code or valid payload detected in this file.", 400)
+
+    try:
+        return await analyze_and_record_scan(request, user, raw_payload, request.headers.get("x-device-fingerprint", ""), qr_image_for_ml)
+    finally:
+        if qr_image_for_ml is not None:
+            qr_image_for_ml.close()
+
+async def analyze_and_record_scan(request, user, raw_payload, device_fingerprint="", qr_image_for_ml=None):
+    if len(raw_payload) > 4096:
+        raise SafeScanError("QR payload is too large.", 400)
+
     email = user["email"]
     verified_wallet = get_verified_wallet(email)
     wallet_address = verified_wallet["address"] if verified_wallet else ""
@@ -2795,7 +3000,7 @@ async def api_scan(request: Request, payload: dict = Body(...)):
 
     if payload_type == "URL":
         try:
-            analysis = await analyze_full_pipeline(normalized_payload)
+            analysis = await analyze_full_pipeline(normalized_payload, qr_image_for_ml)
         except SafeScanError as exc:
             analysis = {
                 "url": normalized_payload,
@@ -2825,7 +3030,7 @@ async def api_scan(request: Request, payload: dict = Body(...)):
 
     counted = record_unique_scan(email, raw_payload, wallet_address)
     save_scan_history(email, history_analysis["normalized"], history_analysis)
-    run_fraud_checks("scan", email, request, {"url": history_analysis["normalized"], "deviceFingerprint": request.headers.get("x-device-fingerprint", "")})
+    run_fraud_checks("scan", email, request, {"url": history_analysis["normalized"], "deviceFingerprint": device_fingerprint})
     audit_log("qr.scanned", request=request, actor_user_id=user.get("google_id"), target_type="scan", metadata={"counted": counted, "payloadType": payload_type})
     return {**analysis, "counted": counted, "scanCount": get_scan_count(email), "payloadType": payload_type}
 
@@ -3538,18 +3743,7 @@ async def scan_qr(
                 "version": LEGAL_VERSION,
                 **index_user_context(user)
             })
-        try:
-            Image, _, _, _, _ = image_libs()
-            image = Image.open(io.BytesIO(contents))
-            try:
-                decoded_qr = decode_qr_image(image)
-                if decoded_qr:
-                    url_qr = decoded_qr[0].data.decode("utf-8")
-                    qr_image_for_ml = image.copy()
-            finally:
-                image.close()
-        except Exception:
-            pass
+        url_qr, qr_image_for_ml = decode_qr_upload(contents, file.filename, file.content_type)
 
     if not url_qr:
         return templates.TemplateResponse("index.html", {
@@ -3557,9 +3751,9 @@ async def scan_qr(
             "status": "ERROR", "url_found": "No QR code or valid URL detected.",
             "source": "Scanner", "score": "0", "threat_class": "N/A",
             "overall_risk": "suspicious",
-            "verdict_summary": "SafeScan could not decode a QR payload from this image.",
+            "verdict_summary": "SafeScan could not decode a QR payload from this file.",
             "reputation": {"provider": "Scanner", "status": "ERROR", "matches": [], "detail": "No decodable payload was found."},
-            "risk_reasons": [risk_reason("No QR payload decoded", "medium", "Upload a clearer QR image or paste the destination manually.")],
+            "risk_reasons": [risk_reason("No QR payload decoded", "medium", "Upload a clearer image, SVG, or PDF containing a QR code, or paste the destination manually.")],
             "virus_total": None,
             "domain_age": None,
             "email": user_email, "scan_count": get_scan_count(user_email) if user_email else 0, "google_client_id": CLIENT_ID,
