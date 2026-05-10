@@ -990,8 +990,16 @@ def set_user_username(user_id, username):
         conn.execute("UPDATE users SET username = ? WHERE google_id = ?", (cleaned, user_id))
     return cleaned
 
-def response_after_login(user_id, request):
-    return RedirectResponse("/", status_code=303)
+def response_after_login(user_id, request, next_url=""):
+    return RedirectResponse(safe_next_url(request, next_url), status_code=303)
+
+def safe_next_url(request: Request, raw="", fallback="/"):
+    raw = raw or ""
+    raw = (raw or "").strip()
+    parsed = urlparse(raw)
+    if raw.startswith("/") and not raw.startswith("//") and not parsed.scheme and not parsed.netloc:
+        return raw
+    return fallback
 
 def get_global_leaderboard(limit=50):
     bounded_limit = max(1, min(int(limit or 50), 100))
@@ -2206,7 +2214,25 @@ def decode_qr_image(image):
             candidate = candidate.convert("RGB")
         candidates.append(candidate)
 
+    def add_grayscale_candidates(candidate):
+        gray = ImageOps.grayscale(candidate)
+        add_candidate(gray)
+
+        contrast = ImageOps.autocontrast(gray)
+        add_candidate(contrast)
+
+        sharpened = contrast.filter(ImageFilter.SHARPEN)
+        add_candidate(sharpened)
+
+        high_contrast = ImageEnhance.Contrast(sharpened).enhance(1.8)
+        add_candidate(high_contrast)
+
+        for source in (gray, contrast, high_contrast):
+            for threshold in (55, 70, 85, 95, 115, 135, 155, 185):
+                add_candidate(source.point(lambda pixel, limit=threshold: 255 if pixel > limit else 0))
+
     add_candidate(image)
+    add_grayscale_candidates(image)
 
     max_side = max(image.size)
     if max_side < 1400:
@@ -2219,31 +2245,28 @@ def decode_qr_image(image):
     else:
         resized = image
 
-    gray = ImageOps.grayscale(resized)
-    add_candidate(gray)
-
-    contrast = ImageOps.autocontrast(gray)
-    add_candidate(contrast)
-
-    sharpened = contrast.filter(ImageFilter.SHARPEN)
-    add_candidate(sharpened)
-
-    high_contrast = ImageEnhance.Contrast(sharpened).enhance(1.8)
-    add_candidate(high_contrast)
-
-    for threshold in (95, 125, 155):
-        add_candidate(high_contrast.point(lambda pixel, limit=threshold: 255 if pixel > limit else 0))
+    if resized is not image:
+        add_grayscale_candidates(resized)
 
     for candidate in candidates:
+        zxing_result = decode_barcodes_with_zxing(candidate, qr_only=True)
+        if zxing_result:
+            return zxing_result
+
         for angle in (0, 90, 180, 270):
             rotated = candidate if angle == 0 else candidate.rotate(angle, expand=True)
-            decoded = decode(rotated)
+            try:
+                from pyzbar.pyzbar import ZBarSymbol
+                decoded = decode(rotated, symbols=[ZBarSymbol.QRCODE])
+            except Exception:
+                decoded = decode(rotated)
             if decoded:
                 return decoded
 
-    zxing_result = decode_barcodes_with_zxing(candidates[0]) if candidates else []
-    if zxing_result:
-        return zxing_result
+    for candidate in candidates:
+        zxing_result = decode_barcodes_with_zxing(candidate)
+        if zxing_result:
+            return zxing_result
     return []
 
 def _decode_qr_from_pil_image(image):
@@ -2428,12 +2451,13 @@ class DecodedBarcode:
         self.data = text.encode("utf-8", errors="replace")
         self.type = barcode_format
 
-def decode_barcodes_with_zxing(image):
+def decode_barcodes_with_zxing(image, qr_only=False):
     try:
         import zxingcpp
     except ImportError:
         return []
     results = []
+    formats = zxingcpp.BarcodeFormat.QRCode if qr_only else zxingcpp.BarcodeFormat.All
     binarizers = (
         zxingcpp.Binarizer.LocalAverage,
         zxingcpp.Binarizer.GlobalHistogram,
@@ -2447,7 +2471,7 @@ def decode_barcodes_with_zxing(image):
                 try:
                     results = zxingcpp.read_barcodes(
                         image,
-                        formats=zxingcpp.BarcodeFormat.All,
+                        formats=formats,
                         try_rotate=True,
                         try_downscale=True,
                         try_invert=True,
@@ -2514,8 +2538,8 @@ async def security_headers_and_rate_limits(request: Request, call_next):
         "script-src 'self' https://accounts.google.com https://apis.google.com https://cdn.jsdelivr.net; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
-        "img-src 'self' data: https://lh3.googleusercontent.com; "
-        "connect-src 'self' https://safescan-qr.onrender.com https://api.virustotal.com https://api.anthropic.com https://api.openai.com https://cdn.jsdelivr.net; "
+        "img-src 'self' data: https://lh3.googleusercontent.com https://ssl.gstatic.com https://www.gstatic.com; "
+        "connect-src 'self' https://safescan-qr.onrender.com https://accounts.google.com https://api.virustotal.com https://api.anthropic.com https://api.openai.com https://cdn.jsdelivr.net; "
         "frame-src https://accounts.google.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
     )
     if path.startswith("/static/"):
@@ -4048,7 +4072,8 @@ async def scan_qr(
 
 @qr_app.post("/auth/google", response_class=HTMLResponse)
 @qr_app.get("/auth/google", response_class=HTMLResponse)
-async def auth_google(request: Request, credential: str = Form(None)):
+async def auth_google(request: Request, credential: str = Form(None), next_url: str = Form("", alias="next"), next_query: str = Query("", alias="next")):
+    return_to = safe_next_url(request, next_url or next_query)
     if not credential:
         return templates.TemplateResponse("index.html", {
             "request": request, "logged_in": False, "results_visible": False,
@@ -4073,6 +4098,10 @@ async def auth_google(request: Request, credential: str = Form(None)):
     run_fraud_checks("signup", user_email, request, {"googleId": google_id})
     session_id = create_session(google_id, request)
     audit_log("user.login", request=request, actor_user_id=google_id)
+    if return_to != "/":
+        response = RedirectResponse(return_to, status_code=303)
+        set_session_cookie(response, session_id)
+        return response
     response = templates.TemplateResponse("index.html", {
         "request": request, "logged_in": True, "results_visible": False,
         "email": user_email, "score": "0", "threat_class": "N/A",
@@ -4162,14 +4191,16 @@ async def logout_get(request: Request):
     return await _do_logout(request)
 
 @qr_app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request, error: str = Query(""), tab: str = Query("login")):
+async def login_page(request: Request, error: str = Query(""), tab: str = Query("login"), next_url: str = Query("/", alias="next")):
     user = get_session_user(request)
+    return_to = safe_next_url(request, next_url)
     if user:
-        return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse("login.html", {"request": request, "error": error, "tab": tab, "local_auth_enabled": LOCAL_AUTH_ENABLED, "google_client_id": CLIENT_ID or "", "auth_google_url": f"{APP_URL}/auth/google"})
+        return RedirectResponse(return_to, status_code=303)
+    auth_google_url = f"{APP_URL}/auth/google?next={quote(return_to, safe='')}"
+    return templates.TemplateResponse("login.html", {"request": request, "error": error, "tab": tab, "next_url": return_to, "local_auth_enabled": LOCAL_AUTH_ENABLED, "google_client_id": CLIENT_ID or "", "auth_google_url": auth_google_url})
 
 @qr_app.post("/auth/register", response_class=HTMLResponse)
-async def auth_register(request: Request, email: str = Form(...), password: str = Form(...)):
+async def auth_register(request: Request, email: str = Form(...), password: str = Form(...), next_url: str = Form("/", alias="next")):
     rate_limited = enforce_rate_limit(request, "register", 5, 3600)
     if rate_limited:
         return rate_limited
@@ -4200,12 +4231,12 @@ async def auth_register(request: Request, email: str = Form(...), password: str 
     run_fraud_checks("signup", email, request, {})
     session_id = create_session(lid, request)
     audit_log("user.register", request=request, actor_user_id=lid)
-    response = response_after_login(lid, request)
+    response = response_after_login(lid, request, next_url)
     set_session_cookie(response, session_id)
     return response
 
 @qr_app.post("/auth/login", response_class=HTMLResponse)
-async def auth_login_local(request: Request, email: str = Form(...), password: str = Form(...)):
+async def auth_login_local(request: Request, email: str = Form(...), password: str = Form(...), next_url: str = Form("/", alias="next")):
     rate_limited = enforce_rate_limit(request, "login_local", 10, 600)
     if rate_limited:
         return rate_limited
@@ -4223,12 +4254,12 @@ async def auth_login_local(request: Request, email: str = Form(...), password: s
         raise HTTPException(status_code=401, detail="Authentication required.")
     session_id = create_session(lid, request)
     audit_log("user.login", request=request, actor_user_id=lid, metadata={"provider": "local"})
-    response = response_after_login(lid, request)
+    response = response_after_login(lid, request, next_url)
     set_session_cookie(response, session_id)
     return response
 
 @qr_app.post("/auth/dev-google")
-async def auth_dev_google(request: Request):
+async def auth_dev_google(request: Request, next_url: str = Form("/", alias="next")):
     if not LOCAL_AUTH_ENABLED:
         raise HTTPException(status_code=404, detail="Not found.")
     google_id = "dev-google-local"
@@ -4240,7 +4271,7 @@ async def auth_dev_google(request: Request):
     run_fraud_checks("signup", user_email, request, {"googleId": google_id, "client": "local"})
     session_id = create_session(google_id, request)
     audit_log("user.login", request=request, actor_user_id=google_id, metadata={"provider": "google_local"})
-    response = response_after_login(google_id, request)
+    response = response_after_login(google_id, request, next_url)
     set_session_cookie(response, session_id)
     return response
 

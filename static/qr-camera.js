@@ -22,8 +22,11 @@
   const JS_QR_CDN = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js";
   const COOLDOWN_MS = 3000;
   const FALLBACK_MAX_DIM = 720; // downsample for jsQR to keep mobile CPU happy.
+  const ENHANCED_SCAN_EVERY_N_FRAMES = 3;
+  const STYLIZED_THRESHOLDS = [55, 70, 85, 95, 115, 135, 155, 185];
 
   let jsQRLoader = null;
+  let fallbackFrameCount = 0;
   function loadJsQR() {
     if (typeof window.jsQR === "function") return Promise.resolve(window.jsQR);
     if (jsQRLoader) return jsQRLoader;
@@ -43,6 +46,61 @@
     return jsQRLoader;
   }
 
+  function drawVideoFrame(video, canvas, ctx) {
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!vw || !vh) return null;
+    const scale = Math.min(1, FALLBACK_MAX_DIM / Math.max(vw, vh));
+    const w = Math.max(1, Math.round(vw * scale));
+    const h = Math.max(1, Math.round(vh * scale));
+    if (canvas.width !== w) canvas.width = w;
+    if (canvas.height !== h) canvas.height = h;
+    ctx.drawImage(video, 0, 0, w, h);
+    return ctx.getImageData(0, 0, w, h);
+  }
+
+  function decodeWithJsQRPasses(jsQR, imageData, w, h, includeEnhanced) {
+    const raw = jsQR(imageData.data, w, h, { inversionAttempts: "attemptBoth" });
+    if (raw && raw.data) return raw.data;
+    if (!includeEnhanced) return null;
+
+    const source = imageData.data;
+    const pixels = w * h;
+    const gray = new Uint8ClampedArray(pixels);
+    let min = 255;
+    let max = 0;
+
+    for (let index = 0, pixel = 0; pixel < pixels; index += 4, pixel += 1) {
+      const luminance = Math.round(source[index] * 0.299 + source[index + 1] * 0.587 + source[index + 2] * 0.114);
+      gray[pixel] = luminance;
+      if (luminance < min) min = luminance;
+      if (luminance > max) max = luminance;
+    }
+
+    const span = Math.max(1, max - min);
+    const enhanced = new Uint8ClampedArray(source.length);
+    for (const threshold of STYLIZED_THRESHOLDS) {
+      for (let pixel = 0, index = 0; pixel < pixels; pixel += 1, index += 4) {
+        const normalized = Math.round(((gray[pixel] - min) * 255) / span);
+        const value = normalized > threshold ? 255 : 0;
+        enhanced[index] = value;
+        enhanced[index + 1] = value;
+        enhanced[index + 2] = value;
+        enhanced[index + 3] = 255;
+      }
+      const code = jsQR(enhanced, w, h, { inversionAttempts: "attemptBoth" });
+      if (code && code.data) return code.data;
+    }
+    return null;
+  }
+
+  async function decodeWithJsQRFallback(video, canvas, ctx, includeEnhanced) {
+    const jsQR = await loadJsQR();
+    const imageData = drawVideoFrame(video, canvas, ctx);
+    if (!imageData) return null;
+    return decodeWithJsQRPasses(jsQR, imageData, canvas.width, canvas.height, includeEnhanced);
+  }
+
   async function buildDecoder() {
     if ("BarcodeDetector" in window) {
       try {
@@ -51,9 +109,11 @@
           const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
           return {
             kind: "BarcodeDetector",
-            decode: async (video) => {
+            decode: async (video, canvas, ctx) => {
               const codes = await detector.detect(video);
-              return codes && codes[0] ? codes[0].rawValue : null;
+              if (codes && codes[0]) return codes[0].rawValue;
+              fallbackFrameCount += 1;
+              return decodeWithJsQRFallback(video, canvas, ctx, fallbackFrameCount % ENHANCED_SCAN_EVERY_N_FRAMES === 0);
             }
           };
         }
@@ -65,18 +125,10 @@
     return {
       kind: "jsQR",
       decode: (video, canvas, ctx) => {
-        const vw = video.videoWidth;
-        const vh = video.videoHeight;
-        if (!vw || !vh) return null;
-        const scale = Math.min(1, FALLBACK_MAX_DIM / Math.max(vw, vh));
-        const w = Math.max(1, Math.round(vw * scale));
-        const h = Math.max(1, Math.round(vh * scale));
-        if (canvas.width !== w) canvas.width = w;
-        if (canvas.height !== h) canvas.height = h;
-        ctx.drawImage(video, 0, 0, w, h);
-        const imageData = ctx.getImageData(0, 0, w, h);
-        const code = jsQR(imageData.data, w, h, { inversionAttempts: "attemptBoth" });
-        return code && code.data ? code.data : null;
+        const imageData = drawVideoFrame(video, canvas, ctx);
+        if (!imageData) return null;
+        fallbackFrameCount += 1;
+        return decodeWithJsQRPasses(jsQR, imageData, canvas.width, canvas.height, fallbackFrameCount % ENHANCED_SCAN_EVERY_N_FRAMES === 0);
       }
     };
   }

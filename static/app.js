@@ -274,7 +274,8 @@ function showWalletModal(content) {
 }
 
 function showSignInWalletModal(message = "Sign in first to connect and verify a wallet.") {
-  showWalletModal(`<h3>Sign in required</h3><p>${escapeHtml(message)}</p><div class="wallet-modal-actions"><a class="primary-button" href="/login">Sign in / Sign up</a></div>`);
+  const next = encodeURIComponent(`${window.location.pathname}${window.location.search}${window.location.hash}`);
+  showWalletModal(`<h3>Sign in required</h3><p>${escapeHtml(message)}</p><div class="wallet-modal-actions"><a class="primary-button" href="/login?next=${next}">Sign in / Sign up</a></div>`);
 }
 
 function setWalletBusy(message) {

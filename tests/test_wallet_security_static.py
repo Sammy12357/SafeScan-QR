@@ -4,6 +4,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SERVER = (ROOT / "hackabull.py").read_text(encoding="utf-8")
 CLIENT = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+LOGIN = (ROOT / "templates" / "login.html").read_text(encoding="utf-8")
+QR_CAMERA = (ROOT / "static" / "qr-camera.js").read_text(encoding="utf-8")
+REQUIREMENTS = (ROOT / "requirements.txt").read_text(encoding="utf-8")
 
 
 def function_body(name: str) -> str:
@@ -56,6 +59,25 @@ def test_frontend_offers_phantom_mobile_browser_handoff():
     assert "Open in Phantom" in CLIENT
     assert "waitForSolanaWallets" in CLIENT
     assert "window.phantom?.solana" in CLIENT
+    assert "/login?next=" in CLIENT
+
+
+def test_google_sign_in_uses_visible_redirect_button_for_wallet_browsers():
+    assert "auth-google-native" in LOGIN
+    assert 'data-ux_mode="redirect"' in LOGIN
+    assert "opacity: 0.01" not in LOGIN
+    assert 'data-login_uri="{{ auth_google_url }}"' in LOGIN
+    assert "https://accounts.google.com" in SERVER
+    assert "next_url" in SERVER
+
+
+def test_stylized_qr_preprocessing_uses_low_threshold_zxing_path():
+    assert "55, 70, 85" in SERVER
+    assert "decode_barcodes_with_zxing(candidate, qr_only=True)" in SERVER
+    assert "zxing-cpp" in REQUIREMENTS
+    assert "STYLIZED_THRESHOLDS" in QR_CAMERA
+    assert "ENHANCED_SCAN_EVERY_N_FRAMES" in QR_CAMERA
+    assert "decodeWithJsQRPasses" in QR_CAMERA
 
 
 def test_disconnect_is_server_side_and_idor_safe():
