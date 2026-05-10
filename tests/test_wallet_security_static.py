@@ -68,12 +68,14 @@ def test_google_sign_in_uses_visible_redirect_button_for_wallet_browsers():
     assert "auth-google-native" in LOGIN
     assert "googleFallbackButton" in LOGIN
     assert 'data-ux_mode="redirect"' in LOGIN
+    assert 'data-state="{{ next_url }}"' in LOGIN
     assert "opacity: 0.01" not in LOGIN
     assert 'data-login_uri="{{ auth_google_url }}"' in LOGIN
     assert "https://accounts.google.com" in SERVER
     assert "next_url" in SERVER
     assert "renderGoogleButton" in AUTH
     assert "google.accounts.id.prompt" in AUTH
+    assert "state: state" in AUTH
 
 
 def test_camera_scanner_uses_back_button_not_x_close():

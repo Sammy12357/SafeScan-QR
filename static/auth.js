@@ -32,12 +32,14 @@
 
     var clientId = googleConfig.dataset.client_id || googleConfig.dataset.clientId || "";
     var loginUri = googleConfig.dataset.login_uri || googleConfig.dataset.loginUri || "";
+    var state = googleConfig.dataset.state || "";
     if (!clientId || !loginUri) return false;
 
     try {
       window.google.accounts.id.initialize({
         client_id: clientId,
         login_uri: loginUri,
+        state: state,
         ux_mode: "redirect"
       });
       window.google.accounts.id.renderButton(googleMount, {

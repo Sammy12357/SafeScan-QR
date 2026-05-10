@@ -4023,8 +4023,15 @@ async def scan_qr(
 
 @qr_app.post("/auth/google", response_class=HTMLResponse)
 @qr_app.get("/auth/google", response_class=HTMLResponse)
-async def auth_google(request: Request, credential: str = Form(None), next_url: str = Form("", alias="next"), next_query: str = Query("", alias="next")):
-    return_to = safe_next_url(request, next_url or next_query)
+async def auth_google(
+    request: Request,
+    credential: str = Form(None),
+    next_url: str = Form("", alias="next"),
+    next_query: str = Query("", alias="next"),
+    state: str = Form("", alias="state"),
+    state_query: str = Query("", alias="state"),
+):
+    return_to = safe_next_url(request, next_url or next_query or state or state_query)
     if not credential:
         return templates.TemplateResponse("index.html", {
             "request": request, "logged_in": False, "results_visible": False,
@@ -4147,7 +4154,7 @@ async def login_page(request: Request, error: str = Query(""), tab: str = Query(
     return_to = safe_next_url(request, next_url)
     if user:
         return RedirectResponse(return_to, status_code=303)
-    auth_google_url = f"{APP_URL}/auth/google?next={quote(return_to, safe='')}"
+    auth_google_url = f"{APP_URL}/auth/google"
     return templates.TemplateResponse("login.html", {"request": request, "error": error, "tab": tab, "next_url": return_to, "local_auth_enabled": LOCAL_AUTH_ENABLED, "google_client_id": CLIENT_ID or "", "auth_google_url": auth_google_url})
 
 @qr_app.post("/auth/register", response_class=HTMLResponse)
