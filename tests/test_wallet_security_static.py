@@ -5,7 +5,9 @@ ROOT = Path(__file__).resolve().parents[1]
 SERVER = (ROOT / "hackabull.py").read_text(encoding="utf-8")
 CLIENT = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
 LOGIN = (ROOT / "templates" / "login.html").read_text(encoding="utf-8")
+INDEX = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
 QR_CAMERA = (ROOT / "static" / "qr-camera.js").read_text(encoding="utf-8")
+AUTH = (ROOT / "static" / "auth.js").read_text(encoding="utf-8")
 REQUIREMENTS = (ROOT / "requirements.txt").read_text(encoding="utf-8")
 
 
@@ -64,11 +66,22 @@ def test_frontend_offers_phantom_mobile_browser_handoff():
 
 def test_google_sign_in_uses_visible_redirect_button_for_wallet_browsers():
     assert "auth-google-native" in LOGIN
+    assert "googleFallbackButton" in LOGIN
     assert 'data-ux_mode="redirect"' in LOGIN
     assert "opacity: 0.01" not in LOGIN
     assert 'data-login_uri="{{ auth_google_url }}"' in LOGIN
     assert "https://accounts.google.com" in SERVER
     assert "next_url" in SERVER
+    assert "renderGoogleButton" in AUTH
+    assert "google.accounts.id.prompt" in AUTH
+
+
+def test_camera_scanner_uses_back_button_not_x_close():
+    assert 'aria-label="Back to scanner"' in QR_CAMERA
+    assert ">Back</button>" in QR_CAMERA
+    assert 'aria-label="Close scanner">×</button>' not in QR_CAMERA
+    assert "riskModalCloseButton" not in INDEX
+    assert 'aria-label="Close scan result">X</button>' not in INDEX
 
 
 def test_stylized_qr_preprocessing_uses_low_threshold_zxing_path():

@@ -311,7 +311,7 @@ body.qr-camera-open { overflow: hidden; }
 .qr-camera-card { width: min(520px, 100%); border: 1px solid rgba(103, 242, 200, 0.35); border-radius: 12px; background: #0b1019; box-shadow: 0 28px 90px rgba(0, 0, 0, 0.55); overflow: hidden; }
 .qr-camera-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--line); }
 .qr-camera-header h3 { margin: 0; font-family: var(--display-font); font-size: 1.1rem; }
-.qr-camera-close { width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.04); color: var(--text); font-size: 1.4rem; line-height: 1; cursor: pointer; }
+.qr-camera-close { min-width: 72px; min-height: 36px; padding: 0 13px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.04); color: var(--text); font: inherit; font-size: 0.9rem; font-weight: 800; line-height: 1; cursor: pointer; }
 .qr-camera-close:hover { border-color: var(--accent); color: var(--accent); }
 .qr-camera-stage { position: relative; aspect-ratio: 4 / 5; background: #000; overflow: hidden; }
 .qr-camera-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }

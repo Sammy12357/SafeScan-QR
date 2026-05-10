@@ -143,7 +143,7 @@
       '<div class="qr-camera-card">' +
         '<div class="qr-camera-header">' +
           '<h3>Scan a QR code</h3>' +
-          '<button class="qr-camera-close" type="button" aria-label="Close scanner">×</button>' +
+          '<button class="qr-camera-close" type="button" aria-label="Back to scanner">Back</button>' +
         '</div>' +
         '<div class="qr-camera-stage">' +
           '<video class="qr-camera-video" autoplay playsinline muted></video>' +
