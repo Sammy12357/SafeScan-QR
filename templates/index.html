@@ -206,6 +206,7 @@
         data-verdict="{{ status }}"
       >
         <div class="risk-modal-card {{ 'risk-modal-safe' if status == 'SAFE' else ('risk-modal-caution' if status == 'CAUTION' else 'risk-modal-dangerous') }}">
+          <button id="riskModalCloseButton" class="risk-modal-close" type="button" aria-label="Close scan result">X</button>
           {% if overall_risk == 'high' %}
           <div class="risk-warning-banner">Caution: This QR code shows strong indicators of a phishing or wallet drain attack.</div>
           {% endif %}
