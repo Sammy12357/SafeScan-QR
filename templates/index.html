@@ -223,7 +223,7 @@
 
           {% if action_description %}
           <div class="decoded-box">
-            <p class="engine-label">What this QR will do</p>
+            <p class="engine-label">What this QR executes</p>
             <p>{{ action_description }}</p>
           </div>
           {% endif %}
@@ -337,7 +337,7 @@
         <div class="results-header"><div><h2>Verdict: {{ status }}</h2></div><div class="verdict-badge {{ 'verdict-safe' if status == 'SAFE' else ('verdict-caution' if status == 'CAUTION' else 'verdict-dangerous') }}">{{ status }}</div></div>
         <div class="results-grid">
           {% if action_description %}
-          <article class="result-card"><h3>What it will do</h3><p>{{ action_description }}</p></article>
+          <article class="result-card"><h3>What it executes</h3><p>{{ action_description }}</p></article>
           {% endif %}
           <article class="result-card"><h3>Decoded payload</h3><p class="mono">{{ url_found }}</p></article>
           <article class="result-card result-card-wide engine-card">
