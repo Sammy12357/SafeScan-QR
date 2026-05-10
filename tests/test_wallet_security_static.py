@@ -64,18 +64,25 @@ def test_frontend_offers_phantom_mobile_browser_handoff():
     assert "/login?next=" in CLIENT
 
 
-def test_google_sign_in_uses_visible_redirect_button_for_wallet_browsers():
+def test_google_sign_in_uses_callback_button_for_wallet_browsers():
     assert "auth-google-native" in LOGIN
     assert "googleFallbackButton" in LOGIN
-    assert 'data-ux_mode="redirect"' in LOGIN
-    assert 'data-state="{{ next_url }}"' in LOGIN
+    assert "googleAuthConfig" in LOGIN
+    assert 'data-next="{{ next_url }}"' in LOGIN
+    assert 'data-auth_url="{{ auth_google_url }}"' in LOGIN
     assert "opacity: 0.01" not in LOGIN
-    assert 'data-login_uri="{{ auth_google_url }}"' in LOGIN
+    assert "g_id_onload" not in LOGIN
+    assert "data-login_uri" not in LOGIN
+    assert 'data-ux_mode="redirect"' not in LOGIN
     assert "https://accounts.google.com" in SERVER
     assert "next_url" in SERVER
     assert "renderGoogleButton" in AUTH
     assert "google.accounts.id.prompt" in AUTH
-    assert "state: state" in AUTH
+    assert "callback: submitGoogleCredential" in AUTH
+    assert 'addHidden(form, "credential", response.credential)' in AUTH
+    assert 'form.submit()' in AUTH
+    assert "login_uri" not in AUTH
+    assert 'ux_mode: "redirect"' not in AUTH
 
 
 def test_camera_scanner_uses_back_button_not_x_close():

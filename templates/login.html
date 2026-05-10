@@ -107,7 +107,7 @@
     [data-panel].active { display: block; }
   </style>
   {% if not local_auth_enabled %}<script src="https://accounts.google.com/gsi/client" async defer></script>{% endif %}
-  <script src="/static/auth.js?v=phantom-google-v1" defer></script>
+  <script src="/static/auth.js?v=phantom-google-callback-v1" defer></script>
 </head>
 <body data-init-error="{{ error }}" data-init-tab="{{ tab if tab else 'login' }}">
   {% set active_tab = tab if tab in ['login', 'register'] else 'login' %}
@@ -158,11 +158,10 @@
         </form>
         {% else %}
         <div
-          id="g_id_onload"
+          id="googleAuthConfig"
           data-client_id="{{ google_client_id }}"
-          data-login_uri="{{ auth_google_url }}"
-          data-state="{{ next_url }}"
-          data-ux_mode="redirect"
+          data-auth_url="{{ auth_google_url }}"
+          data-next="{{ next_url }}"
         ></div>
         <div id="googleButtonMount" class="auth-google-native"></div>
         <button id="googleFallbackButton" class="auth-google-btn auth-google-fallback" type="button">
@@ -174,7 +173,7 @@
           </svg>
           Continue with Google
         </button>
-        <p id="googleSignInStatus" class="auth-google-help" aria-live="polite">If you are inside Phantom, keep this page open while Google redirects back to SafeScan.</p>
+        <p id="googleSignInStatus" class="auth-google-help" aria-live="polite">Use the Google button above. If Phantom blocks the prompt, sign in with email first and connect Phantom after.</p>
         {% endif %}
       </div>
 
