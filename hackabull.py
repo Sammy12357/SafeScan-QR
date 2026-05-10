@@ -62,6 +62,11 @@ VIRUSTOTAL_API_KEY = os.getenv("VIRUSTOTAL_API_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SOLANA_RPC_URL = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
+ALPHA_STRIPE_PAYMENT_LINK = os.getenv("ALPHA_STRIPE_PAYMENT_LINK", "").strip()
+ALPHA_SOLANA_RECIPIENT = os.getenv("ALPHA_SOLANA_RECIPIENT", "").strip()
+ALPHA_SOLANA_AMOUNT_SOL = os.getenv("ALPHA_SOLANA_AMOUNT_SOL", "").strip()
+ALPHA_SOLANA_LABEL = os.getenv("ALPHA_SOLANA_LABEL", "SafeScan QR Alpha").strip()
+ALPHA_SOLANA_MESSAGE = os.getenv("ALPHA_SOLANA_MESSAGE", "Alpha access to SafeScan QR premium API docs and endpoints.").strip()
 MOCK_MODE = os.getenv("MOCK_MODE", "false").lower() in ("1", "true", "yes", "on")
 ML_MODEL_ENABLED = os.getenv("SAFESCAN_ML_ENABLED", "true").lower() in ("1", "true", "yes", "on")
 ML_MODEL_PATH = os.getenv("SAFESCAN_ML_MODEL_PATH", os.path.join(os.path.dirname(__file__), "models", "safescan_qr_model.keras"))
@@ -1823,6 +1828,22 @@ def normalize_url(target_url):
     if not re.match(r"^https?://", trimmed, re.IGNORECASE):
         return f"https://{trimmed}"
     return trimmed
+
+def alpha_solana_pay_url():
+    if not ALPHA_SOLANA_RECIPIENT:
+        return ""
+
+    params = []
+    if ALPHA_SOLANA_AMOUNT_SOL:
+        params.append(("amount", ALPHA_SOLANA_AMOUNT_SOL))
+    if ALPHA_SOLANA_LABEL:
+        params.append(("label", ALPHA_SOLANA_LABEL))
+    if ALPHA_SOLANA_MESSAGE:
+        params.append(("message", ALPHA_SOLANA_MESSAGE))
+    params.append(("memo", "SafeScan Alpha"))
+
+    query = "&".join(f"{quote(key, safe='')}={quote(value, safe='')}" for key, value in params)
+    return f"solana:{ALPHA_SOLANA_RECIPIENT}?{query}" if query else f"solana:{ALPHA_SOLANA_RECIPIENT}"
 
 def extract_urls(text):
     return re.findall(r"https?://[^\s<>'\"]+", text, flags=re.IGNORECASE)
@@ -3601,8 +3622,48 @@ async def product_wedges(request: Request):
 
 @qr_app.get("/product/pricing", response_class=HTMLResponse)
 async def product_pricing(request: Request):
-    body = "<h2>Pricing</h2><p>The SafeScan QR public demo is free during the hackathon. Future wallet, merchant, and API pricing will be published as the product matures.</p>"
+    body = "<h2>Pricing</h2><p>The SafeScan QR public demo is free during the hackathon. Alpha premium access is $1/mo for early API docs, endpoint access, and merchant QR safety workflows.</p><p><a class='primary-button' href='/pay/alpha'>Pay Now</a></p>"
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Pricing", body))
+
+@qr_app.get("/pay/alpha", response_class=HTMLResponse)
+async def alpha_payment_page(request: Request):
+    stripe_button = (
+        f"<a class='primary-button payment-button' href='{ALPHA_STRIPE_PAYMENT_LINK}' rel='noopener noreferrer'>Pay by card with Stripe</a>"
+        if ALPHA_STRIPE_PAYMENT_LINK else
+        "<span class='secondary-button payment-button payment-disabled'>Stripe checkout not configured</span>"
+    )
+    solana_url = alpha_solana_pay_url()
+    solana_button = (
+        f"<a class='secondary-button payment-button' href='{solana_url}'>Pay with Solana</a>"
+        if solana_url else
+        "<span class='secondary-button payment-button payment-disabled'>Solana Pay not configured</span>"
+    )
+    solana_note = (
+        f"<p class='payment-note'>Solana payment recipient: <code>{ALPHA_SOLANA_RECIPIENT}</code></p>"
+        if ALPHA_SOLANA_RECIPIENT else
+        "<p class='payment-note'>Add ALPHA_SOLANA_RECIPIENT in Render to enable wallet checkout.</p>"
+    )
+    body = f"""
+    <h2>Alpha Premium</h2>
+    <p>Pay $1/mo for Alpha access to SafeScan QR premium API docs, risk scoring endpoints, and merchant QR safety workflows.</p>
+    <div class="payment-panel">
+      <div>
+        <p class="eyebrow">Card</p>
+        <h3>Stripe checkout</h3>
+        <p>Use this for credit card and subscription billing.</p>
+        {stripe_button}
+      </div>
+      <div>
+        <p class="eyebrow">Solana</p>
+        <h3>Wallet payment</h3>
+        <p>Use this for a Solana Pay transfer. Access approval still needs manual or webhook confirmation.</p>
+        {solana_button}
+        {solana_note}
+      </div>
+    </div>
+    <p class="payment-note">After payment, email <a href="mailto:{ADMIN_EMAIL}">{ADMIN_EMAIL}</a> with the Stripe receipt or Solana transaction signature so Alpha access can be activated.</p>
+    """
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Alpha Payment", body))
 
 @qr_app.get("/resources/docs", response_class=HTMLResponse)
 async def resources_docs(request: Request):
