@@ -13,7 +13,6 @@ import secrets
 import socket
 import time
 import csv
-import threading
 from urllib.parse import quote, urljoin, urlparse, parse_qsl
 from datetime import datetime, timedelta
 from xml.etree import ElementTree
@@ -104,9 +103,6 @@ def template_response_compat(*args, **kwargs):
 
 templates.TemplateResponse = template_response_compat
 _IMAGE_LIBS = None
-_ML_MODEL = None
-_ML_MODEL_ERROR = None
-_ML_MODEL_LOCK = threading.Lock()
 
 def image_libs():
     global _IMAGE_LIBS
@@ -1300,52 +1296,12 @@ def severity_rank(item):
 def clamp_score(score):
     return max(0, min(100, int(round(float(score or 0)))))
 
-def softmax(values):
-    if not values:
-        return []
-    largest = max(values)
-    exponentials = [pow(2.718281828459045, value - largest) for value in values]
-    total = sum(exponentials) or 1.0
-    return [value / total for value in exponentials]
-
-def load_ml_model():
-    global _ML_MODEL, _ML_MODEL_ERROR
-    if not ML_MODEL_ENABLED:
-        return None
-    if _ML_MODEL is not None:
-        return _ML_MODEL
-    if _ML_MODEL_ERROR is not None:
-        return None
-
-    with _ML_MODEL_LOCK:
-        if _ML_MODEL is not None:
-            return _ML_MODEL
-        if _ML_MODEL_ERROR is not None:
-            return None
-        try:
-            os.environ.setdefault("KERAS_BACKEND", "tensorflow")
-            try:
-                import keras
-            except ImportError:
-                from tensorflow import keras
-            _ML_MODEL = keras.models.load_model(ML_MODEL_PATH, compile=False)
-            return _ML_MODEL
-        except Exception as exc:
-            _ML_MODEL_ERROR = f"{type(exc).__name__}: {exc}"
-            return None
-
 def qr_image_from_payload(payload):
     import qrcode
     qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, border=2, box_size=4)
     qr.add_data(payload)
     qr.make(fit=True)
     return qr.make_image(fill_color="black", back_color="white").convert("RGB")
-
-def ml_input_from_image(image):
-    import numpy as np
-    Image, _, _, ImageOps, _ = image_libs()
-    image = ImageOps.exif_transpose(image).convert("RGB").resize((32, 32), Image.Resampling.BILINEAR)
-    return np.asarray(image, dtype="float32")[None, ...] / 255.0
 
 def classify_qr_with_ml(payload, image=None, input_source="generated_qr"):
     if not ML_MODEL_ENABLED:
@@ -2207,48 +2163,44 @@ def pipeline_response_to_template_analysis(pipeline_response):
 def decode_qr_image(image):
     Image, ImageEnhance, ImageFilter, ImageOps, decode = image_libs()
     image = ImageOps.exif_transpose(image)
-    candidates = []
 
-    def add_candidate(candidate):
+    def normalize_candidate(candidate):
         if candidate.mode not in ("RGB", "L"):
             candidate = candidate.convert("RGB")
-        candidates.append(candidate)
+        return candidate
 
-    def add_grayscale_candidates(candidate):
+    def grayscale_candidates(candidate):
         gray = ImageOps.grayscale(candidate)
-        add_candidate(gray)
+        yield gray
 
         contrast = ImageOps.autocontrast(gray)
-        add_candidate(contrast)
+        yield contrast
 
         sharpened = contrast.filter(ImageFilter.SHARPEN)
-        add_candidate(sharpened)
+        yield sharpened
 
         high_contrast = ImageEnhance.Contrast(sharpened).enhance(1.8)
-        add_candidate(high_contrast)
+        yield high_contrast
 
         for source in (gray, contrast, high_contrast):
             for threshold in (55, 70, 85, 95, 115, 135, 155, 185):
-                add_candidate(source.point(lambda pixel, limit=threshold: 255 if pixel > limit else 0))
+                yield source.point(lambda pixel, limit=threshold: 255 if pixel > limit else 0)
 
-    add_candidate(image)
-    add_grayscale_candidates(image)
+    def candidate_images():
+        yield normalize_candidate(image)
+        yield from grayscale_candidates(image)
 
-    max_side = max(image.size)
-    if max_side < 1400:
-        scale = 1400 / max_side
-        resized = image.resize(
-            (int(image.width * scale), int(image.height * scale)),
-            Image.Resampling.LANCZOS
-        )
-        add_candidate(resized)
-    else:
-        resized = image
+        max_side = max(image.size)
+        if max_side < 1400:
+            scale = 1400 / max_side
+            resized = image.resize(
+                (int(image.width * scale), int(image.height * scale)),
+                Image.Resampling.LANCZOS
+            )
+            yield resized
+            yield from grayscale_candidates(resized)
 
-    if resized is not image:
-        add_grayscale_candidates(resized)
-
-    for candidate in candidates:
+    for candidate in candidate_images():
         zxing_result = decode_barcodes_with_zxing(candidate, qr_only=True)
         if zxing_result:
             return zxing_result
@@ -2263,7 +2215,6 @@ def decode_qr_image(image):
             if decoded:
                 return decoded
 
-    for candidate in candidates:
         zxing_result = decode_barcodes_with_zxing(candidate)
         if zxing_result:
             return zxing_result
