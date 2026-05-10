@@ -3665,6 +3665,28 @@ async def alpha_payment_page(request: Request):
     """
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Alpha Payment", body))
 
+@qr_app.get("/pay/alpha/success", response_class=HTMLResponse)
+async def alpha_payment_success_page(request: Request):
+    body = f"""
+    <h2>Alpha payment received</h2>
+    <p>Thanks for subscribing to SafeScan Alpha Premium. Your payment processor has accepted the checkout session.</p>
+    <div class="payment-panel">
+      <div>
+        <p class="eyebrow">Next step</p>
+        <h3>Activate access</h3>
+        <p>Email your Stripe receipt or Solana transaction signature to <a href="mailto:{ADMIN_EMAIL}">{ADMIN_EMAIL}</a>. Include the email you use to sign in to SafeScan.</p>
+      </div>
+      <div>
+        <p class="eyebrow">Alpha docs</p>
+        <h3>Continue to docs</h3>
+        <p>Review the current Alpha docs while access is activated.</p>
+        <a class="primary-button payment-button" href="/resources/docs">Open docs</a>
+      </div>
+    </div>
+    <p class="payment-note">Automatic account activation will be connected after Stripe webhooks or Solana payment verification are configured.</p>
+    """
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Alpha Payment Success", body))
+
 @qr_app.get("/resources/docs", response_class=HTMLResponse)
 async def resources_docs(request: Request):
     body = "<h2>Docs</h2><p>SafeScan docs will cover QR scanning, risk signals, reputation checks, wallet-pattern detection, and API usage.</p>"
