@@ -1827,6 +1827,58 @@ def normalize_url(target_url):
 def extract_urls(text):
     return re.findall(r"https?://[^\s<>'\"]+", text, flags=re.IGNORECASE)
 
+def _truncate_description(value, limit=90):
+    value = (value or "").strip()
+    if len(value) <= limit:
+        return value
+    return value[: limit - 1].rstrip() + "..."
+
+def _qr_field_value(payload, field):
+    searchable = payload[5:] if payload.upper().startswith("WIFI:") else payload
+    match = re.search(rf"(?:^|[;\r\n]){re.escape(field)}:([^;\r\n]*)", searchable, flags=re.IGNORECASE)
+    if not match:
+        return ""
+    return match.group(1).replace("\\;", ";").strip()
+
+def describe_qr_action(payload_type, normalized):
+    if payload_type == "URL":
+        parsed = urlparse(normalized)
+        host = parsed.hostname or normalized
+        path = parsed.path or "/"
+        if any(marker in normalized.lower() for marker in (".apk", ".exe", ".dmg", ".pkg", ".zip", "download")):
+            return f"Open a browser link on {host} that appears to start or offer a download."
+        if any(marker in normalized.lower() for marker in ("approve", "permit", "signature", "sign-message", "claim", "airdrop")):
+            return f"Open a browser link on {host} that may lead into a wallet, claim, approval, or signature flow."
+        return f"Open a browser link on {host}{_truncate_description(path, 48)}."
+    if payload_type == "Wi-Fi":
+        ssid = _qr_field_value(normalized, "S")
+        auth = _qr_field_value(normalized, "T") or "unspecified security"
+        network = f" named {_truncate_description(ssid, 48)}" if ssid else ""
+        return f"Ask the device to join a Wi-Fi network{network} using {auth}."
+    if payload_type == "SMS":
+        target = normalized.split(":", 1)[1].split(":", 1)[0] if ":" in normalized else ""
+        recipient = f" to {_truncate_description(target, 48)}" if target else ""
+        return f"Open a prefilled text message{recipient}; it should still require review before sending."
+    if payload_type == "Email":
+        parsed = urlparse(normalized)
+        recipient = parsed.path or normalized.replace("mailto:", "", 1)
+        target = f" to {_truncate_description(recipient, 48)}" if recipient else ""
+        return f"Open a prefilled email{target}; it should still require review before sending."
+    if payload_type == "Crypto/payment":
+        scheme = normalized.split(":", 1)[0].lower()
+        return f"Open a {scheme} wallet or payment request; approval should happen only inside the wallet."
+    if payload_type == "Contact card":
+        name = _qr_field_value(normalized, "FN") or _qr_field_value(normalized, "N")
+        contact = f" for {_truncate_description(name, 48)}" if name else ""
+        return f"Offer to add contact details{contact} to the address book."
+    if payload_type == "Calendar":
+        title = _qr_field_value(normalized, "SUMMARY")
+        event = f" named {_truncate_description(title, 48)}" if title else ""
+        return f"Offer to add a calendar event{event}."
+    if payload_type == "JSON/custom":
+        return "Pass structured data to an app or service that understands this QR format."
+    return "Display the decoded text payload without launching a standard browser, wallet, or message flow."
+
 def detect_payload(raw_payload):
     payload = raw_payload.strip()
     upper = payload.upper()
@@ -1854,6 +1906,7 @@ def detect_payload(raw_payload):
 
 def analyze_non_url_payload(raw_payload):
     payload_type, action, normalized = detect_payload(raw_payload)
+    action_description = describe_qr_action(payload_type, normalized)
     embedded_urls = extract_urls(normalized)
     score = 0
     status = "SAFE"
@@ -1919,12 +1972,14 @@ def analyze_non_url_payload(raw_payload):
         "source": "SafeScan Payload Analyzer",
         "normalized": normalized,
         "payload_type": payload_type,
+        "action_description": action_description,
         "reputation": {"provider": "SafeScan Payload Analyzer", "status": "NOT_APPLICABLE", "matches": [], "detail": "Reputation lookup only runs for URL payloads."},
         "reasons": reasons
     }
 
 def analyze_url_payload(raw_payload):
     normalized = validate_public_url(raw_payload)
+    action_description = describe_qr_action("URL", normalized)
     parsed = urlparse(normalized)
     lower_url = normalized.lower()
     score = 0
@@ -1940,6 +1995,7 @@ def analyze_url_payload(raw_payload):
             "source": "Local Cache",
             "normalized": normalized,
             "payload_type": "URL",
+            "action_description": action_description,
             "reputation": {"provider": "Local Cache", "status": cached_status, "matches": [], "detail": "Cached verdict from the last 24 hours."},
             "reasons": [risk_reason("Cached reputation verdict", "high" if cached_status == "MALICIOUS" else "low", "This URL was recently scanned and reused from local cache.")]
         }
@@ -1999,6 +2055,7 @@ def analyze_url_payload(raw_payload):
         "source": "SafeScan Engine",
         "normalized": normalized,
         "payload_type": "URL",
+        "action_description": action_description,
         "reputation": reputation,
         "reasons": reasons
     }
@@ -2021,6 +2078,7 @@ def pipeline_response_to_template_analysis(pipeline_response):
         "source": "SafeScan Core Risk Engine",
         "normalized": pipeline_response["url"],
         "payload_type": "URL",
+        "action_description": describe_qr_action("URL", pipeline_response["url"]),
         "overallRisk": overall_risk,
         "verdict": pipeline_response["verdict"],
         "reputation": {"provider": "SafeScan Core Risk Engine", "status": overall_risk.upper(), "matches": [], "detail": pipeline_response["verdict"]},
@@ -3008,6 +3066,7 @@ async def analyze_and_record_scan(request, user, raw_payload, device_fingerprint
                 "confidenceScore": 95,
                 "verdict": str(exc),
                 "signals": [signal("URL Guard", "Blocked", "high", str(exc), False)],
+                "actionDescription": describe_qr_action("URL", normalized_payload),
                 "scannedAt": now_iso()
             }
         history_analysis = pipeline_response_to_template_analysis(analysis)
@@ -3021,6 +3080,7 @@ async def analyze_and_record_scan(request, user, raw_payload, device_fingerprint
             "overallRisk": template_analysis.get("overallRisk", overall_risk),
             "confidenceScore": score,
             "verdict": template_analysis.get("verdict", template_analysis["threat_class"]),
+            "actionDescription": template_analysis.get("action_description"),
             "signals": [
                 signal(reason.get("label", "Payload Pattern"), template_analysis["status"], reason.get("severity", "low"), reason.get("detail", ""), score < 40)
                 for reason in template_analysis.get("reasons", [])
@@ -3032,7 +3092,13 @@ async def analyze_and_record_scan(request, user, raw_payload, device_fingerprint
     save_scan_history(email, history_analysis["normalized"], history_analysis)
     run_fraud_checks("scan", email, request, {"url": history_analysis["normalized"], "deviceFingerprint": device_fingerprint})
     audit_log("qr.scanned", request=request, actor_user_id=user.get("google_id"), target_type="scan", metadata={"counted": counted, "payloadType": payload_type})
-    return {**analysis, "counted": counted, "scanCount": get_scan_count(email), "payloadType": payload_type}
+    return {
+        **analysis,
+        "actionDescription": analysis.get("actionDescription") or history_analysis.get("action_description"),
+        "counted": counted,
+        "scanCount": get_scan_count(email),
+        "payloadType": payload_type,
+    }
 
 @qr_app.get("/api/scan/history")
 async def api_scan_history(request: Request):
@@ -3794,6 +3860,7 @@ async def scan_qr(
         "status": analysis["status"], "url_found": analysis["normalized"], "source": analysis["source"],
         "score": analysis["score"],
         "threat_class": analysis["threat_class"],
+        "action_description": analysis.get("action_description"),
         "overall_risk": analysis.get("overallRisk", analysis["status"].lower()),
         "verdict_summary": analysis.get("verdict", analysis["threat_class"]),
         "reputation": analysis.get("reputation"),
