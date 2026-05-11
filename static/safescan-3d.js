@@ -17,7 +17,7 @@ if (canvas && showcase && !showcase.dataset.splineSrc?.trim()) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.14;
+  renderer.toneMappingExposure = 1.24;
 
   const rig = new THREE.Group();
   scene.add(rig);
@@ -567,12 +567,12 @@ if (canvas && showcase && !showcase.dataset.splineSrc?.trim()) {
   );
   scene.add(brightParticles);
 
-  const keyLight = new THREE.DirectionalLight(0xffffff, 2.55);
+  const keyLight = new THREE.DirectionalLight(0xffffff, 3.05);
   keyLight.position.set(2.8, 3.4, 4);
   scene.add(keyLight);
-  scene.add(new THREE.AmbientLight(0x78a7ff, 0.82));
+  scene.add(new THREE.AmbientLight(0x8bb8ff, 1.05));
 
-  const accentLight = new THREE.PointLight(0x67f2c8, 8.4, 8);
+  const accentLight = new THREE.PointLight(0x67f2c8, 9.6, 8.6);
   accentLight.position.set(1.9, 0.5, 2.4);
   scene.add(accentLight);
 
