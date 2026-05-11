@@ -25,8 +25,8 @@ RUN groupadd --system safescan && useradd --system --gid safescan --no-create-ho
 
 WORKDIR /app
 
-ENV DATA_DIR=/app/data \
-    SQLITE_DB_PATH=/app/data/qr_cache.db
+ENV DATA_DIR=/var/data \
+    SQLITE_DB_PATH=/var/data/qr_cache.db
 
 # Copy installed packages from builder
 COPY --from=builder /install /usr/local
@@ -38,7 +38,7 @@ COPY static/ ./static/
 COPY models/ ./models/
 
 # Data directory owned by app user
-RUN mkdir -p /app/data && chown safescan:safescan /app/data
+RUN mkdir -p /app/data /var/data && chown safescan:safescan /app/data /var/data
 
 USER safescan
 

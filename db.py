@@ -48,7 +48,12 @@ def database_path() -> str:
     data_dir = os.getenv("DATA_DIR")
     if data_dir:
         return os.path.join(data_dir, "qr_cache.db")
-    return os.getenv("SQLITE_DB_PATH", "qr_cache.db")
+    sqlite_path = os.getenv("SQLITE_DB_PATH")
+    if sqlite_path:
+        return sqlite_path
+    if os.path.isdir("/var/data") and os.access("/var/data", os.W_OK):
+        return "/var/data/qr_cache.db"
+    return "qr_cache.db"
 
 
 def set_rls_context(user_id: str | None, role: str = "user"):

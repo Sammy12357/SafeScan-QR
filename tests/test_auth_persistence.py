@@ -116,7 +116,7 @@ def test_google_login_persists_provider_user_and_session(auth_app, monkeypatch):
     assert sessions[0]["google_id"] == users[0]["google_id"]
 
 
-def test_google_then_local_registration_reuses_same_user(auth_app, monkeypatch):
+def test_google_then_local_registration_blocks_duplicate_email(auth_app, monkeypatch):
     module, client, db_path = auth_app
     monkeypatch.setattr(
         module.id_token,
@@ -131,13 +131,26 @@ def test_google_then_local_registration_reuses_same_user(auth_app, monkeypatch):
     local_response = register(TestClient(module.qr_app, base_url="https://testserver"), "shared@example.com")
 
     assert google_response.status_code == 200
-    assert local_response.status_code == 200
+    assert local_response.status_code == 409
+    assert "already linked to account" in local_response.text
     users = db_rows(db_path, "SELECT google_id, email, google_sub FROM users WHERE lower(email) = ?", ("shared@example.com",))
     credentials = db_rows(db_path, "SELECT user_id FROM local_credentials WHERE email = ?", ("shared@example.com",))
     assert len(users) == 1
     assert users[0]["google_sub"] == "google-sub-2"
-    assert len(credentials) == 1
-    assert credentials[0]["user_id"] == users[0]["google_id"]
+    assert credentials == []
+
+
+def test_local_registration_blocks_existing_email(auth_app):
+    _, client, db_path = auth_app
+
+    first = register(client, "Repeat@Example.com")
+    second = register(TestClient(sys.modules["hackabull"].qr_app, base_url="https://testserver"), "repeat@example.com")
+
+    assert first.status_code == 200
+    assert second.status_code == 409
+    assert "already linked to account" in second.text
+    assert len(db_rows(db_path, "SELECT * FROM users WHERE lower(email) = ?", ("repeat@example.com",))) == 1
+    assert len(db_rows(db_path, "SELECT * FROM local_credentials WHERE lower(email) = ?", ("repeat@example.com",))) == 1
 
 
 def test_user_scan_history_saves_and_fetches_by_user_id(auth_app):
@@ -245,6 +258,21 @@ def test_global_leaderboard_groups_by_username_and_scan_count(auth_app):
 
     assert [row["username"] for row in leaders[:2]] == ["LeaderOne", "RunnerUp"]
     assert [row["scan_count"] for row in leaders[:2]] == [2, 1]
+
+
+def test_global_leaderboard_recovers_count_from_saved_history(auth_app):
+    module, client, db_path = auth_app
+    register(client, "history-leader@example.com")
+    user = db_rows(db_path, "SELECT google_id FROM users WHERE email = ?", ("history-leader@example.com",))[0]
+    module.set_user_username(user["google_id"], "HistoryLeader")
+    module.save_user_scan(user["google_id"], "https://one.example", {"score": 10, "status": "SAFE"}, email="history-leader@example.com")
+    module.save_user_scan(user["google_id"], "https://two.example", {"score": 10, "status": "SAFE"}, email="history-leader@example.com")
+
+    leaders = module.get_global_leaderboard()
+
+    assert leaders[0]["username"] == "HistoryLeader"
+    assert leaders[0]["scan_count"] == 2
+    assert leaders[0]["total_saved_scans"] == 2
 
 
 def test_uploaded_qr_image_decodes_saves_history_and_increments_counter(auth_app):

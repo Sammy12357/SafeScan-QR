@@ -15,7 +15,13 @@ QR_UPLOAD_RETENTION_DAYS = int(os.getenv("QR_UPLOAD_RETENTION_DAYS", "7"))
 
 
 def data_dir() -> Path:
-    return Path(os.getenv("DATA_DIR", "/app/data"))
+    configured = os.getenv("DATA_DIR")
+    if configured:
+        return Path(configured)
+    default_render_disk = Path("/var/data")
+    if default_render_disk.is_dir() and os.access(default_render_disk, os.W_OK):
+        return default_render_disk
+    return Path("data")
 
 
 def storage_enabled() -> bool:

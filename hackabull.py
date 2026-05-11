@@ -373,6 +373,7 @@ def init_db():
                          password_hash TEXT NOT NULL,
                          created_at TEXT NOT NULL,
                          user_id TEXT)''')
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_local_credentials_email_lower ON local_credentials(lower(email))")
     conn.commit()
     conn.close()
 
@@ -953,21 +954,79 @@ def run_fraud_checks(event_type, user_id, request=None, metadata=None):
         audit_log("fraud.flags_added", request=request, actor_user_id=user_id, target_type="user", target_id=user_id, metadata={"signalCount": len(signals), "points": new_points})
     return signals
 
-def save_scan_history(email, url, analysis, reported=False):
+def lookup_user_id_by_email(email):
+    normalized_email = (email or "").strip().lower()
+    if not normalized_email:
+        return None
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT google_id FROM users WHERE lower(email) = ? AND status != 'deleted' ORDER BY created_at LIMIT 1",
+            (normalized_email,),
+        ).fetchone()
+    return row["google_id"] if row else None
+
+def save_scan_history(email, url, analysis, reported=False, user_id=None):
+    normalized_email = (email or "").strip().lower()
+    resolved_user_id = user_id or lookup_user_id_by_email(normalized_email)
     with get_conn() as conn:
         conn.execute(
-            "INSERT INTO scan_history (id, email, url, risk_score, verdict, signals, reported, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO scan_history (id, email, url, risk_score, verdict, signals, reported, created_at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 make_id("scan"),
-                email,
+                normalized_email,
                 url[:2048],
                 int(analysis.get("score") or analysis.get("confidenceScore") or 0),
                 analysis.get("status") or status_from_risk(analysis.get("overallRisk")),
                 json.dumps(analysis.get("reasons") or analysis.get("signals") or []),
                 int(reported),
-                now_iso()
+                now_iso(),
+                resolved_user_id,
             )
         )
+
+
+def save_user_scan(user_id, url, analysis, email=None, reported=False):
+    resolved_email = (email or "").strip().lower()
+    if not resolved_email and user_id:
+        with get_conn() as conn:
+            row = conn.execute("SELECT email FROM users WHERE google_id = ?", (user_id,)).fetchone()
+            resolved_email = (row["email"] if row else "").strip().lower()
+    if not resolved_email:
+        raise SafeScanError("A user email is required to save scan history.", 400)
+    with get_conn() as conn:
+        scan_id = make_id("scan")
+        conn.execute(
+            "INSERT INTO scan_history (id, email, url, risk_score, verdict, signals, reported, created_at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                scan_id,
+                resolved_email,
+                url[:2048],
+                int(analysis.get("score") or analysis.get("confidenceScore") or 0),
+                analysis.get("status") or status_from_risk(analysis.get("overallRisk")),
+                json.dumps(analysis.get("reasons") or analysis.get("signals") or []),
+                int(reported),
+                now_iso(),
+                user_id,
+            ),
+        )
+    return scan_id
+
+
+def get_user_scan_history(user_id, limit=100):
+    bounded_limit = max(1, min(int(limit or 100), 500))
+    with get_conn() as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT *, verdict AS threat_type
+            FROM scan_history
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (user_id, bounded_limit),
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def persist_qr_upload(content: bytes, filename: str, content_type: str, user: dict | None):
@@ -1072,8 +1131,7 @@ def verify_password(password, stored):
 
 def save_local_user(email, request=None):
     uid = canonical_user_id(email)
-    save_user_to_db(uid, email, request)
-    return uid
+    return save_user_to_db(uid, email, request)
 
 def email_account_exists(email):
     normalized_email = (email or "").strip().lower()
@@ -1128,13 +1186,14 @@ def get_global_leaderboard(limit=50):
             SELECT
                 u.google_id AS user_id,
                 u.username,
-                COALESCE(s.scan_count, 0) AS scan_count,
+                MAX(COALESCE(s.scan_count, 0), COALESCE(se.unique_events, 0), COALESCE(h.unique_saved_scans, 0)) AS scan_count,
                 COALESCE(h.total_saved_scans, 0) AS total_saved_scans,
                 COALESCE(h.last_history_at, se.last_event_at) AS last_scanned_at
             FROM users u
             LEFT JOIN scans s ON s.user_id = u.google_id OR lower(s.email) = lower(u.email)
             LEFT JOIN (
-                SELECT user_id, lower(email) AS email_key, COUNT(*) AS total_saved_scans, MAX(created_at) AS last_history_at
+                SELECT user_id, lower(email) AS email_key, COUNT(*) AS total_saved_scans,
+                       COUNT(DISTINCT url) AS unique_saved_scans, MAX(created_at) AS last_history_at
                 FROM scan_history
                 GROUP BY user_id, lower(email)
             ) h ON h.user_id = u.google_id OR h.email_key = lower(u.email)
@@ -1146,8 +1205,8 @@ def get_global_leaderboard(limit=50):
             WHERE u.status != 'deleted'
               AND COALESCE(u.username, '') != ''
               AND (COALESCE(s.scan_count, 0) > 0 OR COALESCE(h.total_saved_scans, 0) > 0 OR COALESCE(se.unique_events, 0) > 0)
-            GROUP BY u.google_id, u.username, s.scan_count, h.total_saved_scans, h.last_history_at, se.last_event_at
-            ORDER BY COALESCE(s.scan_count, 0) DESC, total_saved_scans DESC, last_scanned_at DESC
+            GROUP BY u.google_id, u.username, s.scan_count, h.total_saved_scans, h.unique_saved_scans, h.last_history_at, se.unique_events, se.last_event_at
+            ORDER BY scan_count DESC, total_saved_scans DESC, last_scanned_at DESC
             LIMIT ?
             """,
             (bounded_limit,)
@@ -1171,7 +1230,9 @@ def referral_code_for_user(email):
         conn.execute("UPDATE users SET referral_code = ? WHERE email = ?", (code, normalized_email))
         return code
 
-def record_unique_scan(email, url, wallet):
+def record_unique_scan(email, url, wallet, user_id=None):
+    normalized_email = (email or "").strip().lower()
+    resolved_user_id = user_id or lookup_user_id_by_email(normalized_email)
     normalized_payload = url.strip()[:2048]
     payload_hash = hashlib.sha256(normalized_payload.encode("utf-8")).hexdigest()
     cutoff = (datetime.utcnow() - timedelta(seconds=60)).isoformat()
@@ -1179,22 +1240,23 @@ def record_unique_scan(email, url, wallet):
     with get_conn() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO scans (email, url_found, scan_count, wallet_address)
-            VALUES (?, ?, 0, ?)
+            INSERT INTO scans (email, url_found, scan_count, wallet_address, user_id)
+            VALUES (?, ?, 0, ?, ?)
             ON CONFLICT(email) DO UPDATE SET
-                wallet_address = COALESCE(excluded.wallet_address, scans.wallet_address)
-        """, (email, normalized_payload, wallet))
+                wallet_address = COALESCE(excluded.wallet_address, scans.wallet_address),
+                user_id = COALESCE(scans.user_id, excluded.user_id)
+        """, (normalized_email, normalized_payload, wallet, resolved_user_id))
 
-        cursor.execute("SELECT url_found, scan_count FROM scans WHERE email = ?", (email,))
+        cursor.execute("SELECT url_found, scan_count FROM scans WHERE email = ?", (normalized_email,))
         previous_url, current_count = cursor.fetchone()
 
         cursor.execute("""
             INSERT OR IGNORE INTO scan_events (email, payload_hash, url_found, first_scanned_at)
             VALUES (?, ?, ?, ?)
-        """, (email, payload_hash, normalized_payload, datetime.now().isoformat()))
+        """, (normalized_email, payload_hash, normalized_payload, datetime.now().isoformat()))
 
         if cursor.rowcount == 0:
-            cursor.execute("SELECT first_scanned_at FROM scan_events WHERE email = ? AND payload_hash = ?", (email, payload_hash))
+            cursor.execute("SELECT first_scanned_at FROM scan_events WHERE email = ? AND payload_hash = ?", (normalized_email, payload_hash))
             existing = cursor.fetchone()
             if existing and str(existing[0]) >= cutoff:
                 return False
@@ -1206,9 +1268,10 @@ def record_unique_scan(email, url, wallet):
         if normalized_payload in previous_urls and current_count > 0:
             cursor.execute("""
                 UPDATE scans
-                SET wallet_address = COALESCE(?, wallet_address)
+                SET wallet_address = COALESCE(?, wallet_address),
+                    user_id = COALESCE(user_id, ?)
                 WHERE email = ?
-            """, (wallet, email))
+            """, (wallet, resolved_user_id, normalized_email))
             return False
 
         previous_urls.append(normalized_payload)
@@ -1219,9 +1282,10 @@ def record_unique_scan(email, url, wallet):
             SET scan_count = scan_count + 1,
                 url_found = ?,
                 wallet_address = COALESCE(?, wallet_address),
+                user_id = COALESCE(user_id, ?),
                 airdrop_eligible = CASE WHEN scan_count + 1 >= 5 THEN 1 ELSE airdrop_eligible END
             WHERE email = ?
-        """, (updated_urls, wallet, email))
+        """, (updated_urls, wallet, resolved_user_id, normalized_email))
         return True
 
 def get_scan_count(email):
@@ -3450,8 +3514,8 @@ async def analyze_and_record_scan(request, user, raw_payload, device_fingerprint
             "scannedAt": now_iso(),
         }
 
-    counted = record_unique_scan(email, raw_payload, wallet_address)
-    save_scan_history(email, history_analysis["normalized"], history_analysis)
+    counted = record_unique_scan(email, raw_payload, wallet_address, user_id=user.get("google_id"))
+    save_scan_history(email, history_analysis["normalized"], history_analysis, user_id=user.get("google_id"))
     run_fraud_checks("scan", email, request, {"url": history_analysis["normalized"], "deviceFingerprint": device_fingerprint})
     audit_log("qr.scanned", request=request, actor_user_id=user.get("google_id"), target_type="scan", metadata={"counted": counted, "payloadType": payload_type})
     return {
@@ -4295,8 +4359,8 @@ async def scan_qr(
         qr_image_for_ml.close()
     counted = False
     if user_email:
-        counted = record_unique_scan(user_email, url_qr, wallet_address)
-        save_scan_history(user_email, analysis["normalized"], analysis)
+        counted = record_unique_scan(user_email, url_qr, wallet_address, user_id=user.get("google_id") if user else None)
+        save_scan_history(user_email, analysis["normalized"], analysis, user_id=user.get("google_id") if user else None)
         run_fraud_checks("scan", user_email, request, {"url": analysis["normalized"], "deviceFingerprint": device_fingerprint})
     audit_log("qr.scanned", request=request, actor_user_id=user.get("google_id") if user else None, target_type="scan", metadata={"counted": counted, "payloadType": payload_type, "guest": not bool(user_email)})
 
@@ -4348,7 +4412,7 @@ async def auth_google(
         audit_log("auth.failed", request=request, metadata={"provider": "google"})
         raise HTTPException(status_code=401, detail="Authentication required.")
 
-    save_user_to_db(google_id, user_email, request, idinfo.get("name") or "", idinfo.get("picture") or "")
+    google_id = save_user_to_db(google_id, user_email, request, idinfo.get("name") or "", idinfo.get("picture") or "")
     user = require_user_from_google_id(google_id)
     if user["status"] != "active":
         raise HTTPException(status_code=401, detail="Authentication required.")
@@ -4410,7 +4474,7 @@ async def auth_verify(request: Request, payload: dict = Body(...)):
         audit_log("auth.failed", request=request, metadata={"provider": provider})
         raise HTTPException(status_code=401, detail="Authentication required.")
 
-    save_user_to_db(google_id, user_email, request, idinfo.get("name") or "", idinfo.get("picture") or "")
+    google_id = save_user_to_db(google_id, user_email, request, idinfo.get("name") or "", idinfo.get("picture") or "")
     user = require_user_from_google_id(google_id)
     if user["status"] != "active":
         raise HTTPException(status_code=401, detail="Authentication required.")
@@ -4480,10 +4544,24 @@ async def auth_register(request: Request, email: str = Form(...), password: str 
             status_code=409,
         )
     lid = save_local_user(email, request)
-    with get_conn() as conn:
-        conn.execute(
-            "INSERT INTO local_credentials (email, password_hash, created_at, user_id) VALUES (?, ?, ?, ?)",
-            (email, hash_password(password), now_iso(), lid)
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                "INSERT INTO local_credentials (email, password_hash, created_at, user_id) VALUES (?, ?, ?, ?)",
+                (email, hash_password(password), now_iso(), lid)
+            )
+    except sqlite3.IntegrityError:
+        return templates.TemplateResponse(
+            "login.html",
+            {
+                "request": request,
+                "error": "Email is already linked to an account. Please sign in instead.",
+                "tab": "register",
+                "local_auth_enabled": LOCAL_AUTH_ENABLED,
+                "google_client_id": CLIENT_ID or "",
+                "auth_google_url": f"{APP_URL}/auth/google",
+            },
+            status_code=409,
         )
     run_fraud_checks("signup", email, request, {})
     session_id = create_session(lid, request)
@@ -4521,7 +4599,7 @@ async def auth_dev_google(request: Request, next_url: str = Form("/", alias="nex
         raise HTTPException(status_code=404, detail="Not found.")
     google_id = "dev-google-local"
     user_email = "google-demo@safescan.local"
-    save_user_to_db(google_id, user_email, request)
+    google_id = save_user_to_db(google_id, user_email, request)
     user = require_user_from_google_id(google_id)
     if user["status"] != "active":
         raise HTTPException(status_code=401, detail="Authentication required.")
@@ -4697,9 +4775,21 @@ def save_user_to_db(google_id, email, request=None, display_name="", picture="")
     role = role_for_email(normalized_email)
     referral_code = hashlib.sha256(f"{normalized_email}:{APP_URL}".encode("utf-8")).hexdigest()[:10]
     with get_conn() as conn:
+        existing = conn.execute(
+            """
+            SELECT google_id
+            FROM users
+            WHERE lower(email) = ? AND status != 'deleted'
+            ORDER BY CASE WHEN google_id = ? THEN 0 ELSE 1 END, created_at
+            LIMIT 1
+            """,
+            (normalized_email, google_id),
+        ).fetchone()
+        resolved_google_id = existing["google_id"] if existing else google_id
+        google_sub = google_id if not google_id.startswith("user_") and not google_id.startswith("local_") else None
         conn.execute("""
-            INSERT INTO users (google_id, email, display_name, picture, last_login, role, status, last_login_at, login_ip, created_at, referral_code)
-            VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
+            INSERT INTO users (google_id, email, display_name, picture, last_login, role, status, last_login_at, login_ip, created_at, referral_code, google_sub)
+            VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
             ON CONFLICT(google_id) DO UPDATE SET
                 email=excluded.email,
                 display_name=COALESCE(NULLIF(users.display_name, ''), excluded.display_name),
@@ -4708,11 +4798,13 @@ def save_user_to_db(google_id, email, request=None, display_name="", picture="")
                 last_login_at=excluded.last_login_at,
                 login_ip=excluded.login_ip,
                 referral_code=COALESCE(users.referral_code, excluded.referral_code),
+                google_sub=COALESCE(users.google_sub, excluded.google_sub),
                 role=CASE
                     WHEN users.role IN ('owner', 'admin') THEN users.role
                     ELSE excluded.role
                 END
-        """, (google_id, normalized_email, normalized_display_name, normalized_picture, datetime.now().isoformat(), role, now_iso(), request_ip(request) if request else None, now_iso(), referral_code))
+        """, (resolved_google_id, normalized_email, normalized_display_name, normalized_picture, datetime.now().isoformat(), role, now_iso(), request_ip(request) if request else None, now_iso(), referral_code, google_sub))
+    return resolved_google_id
 
 
 
