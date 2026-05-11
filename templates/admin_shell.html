@@ -19,6 +19,8 @@
       <a href="/admin/users">All Users</a>
       <a href="/admin/users?status=suspended">Suspended</a>
       <a href="/admin/users?flag=review">Pending Review</a>
+      <p>Growth</p>
+      <a href="/admin/waitlist">Waitlist</a>
       <p>Scanning</p>
       <a href="/admin/scans">All Scans</a>
       <a href="/admin/reports">Reported URLs</a>
@@ -106,6 +108,13 @@
       <section class="admin-card"><table class="admin-table"><thead><tr><th>Scan ID</th><th>User</th><th>URL</th><th>Risk</th><th>Verdict</th><th>Signals</th><th>Date</th><th>Actions</th></tr></thead><tbody>
         {% for scan in data.rows %}<tr><td>{{ scan.id[:12] }}</td><td>{{ scan.email }}</td><td class="truncate" title="{{ scan.url }}">{{ scan.url }}</td><td class="risk">{{ scan.risk_score }}</td><td><span class="badge {{ scan.verdict|lower }}">{{ scan.verdict }}</span></td><td>{{ (scan.signals or '[]')|length }}</td><td>{{ scan.created_at }}</td><td><details><summary>View Details</summary><pre>{{ scan.signals }}</pre></details><form action="/admin/scans/{{ scan.id }}/flag" method="post"><button>Flag URL</button></form><a href="/admin/users?search={{ scan.email }}">View User</a></td></tr>{% endfor %}
       </tbody></table></section>
+
+      {% elif page == 'waitlist' %}
+      <div class="stat-grid small"><article>Total Signups <b>{{ data.total }}</b></article><article>Showing <b>{{ data.rows|length }}</b></article></div>
+      <form class="filters" method="get"><input name="search" value="{{ data.filters.search }}" placeholder="Search email"><button>Filter</button>{% if is_owner %}<a class="button-link" href="/admin/export/waitlist">Export CSV</a>{% endif %}</form>
+      <section class="admin-card"><table class="admin-table"><thead><tr><th>Email</th><th>Source</th><th>Joined</th></tr></thead><tbody>
+        {% for signup in data.rows %}<tr><td>{{ signup.email }}</td><td>{{ signup.source or 'footer' }}</td><td>{{ signup.created_at }}</td></tr>{% endfor %}
+      </tbody></table>{% if not data.rows %}<p>No waitlist signups found.</p>{% endif %}</section>
 
       {% elif page == 'reports' %}
       <div class="tabs"><a href="/admin/reports">Reports</a><a href="/admin/reports?tab=blocklist">Blocklist</a></div>

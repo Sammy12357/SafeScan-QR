@@ -2994,6 +2994,23 @@ def fetch_reports(tab="reports"):
         blocklist = [dict(row) for row in conn.execute("SELECT * FROM url_blocklist WHERE removed_at IS NULL ORDER BY created_at DESC LIMIT 200")]
     return {"reports": reports, "blocklist": blocklist, "tab": tab}
 
+def fetch_waitlist(search="", limit=500):
+    clauses = []
+    params = []
+    if search:
+        clauses.append("email LIKE ?")
+        params.append(f"%{search}%")
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    bounded_limit = max(1, min(int(limit or 500), 5000))
+    with get_conn() as conn:
+        conn.row_factory = sqlite3.Row
+        rows = [dict(row) for row in conn.execute(
+            f"SELECT email, source, created_at FROM waitlist_signups {where} ORDER BY created_at DESC LIMIT ?",
+            params + [bounded_limit],
+        )]
+        total = conn.execute("SELECT COUNT(*) FROM waitlist_signups").fetchone()[0]
+    return {"rows": rows, "total": total, "filters": {"search": search}, "limit": bounded_limit}
+
 def fetch_airdrop_data():
     users = fetch_admin_users(limit=10000)["rows"]
     wallet_users = [row for row in users if row.get("wallet_address")]
@@ -3254,6 +3271,22 @@ async def admin_export_users(request: Request):
 @qr_app.get("/admin/scans", response_class=HTMLResponse)
 async def admin_scans(request: Request, search: str = Query(""), verdict: str = Query(""), user: str = Query("")):
     return admin_context(request, "All Scans", "scans", fetch_scans(search=search, verdict=verdict, user=user))
+
+@qr_app.get("/admin/waitlist", response_class=HTMLResponse)
+async def admin_waitlist(request: Request, search: str = Query("")):
+    return admin_context(request, "Waitlist", "waitlist", fetch_waitlist(search=search))
+
+@qr_app.get("/admin/export/waitlist")
+async def admin_export_waitlist(request: Request):
+    owner = require_role_user(request, "owner")
+    rows = fetch_waitlist(limit=5000)["rows"]
+    out = io.StringIO()
+    writer = csv.DictWriter(out, fieldnames=["email", "source", "created_at"])
+    writer.writeheader()
+    for row in rows:
+        writer.writerow({key: row.get(key, "") for key in writer.fieldnames})
+    audit_log("admin.export", request=request, actor_user_id=owner.get("google_id"), target_type="waitlist")
+    return Response(out.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=safescan-waitlist.csv"})
 
 @qr_app.post("/admin/scans/{scan_id}/flag")
 async def admin_flag_scan(request: Request, scan_id: str):

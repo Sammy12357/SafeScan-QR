@@ -139,3 +139,55 @@ def test_unauthenticated_scan_history_returns_401(security_app):
     response = client.get("/api/scan-history")
 
     assert response.status_code == 401
+
+
+def test_waitlist_admin_page_requires_admin(security_app):
+    _, client, db_path = security_app
+    register(client, "user@example.com")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO waitlist_signups VALUES (?, ?, ?)",
+            ("lead@example.com", "footer", "2026-05-11T12:00:00Z"),
+        )
+
+    response = client.get("/admin/waitlist", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"
+
+
+def test_admin_can_view_waitlist_signups(security_app):
+    _, client, db_path = security_app
+    register(client, "admin@example.com")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO waitlist_signups VALUES (?, ?, ?)",
+            ("lead@example.com", "footer", "2026-05-11T12:00:00Z"),
+        )
+
+    response = client.get("/admin/waitlist")
+
+    assert response.status_code == 200
+    assert "lead@example.com" in response.text
+    assert "Waitlist" in response.text
+
+
+def test_waitlist_export_requires_owner(security_app):
+    _, admin_client, db_path = security_app
+    register(admin_client, "admin@example.com")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO waitlist_signups VALUES (?, ?, ?)",
+            ("lead@example.com", "footer", "2026-05-11T12:00:00Z"),
+        )
+
+    denied = admin_client.get("/admin/export/waitlist", follow_redirects=False)
+
+    owner_client = TestClient(sys.modules["hackabull"].qr_app, base_url="https://testserver")
+    register(owner_client, "owner@example.com")
+    allowed = owner_client.get("/admin/export/waitlist")
+
+    assert denied.status_code == 403
+    assert allowed.status_code == 200
+    assert allowed.headers["content-type"].startswith("text/csv")
+    assert "lead@example.com" in allowed.text
