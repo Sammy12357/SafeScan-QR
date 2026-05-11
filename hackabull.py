@@ -2995,20 +2995,40 @@ def fetch_reports(tab="reports"):
     return {"reports": reports, "blocklist": blocklist, "tab": tab}
 
 def fetch_waitlist(search="", limit=500):
-    clauses = []
-    params = []
-    if search:
-        clauses.append("email LIKE ?")
-        params.append(f"%{search}%")
-    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     bounded_limit = max(1, min(int(limit or 500), 5000))
-    with get_conn() as conn:
-        conn.row_factory = sqlite3.Row
-        rows = [dict(row) for row in conn.execute(
-            f"SELECT email, source, created_at FROM waitlist_signups {where} ORDER BY created_at DESC LIMIT ?",
-            params + [bounded_limit],
-        )]
-        total = conn.execute("SELECT COUNT(*) FROM waitlist_signups").fetchone()[0]
+    normalized_search = (search or "").strip().lower()
+    candidates = [database_path(), "/app/data/qr_cache.db", "/var/data/qr_cache.db"]
+    seen_paths = []
+    signups = {}
+    total = 0
+    for candidate in candidates:
+        if not candidate or candidate in seen_paths or not os.path.exists(candidate):
+            continue
+        seen_paths.append(candidate)
+        try:
+            with sqlite3.connect(candidate) as conn:
+                conn.row_factory = sqlite3.Row
+                table = conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'waitlist_signups'"
+                ).fetchone()
+                if not table:
+                    continue
+                rows = conn.execute(
+                    "SELECT email, source, created_at FROM waitlist_signups ORDER BY created_at DESC LIMIT ?",
+                    (bounded_limit,),
+                ).fetchall()
+        except sqlite3.Error:
+            continue
+        for row in rows:
+            email = (row["email"] or "").strip().lower()
+            if not email or (normalized_search and normalized_search not in email):
+                continue
+            existing = signups.get(email)
+            current = dict(row)
+            if not existing or str(current.get("created_at") or "") > str(existing.get("created_at") or ""):
+                signups[email] = current
+    rows = sorted(signups.values(), key=lambda row: row.get("created_at") or "", reverse=True)[:bounded_limit]
+    total = len(signups)
     return {"rows": rows, "total": total, "filters": {"search": search}, "limit": bounded_limit}
 
 def fetch_airdrop_data():

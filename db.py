@@ -51,6 +51,8 @@ def database_path() -> str:
     sqlite_path = os.getenv("SQLITE_DB_PATH")
     if sqlite_path:
         return sqlite_path
+    if os.path.exists("/app/data/qr_cache.db") or (os.path.isdir("/app/data") and os.access("/app/data", os.W_OK)):
+        return "/app/data/qr_cache.db"
     if os.path.isdir("/var/data") and os.access("/var/data", os.W_OK):
         return "/var/data/qr_cache.db"
     return "qr_cache.db"

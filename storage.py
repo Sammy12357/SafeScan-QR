@@ -18,6 +18,9 @@ def data_dir() -> Path:
     configured = os.getenv("DATA_DIR")
     if configured:
         return Path(configured)
+    legacy_render_disk = Path("/app/data")
+    if legacy_render_disk.exists() or (legacy_render_disk.parent.is_dir() and os.access(legacy_render_disk.parent, os.W_OK)):
+        return legacy_render_disk
     default_render_disk = Path("/var/data")
     if default_render_disk.is_dir() and os.access(default_render_disk, os.W_OK):
         return default_render_disk

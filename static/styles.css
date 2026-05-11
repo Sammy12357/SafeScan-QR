@@ -83,9 +83,10 @@ body {
 .spline-showcase.webgl-ready .device-orbit,
 .spline-showcase.spline-loaded .device-orbit,
 .spline-showcase.spline-loaded .three-scene { opacity: 0; pointer-events: none; }
+.spline-showcase.webgl-fallback .device-orbit { opacity: 1; }
 .spline-embed, .spline-embed iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 .spline-embed:not(:empty) ~ .device-orbit { opacity: 0; pointer-events: none; }
-.device-orbit { position: absolute; inset: 24px; display: grid; place-items: center; perspective: 1100px; opacity: 0; }
+.device-orbit { position: absolute; inset: 24px; display: grid; place-items: center; perspective: 1100px; opacity: 1; }
 .device-orbit::before { content: ""; position: absolute; width: 72%; aspect-ratio: 1; border: 1px solid rgba(103, 242, 200, 0.2); border-radius: 50%; transform: rotateX(68deg); box-shadow: inset 0 0 36px rgba(103, 242, 200, 0.08); }
 .phone-model { position: relative; width: min(68%, 300px); aspect-ratio: 0.52; padding: 22px 18px 18px; border: 1px solid rgba(255, 255, 255, 0.24); border-radius: 36px; background: linear-gradient(145deg, #111b2b, #05080d); box-shadow: 0 48px 90px rgba(0, 0, 0, 0.45), inset 0 0 0 8px rgba(255, 255, 255, 0.035); transform: rotateY(-18deg) rotateX(10deg); animation: modelFloat 7s ease-in-out infinite; }
 .phone-sensor { width: 72px; height: 7px; margin: 0 auto 18px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); }

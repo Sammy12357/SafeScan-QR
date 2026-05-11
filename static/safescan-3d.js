@@ -1,9 +1,17 @@
-import * as THREE from "/static/vendor/three.module.js";
-
 const canvas = document.getElementById("safeScanModel");
 const showcase = document.querySelector(".spline-showcase");
+let THREE = null;
 
 if (canvas && showcase && !showcase.dataset.splineSrc?.trim()) {
+  try {
+    THREE = await import("/static/vendor/three.module.js?v=local-three-v2");
+  } catch (error) {
+    console.error("SafeScan 3D model failed to load Three.js", error);
+    showcase.classList.add("webgl-fallback");
+  }
+}
+
+if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim()) {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
   camera.position.set(0, 0.45, 7.2);
