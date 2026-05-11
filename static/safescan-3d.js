@@ -1,4 +1,4 @@
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js";
+import * as THREE from "/static/vendor/three.module.js";
 
 const canvas = document.getElementById("safeScanModel");
 const showcase = document.querySelector(".spline-showcase");
