@@ -1,32 +1,47 @@
 import sqlite3
 import os
 import asyncio
-import base58
 import json
 from datetime import datetime
 from dotenv import load_dotenv
-from solana.rpc.async_api import AsyncClient
-from solders.pubkey import Pubkey
-from solders.keypair import Keypair
-from solders.transaction import VersionedTransaction
-from solders.message import MessageV0
-from spl.token.instructions import (
-    get_associated_token_address,
-    create_associated_token_account,
-    transfer_checked,
-    TransferCheckedParams
-)
-from spl.token.constants import TOKEN_PROGRAM_ID
 
 try:
-    from spl.token.constants import TOKEN_2022_PROGRAM_ID
+    import base58
+    from solana.rpc.async_api import AsyncClient
+    from solders.pubkey import Pubkey
+    from solders.keypair import Keypair
+    from solders.transaction import VersionedTransaction
+    from solders.message import MessageV0
+    from spl.token.instructions import (
+        get_associated_token_address,
+        create_associated_token_account,
+        transfer_checked,
+        TransferCheckedParams
+    )
+    from spl.token.constants import TOKEN_PROGRAM_ID
+    try:
+        from spl.token.constants import TOKEN_2022_PROGRAM_ID
+    except ImportError:
+        TOKEN_2022_PROGRAM_ID = None
 except ImportError:
+    base58 = None
+    AsyncClient = None
+    Pubkey = None
+    Keypair = None
+    VersionedTransaction = None
+    MessageV0 = None
+    get_associated_token_address = None
+    create_associated_token_account = None
+    transfer_checked = None
+    TransferCheckedParams = None
+    TOKEN_PROGRAM_ID = None
     TOKEN_2022_PROGRAM_ID = None
 
 load_dotenv()
 
 # SQR Configuration
-MINT_ADDRESS = Pubkey.from_string("Bpdt7Hey78HeEEr9Q6x19gYAns5n6w44LdjJhxN3pump")
+MINT_ADDRESS_VALUE = "Bpdt7Hey78HeEEr9Q6x19gYAns5n6w44LdjJhxN3pump"
+MINT_ADDRESS = Pubkey.from_string(MINT_ADDRESS_VALUE) if Pubkey is not None else MINT_ADDRESS_VALUE
 AIRDROP_BASE_ALLOCATION = int(os.getenv("SQR_BASE_ALLOCATION", "100"))
 AIRDROP_TOKEN_ALLOCATIONS = {
     "Scanner": AIRDROP_BASE_ALLOCATION,
@@ -34,6 +49,12 @@ AIRDROP_TOKEN_ALLOCATIONS = {
     "Guardian": AIRDROP_BASE_ALLOCATION * 5,
 }
 RPC_URL = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
+AIRDROP_ENABLED = os.getenv("AIRDROP_ENABLED", "false").lower() in ("1", "true", "yes", "on")
+SOLANA_MAINNET_ENABLED = os.getenv("SOLANA_MAINNET_ENABLED", "false").lower() in ("1", "true", "yes", "on")
+AIRDROP_DRY_RUN = os.getenv("AIRDROP_DRY_RUN", "true").lower() in ("1", "true", "yes", "on")
+AIRDROP_MAX_RECIPIENTS_PER_RUN = int(os.getenv("AIRDROP_MAX_RECIPIENTS_PER_RUN", "25"))
+AIRDROP_MAX_TOKENS_PER_RUN = int(os.getenv("AIRDROP_MAX_TOKENS_PER_RUN", "2500"))
+AIRDROP_ADMIN_SECRET = os.getenv("AIRDROP_ADMIN_SECRET", "")
 
 
 def describe_exception(exc):
@@ -42,6 +63,38 @@ def describe_exception(exc):
         "type": type(exc).__name__,
         "message": message
     }
+
+
+def is_mainnet_rpc(rpc_url=RPC_URL):
+    return "mainnet" in (rpc_url or "").lower()
+
+
+def validate_airdrop_runtime():
+    if not AIRDROP_ENABLED:
+        raise RuntimeError("Airdrop sweep is disabled. Set AIRDROP_ENABLED=true to run it.")
+    if is_mainnet_rpc() and not SOLANA_MAINNET_ENABLED:
+        raise RuntimeError("Mainnet airdrop is disabled. Set SOLANA_MAINNET_ENABLED=true to allow mainnet transfers.")
+    if not AIRDROP_ADMIN_SECRET or len(AIRDROP_ADMIN_SECRET) < 16:
+        raise RuntimeError("AIRDROP_ADMIN_SECRET must be set to a strong value before running an airdrop.")
+    if AIRDROP_MAX_RECIPIENTS_PER_RUN < 1:
+        raise RuntimeError("AIRDROP_MAX_RECIPIENTS_PER_RUN must be at least 1.")
+    if AIRDROP_MAX_TOKENS_PER_RUN < 1:
+        raise RuntimeError("AIRDROP_MAX_TOKENS_PER_RUN must be at least 1.")
+
+
+def require_solana_runtime():
+    missing = [
+        name
+        for name, value in {
+            "base58": base58,
+            "solana": AsyncClient,
+            "solders": Pubkey,
+            "spl-token": transfer_checked,
+        }.items()
+        if value is None
+    ]
+    if missing:
+        raise RuntimeError(f"Solana airdrop dependencies are not installed: {', '.join(missing)}")
 
 
 def associated_token_address(owner, token_program_id):
@@ -72,6 +125,7 @@ def create_token_account_instruction(payer, owner, token_program_id):
 
 
 def load_server_wallet():
+    require_solana_runtime()
     pk_str = os.getenv("SOLANA_PRIVATE_KEY")
     if not pk_str:
         raise RuntimeError("SOLANA_PRIVATE_KEY is not set.")
@@ -182,6 +236,8 @@ def ensure_distribution_columns(cursor):
 
 async def airdrop_sweep():
     print("\n--- SafeScan Airdrop Sweep ---")
+    validate_airdrop_runtime()
+    require_solana_runtime()
     client = AsyncClient(RPC_URL)
     conn = None
 
@@ -200,13 +256,21 @@ async def airdrop_sweep():
             )
 
         # 1. Connect to Database
-        conn = sqlite3.connect('qr_cache.db')
+        conn = sqlite3.connect(os.path.join(os.getenv("DATA_DIR", "/app/data"), "qr_cache.db"))
         cursor = conn.cursor()
         ensure_distribution_columns(cursor)
         conn.commit()
 
         winners, skipped = fetch_qualified_recipients(cursor)
+        if len(winners) > AIRDROP_MAX_RECIPIENTS_PER_RUN:
+            raise RuntimeError(
+                f"Airdrop recipient limit exceeded: {len(winners)} > {AIRDROP_MAX_RECIPIENTS_PER_RUN}."
+            )
         total_tokens_to_send = sum(winner["amount"] for winner in winners)
+        if total_tokens_to_send > AIRDROP_MAX_TOKENS_PER_RUN:
+            raise RuntimeError(
+                f"Airdrop token limit exceeded: {total_tokens_to_send} > {AIRDROP_MAX_TOKENS_PER_RUN}."
+            )
         total_required_raw = total_tokens_to_send * (10 ** decimals)
 
         server_balance = await get_token_balance(client, server_ata)
@@ -241,6 +305,19 @@ async def airdrop_sweep():
             amount = int(winner["amount"])
             amount_raw = amount * (10 ** decimals)
             try:
+                if AIRDROP_DRY_RUN:
+                    print(f"DRY RUN: would send {amount} SQR to {email}")
+                    summary["sent"].append({
+                        "email": email,
+                        "wallet": wallet_str,
+                        "tier": winner["tier"],
+                        "amount": amount,
+                        "signature": "dry-run",
+                        "explorer_url": None,
+                        "dry_run": True,
+                    })
+                    continue
+
                 if not wallet_str:
                     print(f"SKIPPED {email}: no wallet address saved.")
                     summary["skipped"].append({"email": email, "reason": "No wallet address saved."})
