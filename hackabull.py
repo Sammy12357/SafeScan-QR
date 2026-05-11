@@ -1435,7 +1435,7 @@ def classify_qr_with_ml(payload, image=None, input_source="generated_qr"):
         import ml_model as _ml_mod
         result = _ml_mod.predict(image)
 
-        mal_prob_float = result["malicious_prob"]          # e.g. 73.4  (0â€“100, 1 dp)
+        mal_prob_float = result["malicious_prob"]          # e.g. 73.4  (0–100, 1 dp)
         safe_prob_float = result["safe_prob"]
         malicious_probability = mal_prob_float / 100.0
         benign_probability = safe_prob_float / 100.0
@@ -2595,6 +2595,7 @@ def decode_barcodes_with_zxing(image, qr_only=False):
     return decoded
 
 qr_app = FastAPI()
+app = qr_app
 
 
 @qr_app.get("/health", include_in_schema=False)
