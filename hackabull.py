@@ -108,7 +108,6 @@ ALLOWED_ORIGINS = sorted({
     ).split(",")
     if origin.strip())
 })
-GOOGLE_SIGN_IN_ORIGINS = {"https://accounts.google.com", "https://www.gstatic.com"}
 SESSION_COOKIE_NAME = "__Host-safescan_session"
 SESSION_TTL_SECONDS = 24 * 60 * 60
 SESSION_IDLE_SECONDS = 7 * 24 * 60 * 60
@@ -2649,7 +2648,7 @@ qr_app.add_middleware(
 async def enforce_origin(request: Request, call_next):
     origin = request.headers.get("origin")
     if request.method in ("POST", "PUT", "PATCH", "DELETE") and origin:
-        google_sign_in_callback = request.url.path == "/auth/google" and origin in GOOGLE_SIGN_IN_ORIGINS
+        google_sign_in_callback = request.url.path == "/auth/google"
         if origin not in ALLOWED_ORIGINS and not google_sign_in_callback:
             return JSONResponse({"error": "Origin not allowed."}, status_code=403)
     return await call_next(request)
