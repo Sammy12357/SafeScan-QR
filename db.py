@@ -45,6 +45,9 @@ def database_path() -> str:
         if parsed.netloc:
             return unquote(f"//{parsed.netloc}{parsed.path}")
         return unquote(parsed.path.lstrip("/")) if os.name == "nt" else unquote(parsed.path)
+    data_dir = os.getenv("DATA_DIR")
+    if data_dir:
+        return os.path.join(data_dir, "qr_cache.db")
     return os.getenv("SQLITE_DB_PATH", "qr_cache.db")
 
 
