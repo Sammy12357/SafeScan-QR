@@ -37,6 +37,40 @@ from db import (
     set_rls_context,
     user_scoped_select,
 )
+from storage import backend_status as storage_backend_status
+from storage import download_file as storage_download_file
+from storage import object_key as storage_object_key
+from storage import upload_bytes as storage_upload_bytes
+
+try:
+    from prometheus_client import Counter, Gauge, Histogram, CONTENT_TYPE_LATEST, generate_latest
+except ImportError:
+    CONTENT_TYPE_LATEST = "text/plain; version=0.0.4; charset=utf-8"
+
+    class _Metric:
+        def labels(self, **kwargs):
+            return self
+
+        def inc(self, amount=1):
+            return None
+
+        def dec(self, amount=1):
+            return None
+
+        def observe(self, value):
+            return None
+
+    def Counter(*args, **kwargs):
+        return _Metric()
+
+    def Gauge(*args, **kwargs):
+        return _Metric()
+
+    def Histogram(*args, **kwargs):
+        return _Metric()
+
+    def generate_latest():
+        return b"# prometheus-client is not installed\n"
 
 warnings.filterwarnings("ignore", category=ImportWarning)
 load_dotenv()
@@ -91,10 +125,21 @@ ALPHA_SOLANA_MESSAGE = os.getenv("ALPHA_SOLANA_MESSAGE", "Alpha access to SafeSc
 MOCK_MODE = os.getenv("MOCK_MODE", "false").lower() in ("1", "true", "yes", "on")
 ML_MODEL_ENABLED = os.getenv("SAFESCAN_ML_ENABLED", "true").lower() in ("1", "true", "yes", "on")
 ML_MODEL_PATH = os.getenv("SAFESCAN_ML_MODEL_PATH", os.path.join(os.path.dirname(__file__), "models", "safescan_qr_model.keras"))
+os.environ["SAFESCAN_ML_MODEL_PATH"] = ML_MODEL_PATH
+ML_MODEL_OBJECT_KEY = os.getenv("ML_MODEL_OBJECT_KEY", "models/safescan_qr_model.keras")
 ML_MODEL_WEIGHT = max(0.0, min(1.0, float(os.getenv("SAFESCAN_ML_WEIGHT", "0.65"))))
 ML_MALICIOUS_CLASS_INDEX = int(os.getenv("SAFESCAN_ML_MALICIOUS_CLASS_INDEX", "1"))
 LOCAL_AUTH_ENABLED = MOCK_MODE or APP_URL.startswith("http://127.0.0.1") or APP_URL.startswith("http://localhost")
 APP_STARTED_AT = datetime.utcnow()
+REQUEST_COUNT = Counter("safescan_requests_total", "Total HTTP requests", ["method", "path", "status"])
+REQUEST_LATENCY = Histogram(
+    "safescan_request_duration_seconds",
+    "HTTP request latency in seconds",
+    ["path"],
+    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0],
+)
+ACTIVE_SCANS = Gauge("safescan_active_scans", "In-flight scan requests")
+QR_UPLOADS = Counter("safescan_qr_uploads_total", "Stored QR upload artifacts", ["backend"])
 HIGH_RISK_TLDS = {".xyz", ".top", ".click", ".gq", ".tk", ".ml", ".cf"}
 URL_SHORTENERS = {"bit.ly", "t.co", "tinyurl.com", "goo.gl", "ow.ly", "is.gd", "buff.ly", "cutt.ly", "rebrand.ly", "shorturl.at"}
 BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
@@ -188,6 +233,11 @@ def init_db():
                         (id TEXT PRIMARY KEY, email TEXT NOT NULL, url TEXT NOT NULL,
                          risk_score INTEGER, verdict TEXT, signals TEXT,
                          reported INTEGER DEFAULT 0, created_at TEXT NOT NULL)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS upload_artifacts
+                        (id TEXT PRIMARY KEY, user_id TEXT, email TEXT,
+                         object_key TEXT NOT NULL, backend TEXT NOT NULL,
+                         content_type TEXT, byte_size INTEGER NOT NULL,
+                         sha256 TEXT NOT NULL, created_at TEXT NOT NULL)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS url_reports
                         (id TEXT PRIMARY KEY, url TEXT NOT NULL, reporter_email TEXT,
                          reason TEXT NOT NULL, risk_score INTEGER, status TEXT NOT NULL DEFAULT 'pending',
@@ -240,6 +290,7 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_abuse_email ON abuse_flags(email)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_scan_history_email ON scan_history(email)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_scan_history_created ON scan_history(created_at)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_upload_artifacts_user_id ON upload_artifacts(user_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_reports_status ON url_reports(status)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_blocklist_url ON url_blocklist(url)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_ip_registry_ip ON ip_registry(ip_address)")
@@ -905,6 +956,45 @@ def save_scan_history(email, url, analysis, reported=False):
             )
         )
 
+
+def persist_qr_upload(content: bytes, filename: str, content_type: str, user: dict | None):
+    if not content:
+        return None
+    user_id = (user or {}).get("google_id") or (user or {}).get("email")
+    email = (user or {}).get("email")
+    key = storage_object_key("qr-uploads", filename or "upload.bin", user_id, content)
+    artifact = storage_upload_bytes(content, key, content_type or "application/octet-stream")
+    digest = hashlib.sha256(content).hexdigest()
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO upload_artifacts VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                make_id("upload"),
+                user_id,
+                email,
+                artifact["key"],
+                artifact["backend"],
+                content_type or "application/octet-stream",
+                len(content),
+                digest,
+                now_iso(),
+            ),
+        )
+    QR_UPLOADS.labels(backend=artifact["backend"]).inc()
+    return artifact
+
+
+def ensure_ml_model_available():
+    if not ML_MODEL_ENABLED or os.path.exists(ML_MODEL_PATH):
+        return
+    if not ML_MODEL_OBJECT_KEY:
+        return
+    try:
+        storage_download_file(ML_MODEL_OBJECT_KEY, ML_MODEL_PATH)
+    except Exception as exc:
+        print({"warning": "ML model download failed", "error": str(exc)})
+
+
 def plain_action(action):
     labels = {
         "user.login": "User logged in",
@@ -1330,6 +1420,7 @@ def classify_qr_with_ml(payload, image=None, input_source="generated_qr"):
             image = generated_image
             input_source = "generated_qr"
 
+        ensure_ml_model_available()
         import ml_model as _ml_mod
         result = _ml_mod.predict(image)
 
@@ -2493,6 +2584,39 @@ def decode_barcodes_with_zxing(image, qr_only=False):
     return decoded
 
 qr_app = FastAPI()
+
+
+@qr_app.get("/health", include_in_schema=False)
+async def health_check():
+    """Lightweight liveness probe - does not touch the DB."""
+    return {"status": "ok"}
+
+
+@qr_app.get("/health/live", include_in_schema=False)
+async def health_live():
+    return {"status": "alive"}
+
+
+@qr_app.get("/health/ready", include_in_schema=False)
+async def health_ready():
+    try:
+        with sqlite3.connect(database_path(), timeout=2) as conn:
+            conn.execute("SELECT 1")
+        storage = storage_backend_status()
+        return {"status": "ready", "storage": storage["backend"]}
+    except Exception as exc:
+        return JSONResponse({"status": "not_ready", "error": str(exc)}, status_code=503)
+
+
+@qr_app.get("/metrics", include_in_schema=False)
+async def metrics(request: Request):
+    ip = request_ip(request)
+    allowed = [item.strip() for item in os.getenv("METRICS_ALLOWED_IPS", "127.0.0.1,::1").split(",") if item.strip()]
+    if ip not in allowed:
+        raise HTTPException(status_code=403)
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
 qr_app.mount("/static", StaticFiles(directory="static"), name="static")
 
 qr_app.add_middleware(
@@ -2596,6 +2720,23 @@ async def security_headers_and_rate_limits(request: Request, call_next):
         if api_limit:
             return apply_security_headers(request, api_limit)
     return await call_next(request)
+
+
+@qr_app.middleware("http")
+async def metrics_middleware(request: Request, call_next):
+    start = time.monotonic()
+    if request.url.path in ("/api/scan", "/api/scan/file", "/search_qr_api"):
+        ACTIVE_SCANS.inc()
+    try:
+        response = await call_next(request)
+        return response
+    finally:
+        duration = time.monotonic() - start
+        status = getattr(locals().get("response", None), "status_code", 500)
+        REQUEST_COUNT.labels(method=request.method, path=request.url.path, status=str(status)).inc()
+        REQUEST_LATENCY.labels(path=request.url.path).observe(duration)
+        if request.url.path in ("/api/scan", "/api/scan/file", "/search_qr_api"):
+            ACTIVE_SCANS.dec()
 
 @qr_app.exception_handler(SafeScanError)
 async def safe_scan_error_handler(request: Request, exc: SafeScanError):
@@ -3230,6 +3371,7 @@ async def api_scan_file(request: Request, file: UploadFile = File(...)):
     if len(contents) > MAX_QR_UPLOAD_BYTES:
         raise SafeScanError(f"Uploaded file is too large. Use a file under {MAX_QR_UPLOAD_BYTES // (1024 * 1024)} MB.", 400)
 
+    persist_qr_upload(contents, file.filename, file.content_type, user)
     raw_payload, qr_image_for_ml = decode_qr_upload(contents, file.filename, file.content_type)
     if not raw_payload:
         raise SafeScanError("No QR code or valid payload detected in this file.", 400)
@@ -3375,10 +3517,6 @@ async def api_app_runtime():
         "serverNow": now.isoformat() + "Z",
         "uptimeSeconds": int((now - APP_STARTED_AT).total_seconds()),
     }
-
-@qr_app.get("/health")
-async def health():
-    return {"status": "ok"}
 
 @qr_app.post("/api/report")
 async def api_report_url(request: Request, payload: dict = Body(...)):
@@ -4093,6 +4231,7 @@ async def scan_qr(
                 "version": LEGAL_VERSION,
                 **index_user_context(user)
             })
+        persist_qr_upload(contents, file.filename, file.content_type, user)
         url_qr, qr_image_for_ml = decode_qr_upload(contents, file.filename, file.content_type)
 
     if not url_qr:
