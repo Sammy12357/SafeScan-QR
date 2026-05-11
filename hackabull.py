@@ -47,30 +47,40 @@ try:
 except ImportError:
     CONTENT_TYPE_LATEST = "text/plain; version=0.0.4; charset=utf-8"
 
-    class _Metric:
-        def labels(self, **kwargs):
-            return self
-
-        def inc(self, amount=1):
-            return None
-
-        def dec(self, amount=1):
-            return None
-
-        def observe(self, value):
-            return None
-
     def Counter(*args, **kwargs):
-        return _Metric()
+        return _NoopMetric()
 
     def Gauge(*args, **kwargs):
-        return _Metric()
+        return _NoopMetric()
 
     def Histogram(*args, **kwargs):
-        return _Metric()
+        return _NoopMetric()
 
     def generate_latest():
         return b"# prometheus-client is not installed\n"
+
+
+class _NoopMetric:
+    def labels(self, **kwargs):
+        return self
+
+    def inc(self, amount=1):
+        return None
+
+    def dec(self, amount=1):
+        return None
+
+    def observe(self, value):
+        return None
+
+
+def build_metric(factory, *args, **kwargs):
+    try:
+        return factory(*args, **kwargs)
+    except ValueError as exc:
+        if "Duplicated timeseries" in str(exc):
+            return _NoopMetric()
+        raise
 
 warnings.filterwarnings("ignore", category=ImportWarning)
 load_dotenv()
@@ -131,15 +141,16 @@ ML_MODEL_WEIGHT = max(0.0, min(1.0, float(os.getenv("SAFESCAN_ML_WEIGHT", "0.65"
 ML_MALICIOUS_CLASS_INDEX = int(os.getenv("SAFESCAN_ML_MALICIOUS_CLASS_INDEX", "1"))
 LOCAL_AUTH_ENABLED = MOCK_MODE or APP_URL.startswith("http://127.0.0.1") or APP_URL.startswith("http://localhost")
 APP_STARTED_AT = datetime.utcnow()
-REQUEST_COUNT = Counter("safescan_requests_total", "Total HTTP requests", ["method", "path", "status"])
-REQUEST_LATENCY = Histogram(
+REQUEST_COUNT = build_metric(Counter, "safescan_requests_total", "Total HTTP requests", ["method", "path", "status"])
+REQUEST_LATENCY = build_metric(
+    Histogram,
     "safescan_request_duration_seconds",
     "HTTP request latency in seconds",
     ["path"],
     buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0],
 )
-ACTIVE_SCANS = Gauge("safescan_active_scans", "In-flight scan requests")
-QR_UPLOADS = Counter("safescan_qr_uploads_total", "Stored QR upload artifacts", ["backend"])
+ACTIVE_SCANS = build_metric(Gauge, "safescan_active_scans", "In-flight scan requests")
+QR_UPLOADS = build_metric(Counter, "safescan_qr_uploads_total", "Stored QR upload artifacts", ["backend"])
 HIGH_RISK_TLDS = {".xyz", ".top", ".click", ".gq", ".tk", ".ml", ".cf"}
 URL_SHORTENERS = {"bit.ly", "t.co", "tinyurl.com", "goo.gl", "ow.ly", "is.gd", "buff.ly", "cutt.ly", "rebrand.ly", "shorturl.at"}
 BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
