@@ -98,14 +98,17 @@ DEFAULT_ADMIN_EMAILS = {"homzajoe@gmail.com", "restreposamuel2004@gmail.com"}
 ADMIN_EMAILS = DEFAULT_ADMIN_EMAILS | {email.strip().lower() for email in os.getenv("ADMIN_EMAILS", ADMIN_EMAIL).split(",") if email.strip()}
 OWNER_EMAILS = {email.strip().lower() for email in os.getenv("OWNER_EMAILS", "").split(",") if email.strip()} or {ADMIN_EMAIL.strip().lower()}
 APP_URL = os.getenv("APP_URL", "https://safescan-qr.onrender.com").rstrip("/")
-ALLOWED_ORIGINS = [
-    origin.strip()
+APP_ORIGIN = "{uri.scheme}://{uri.netloc}".format(uri=urlparse(APP_URL)) if urlparse(APP_URL).scheme and urlparse(APP_URL).netloc else APP_URL
+ALLOWED_ORIGINS = sorted({
+    APP_ORIGIN,
+    *(origin.strip()
     for origin in os.getenv(
         "CORS_ALLOWED_ORIGINS",
         "https://safescan-qr.onrender.com",
     ).split(",")
-    if origin.strip()
-]
+    if origin.strip())
+})
+GOOGLE_SIGN_IN_ORIGINS = {"https://accounts.google.com", "https://www.gstatic.com"}
 SESSION_COOKIE_NAME = "__Host-safescan_session"
 SESSION_TTL_SECONDS = 24 * 60 * 60
 SESSION_IDLE_SECONDS = 7 * 24 * 60 * 60
@@ -2646,7 +2649,8 @@ qr_app.add_middleware(
 async def enforce_origin(request: Request, call_next):
     origin = request.headers.get("origin")
     if request.method in ("POST", "PUT", "PATCH", "DELETE") and origin:
-        if origin not in ALLOWED_ORIGINS:
+        google_sign_in_callback = request.url.path == "/auth/google" and origin in GOOGLE_SIGN_IN_ORIGINS
+        if origin not in ALLOWED_ORIGINS and not google_sign_in_callback:
             return JSONResponse({"error": "Origin not allowed."}, status_code=403)
     return await call_next(request)
 
