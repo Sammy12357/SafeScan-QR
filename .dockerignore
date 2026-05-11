@@ -12,5 +12,4 @@ __pycache__
 .DS_Store
 tests/
 *.md
-models/
 node_modules/
