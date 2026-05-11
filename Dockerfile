@@ -1,22 +1,47 @@
-# Use a lightweight Python image
-FROM python:3.11-slim
+# -- Stage 1: builder ------------------------------------------------
+FROM python:3.11-slim AS builder
 
-# Install runtime libraries
-RUN apt-get update && apt-get install -y libzbar0 curl && rm -rf /var/lib/apt/lists/*
+WORKDIR /build
 
-# Set up the folder
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libzbar0 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+# -- Stage 2: runtime ------------------------------------------------
+FROM python:3.11-slim AS runtime
+
+# System deps only - no build tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libzbar0 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Non-root user
+RUN groupadd --system safescan && useradd --system --gid safescan --no-create-home safescan
+
 WORKDIR /app
-COPY . .
 
-# Install your Python libraries
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy installed packages from builder
+COPY --from=builder /install /usr/local
 
-RUN addgroup --system safescan && adduser --system --ingroup safescan safescan \
-  && chown -R safescan:safescan /app
+# Copy only application code
+COPY hackabull.py distribute.py scrop.py db.py storage.py ml_model.py ./
+COPY templates/ ./templates/
+COPY static/ ./static/
+
+# Data directory owned by app user
+RUN mkdir -p /app/data && chown safescan:safescan /app/data
+
 USER safescan
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -f http://localhost:8000/health || exit 1
+EXPOSE 8000
 
-# Start the server
-CMD uvicorn hackabull:qr_app --host 0.0.0.0 --port ${PORT:-8000}
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD curl -f http://localhost:8000/health/ready || exit 1
+
+CMD ["uvicorn", "hackabull:qr_app", "--host", "0.0.0.0", "--port", "8000", \
+     "--workers", "2", "--loop", "uvloop", "--http", "httptools"]
