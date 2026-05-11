@@ -14,7 +14,10 @@ import h5py
 import numpy as np
 from PIL import Image
 
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "safescan_qr_model.keras")
+MODEL_PATH = os.getenv(
+    "SAFESCAN_ML_MODEL_PATH",
+    os.path.join(os.path.dirname(__file__), "models", "safescan_qr_model.keras"),
+)
 _weights = None
 
 
@@ -91,32 +94,32 @@ def predict(pil_image):
     Run the CNN on a PIL image.
 
     Returns a dict with keys:
-        safe_prob       float  0–1
-        malicious_prob  float  0–1
+        safe_prob       float  0â€“1
+        malicious_prob  float  0â€“1
         label           str    'safe' | 'malicious'
-        confidence_pct  int    0–100 (confidence in the predicted class)
+        confidence_pct  int    0â€“100 (confidence in the predicted class)
     """
     w = _load_weights()
 
-    # Pre-process: resize to 32×32 RGB, normalise to [0,1]
+    # Pre-process: resize to 32Ã—32 RGB, normalise to [0,1]
     img = pil_image.convert("RGB").resize((32, 32), Image.LANCZOS)
     x = np.array(img, dtype=np.float32) / 255.0  # (32,32,3)
 
-    # Block 1: Conv → BN → ReLU → MaxPool
+    # Block 1: Conv â†’ BN â†’ ReLU â†’ MaxPool
     x = _conv2d_same(x, w["conv1_w"], w["conv1_b"])            # (32,32,32)
     x = _batch_norm(x, w["bn1_gamma"], w["bn1_beta"],
                     w["bn1_mean"], w["bn1_var"])
     x = _relu(x)
     x = _maxpool2d(x)                                           # (16,16,32)
 
-    # Block 2: Conv → BN → ReLU → MaxPool
+    # Block 2: Conv â†’ BN â†’ ReLU â†’ MaxPool
     x = _conv2d_same(x, w["conv2_w"], w["conv2_b"])            # (16,16,64)
     x = _batch_norm(x, w["bn2_gamma"], w["bn2_beta"],
                     w["bn2_mean"], w["bn2_var"])
     x = _relu(x)
     x = _maxpool2d(x)                                           # (8,8,64)
 
-    # Head: Flatten → Dense(128, relu) → Dense(2, linear) → Softmax
+    # Head: Flatten â†’ Dense(128, relu) â†’ Dense(2, linear) â†’ Softmax
     x = x.flatten()                                             # (4096,)
     x = _relu(x @ w["dense1_w"] + w["dense1_b"])               # (128,)
     logits = x @ w["dense2_w"] + w["dense2_b"]                 # (2,)
