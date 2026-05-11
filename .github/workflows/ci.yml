@@ -36,4 +36,4 @@ jobs:
       - name: Syntax check
         run: python -m py_compile hackabull.py db.py distribute.py scrop.py storage.py ml_model.py
       - name: Run tests
-        run: pytest tests/test_security.py tests/test_airdrop_safety.py tests/test_storage_monitoring.py -q
+        run: pytest tests/test_security.py tests/test_airdrop_safety.py tests/test_storage_monitoring.py tests/test_wallet_security_static.py -q
