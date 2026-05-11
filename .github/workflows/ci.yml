@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "codex/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: sqlite:///test_ci.db
+      APP_URL: https://testserver
+      MOCK_MODE: "true"
+      SAFESCAN_ML_ENABLED: "false"
+      AIRDROP_ENABLED: "false"
+      SOLANA_MAINNET_ENABLED: "false"
+      AIRDROP_DRY_RUN: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install system packages
+        run: sudo apt-get update && sudo apt-get install -y libzbar0
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+      - name: Syntax check
+        run: python -m py_compile hackabull.py db.py distribute.py scrop.py storage.py ml_model.py
+      - name: Run tests
+        run: pytest tests/test_security.py tests/test_airdrop_safety.py tests/test_storage_monitoring.py -q
