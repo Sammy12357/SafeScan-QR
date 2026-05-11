@@ -96,10 +96,18 @@
       position: relative; overflow: hidden;
     }
     .auth-google-btn:hover { border-color: rgba(255,255,255,0.28); background: rgba(255,255,255,0.04); }
-    .auth-google-native { display: grid; place-items: center; min-height: 44px; }
-    .auth-google-native .g_id_signin { width: 100%; min-height: 44px; }
-    .auth-google-native:empty { display: none; }
-    .auth-google-fallback { margin-top: 10px; }
+    .auth-google-btn svg,
+    .auth-google-btn span { position: relative; z-index: 1; pointer-events: none; }
+    .auth-google-native {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      opacity: 0.01;
+      overflow: hidden;
+    }
+    .auth-google-native:empty { pointer-events: none; }
+    .auth-google-native .g_id_signin,
+    .auth-google-native iframe { width: 100% !important; height: 100% !important; }
     .auth-google-help { margin: 10px 0 0; color: var(--muted); font-size: 0.75rem; line-height: 1.45; text-align: center; }
     .auth-terms { text-align: center; font-size: 0.75rem; color: var(--muted); margin-top: 20px; }
     .auth-terms a { color: var(--muted); text-decoration: underline; }
@@ -136,7 +144,7 @@
           </div>
           <div>
             <label for="login-password">Password</label>
-            <input id="login-password" type="password" name="password" required autocomplete="current-password" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢">
+            <input id="login-password" type="password" name="password" required autocomplete="current-password" placeholder="Password">
           </div>
           <button class="auth-submit" type="submit">Sign in</button>
         </form>
@@ -164,17 +172,17 @@
           data-state="{{ next_url }}"
           data-ux_mode="redirect"
         ></div>
-        <div id="googleButtonMount" class="auth-google-native"></div>
-        <button id="googleFallbackButton" class="auth-google-btn auth-google-fallback" type="button">
+        <button id="googleFallbackButton" class="auth-google-btn" type="button">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
             <path fill="#4285f4" d="M22.6 12.2c0-.8-.1-1.5-.2-2.2H12v4.2h5.9c-.3 1.4-1 2.5-2.1 3.2v2.7h3.4c2-1.8 3.4-4.5 3.4-7.9Z"/>
             <path fill="#34a853" d="M12 23c2.9 0 5.3-1 7.1-2.6l-3.4-2.7c-1 .6-2.2 1-3.7 1-2.8 0-5.1-1.9-6-4.4H2.5v2.8C4.3 20.6 7.9 23 12 23Z"/>
             <path fill="#fbbc05" d="M6 14.3c-.2-.6-.3-1.3-.3-2.1s.1-1.4.3-2.1V7.3H2.5C1.8 8.8 1.4 10.4 1.4 12.2s.4 3.4 1.1 4.9L6 14.3Z"/>
             <path fill="#ea4335" d="M12 5.7c1.6 0 3 .5 4.1 1.6l3-3C17.3 2.6 14.9 1.6 12 1.6 7.9 1.6 4.3 4 2.5 7.3L6 10.1c.9-2.5 3.2-4.4 6-4.4Z"/>
           </svg>
-          Continue with Google
+          <span>Continue with Google</span>
+          <div id="googleButtonMount" class="auth-google-native" aria-hidden="true"></div>
         </button>
-        <p id="googleSignInStatus" class="auth-google-help" aria-live="polite">If you are inside Phantom, keep this page open while Google redirects back to SafeScan.</p>
+        <p id="googleSignInStatus" class="auth-google-help" aria-live="polite">If Google does not open, try again after a moment.</p>
         {% endif %}
       </div>
 
@@ -188,7 +196,7 @@
           </div>
           <div>
             <label for="reg-password">Password <span>(min 8 characters)</span></label>
-            <input id="reg-password" type="password" name="password" required autocomplete="new-password" minlength="8" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢">
+            <input id="reg-password" type="password" name="password" required autocomplete="new-password" minlength="8" placeholder="At least 8 characters">
           </div>
           <button class="auth-submit" type="submit">Create account</button>
         </form>
