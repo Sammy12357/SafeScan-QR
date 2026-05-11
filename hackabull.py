@@ -28,6 +28,15 @@ import os
 from dotenv import load_dotenv
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
+from db import (
+    assert_owns_row,
+    clear_rls_context,
+    database_path,
+    get_conn,
+    rls_user_id,
+    set_rls_context,
+    user_scoped_select,
+)
 
 warnings.filterwarnings("ignore", category=ImportWarning)
 load_dotenv()
@@ -45,7 +54,15 @@ DEFAULT_ADMIN_EMAILS = {"homzajoe@gmail.com", "restreposamuel2004@gmail.com"}
 ADMIN_EMAILS = DEFAULT_ADMIN_EMAILS | {email.strip().lower() for email in os.getenv("ADMIN_EMAILS", ADMIN_EMAIL).split(",") if email.strip()}
 OWNER_EMAILS = {email.strip().lower() for email in os.getenv("OWNER_EMAILS", "").split(",") if email.strip()} or {ADMIN_EMAIL.strip().lower()}
 APP_URL = os.getenv("APP_URL", "https://safescan-qr.onrender.com").rstrip("/")
-SESSION_COOKIE_NAME = "safescan_session"
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ALLOWED_ORIGINS",
+        "https://safescan-qr.onrender.com",
+    ).split(",")
+    if origin.strip()
+]
+SESSION_COOKIE_NAME = "__Host-safescan_session"
 SESSION_TTL_SECONDS = 24 * 60 * 60
 SESSION_IDLE_SECONDS = 7 * 24 * 60 * 60
 MAX_QR_UPLOAD_BYTES = int(os.getenv("MAX_QR_UPLOAD_BYTES", str(8 * 1024 * 1024)))
@@ -113,7 +130,7 @@ def image_libs():
     return _IMAGE_LIBS
 
 def init_db():
-    conn = sqlite3.connect("qr_cache.db")
+    conn = sqlite3.connect(database_path())
     cursor = conn.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS scan_results (url TEXT PRIMARY KEY, status TEXT, timestamp TEXT)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS users (
@@ -298,7 +315,7 @@ def init_db():
 init_db()
 
 def db_connect():
-    return sqlite3.connect("qr_cache.db")
+    return get_conn()
 
 class SafeScanError(Exception):
     def __init__(self, message, status_code=400):
@@ -330,7 +347,7 @@ def sanitize_metadata(value):
 
 def audit_log(action, request=None, actor_user_id=None, target_type=None, target_id=None, metadata=None):
     try:
-        with sqlite3.connect("qr_cache.db") as conn:
+        with get_conn() as conn:
             conn.execute(
                 "INSERT INTO audit_logs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
@@ -357,8 +374,8 @@ def set_session_cookie(response, session_id):
         session_id,
         max_age=SESSION_TTL_SECONDS,
         httponly=True,
-        secure=_COOKIE_SECURE,
-        samesite=_COOKIE_SAMESITE,
+        secure=True,
+        samesite="strict",
         path="/",
     )
 
@@ -367,8 +384,8 @@ def clear_session_cookie(response):
         SESSION_COOKIE_NAME,
         path="/",
         httponly=True,
-        secure=_COOKIE_SECURE,
-        samesite=_COOKIE_SAMESITE,
+        secure=True,
+        samesite="strict",
     )
 
 def _b64url_decode(value):
@@ -447,7 +464,7 @@ def request_session_id(request):
 def create_session(google_id, request):
     session_id = secrets.token_urlsafe(32)
     created = datetime.utcnow()
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.execute(
             "INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
@@ -475,7 +492,7 @@ def get_session_user(request):
     session_id = request_session_id(request)
     if not session_id:
         return cache_session_user(None)
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
             """
@@ -511,7 +528,7 @@ def require_user(request):
     return user
 
 def require_user_from_google_id(google_id):
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute("SELECT google_id, email, username, display_name, picture, role, status, google_sub FROM users WHERE google_id = ?", (google_id,)).fetchone()
     if not row:
@@ -596,7 +613,7 @@ def follow_safe_redirects(target_url, max_redirects=10):
     raise requests.TooManyRedirects()
 
 def flag_abuse(email, flag_type, detail):
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.execute("INSERT INTO abuse_flags VALUES (?, ?, ?, ?, ?)", (make_id("flag"), email, flag_type, detail, now_iso()))
 
 def validate_wallet_address(address):
@@ -605,7 +622,7 @@ def validate_wallet_address(address):
         return "", None
     if not is_valid_solana_address(clean):
         raise SafeScanError("Invalid Solana wallet address.", 400)
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         row = conn.execute(
             """
             SELECT user_id FROM wallets WHERE address = ? AND verified = 1
@@ -653,19 +670,21 @@ def wallet_verification_message(nonce, email, issued_at, expires_at):
 
 def cleanup_wallet_nonces():
     cutoff = (datetime.utcnow() - timedelta(hours=1)).isoformat()
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.execute(
             "DELETE FROM wallet_nonces WHERE expires_at < ? OR (used = 1 AND created_at < ?)",
             (now_iso(), cutoff)
         )
 
 def get_verified_wallet(user_id):
-    with sqlite3.connect("qr_cache.db") as conn:
-        conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT * FROM wallets WHERE user_id = ? AND verified = 1",
-            (user_id,)
-        ).fetchone()
+    with get_conn() as conn:
+        rows = user_scoped_select(conn, "wallets", "verified = 1")
+        row = next((item for item in rows if item["user_id"] == user_id), None)
+        if not row and not rls_user_id():
+            row = conn.execute(
+                "SELECT * FROM wallets WHERE user_id = ? AND verified = 1",
+                (user_id,)
+            ).fetchone()
     return dict(row) if row else None
 
 def verify_solana_signature(wallet_address, signature, message):
@@ -704,7 +723,7 @@ async def verify_wallet_on_chain(wallet_address, user_id):
         oldest = signatures[-1] if signatures else None
         if oldest and oldest.get("blockTime"):
             wallet_age_days = int((time.time() - int(oldest["blockTime"])) // (24 * 60 * 60))
-        with sqlite3.connect("qr_cache.db") as conn:
+        with get_conn() as conn:
             conn.execute(
                 """
                 UPDATE wallets
@@ -740,7 +759,7 @@ def severity_points(severity):
     return {"low": 5, "medium": 20, "high": 50, "critical": 100}.get(severity, 0)
 
 def register_ip_event(user_id, request, event_type):
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.execute(
             "INSERT INTO ip_registry VALUES (?, ?, ?, ?, ?)",
             (make_id("ip"), request_ip(request), user_id, event_type, now_iso())
@@ -750,7 +769,7 @@ def register_device_fingerprint(user_id, fingerprint):
     clean = (fingerprint or "").strip()
     if not re.fullmatch(r"[a-f0-9]{64}", clean):
         return
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.execute(
             """
             INSERT INTO device_fingerprints VALUES (?, ?, ?, ?, ?)
@@ -769,7 +788,7 @@ def run_fraud_checks(event_type, user_id, request=None, metadata=None):
 
     if ip_value:
         register_ip_event(user_id, request, event_type) if request else None
-        with sqlite3.connect("qr_cache.db") as conn:
+        with get_conn() as conn:
             since_24h = (datetime.utcnow() - timedelta(hours=24)).isoformat()
             since_1h = (datetime.utcnow() - timedelta(hours=1)).isoformat()
             recent_signups = conn.execute(
@@ -792,7 +811,7 @@ def run_fraud_checks(event_type, user_id, request=None, metadata=None):
             signals.append({"checkName": "ip_scan_cluster", "severity": "medium", "autoDisqualify": False, "reason": f"{active_scan_accounts} active scan accounts share one IP in the last hour.", "metadata": {"ip": ip_value, "activeScanAccounts": active_scan_accounts}})
 
     if event_type == "scan":
-        with sqlite3.connect("qr_cache.db") as conn:
+        with get_conn() as conn:
             conn.row_factory = sqlite3.Row
             velocity = conn.execute("SELECT * FROM scan_velocity WHERE user_id = ?", (user_id,)).fetchone()
             now = datetime.utcnow()
@@ -830,7 +849,7 @@ def run_fraud_checks(event_type, user_id, request=None, metadata=None):
 
     if fingerprint:
         register_device_fingerprint(user_id, fingerprint)
-        with sqlite3.connect("qr_cache.db") as conn:
+        with get_conn() as conn:
             shared_users = conn.execute("SELECT COUNT(DISTINCT user_id) FROM device_fingerprints WHERE fingerprint = ?", (fingerprint,)).fetchone()[0]
         if shared_users > 5:
             signals.append({"checkName": "device_fingerprint", "severity": "critical", "autoDisqualify": True, "reason": f"Device fingerprint is shared by {shared_users} accounts.", "metadata": {"sharedUsers": shared_users}})
@@ -839,7 +858,7 @@ def run_fraud_checks(event_type, user_id, request=None, metadata=None):
 
     if event_type == "wallet_connect" and metadata.get("walletAddress"):
         wallet = metadata["walletAddress"]
-        with sqlite3.connect("qr_cache.db") as conn:
+        with get_conn() as conn:
             existing = conn.execute(
                 """
                 SELECT user_id FROM wallets WHERE address = ? AND user_id != ? AND verified = 1
@@ -860,7 +879,7 @@ def run_fraud_checks(event_type, user_id, request=None, metadata=None):
 
     if signals:
         new_points = sum(severity_points(item["severity"]) for item in signals)
-        with sqlite3.connect("qr_cache.db") as conn:
+        with get_conn() as conn:
             for item in signals:
                 conn.execute(
                     "INSERT INTO fraud_flags VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, NULL, ?)",
@@ -871,7 +890,7 @@ def run_fraud_checks(event_type, user_id, request=None, metadata=None):
     return signals
 
 def save_scan_history(email, url, analysis, reported=False):
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.execute(
             "INSERT INTO scan_history (id, email, url, risk_score, verdict, signals, reported, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
@@ -957,7 +976,7 @@ def email_account_exists(email):
     normalized_email = (email or "").strip().lower()
     if not normalized_email:
         return False
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         existing_user = conn.execute("SELECT 1 FROM users WHERE lower(email) = ? LIMIT 1", (normalized_email,)).fetchone()
         existing_local = conn.execute("SELECT 1 FROM local_credentials WHERE lower(email) = ? LIMIT 1", (normalized_email,)).fetchone()
     return bool(existing_user or existing_local)
@@ -973,7 +992,7 @@ def sanitize_username(username):
 
 def set_user_username(user_id, username):
     cleaned = sanitize_username(username)
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         current = conn.execute("SELECT username FROM users WHERE google_id = ?", (user_id,)).fetchone()
         if current and (current[0] or "").strip():
             raise SafeScanError("Username is already set for this account.", 400)
@@ -999,7 +1018,7 @@ def safe_next_url(request: Request, raw="", fallback="/"):
 
 def get_global_leaderboard(limit=50):
     bounded_limit = max(1, min(int(limit or 50), 100))
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             """
@@ -1041,7 +1060,7 @@ def referral_code_for_user(email):
     normalized_email = (email or "").strip().lower()
     if not normalized_email:
         return ""
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         row = conn.execute("SELECT referral_code FROM users WHERE email = ?", (normalized_email,)).fetchone()
         if row and row[0]:
             return row[0]
@@ -1054,7 +1073,7 @@ def record_unique_scan(email, url, wallet):
     payload_hash = hashlib.sha256(normalized_payload.encode("utf-8")).hexdigest()
     cutoff = (datetime.utcnow() - timedelta(seconds=60)).isoformat()
 
-    with sqlite3.connect('qr_cache.db') as conn:
+    with get_conn() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO scans (email, url_found, scan_count, wallet_address)
@@ -1103,18 +1122,17 @@ def record_unique_scan(email, url, wallet):
         return True
 
 def get_scan_count(email):
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT scan_count FROM scans WHERE email = ?", (email,))
         result = cursor.fetchone()
         return result[0] if result else 0
 
 def get_cached_result(target_url: str):
-    conn = sqlite3.connect("qr_cache.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT status, timestamp FROM scan_results WHERE url = ?", (target_url,))
-    row = cursor.fetchone()
-    conn.close()
+    with get_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT status, timestamp FROM scan_results WHERE url = ?", (target_url,))
+        row = cursor.fetchone()
     if row:
         last_scan = datetime.fromisoformat(row[1])
         if datetime.now() - last_scan < timedelta(hours=24):
@@ -1122,11 +1140,9 @@ def get_cached_result(target_url: str):
     return None
 
 def save_to_cache(target_url: str, status: str):
-    conn = sqlite3.connect("qr_cache.db")
-    cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO scan_results VALUES (?, ?, ?)", (target_url, status, datetime.now().isoformat()))
-    conn.commit()
-    conn.close()
+    with get_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO scan_results VALUES (?, ?, ?)", (target_url, status, datetime.now().isoformat()))
 
 def make_id(prefix):
     return f"{prefix}_{hashlib.sha256(f'{prefix}:{datetime.utcnow().isoformat()}:{os.urandom(8)}'.encode('utf-8')).hexdigest()[:24]}"
@@ -1169,7 +1185,7 @@ def legal_context(request: Request, title, body_html):
     }
 
 def get_user_export(email):
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.row_factory = sqlite3.Row
         scans = [dict(row) for row in conn.execute("SELECT * FROM scans WHERE email = ?", (email,))]
         events = [dict(row) for row in conn.execute("SELECT * FROM scan_events WHERE email = ?", (email,))]
@@ -1179,7 +1195,7 @@ def get_user_export(email):
     return {"email": email, "scans": scans, "scanEvents": events, "dataRequests": requests_, "ageConfirmations": age, "privacyOptOuts": opt_outs}
 
 def delete_user_data(email):
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.execute("DELETE FROM scans WHERE email = ?", (email,))
         conn.execute("DELETE FROM scan_events WHERE email = ?", (email,))
         conn.execute("DELETE FROM users WHERE email = ?", (email,))
@@ -1317,7 +1333,7 @@ def classify_qr_with_ml(payload, image=None, input_source="generated_qr"):
         import ml_model as _ml_mod
         result = _ml_mod.predict(image)
 
-        mal_prob_float = result["malicious_prob"]          # e.g. 73.4  (0–100, 1 dp)
+        mal_prob_float = result["malicious_prob"]          # e.g. 73.4  (0â€“100, 1 dp)
         safe_prob_float = result["safe_prob"]
         malicious_probability = mal_prob_float / 100.0
         benign_probability = safe_prob_float / 100.0
@@ -2481,11 +2497,83 @@ qr_app.mount("/static", StaticFiles(directory="static"), name="static")
 
 qr_app.add_middleware(
     CORSMiddleware,
-    allow_origins=[APP_URL, "http://localhost:3000", "http://127.0.0.1:3000"],
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["content-type", "authorization", "x-airdrop-secret", "x-device-fingerprint"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=None,
     allow_credentials=True,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Device-Fingerprint"],
+    expose_headers=["X-Request-Id"],
+    max_age=600,
 )
+
+@qr_app.middleware("http")
+async def enforce_origin(request: Request, call_next):
+    origin = request.headers.get("origin")
+    if request.method in ("POST", "PUT", "PATCH", "DELETE") and origin:
+        if origin not in ALLOWED_ORIGINS:
+            return JSONResponse({"error": "Origin not allowed."}, status_code=403)
+    return await call_next(request)
+
+@qr_app.middleware("http")
+async def rls_context_middleware(request: Request, call_next):
+    try:
+        user = get_session_user(request)
+        if user:
+            set_rls_context(
+                user_id=user.get("email") or user.get("google_id"),
+                role=user.get("role", "user"),
+            )
+        else:
+            set_rls_context(None, "guest")
+        response = await call_next(request)
+        return response
+    finally:
+        clear_rls_context()
+
+CSP_POLICY = "; ".join([
+    "default-src 'self'",
+    "script-src 'self' https://accounts.google.com https://apis.google.com https://cdn.jsdelivr.net",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: https://lh3.googleusercontent.com https://ssl.gstatic.com https://www.gstatic.com",
+    "connect-src 'self' https://safescan-qr.onrender.com https://accounts.google.com https://safebrowsing.googleapis.com https://www.virustotal.com https://api.virustotal.com https://api.mainnet-beta.solana.com https://api.anthropic.com https://api.openai.com https://cdn.jsdelivr.net",
+    "frame-src https://accounts.google.com",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    "base-uri 'self'",
+    "upgrade-insecure-requests",
+])
+
+PERMISSIONS_POLICY = ", ".join([
+    "camera=()",
+    "microphone=()",
+    "geolocation=()",
+    "payment=()",
+])
+
+def apply_security_headers(request: Request, response):
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+    response.headers["Content-Security-Policy"] = CSP_POLICY
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = PERMISSIONS_POLICY
+    if "Server" in response.headers:
+        del response.headers["Server"]
+    if "X-Powered-By" in response.headers:
+        del response.headers["X-Powered-By"]
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+    elif request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return response
+
+@qr_app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    return apply_security_headers(request, response)
 
 async def wallet_nonce_cleanup_loop():
     while True:
@@ -2502,30 +2590,12 @@ async def security_headers_and_rate_limits(request: Request, call_next):
     if not path.startswith("/static/"):
         public_limit = enforce_rate_limit(request, "public", 300, 15 * 60)
         if public_limit:
-            return public_limit
+            return apply_security_headers(request, public_limit)
     if path.startswith("/api/"):
         api_limit = enforce_rate_limit(request, "api", 100, 15 * 60)
         if api_limit:
-            return api_limit
-    response = await call_next(request)
-    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    # Allow same-origin pages to request camera (for the live QR scanner). Mic
-    # and geolocation stay off because we do not use them.
-    response.headers["Permissions-Policy"] = "camera=(self), microphone=(), geolocation=()"
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; "
-        "script-src 'self' https://accounts.google.com https://apis.google.com https://cdn.jsdelivr.net; "
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-        "font-src 'self' https://fonts.gstatic.com; "
-        "img-src 'self' data: https://lh3.googleusercontent.com https://ssl.gstatic.com https://www.gstatic.com; "
-        "connect-src 'self' https://safescan-qr.onrender.com https://accounts.google.com https://api.virustotal.com https://api.anthropic.com https://api.openai.com https://cdn.jsdelivr.net; "
-        "frame-src https://accounts.google.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
-    )
-    if path.startswith("/static/"):
-        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-    return response
+            return apply_security_headers(request, api_limit)
+    return await call_next(request)
 
 @qr_app.exception_handler(SafeScanError)
 async def safe_scan_error_handler(request: Request, exc: SafeScanError):
@@ -2541,6 +2611,10 @@ async def http_error_handler(request: Request, exc: HTTPException):
         429: "Too many requests. Please slow down.",
     }
     return JSONResponse({"error": safe_messages.get(exc.status_code, exc.detail)}, status_code=exc.status_code)
+
+@qr_app.exception_handler(PermissionError)
+async def permission_error_handler(request: Request, exc: PermissionError):
+    return JSONResponse({"error": str(exc) or "You do not have permission to do this."}, status_code=403)
 
 @qr_app.exception_handler(Exception)
 async def unhandled_error_handler(request: Request, exc: Exception):
@@ -2578,7 +2652,7 @@ def fetch_admin_users(search="", status="", role="", tier="", page=1, limit=25):
         params.append(role)
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     offset = max(0, page - 1) * limit
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.row_factory = sqlite3.Row
         total = conn.execute(f"SELECT COUNT(*) FROM users u {where}", params).fetchone()[0]
         rows = [dict(row) for row in conn.execute(
@@ -2611,7 +2685,7 @@ def fetch_admin_users(search="", status="", role="", tier="", page=1, limit=25):
     return {"rows": rows, "total": total, "page": page, "limit": limit, "pages": max(1, (total + limit - 1) // limit)}
 
 def fetch_user_detail(email):
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.row_factory = sqlite3.Row
         user = conn.execute(
             """
@@ -2634,7 +2708,7 @@ def fetch_user_detail(email):
 def dashboard_data():
     today = datetime.utcnow().date().isoformat()
     since_30 = (datetime.utcnow() - timedelta(days=30)).isoformat()
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.row_factory = sqlite3.Row
         total_users = conn.execute("SELECT COUNT(*) FROM users WHERE status != 'deleted'").fetchone()[0]
         scans_today = conn.execute("SELECT COUNT(*) FROM scan_history WHERE created_at >= ?", (today,)).fetchone()[0]
@@ -2685,7 +2759,7 @@ def fetch_scans(search="", verdict="", user="", limit=100):
         clauses.append("email LIKE ?")
         params.append(f"%{user}%")
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.row_factory = sqlite3.Row
         rows = [dict(row) for row in conn.execute(f"SELECT * FROM scan_history {where} ORDER BY created_at DESC LIMIT ?", params + [limit])]
         total = conn.execute("SELECT COUNT(*) FROM scan_history").fetchone()[0]
@@ -2694,7 +2768,7 @@ def fetch_scans(search="", verdict="", user="", limit=100):
     return {"rows": rows, "stats": {"total": total, "flagged_today": flagged_today, "avg_risk": round(avg_risk, 1), "common_tld": "n/a"}}
 
 def fetch_reports(tab="reports"):
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.row_factory = sqlite3.Row
         reports = [dict(row) for row in conn.execute("SELECT * FROM url_reports ORDER BY created_at DESC LIMIT 200")]
         blocklist = [dict(row) for row in conn.execute("SELECT * FROM url_blocklist WHERE removed_at IS NULL ORDER BY created_at DESC LIMIT 200")]
@@ -2745,7 +2819,7 @@ def next_airdrop_milestone(scan_count, referrals):
     return "Guardian tier unlocked."
 
 def fetch_fraud_data():
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.row_factory = sqlite3.Row
         rows = [dict(row) for row in conn.execute(
             """
@@ -2775,7 +2849,7 @@ def fetch_audit_logs(search="", action="", target_type=""):
         clauses.append("target_type = ?")
         params.append(target_type)
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.row_factory = sqlite3.Row
         rows = [dict(row) for row in conn.execute(
             f"""
@@ -2920,7 +2994,7 @@ async def admin_user_drawer(request: Request, email: str):
 async def admin_suspend_user(request: Request, email: str, action: str = Form("suspend")):
     admin_user = require_role_user(request, "admin")
     new_status = "active" if action == "unsuspend" else "suspended"
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.execute("UPDATE users SET status = ? WHERE email = ?", (new_status, email))
     audit_log("admin.user_unsuspended" if new_status == "active" else "admin.user_suspended", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=email)
     return RedirectResponse("/admin/users", status_code=303)
@@ -2930,7 +3004,7 @@ async def admin_change_role(request: Request, email: str, role: str = Form(...))
     admin_user = require_role_user(request, "owner")
     if role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="Invalid request.")
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.execute("UPDATE users SET role = ? WHERE email = ?", (role, email))
     audit_log("admin.role_changed", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=email, metadata={"role": role})
     return RedirectResponse("/admin/users", status_code=303)
@@ -2940,7 +3014,7 @@ async def admin_delete_user(request: Request, email: str, confirm: str = Form(""
     admin_user = require_role_user(request, "owner")
     if confirm != "DELETE":
         raise HTTPException(status_code=400, detail="Invalid request.")
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.execute("UPDATE users SET status = 'deleted', deleted_at = ?, airdrop_status = 'disqualified' WHERE email = ?", (now_iso(), email))
     audit_log("admin.user_deleted", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=email)
     return RedirectResponse("/admin/users", status_code=303)
@@ -2964,8 +3038,9 @@ async def admin_scans(request: Request, search: str = Query(""), verdict: str = 
 @qr_app.post("/admin/scans/{scan_id}/flag")
 async def admin_flag_scan(request: Request, scan_id: str):
     admin_user = require_role_user(request, "admin")
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.row_factory = sqlite3.Row
+        assert_owns_row(conn, "scan_history", scan_id)
         scan = conn.execute("SELECT * FROM scan_history WHERE id = ?", (scan_id,)).fetchone()
         if not scan:
             raise HTTPException(status_code=404, detail="Not found.")
@@ -2981,8 +3056,9 @@ async def admin_reports(request: Request, tab: str = Query("reports")):
 @qr_app.post("/admin/reports/{report_id}/action")
 async def admin_report_action(request: Request, report_id: str, action: str = Form(...)):
     admin_user = require_role_user(request, "admin")
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.row_factory = sqlite3.Row
+        assert_owns_row(conn, "url_reports", report_id)
         report = conn.execute("SELECT * FROM url_reports WHERE id = ?", (report_id,)).fetchone()
         if not report:
             raise HTTPException(status_code=404, detail="Not found.")
@@ -3002,7 +3078,8 @@ async def admin_report_action(request: Request, report_id: str, action: str = Fo
 @qr_app.post("/admin/blocklist/{block_id}/remove")
 async def admin_remove_block(request: Request, block_id: str):
     admin_user = require_role_user(request, "admin")
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
+        assert_owns_row(conn, "url_blocklist", block_id)
         conn.execute("UPDATE url_blocklist SET removed_at = ? WHERE id = ?", (now_iso(), block_id))
     audit_log("admin.blocklist_removed", request=request, actor_user_id=admin_user.get("google_id"), target_type="blocklist", target_id=block_id)
     return RedirectResponse("/admin/reports?tab=blocklist", status_code=303)
@@ -3055,7 +3132,7 @@ async def admin_airdrop_status(request: Request, email: str, status: str = Form(
     admin_user = require_role_user(request, "admin")
     if status not in ("eligible", "flagged", "disqualified", "cleared"):
         raise HTTPException(status_code=400, detail="Invalid request.")
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.execute("UPDATE users SET airdrop_status = ? WHERE email = ?", (status, email))
     audit_log("admin.airdrop_status_changed", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=email, metadata={"status": status, "reason": reason})
     return RedirectResponse("/admin/airdrop", status_code=303)
@@ -3066,12 +3143,13 @@ async def admin_fraud_review(request: Request, email: str, outcome: str = Form(.
     if outcome not in ("cleared", "disqualified", "escalated"):
         raise HTTPException(status_code=400, detail="Invalid request.")
     status = "cleared" if outcome == "cleared" else ("disqualified" if outcome == "disqualified" else "flagged")
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.execute("UPDATE fraud_flags SET reviewed = 1, reviewed_by = ?, reviewed_at = ?, review_outcome = ? WHERE user_id = ? AND reviewed = 0", (admin_user.get("email"), now_iso(), outcome, email))
         conn.execute("UPDATE users SET airdrop_status = ? WHERE email = ?", (status, email))
     audit_log("admin.fraud_reviewed", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=email, metadata={"outcome": outcome, "reason": reason})
     return RedirectResponse("/admin/airdrop/fraud", status_code=303)
 
+@qr_app.get("/admin/audit-logs", response_class=HTMLResponse)
 @qr_app.get("/admin/logs", response_class=HTMLResponse)
 async def admin_logs(request: Request, search: str = Query(""), action: str = Query(""), target_type: str = Query(""), export: str = Query("")):
     data = fetch_audit_logs(search=search, action=action, target_type=target_type)
@@ -3088,7 +3166,7 @@ async def admin_logs(request: Request, search: str = Query(""), action: str = Qu
 
 @qr_app.get("/admin/api-keys", response_class=HTMLResponse)
 async def admin_api_keys(request: Request):
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.row_factory = sqlite3.Row
         keys = [dict(row) for row in conn.execute("SELECT * FROM api_keys ORDER BY created_at DESC")]
     return admin_context(request, "API Keys", "api_keys", {"keys": keys}, owner_only=True)
@@ -3098,7 +3176,7 @@ async def admin_create_api_key(request: Request, name: str = Form(...), scopes: 
     owner = require_role_user(request, "owner")
     raw_key = "sk_live_" + secrets.token_urlsafe(32)
     hint = raw_key[:14] + "..."
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.execute("INSERT INTO api_keys VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, NULL, NULL)", (make_id("key"), name[:80], hint, hashlib.sha256(raw_key.encode()).hexdigest(), json.dumps(scopes), owner.get("email"), now_iso(), expires_at or None))
     audit_log("api_key.created", request=request, actor_user_id=owner.get("google_id"), target_type="api_key", metadata={"name": name, "scopes": scopes})
     return admin_context(request, "API Keys", "api_key_created", {"raw_key": raw_key}, owner_only=True)
@@ -3106,7 +3184,8 @@ async def admin_create_api_key(request: Request, name: str = Form(...), scopes: 
 @qr_app.post("/admin/api-keys/{key_id}/revoke")
 async def admin_revoke_api_key(request: Request, key_id: str):
     owner = require_role_user(request, "owner")
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
+        assert_owns_row(conn, "api_keys", key_id)
         conn.execute("UPDATE api_keys SET status = 'revoked', revoked_at = ? WHERE id = ?", (now_iso(), key_id))
     audit_log("api_key.revoked", request=request, actor_user_id=owner.get("google_id"), target_type="api_key", target_id=key_id)
     return RedirectResponse("/admin/api-keys", status_code=303)
@@ -3226,27 +3305,19 @@ async def analyze_and_record_scan(request, user, raw_payload, device_fingerprint
         "payloadType": payload_type,
     }
 
+@qr_app.get("/api/scan-history")
 @qr_app.get("/api/scan/history")
 async def api_scan_history(request: Request):
-    user = require_user(request)
+    require_user(request)
     try:
         limit = int(request.query_params.get("limit", "50"))
     except ValueError:
         limit = 50
     limit = max(1, min(limit, 100))
 
-    with sqlite3.connect("qr_cache.db") as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            """
-            SELECT id, url, risk_score, verdict, signals, reported, created_at
-            FROM scan_history
-            WHERE email = ?
-            ORDER BY created_at DESC
-            LIMIT ?
-            """,
-            (user["email"], limit),
-        ).fetchall()
+    with get_conn() as conn:
+        rows = user_scoped_select(conn, "scan_history")
+    rows = sorted(rows, key=lambda row: row["created_at"] or "", reverse=True)[:limit]
 
     history = []
     for row in rows:
@@ -3272,19 +3343,9 @@ async def api_history(request: Request):
     user = get_session_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
-    with sqlite3.connect("qr_cache.db") as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            """
-            SELECT id, email, url, verdict AS threat_type, verdict,
-                   created_at AS scanned_at, risk_score, signals, reported
-            FROM scan_history
-            WHERE lower(email) = lower(?)
-            ORDER BY created_at DESC
-            LIMIT 100
-            """,
-            (user["email"],)
-        ).fetchall()
+    with get_conn() as conn:
+        rows = user_scoped_select(conn, "scan_history")
+    rows = sorted(rows, key=lambda row: row["created_at"] or "", reverse=True)[:100]
     result = []
     for row in rows:
         try:
@@ -3296,13 +3357,13 @@ async def api_history(request: Request):
             "id": row["id"],
             "url": row["url"],
             "verdict": row["verdict"] or "safe",
-            "threat_type": row["threat_type"] or "safe",
+            "threat_type": row["verdict"] or "safe",
             "riskScore": int(row["risk_score"] or 0),
             "risk_score": int(row["risk_score"] or 0),
             "signals": signals if isinstance(signals, list) else [],
             "reported": bool(row["reported"]),
-            "scannedAt": row["scanned_at"],
-            "analyzedAt": row["scanned_at"],
+            "scannedAt": row["created_at"],
+            "analyzedAt": row["created_at"],
         })
     return result
 
@@ -3314,6 +3375,10 @@ async def api_app_runtime():
         "serverNow": now.isoformat() + "Z",
         "uptimeSeconds": int((now - APP_STARTED_AT).total_seconds()),
     }
+
+@qr_app.get("/health")
+async def health():
+    return {"status": "ok"}
 
 @qr_app.post("/api/report")
 async def api_report_url(request: Request, payload: dict = Body(...)):
@@ -3328,7 +3393,7 @@ async def api_report_url(request: Request, payload: dict = Body(...)):
     target_url = validate_public_url(payload.get("url", ""))
     analysis = await analyze_full_pipeline(target_url)
     report_id = make_id("report")
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.execute(
             "INSERT INTO url_reports VALUES (?, ?, ?, ?, ?, 'pending', ?, NULL, NULL)",
             (report_id, target_url, user.get("email") if user else "", reason, int(analysis.get("confidenceScore") or 0), now_iso())
@@ -3341,7 +3406,7 @@ async def api_user_profile(request: Request):
     user = require_user(request)
     email = user["email"]
     scan_count = get_scan_count(email)
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         referral_count = conn.execute("SELECT COUNT(*) FROM referrals WHERE referrer_email = ? AND counted = 1", (email,)).fetchone()[0]
     wallet = get_verified_wallet(email)
     return {
@@ -3355,12 +3420,36 @@ async def api_user_profile(request: Request):
         "walletConnected": bool(wallet),
     }
 
+@qr_app.get("/api/me")
+async def api_me(request: Request):
+    user = require_user(request)
+    return {
+        "session": {"id": user.get("session_id")},
+        "user": {
+            "id": user.get("google_id"),
+            "email": user.get("email"),
+            "username": user.get("username"),
+            "name": user.get("display_name") or "Safe scanner",
+            "avatarUrl": user.get("picture"),
+            "role": user.get("role", "user"),
+            "status": user.get("status", "active"),
+        },
+    }
+
+@qr_app.get("/api/scans")
+async def api_scans(request: Request):
+    require_user(request)
+    with get_conn() as conn:
+        scans = [dict(row) for row in user_scoped_select(conn, "scans")]
+        events = [dict(row) for row in user_scoped_select(conn, "scan_events")]
+    return {"scans": scans, "events": events}
+
 @qr_app.get("/api/referral")
 async def api_referral_status(request: Request):
     user = require_user(request)
     email = user["email"]
     code = referral_code_for_user(email)
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         referral_count = conn.execute("SELECT COUNT(*) FROM referrals WHERE referrer_email = ? AND counted = 1", (email,)).fetchone()[0]
     return {
         "code": code,
@@ -3373,7 +3462,7 @@ async def api_airdrop_status(request: Request):
     user = require_user(request)
     email = user["email"]
     scan_count = get_scan_count(email)
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         row = conn.execute("SELECT airdrop_status, COALESCE(fraud_score, 0), referral_code FROM users WHERE email = ?", (email,)).fetchone()
         referrals = conn.execute("SELECT COUNT(*) FROM referrals WHERE referrer_email = ? AND counted = 1", (email,)).fetchone()[0]
     referral_code = row[2] if row and row[2] else referral_code_for_user(email)
@@ -3421,7 +3510,7 @@ async def api_wallet_nonce(request: Request, payload: dict = Body(...)):
         raise SafeScanError("Invalid Solana address format.", 400)
     rate_limit = enforce_rate_limit(request, "wallet_nonce", 5, 60 * 60, user_key=wallet_address.lower())
     if rate_limit:
-        with sqlite3.connect("qr_cache.db") as conn:
+        with get_conn() as conn:
             conn.execute(
                 "INSERT INTO fraud_flags VALUES (?, ?, 'wallet_nonce_rate_limit', 'medium', ?, ?, 0, 0, NULL, NULL, NULL, ?)",
                 (
@@ -3437,7 +3526,7 @@ async def api_wallet_nonce(request: Request, payload: dict = Body(...)):
                 (user["email"],)
             )
         return rate_limit
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         existing = conn.execute(
             """
             SELECT user_id FROM wallets WHERE address = ? AND user_id != ? AND verified = 1
@@ -3453,7 +3542,7 @@ async def api_wallet_nonce(request: Request, payload: dict = Body(...)):
     issued_at = now_iso()
     expires_at = (datetime.utcnow() + timedelta(minutes=5)).isoformat() + "Z"
     message = wallet_verification_message(nonce, user["email"], issued_at, expires_at)
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.execute(
             """
             INSERT INTO wallet_nonces (user_id, wallet_address, nonce, message, issued_at, expires_at, used, created_at)
@@ -3481,7 +3570,7 @@ async def api_wallet_verify(request: Request, payload: dict = Body(...)):
     signature = (payload.get("signature") or "").strip()
     if not is_valid_solana_address(wallet_address):
         raise SafeScanError("Invalid Solana address format.", 400)
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.row_factory = sqlite3.Row
         stored = conn.execute(
             "SELECT * FROM wallet_nonces WHERE user_id = ? AND wallet_address = ? AND used = 0",
@@ -3495,14 +3584,14 @@ async def api_wallet_verify(request: Request, payload: dict = Body(...)):
     except ValueError:
         raise SafeScanError("Verification expired. Please try again.", 400)
     if datetime.utcnow() > expires_at or datetime.utcnow() - issued_at > timedelta(minutes=5):
-        with sqlite3.connect("qr_cache.db") as conn:
+        with get_conn() as conn:
             conn.execute("DELETE FROM wallet_nonces WHERE user_id = ?", (user["email"],))
         raise SafeScanError("Verification expired. Please try again.", 400)
     message = wallet_verification_message(stored["nonce"], user["email"], stored["issued_at"], stored["expires_at"])
     try:
         verify_solana_signature(wallet_address, signature, message)
     except (ValueError, InvalidSignature):
-        with sqlite3.connect("qr_cache.db") as conn:
+        with get_conn() as conn:
             conn.execute("UPDATE wallet_nonces SET used = 1 WHERE user_id = ?", (user["email"],))
         audit_log(
             "wallet.verification_failed",
@@ -3513,7 +3602,7 @@ async def api_wallet_verify(request: Request, payload: dict = Body(...)):
             metadata={"reason": "signature_invalid"}
         )
         raise SafeScanError("Signature verification failed. Request a new challenge and try again.", 400)
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         existing = conn.execute(
             "SELECT user_id FROM wallets WHERE address = ? AND user_id != ? AND verified = 1 LIMIT 1",
             (wallet_address, user["email"])
@@ -3529,7 +3618,7 @@ async def api_wallet_verify(request: Request, payload: dict = Body(...)):
     if any(signal.get("autoDisqualify") for signal in signals):
         raise HTTPException(status_code=403, detail="Wallet connection could not be completed. Contact support.")
     connected_at = now_iso()
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.execute("UPDATE wallet_nonces SET used = 1 WHERE user_id = ?", (user["email"],))
         conn.execute(
             """
@@ -3561,7 +3650,7 @@ async def api_wallet_disconnect(request: Request):
     wallet = get_verified_wallet(user["email"])
     if not wallet:
         raise HTTPException(status_code=404, detail="No connected wallet found.")
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.execute("DELETE FROM wallets WHERE user_id = ?", (user["email"],))
         conn.execute("DELETE FROM wallet_nonces WHERE user_id = ?", (user["email"],))
         conn.execute("UPDATE scans SET wallet_address = NULL WHERE email = ?", (user["email"],))
@@ -3571,30 +3660,37 @@ async def api_wallet_disconnect(request: Request):
 @qr_app.get("/api/admin/stats/users")
 async def api_admin_stats_users(request: Request):
     require_role_user(request, "admin")
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         value = conn.execute("SELECT COUNT(*) FROM users WHERE status != 'deleted'").fetchone()[0]
     return {"value": value}
 
 @qr_app.get("/api/admin/stats/scans-today")
 async def api_admin_stats_scans_today(request: Request):
     require_role_user(request, "admin")
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         value = conn.execute("SELECT COUNT(*) FROM scan_history WHERE created_at >= ?", (datetime.utcnow().date().isoformat(),)).fetchone()[0]
     return {"value": value}
 
 @qr_app.get("/api/admin/stats/blocked")
 async def api_admin_stats_blocked(request: Request):
     require_role_user(request, "admin")
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         value = conn.execute("SELECT COUNT(*) FROM scan_history WHERE verdict IN ('MALICIOUS', 'HIGH') OR risk_score >= 80").fetchone()[0]
     return {"value": value}
 
 @qr_app.get("/api/admin/stats/fraud-flags")
 async def api_admin_stats_fraud_flags(request: Request):
     require_role_user(request, "admin")
-    with sqlite3.connect("qr_cache.db") as conn:
-        value = conn.execute("SELECT COUNT(*) FROM fraud_flags WHERE reviewed = 0").fetchone()[0]
+    with get_conn() as conn:
+        value = len(user_scoped_select(conn, "fraud_flags", "reviewed = 0"))
     return {"value": value}
+
+@qr_app.get("/api/fraud-flags")
+async def api_fraud_flags(request: Request):
+    require_role_user(request, "admin")
+    with get_conn() as conn:
+        rows = [dict(row) for row in user_scoped_select(conn, "fraud_flags", "reviewed = 0")]
+    return {"rows": rows}
 
 @qr_app.post("/api/check-reputation")
 async def api_check_reputation(payload: dict = Body(...)):
@@ -3658,7 +3754,7 @@ async def privacy_policy(request: Request):
 
 @qr_app.post("/waitlist", response_class=HTMLResponse)
 async def waitlist_signup(request: Request, email: str = Form(...)):
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO waitlist_signups VALUES (?, ?, ?)",
             (email.strip().lower(), "footer", datetime.utcnow().isoformat() + "Z")
@@ -3853,13 +3949,13 @@ async def submit_data_request(
             status = "completed"
             audit_log("account.deleted", request=request, actor_user_id=session_user.get("google_id"), target_type="user", target_id=email)
     elif request_type in ("do_not_sell", "limit_sensitive", "object", "revoke_consent"):
-        with sqlite3.connect("qr_cache.db") as conn:
+        with get_conn() as conn:
             conn.execute(
                 "INSERT INTO privacy_opt_outs VALUES (?, ?, ?, ?, ?)",
                 (make_id("opt"), email, region, request_type, now)
             )
 
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.execute(
             "INSERT INTO data_requests VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (request_id, email, region, request_type, details, status, now, now if status == "completed" else None)
@@ -3877,7 +3973,7 @@ async def log_consent(request: Request, payload: dict = Body(...)):
     consent_given = consent_type != "essential_only"
     now = datetime.utcnow()
     consent_id = make_id("consent")
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.execute(
             "INSERT INTO consent_logs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
@@ -3898,7 +3994,7 @@ async def log_consent(request: Request, payload: dict = Body(...)):
 @qr_app.get("/legal/consent-log", response_class=HTMLResponse)
 async def consent_log(request: Request, secret: str = Query("")):
     admin_user = require_role_user(request, "admin")
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.row_factory = sqlite3.Row
         rows = [dict(row) for row in conn.execute("SELECT * FROM consent_logs ORDER BY timestamp DESC LIMIT 200")]
     audit_log("admin.view_logs", request=request, actor_user_id=admin_user.get("google_id"), target_type="consent_logs")
@@ -3951,7 +4047,7 @@ async def report_breach(
     template = f"""GDPR Article 33/34 Breach Notification Draft\nDiscovery date: {discovery_date}\nData categories affected: {data_categories}\nEstimated users affected: {users_affected}\nLikely consequences: {likely_consequences}\nMeasures taken: {measures_taken}\nAdmin contact: {ADMIN_EMAIL}\nReview whether supervisory authority notice is required within 72 hours and whether user notice is required for high-risk impact."""
     report_id = make_id("breach")
     now = datetime.utcnow().isoformat() + "Z"
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.execute("INSERT INTO breach_reports VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (report_id, discovery_date, data_categories, users_affected, likely_consequences, measures_taken, now, template))
     audit_log("admin.breach_report_created", request=request, actor_user_id=admin_user.get("google_id"), target_type="breach_report", target_id=report_id)
     body = f"<h2>Breach Report {report_id}</h2><pre class='legal-json'>{template}</pre>"
@@ -4182,7 +4278,7 @@ async def _do_logout(request: Request):
     session_id = request_session_id(request)
     user = get_session_user(request)
     if session_id:
-        with sqlite3.connect("qr_cache.db") as conn:
+        with get_conn() as conn:
             conn.execute("UPDATE sessions SET revoked_at = ? WHERE id = ?", (now_iso(), session_id))
     audit_log("user.logout", request=request, actor_user_id=user.get("google_id") if user else None)
     response = RedirectResponse("/", status_code=303)
@@ -4230,7 +4326,7 @@ async def auth_register(request: Request, email: str = Form(...), password: str 
             status_code=409,
         )
     lid = save_local_user(email, request)
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.execute(
             "INSERT INTO local_credentials (email, password_hash, created_at, user_id) VALUES (?, ?, ?, ?)",
             (email, hash_password(password), now_iso(), lid)
@@ -4248,13 +4344,13 @@ async def auth_login_local(request: Request, email: str = Form(...), password: s
     if rate_limited:
         return rate_limited
     email = email.strip().lower()
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         row = conn.execute("SELECT password_hash, user_id FROM local_credentials WHERE email = ?", (email,)).fetchone()
     if not row or not verify_password(password, row[0]):
         audit_log("auth.failed", request=request, metadata={"provider": "local"})
         return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid email or password.", "tab": "login"})
     lid = save_local_user(email, request)
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.execute("UPDATE local_credentials SET user_id = ? WHERE email = ?", (lid, email))
     user = require_user_from_google_id(lid)
     if user["status"] != "active":
@@ -4329,12 +4425,9 @@ async def history_page(request: Request):
     email = user["email"] if user else ""
     scans = []
     if user:
-        with sqlite3.connect("qr_cache.db") as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                "SELECT url, verdict, risk_score, created_at FROM scan_history WHERE lower(email)=lower(?) ORDER BY created_at DESC LIMIT 100",
-                (email,)
-            ).fetchall()
+        with get_conn() as conn:
+            rows = user_scoped_select(conn, "scan_history")
+            rows = sorted(rows, key=lambda row: row["created_at"] or "", reverse=True)[:100]
             scans = [dict(r) for r in rows]
     return templates.TemplateResponse("history.html", {"request": request, "email": email, "scans": scans})
 
@@ -4370,7 +4463,7 @@ async def confirm_age_submit(
         return templates.TemplateResponse("confirm_age.html", {
             "request": request, "email": email, "locale": locale, "threshold": threshold, "blocked": True
         })
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO age_confirmations VALUES (?, ?, ?, ?)",
             (email, threshold, locale, datetime.utcnow().isoformat() + "Z")
@@ -4449,7 +4542,7 @@ def save_user_to_db(google_id, email, request=None, display_name="", picture="")
     normalized_picture = (picture or "").strip()[:500]
     role = role_for_email(normalized_email)
     referral_code = hashlib.sha256(f"{normalized_email}:{APP_URL}".encode("utf-8")).hexdigest()[:10]
-    with sqlite3.connect("qr_cache.db") as conn:
+    with get_conn() as conn:
         conn.execute("""
             INSERT INTO users (google_id, email, display_name, picture, last_login, role, status, last_login_at, login_ip, created_at, referral_code)
             VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
