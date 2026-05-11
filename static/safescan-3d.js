@@ -642,6 +642,8 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim()) {
   new ResizeObserver(resize).observe(showcase);
   resize();
   showcase.classList.add("webgl-ready");
+  canvas.style.opacity = "1";
+  canvas.style.visibility = "visible";
 
   const clock = new THREE.Clock();
   function animate() {
