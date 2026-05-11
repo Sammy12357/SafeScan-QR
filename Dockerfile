@@ -32,6 +32,7 @@ COPY --from=builder /install /usr/local
 COPY hackabull.py distribute.py scrop.py db.py storage.py ml_model.py ./
 COPY templates/ ./templates/
 COPY static/ ./static/
+COPY models/ ./models/
 
 # Data directory owned by app user
 RUN mkdir -p /app/data && chown safescan:safescan /app/data
@@ -43,4 +44,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD curl -f "http://localhost:${PORT:-8000}/health/ready" || exit 1
 
-CMD ["sh", "-c", "uvicorn hackabull:qr_app --host 0.0.0.0 --port ${PORT:-8000} --workers ${WEB_CONCURRENCY:-2} --loop uvloop --http httptools"]
+CMD ["sh", "-c", "python -m uvicorn hackabull:qr_app --host 0.0.0.0 --port ${PORT:-8000} --workers ${WEB_CONCURRENCY:-1}"]
