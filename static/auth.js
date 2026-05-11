@@ -16,7 +16,7 @@
     btn.addEventListener("click", function () { activate(btn.dataset.for); });
   });
 
-  var googleConfig = document.getElementById("googleAuthConfig");
+  var googleConfig = document.getElementById("g_id_onload");
   var googleMount = document.getElementById("googleButtonMount");
   var googleFallbackButton = document.getElementById("googleFallbackButton");
   var googleStatus = document.getElementById("googleSignInStatus");
@@ -25,44 +25,22 @@
     if (googleStatus) googleStatus.textContent = message;
   }
 
-  function addHidden(form, name, value) {
-    var input = document.createElement("input");
-    input.type = "hidden";
-    input.name = name;
-    input.value = value || "";
-    form.appendChild(input);
-  }
-
-  function submitGoogleCredential(response) {
-    if (!response || !response.credential) {
-      setGoogleStatus("Google did not return a sign-in token. Try the Google button again, or sign in with email first.");
-      return;
-    }
-
-    var form = document.createElement("form");
-    form.method = "post";
-    form.action = googleConfig.dataset.auth_url || googleConfig.dataset.authUrl || "/auth/google";
-    addHidden(form, "credential", response.credential);
-    addHidden(form, "next", googleConfig.dataset.next || "/");
-    setGoogleStatus("Signing you in...");
-    document.body.appendChild(form);
-    form.submit();
-  }
-
   function renderGoogleButton() {
     if (!googleConfig || !googleMount || !window.google || !window.google.accounts || !window.google.accounts.id) {
       return false;
     }
 
     var clientId = googleConfig.dataset.client_id || googleConfig.dataset.clientId || "";
-    if (!clientId) return false;
+    var loginUri = googleConfig.dataset.login_uri || googleConfig.dataset.loginUri || "";
+    var state = googleConfig.dataset.state || "";
+    if (!clientId || !loginUri) return false;
 
     try {
       window.google.accounts.id.initialize({
         client_id: clientId,
-        callback: submitGoogleCredential,
-        auto_select: false,
-        cancel_on_tap_outside: true
+        login_uri: loginUri,
+        state: state,
+        ux_mode: "redirect"
       });
       window.google.accounts.id.renderButton(googleMount, {
         type: "standard",
@@ -76,7 +54,7 @@
       setGoogleStatus("Use the Google button above. If Phantom does not show it, tap Continue with Google.");
       return true;
     } catch (error) {
-      setGoogleStatus("Google sign-in could not render in this browser. Sign in with email first, then connect Phantom.");
+      setGoogleStatus("Google sign-in could not render in this browser. Tap Continue with Google to try the redirect prompt.");
       return false;
     }
   }
