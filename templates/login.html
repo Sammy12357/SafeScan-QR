@@ -115,7 +115,7 @@
     [data-panel].active { display: block; }
   </style>
   {% if not local_auth_enabled %}<script src="https://accounts.google.com/gsi/client" async defer></script>{% endif %}
-  <script src="/static/auth.js?v=phantom-google-v1" defer></script>
+  <script src="/static/auth.js?v=google-clean-v1" defer></script>
 </head>
 <body data-init-error="{{ error }}" data-init-tab="{{ tab if tab else 'login' }}">
   {% set active_tab = tab if tab in ['login', 'register'] else 'login' %}
@@ -182,7 +182,6 @@
           <span>Continue with Google</span>
           <div id="googleButtonMount" class="auth-google-native" aria-hidden="true"></div>
         </button>
-        <p id="googleSignInStatus" class="auth-google-help" aria-live="polite">If Google does not open, try again after a moment.</p>
         {% endif %}
       </div>
 

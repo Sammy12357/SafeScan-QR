@@ -51,7 +51,6 @@
         logo_alignment: "left",
         width: Math.min(356, Math.max(240, googleMount.clientWidth || 356))
       });
-      setGoogleStatus("Use the Google button above. If Phantom does not show it, tap Continue with Google.");
       return true;
     } catch (error) {
       setGoogleStatus("Google sign-in could not render in this browser. Tap Continue with Google to try the redirect prompt.");
@@ -69,13 +68,13 @@
       window.google.accounts.id.prompt(function (notification) {
         if (!notification) return;
         if (notification.isNotDisplayed && notification.isNotDisplayed()) {
-          setGoogleStatus("Phantom blocked Google's prompt. Use the Google button above, or sign in with email first.");
+          setGoogleStatus("Google sign-in was blocked in this browser. Try again, or sign in with email first.");
         } else if (notification.isSkippedMoment && notification.isSkippedMoment()) {
-          setGoogleStatus("Google skipped the prompt in this browser. Use the Google button above, or sign in with email first.");
+          setGoogleStatus("Google skipped the prompt in this browser. Try again, or sign in with email first.");
         }
       });
     } catch (error) {
-      setGoogleStatus("Google sign-in could not start in this browser. Use the Google button above, or sign in with email first.");
+      setGoogleStatus("Google sign-in could not start in this browser. Try again, or sign in with email first.");
     }
   }
 
