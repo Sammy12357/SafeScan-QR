@@ -1,0 +1,29 @@
+name: Deploy Gate
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    branches:
+      - main
+    types:
+      - completed
+  workflow_dispatch:
+
+jobs:
+  deploy-gate:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Refuse unsafe airdrop deploy settings
+        env:
+          AIRDROP_ENABLED: ${{ secrets.AIRDROP_ENABLED }}
+          SOLANA_MAINNET_ENABLED: ${{ secrets.SOLANA_MAINNET_ENABLED }}
+        run: |
+          if [ "$AIRDROP_ENABLED" = "true" ] && [ "$SOLANA_MAINNET_ENABLED" != "true" ]; then
+            echo "AIRDROP_ENABLED requires SOLANA_MAINNET_ENABLED=true for production."
+            exit 1
+          fi
+          echo "Deploy gate passed. Configure the Render deploy hook here once production approval is ready."
