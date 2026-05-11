@@ -11,7 +11,8 @@ COPY . .
 # Install your Python libraries
 RUN pip install --no-cache-dir -r requirements.txt
 
-RUN addgroup --system safescan && adduser --system --ingroup safescan safescan
+RUN addgroup --system safescan && adduser --system --ingroup safescan safescan \
+  && chown -R safescan:safescan /app
 USER safescan
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
