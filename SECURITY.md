@@ -92,7 +92,7 @@ Update these environment variables in Render, redeploy, and invalidate sessions 
 
 ## Security Report Process
 
-Send vulnerability reports to `privacy@safescan-qr.onrender.com` or the address configured in `ADMIN_EMAIL`. Include the affected route, reproduction steps, expected impact, and whether any user data may have been exposed.
+Send vulnerability reports to `safescanqr@gmail.com` or the address configured in `ADMIN_EMAIL`. Include the affected route, reproduction steps, expected impact, and whether any user data may have been exposed.
 
 ## Deployment Checklist
 
