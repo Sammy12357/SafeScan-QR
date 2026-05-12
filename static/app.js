@@ -493,26 +493,16 @@ dom.copyTokenAddressButton?.addEventListener("click", async () => {
 });
 
 dom.topCopyReferralButton?.addEventListener("click", async () => {
-  window.clearTimeout(dom.topCopyReferralButton.dataset.resetTimer);
-  if (dom.topCopyReferralButton.textContent.trim() === "Copied link") {
-    dom.topCopyReferralButton.textContent = "Referral link";
-    return;
-  }
   try {
     const response = await fetch("/api/referral", { credentials: "same-origin" });
     const body = await response.json();
     const referralLink = body.referralLink || body.link;
     if (!response.ok || !referralLink) throw new Error(body.detail || "Referral link unavailable.");
     const copied = await copyTextToClipboard(referralLink);
-    dom.topCopyReferralButton.textContent = copied ? "Copied link" : "Copy failed";
     showCopyToast(copied ? "Copied link" : "Copy failed");
   } catch {
-    dom.topCopyReferralButton.textContent = "Sign in first";
     showCopyToast("Sign in first");
   }
-  dom.topCopyReferralButton.dataset.resetTimer = window.setTimeout(() => {
-    dom.topCopyReferralButton.textContent = "Referral link";
-  }, 1800);
 });
 
 dom.qrForm?.addEventListener("submit", () => {
