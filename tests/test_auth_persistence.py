@@ -132,11 +132,36 @@ def test_google_then_local_registration_blocks_duplicate_email(auth_app, monkeyp
 
     assert google_response.status_code == 200
     assert local_response.status_code == 409
-    assert "already linked to account" in local_response.text
+    assert "already linked to an account" in local_response.text
     users = db_rows(db_path, "SELECT google_id, email, google_sub FROM users WHERE lower(email) = ?", ("shared@example.com",))
     credentials = db_rows(db_path, "SELECT user_id FROM local_credentials WHERE email = ?", ("shared@example.com",))
     assert len(users) == 1
     assert users[0]["google_sub"] == "google-sub-2"
+    assert credentials == []
+
+
+def test_mobile_sign_in_then_local_registration_blocks_duplicate_email(auth_app, monkeypatch):
+    module, client, db_path = auth_app
+    monkeypatch.setattr(
+        module.id_token,
+        "verify_oauth2_token",
+        lambda credential, request, client_id: {
+            "sub": "mobile-sub-1",
+            "email": "mobile-shared@example.com",
+            "name": "Mobile User",
+        },
+    )
+
+    verify_response = client.post("/auth/verify", json={"token": "valid-token"})
+    local_response = register(TestClient(module.qr_app, base_url="https://testserver"), "mobile-shared@example.com")
+
+    assert verify_response.status_code == 200
+    assert local_response.status_code == 409
+    assert "already linked to an account" in local_response.text
+    users = db_rows(db_path, "SELECT google_id, email, google_sub FROM users WHERE lower(email) = ?", ("mobile-shared@example.com",))
+    credentials = db_rows(db_path, "SELECT user_id FROM local_credentials WHERE email = ?", ("mobile-shared@example.com",))
+    assert len(users) == 1
+    assert users[0]["google_sub"] == "mobile-sub-1"
     assert credentials == []
 
 
@@ -148,9 +173,22 @@ def test_local_registration_blocks_existing_email(auth_app):
 
     assert first.status_code == 200
     assert second.status_code == 409
-    assert "already linked to account" in second.text
+    assert "already linked to an account" in second.text
     assert len(db_rows(db_path, "SELECT * FROM users WHERE lower(email) = ?", ("repeat@example.com",))) == 1
     assert len(db_rows(db_path, "SELECT * FROM local_credentials WHERE lower(email) = ?", ("repeat@example.com",))) == 1
+
+
+def test_signed_in_user_cannot_create_another_account(auth_app):
+    _, client, db_path = auth_app
+
+    first = register(client, "signed-in@example.com")
+    second = register(client, "second-account@example.com")
+
+    assert first.status_code == 200
+    assert second.status_code == 409
+    assert "already signed in" in second.text
+    assert len(db_rows(db_path, "SELECT * FROM users WHERE lower(email) = ?", ("second-account@example.com",))) == 0
+    assert len(db_rows(db_path, "SELECT * FROM local_credentials WHERE lower(email) = ?", ("second-account@example.com",))) == 0
 
 
 def test_user_scan_history_saves_and_fetches_by_user_id(auth_app):

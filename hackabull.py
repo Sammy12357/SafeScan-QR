@@ -1194,6 +1194,20 @@ def email_account_exists(email):
         existing_local = conn.execute("SELECT 1 FROM local_credentials WHERE lower(email) = ? LIMIT 1", (normalized_email,)).fetchone()
     return bool(existing_user or existing_local)
 
+def duplicate_account_response(request, message="Email is already linked to an account. Please sign in instead."):
+    return templates.TemplateResponse(
+        "login.html",
+        {
+            "request": request,
+            "error": message,
+            "tab": "register",
+            "local_auth_enabled": LOCAL_AUTH_ENABLED,
+            "google_client_id": CLIENT_ID or "",
+            "auth_google_url": f"{APP_URL}/auth/google",
+        },
+        status_code=409,
+    )
+
 def username_required(user):
     return bool(user) and not (user.get("username") or "").strip()
 
@@ -4646,24 +4660,15 @@ async def auth_register(request: Request, email: str = Form(...), password: str 
     rate_limited = enforce_rate_limit(request, "register", 5, 3600)
     if rate_limited:
         return rate_limited
+    if get_session_user(request):
+        return duplicate_account_response(request, "You are already signed in. Sign out before creating a new account.")
     email = email.strip().lower()
     if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
         return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid email address.", "tab": "register"})
     if len(password) < 8:
         return templates.TemplateResponse("login.html", {"request": request, "error": "Password must be at least 8 characters.", "tab": "register"})
     if email_account_exists(email):
-        return templates.TemplateResponse(
-            "login.html",
-            {
-                "request": request,
-                "error": "Email is already linked to account.",
-                "tab": "register",
-                "local_auth_enabled": LOCAL_AUTH_ENABLED,
-                "google_client_id": CLIENT_ID or "",
-                "auth_google_url": f"{APP_URL}/auth/google",
-            },
-            status_code=409,
-        )
+        return duplicate_account_response(request)
     lid = save_local_user(email, request)
     try:
         with get_conn() as conn:
@@ -4672,18 +4677,7 @@ async def auth_register(request: Request, email: str = Form(...), password: str 
                 (email, hash_password(password), now_iso(), lid)
             )
     except sqlite3.IntegrityError:
-        return templates.TemplateResponse(
-            "login.html",
-            {
-                "request": request,
-                "error": "Email is already linked to an account. Please sign in instead.",
-                "tab": "register",
-                "local_auth_enabled": LOCAL_AUTH_ENABLED,
-                "google_client_id": CLIENT_ID or "",
-                "auth_google_url": f"{APP_URL}/auth/google",
-            },
-            status_code=409,
-        )
+        return duplicate_account_response(request)
     run_fraud_checks("signup", email, request, {})
     session_id = create_session(lid, request)
     audit_log("user.register", request=request, actor_user_id=lid)
