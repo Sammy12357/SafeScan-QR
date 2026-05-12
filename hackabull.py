@@ -4169,6 +4169,90 @@ async def product_getting_started(request: Request):
     body = "<h2>Getting Started</h2><p>Sign in, connect a wallet for airdrop tracking, then scan or paste a QR payload to see the SafeScan risk verdict and signal breakdown.</p>"
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Getting Started", body))
 
+@qr_app.get("/risk-engine", response_class=HTMLResponse)
+async def risk_engine_page(request: Request):
+    body = """
+    <h2>Risk analysis model</h2>
+    <p>SafeScan QR turns a QR payload into a 0-100 risk score by decoding the payload, classifying the action, inspecting URLs, checking reputation sources, matching wallet-drain patterns, and optionally blending in the local ML model. The final verdict is informational, not a guarantee of safety.</p>
+
+    <div class="risk-model-grid">
+      <section>
+        <h3>Score bands</h3>
+        <ul>
+          <li><strong>0-39 SAFE:</strong> no major suspicious indicators were found.</li>
+          <li><strong>40-79 CAUTION:</strong> one or more suspicious signals need review.</li>
+          <li><strong>80-100 MALICIOUS:</strong> high-risk signals indicate likely phishing, malware, credential theft, or wallet drain behavior.</li>
+        </ul>
+      </section>
+      <section>
+        <h3>Output data</h3>
+        <ul>
+          <li>Final verdict, risk score, confidence score, and threat class.</li>
+          <li>Decoded URL or non-URL QR payload.</li>
+          <li>Human-readable explanation and next-action guidance.</li>
+          <li>Signal list with label, severity, detail, and whether the signal is positive or negative.</li>
+        </ul>
+      </section>
+    </div>
+
+    <h2>Data checked during analysis</h2>
+    <div class="risk-model-grid">
+      <section>
+        <h3>Payload and action data</h3>
+        <ul>
+          <li>URL, text, Wi-Fi, email, SMS, phone, contact card, calendar, wallet, payment, and app-deep-link payloads.</li>
+          <li>Embedded URLs hidden inside non-URL QR actions.</li>
+          <li>Sensitive wording such as password, seed, recovery, verify, login, wallet, bank, and urgent.</li>
+          <li>Download, installer, executable, and compressed file paths.</li>
+        </ul>
+      </section>
+      <section>
+        <h3>URL and domain data</h3>
+        <ul>
+          <li>HTTPS vs non-HTTPS destination.</li>
+          <li>Hostname, top-level domain, punycode, suspicious query parameters, fragments, and redirects.</li>
+          <li>Domain age from WHOIS/RDAP when available.</li>
+          <li>New, recently registered, unknown-age, and high-risk TLD indicators.</li>
+        </ul>
+      </section>
+      <section>
+        <h3>Reputation data</h3>
+        <ul>
+          <li>Google Safe Browsing threat matches when the API key is configured.</li>
+          <li>VirusTotal-style engine summary: clean, unrated, malicious, and suspicious vendor results.</li>
+          <li>Local URL cache so repeated scans can reuse recent verdicts quickly.</li>
+          <li>Admin-confirmed reports and blocklist decisions.</li>
+        </ul>
+      </section>
+      <section>
+        <h3>Crypto and payment data</h3>
+        <ul>
+          <li>Solana and wallet-deep-link payloads.</li>
+          <li>Wallet address placement in URL query strings or fragments.</li>
+          <li>Claim, approve, permit, signature, drain, mint, airdrop, and connect-wallet language.</li>
+          <li>Payment QR actions that can launch wallet, transfer, or checkout flows.</li>
+        </ul>
+      </section>
+    </div>
+
+    <h2>Model pipeline</h2>
+    <ol>
+      <li><strong>Decode:</strong> read the QR image, pasted payload, SVG, PDF, or manual URL input.</li>
+      <li><strong>Normalize:</strong> trim and classify the payload type, extract embedded URLs, and validate URL shape.</li>
+      <li><strong>Inspect:</strong> check scheme, domain, path, query, redirects, reputation matches, domain age, and crypto patterns.</li>
+      <li><strong>Score:</strong> convert each signal into weighted risk, then clamp the final confidence score from 0 to 100.</li>
+      <li><strong>Blend ML:</strong> when enabled, combine the local QR ML model score with rule-based evidence.</li>
+      <li><strong>Explain:</strong> return the verdict, score, reasons, action description, threat class, and optional admin/reporting metadata.</li>
+    </ol>
+
+    <h2>Stored data</h2>
+    <p>For signed-in users, SafeScan can save scan history and counters so profile progress, scan history, fraud prevention, and leaderboard features work across sessions. Stored scan rows may include user id, email, URL or payload, risk score, verdict, signal JSON, report status, and created time. Uploaded QR image files may be stored temporarily according to the configured upload retention policy.</p>
+
+    <h2>Privacy and limits</h2>
+    <p>SafeScan avoids sending direct personal identifiers to external AI analysis providers. URL payloads and risk signals may be processed by configured reputation or AI services. The engine is designed to explain risk clearly, but users should still verify important links, wallet prompts, and payment requests independently.</p>
+    """
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Risk Engine", body))
+
 @qr_app.get("/product/wedges", response_class=HTMLResponse)
 async def product_wedges(request: Request):
     body = "<h2>Wedges</h2><p>SafeScan starts with consumer QR safety, expands into Solana Mobile distribution, and grows into a threat-intelligence API for wallets, dApps, and payment providers.</p>"

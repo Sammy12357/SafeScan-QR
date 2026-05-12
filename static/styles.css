@@ -380,6 +380,10 @@ body.qr-camera-open { overflow: hidden; }
 .legal-document h2 { margin-top: 26px; color: var(--text); }
 .legal-document p, .legal-document li { color: var(--muted); line-height: 1.65; }
 .legal-meta { margin-top: 0; color: var(--accent) !important; font-weight: 800; }
+.risk-model-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 18px 0; }
+.risk-model-grid section { min-width: 0; padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.035); }
+.risk-model-grid h3 { margin: 0 0 10px; font-family: var(--display-font); font-size: 1.05rem; letter-spacing: 0; color: var(--text); }
+.risk-model-grid ul { margin: 0; padding-left: 18px; }
 .legal-table { width: 100%; min-width: 760px; table-layout: fixed; border-collapse: collapse; margin: 18px 0; }
 .legal-table th, .legal-table td { padding: 12px; border: 1px solid var(--line); text-align: left; vertical-align: top; color: var(--muted); overflow-wrap: break-word; word-break: normal; hyphens: auto; }
 .legal-table th { color: var(--text); background: rgba(255, 255, 255, 0.05); }
@@ -457,6 +461,7 @@ body.qr-camera-open { overflow: hidden; }
   .risk-modal { align-items: stretch; padding: 0; }
   .risk-modal-card { width: 100%; max-height: 100vh; min-height: 100vh; border-radius: 0; padding: 18px; }
   .payment-panel { grid-template-columns: 1fr; }
+  .risk-model-grid { grid-template-columns: 1fr; }
   .risk-verdict-top { grid-template-columns: 1fr; text-align: center; }
   .risk-indicator { width: 118px; margin: 0 auto; }
   .confidence-header, .reputation-row { align-items: stretch; flex-direction: column; }

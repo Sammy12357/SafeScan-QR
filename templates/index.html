@@ -374,6 +374,7 @@
               {% if virus_total %}<div><p class="engine-label">VirusTotal</p><p>{{ virus_total.summary.clean }} clean · {{ virus_total.summary.unrated }} unrated · {{ virus_total.summary.malicious }} malicious</p></div>{% endif %}
               {% if ml_risk and ml_risk.enabled %}<div><p class="engine-label">ML model</p><p>{{ ml_risk.label }} · {{ ml_risk.score | round(1) }}/100</p></div>{% endif %}
             </div>
+            <p class="engine-copy"><a href="/risk-engine">Risk Engine details</a></p>
           </article>
         </div>
       </section>
