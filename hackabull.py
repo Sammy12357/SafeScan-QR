@@ -4200,13 +4200,13 @@ async def alpha_payment_page(request: Request):
     <h2>Alpha Premium</h2>
     <p>Pay $1/mo for Alpha access to SafeScan QR premium API docs, risk scoring endpoints, and merchant QR safety workflows.</p>
     <div class="payment-panel">
-      <div>
+      <div class="payment-option">
         <p class="eyebrow">Card</p>
         <h3>Stripe checkout</h3>
         <p>Use this for credit card and subscription billing.</p>
         {stripe_button}
       </div>
-      <div>
+      <div class="payment-option payment-option-wallet">
         <p class="eyebrow">Solana</p>
         <h3>Wallet payment</h3>
         <p>Use this for a Solana Pay transfer. Access approval still needs manual or webhook confirmation.</p>
@@ -4214,7 +4214,6 @@ async def alpha_payment_page(request: Request):
         {solana_note}
       </div>
     </div>
-    <p class="payment-note">After payment, email <a href="mailto:{ADMIN_EMAIL}">{ADMIN_EMAIL}</a> with the Stripe receipt or Solana transaction signature so Alpha access can be activated.</p>
     """
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Alpha Payment", body))
 
