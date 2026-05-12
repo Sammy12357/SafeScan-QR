@@ -11,6 +11,7 @@ const dom = {
   connectWalletButton: document.getElementById("connectWalletButton"),
   disconnectWalletButton: document.getElementById("disconnectWalletButton"),
   topConnectWalletButton: document.getElementById("topConnectWalletButton"),
+  topCopyReferralButton: document.getElementById("topCopyReferralButton"),
   tokenAddress: document.getElementById("tokenAddress"),
   copyTokenAddressButton: document.getElementById("copyTokenAddressButton"),
   airdropProfile: document.getElementById("airdropProfile"),
@@ -34,6 +35,25 @@ const loadingSteps = [
   "Running reputation scan...",
   "Consulting AI analyst..."
 ];
+let copyToastTimer = 0;
+
+function showCopyToast(message = "Copied") {
+  let toast = document.getElementById("copyToast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "copyToast";
+    toast.className = "copy-toast";
+    toast.setAttribute("role", "status");
+    toast.setAttribute("aria-live", "polite");
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.classList.add("visible");
+  window.clearTimeout(copyToastTimer);
+  copyToastTimer = window.setTimeout(() => {
+    toast.classList.remove("visible");
+  }, 1400);
+}
 
 async function sha256(value) {
   if (!crypto?.subtle) return "";
@@ -469,6 +489,18 @@ dom.copyTokenAddressButton?.addEventListener("click", async () => {
   dom.tokenAddress?.classList.add("token-address-copied");
 
   copyTextToClipboard(tokenAddress).catch(() => {});
+});
+
+dom.topCopyReferralButton?.addEventListener("click", async () => {
+  try {
+    const response = await fetch("/api/referral", { credentials: "same-origin" });
+    const body = await response.json();
+    if (!response.ok || !body.referralLink) throw new Error(body.detail || "Referral link unavailable.");
+    const copied = await copyTextToClipboard(body.referralLink);
+    showCopyToast(copied ? "Copied" : "Copy failed");
+  } catch {
+    showCopyToast("Sign in first");
+  }
 });
 
 dom.qrForm?.addEventListener("submit", () => {

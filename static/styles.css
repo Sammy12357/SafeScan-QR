@@ -138,6 +138,8 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
 .token-address { padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: rgba(0, 0, 0, 0.16); color: var(--text); font-family: "IBM Plex Mono", monospace; font-size: 0.92rem; overflow-wrap: anywhere; }
 .token-address-copied { animation: tokenCopiedPulse 0.9s ease-out; }
 .token-copy-button { padding: 12px 14px; border-radius: 14px; border: 1px solid rgba(103, 242, 200, 0.24); background: rgba(103, 242, 200, 0.08); color: var(--accent); font: inherit; font-weight: 800; cursor: pointer; }
+.copy-toast { position: fixed; top: 22px; left: 50%; z-index: 1200; transform: translate(-50%, -10px); opacity: 0; pointer-events: none; padding: 10px 14px; border: 1px solid rgba(103, 242, 200, 0.34); border-radius: 12px; background: rgba(7, 17, 29, 0.94); color: var(--accent); font-weight: 800; box-shadow: 0 14px 38px rgba(0, 0, 0, 0.28); transition: opacity 0.18s ease, transform 0.18s ease; }
+.copy-toast.visible { opacity: 1; transform: translate(-50%, 0); }
 
 .airdrop-card h3 { margin: 8px 0 10px; font-size: 1.35rem; }
 .airdrop-card label { display: block; margin: 18px 0 10px; font-weight: 700; }
