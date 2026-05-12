@@ -285,7 +285,7 @@ function showWalletModal(content) {
   removeWalletModal();
   const modal = document.createElement("div");
   modal.className = "wallet-modal";
-  modal.innerHTML = `<div class="wallet-modal-card"><button class="wallet-modal-close" type="button" aria-label="Close wallet dialog">X</button>${content}</div>`;
+  modal.innerHTML = `<div class="wallet-modal-card"><button class="wallet-modal-close" type="button" aria-label="Close wallet dialog" style="position:absolute;top:12px;right:12px;display:grid;place-items:center;width:34px;height:34px;border:1px solid rgba(255,110,127,0.72);border-radius:8px;background:rgba(255,110,127,0.16);color:#ff6e7f;font-family:inherit;font-size:1rem;font-weight:900;line-height:1;cursor:pointer;z-index:3;">X</button>${content}</div>`;
   modal.addEventListener("click", (event) => {
     if (event.target === modal) removeWalletModal();
   });
@@ -493,15 +493,22 @@ dom.copyTokenAddressButton?.addEventListener("click", async () => {
 });
 
 dom.topCopyReferralButton?.addEventListener("click", async () => {
+  const originalText = dom.topCopyReferralButton.textContent;
+  window.clearTimeout(dom.topCopyReferralButton.dataset.resetTimer);
   try {
     const response = await fetch("/api/referral", { credentials: "same-origin" });
     const body = await response.json();
     if (!response.ok || !body.referralLink) throw new Error(body.detail || "Referral link unavailable.");
     const copied = await copyTextToClipboard(body.referralLink);
-    showCopyToast(copied ? "Copied" : "Copy failed");
+    dom.topCopyReferralButton.textContent = copied ? "Copied link" : "Copy failed";
+    showCopyToast(copied ? "Copied link" : "Copy failed");
   } catch {
+    dom.topCopyReferralButton.textContent = "Sign in first";
     showCopyToast("Sign in first");
   }
+  dom.topCopyReferralButton.dataset.resetTimer = window.setTimeout(() => {
+    dom.topCopyReferralButton.textContent = originalText || "Referral link";
+  }, 1800);
 });
 
 dom.qrForm?.addEventListener("submit", () => {
