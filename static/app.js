@@ -497,8 +497,9 @@ dom.topCopyReferralButton?.addEventListener("click", async () => {
   try {
     const response = await fetch("/api/referral", { credentials: "same-origin" });
     const body = await response.json();
-    if (!response.ok || !body.referralLink) throw new Error(body.detail || "Referral link unavailable.");
-    const copied = await copyTextToClipboard(body.referralLink);
+    const referralLink = body.referralLink || body.link;
+    if (!response.ok || !referralLink) throw new Error(body.detail || "Referral link unavailable.");
+    const copied = await copyTextToClipboard(referralLink);
     dom.topCopyReferralButton.textContent = copied ? "Copied link" : "Copy failed";
     showCopyToast(copied ? "Copied link" : "Copy failed");
   } catch {
