@@ -13,7 +13,7 @@ import secrets
 import socket
 import time
 import csv
-from urllib.parse import quote, urljoin, urlparse, parse_qsl
+from urllib.parse import quote, urlencode, urljoin, urlparse, parse_qsl
 from datetime import datetime, timedelta
 from xml.etree import ElementTree
 
@@ -130,7 +130,7 @@ VIRUSTOTAL_API_KEY = os.getenv("VIRUSTOTAL_API_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SOLANA_RPC_URL = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
-ALPHA_STRIPE_PAYMENT_LINK = os.getenv("ALPHA_STRIPE_PAYMENT_LINK", "").strip()
+ALPHA_STRIPE_PAYMENT_LINK = os.getenv("ALPHA_STRIPE_PAYMENT_LINK", "https://buy.stripe.com/00w3cxfdAb7OcKB4sC87K01").strip()
 ALPHA_SOLANA_RECIPIENT = os.getenv("ALPHA_SOLANA_RECIPIENT", "").strip()
 ALPHA_SOLANA_AMOUNT_SOL = os.getenv("ALPHA_SOLANA_AMOUNT_SOL", "").strip()
 ALPHA_SOLANA_LABEL = os.getenv("ALPHA_SOLANA_LABEL", "SafeScan QR Alpha").strip()
@@ -315,6 +315,16 @@ def init_db():
                          nonce TEXT NOT NULL, message TEXT NOT NULL,
                          issued_at TEXT NOT NULL, expires_at TEXT NOT NULL,
                          used INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS alpha_subscriptions
+                        (id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+                         email TEXT NOT NULL, tier TEXT NOT NULL DEFAULT 'alpha_premium',
+                         provider TEXT NOT NULL DEFAULT 'stripe',
+                         status TEXT NOT NULL DEFAULT 'active',
+                         purchased_at TEXT NOT NULL,
+                         checkout_session_id TEXT, stripe_payment_link TEXT,
+                         client_reference_id TEXT, metadata TEXT,
+                         created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                         UNIQUE(user_id, tier, provider))''')
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sessions_google_id ON sessions(google_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_logs(created_at)")
@@ -331,6 +341,8 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_device_fingerprint ON device_fingerprints(fingerprint)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_wallets_address ON wallets(address)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_wallet_nonces_wallet ON wallet_nonces(wallet_address)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_alpha_subscriptions_email ON alpha_subscriptions(email)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_alpha_subscriptions_purchased ON alpha_subscriptions(purchased_at)")
     cursor.execute("PRAGMA table_info(users)")
     user_columns = {row[1] for row in cursor.fetchall()}
     user_migrations = {
@@ -2160,6 +2172,65 @@ def alpha_solana_pay_url():
 
     query = "&".join(f"{quote(key, safe='')}={quote(value, safe='')}" for key, value in params)
     return f"solana:{ALPHA_SOLANA_RECIPIENT}?{query}" if query else f"solana:{ALPHA_SOLANA_RECIPIENT}"
+
+def alpha_stripe_checkout_url(request: Request):
+    if not ALPHA_STRIPE_PAYMENT_LINK:
+        return ""
+
+    user = get_session_user(request)
+    params = []
+    if user:
+        if user.get("email"):
+            params.append(("prefilled_email", user["email"]))
+        if user.get("google_id"):
+            params.append(("client_reference_id", user["google_id"]))
+
+    if not params:
+        return ALPHA_STRIPE_PAYMENT_LINK
+
+    separator = "&" if "?" in ALPHA_STRIPE_PAYMENT_LINK else "?"
+    return f"{ALPHA_STRIPE_PAYMENT_LINK}{separator}{urlencode(params)}"
+
+def record_alpha_subscription_purchase(request: Request, provider="stripe"):
+    user = get_session_user(request)
+    if not user:
+        return None
+
+    purchased_at = now_iso()
+    metadata = {
+        "source": "alpha_success_page",
+        "ipHash": hash_ip(request_ip(request)),
+        "userAgent": request.headers.get("user-agent", ""),
+    }
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO alpha_subscriptions
+                (id, user_id, email, tier, provider, status, purchased_at,
+                 stripe_payment_link, client_reference_id, metadata, created_at, updated_at)
+            VALUES (?, ?, ?, 'alpha_premium', ?, 'active', ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, tier, provider) DO UPDATE SET
+                email = excluded.email,
+                status = 'active',
+                stripe_payment_link = excluded.stripe_payment_link,
+                client_reference_id = excluded.client_reference_id,
+                metadata = excluded.metadata,
+                updated_at = excluded.updated_at
+            """,
+            (
+                make_id("sub"),
+                user["google_id"],
+                user["email"],
+                provider,
+                purchased_at,
+                ALPHA_STRIPE_PAYMENT_LINK if provider == "stripe" else None,
+                user["google_id"],
+                json.dumps(metadata),
+                purchased_at,
+                purchased_at,
+            ),
+        )
+    return {**user, "purchased_at": purchased_at}
 
 def extract_urls(text):
     return re.findall(r"https?://[^\s<>'\"]+", text, flags=re.IGNORECASE)
@@ -4265,9 +4336,10 @@ async def product_pricing(request: Request):
 
 @qr_app.get("/pay/alpha", response_class=HTMLResponse)
 async def alpha_payment_page(request: Request):
+    stripe_url = alpha_stripe_checkout_url(request)
     stripe_button = (
-        f"<a class='primary-button payment-button' href='{ALPHA_STRIPE_PAYMENT_LINK}' rel='noopener noreferrer'>Pay by card with Stripe</a>"
-        if ALPHA_STRIPE_PAYMENT_LINK else
+        f"<a class='primary-button payment-button' href='{stripe_url}' rel='noopener noreferrer'>Pay by card with Stripe</a>"
+        if stripe_url else
         "<span class='secondary-button payment-button payment-disabled'>Stripe checkout not configured</span>"
     )
     solana_url = alpha_solana_pay_url()
@@ -4303,6 +4375,12 @@ async def alpha_payment_page(request: Request):
 
 @qr_app.get("/pay/alpha/success", response_class=HTMLResponse)
 async def alpha_payment_success_page(request: Request):
+    recorded_purchase = record_alpha_subscription_purchase(request)
+    storage_note = (
+        f"<p class='payment-note'>Subscription start saved for {recorded_purchase['email']} on {recorded_purchase['purchased_at']}.</p>"
+        if recorded_purchase else
+        "<p class='payment-note'>Sign in to SafeScan, then revisit this success page so your subscription start date can be saved to your account.</p>"
+    )
     body = f"""
     <h2>Alpha payment received</h2>
     <p>Thanks for subscribing to SafeScan Alpha Premium. Your payment processor has accepted the checkout session.</p>
@@ -4319,7 +4397,8 @@ async def alpha_payment_success_page(request: Request):
         <a class="primary-button payment-button" href="/resources/docs">Open docs</a>
       </div>
     </div>
-    <p class="payment-note">Automatic account activation will be connected after Stripe webhooks or Solana payment verification are configured.</p>
+    {storage_note}
+    <p class="payment-note">For fully automatic Stripe verification, connect a Stripe webhook next so SafeScan can confirm paid checkout sessions directly from Stripe.</p>
     """
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Alpha Payment Success", body))
 

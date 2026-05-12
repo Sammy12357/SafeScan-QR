@@ -64,6 +64,30 @@ def test_email_registration_persists_user_credentials_and_session(auth_app):
     assert sessions[0]["google_id"] == users[0]["google_id"]
 
 
+def test_alpha_payment_uses_stripe_link_and_records_purchase_date(auth_app):
+    _, client, db_path = auth_app
+    register(client, "alpha@example.com")
+
+    payment = client.get("/pay/alpha")
+    success = client.get("/pay/alpha/success")
+
+    assert payment.status_code == 200
+    assert "https://buy.stripe.com/00w3cxfdAb7OcKB4sC87K01" in payment.text
+    assert "prefilled_email=alpha%40example.com" in payment.text
+    assert success.status_code == 200
+    assert "Subscription start saved for alpha@example.com" in success.text
+    rows = db_rows(
+        db_path,
+        "SELECT email, tier, provider, status, purchased_at FROM alpha_subscriptions WHERE email = ?",
+        ("alpha@example.com",),
+    )
+    assert len(rows) == 1
+    assert rows[0]["tier"] == "alpha_premium"
+    assert rows[0]["provider"] == "stripe"
+    assert rows[0]["status"] == "active"
+    assert rows[0]["purchased_at"].endswith("Z")
+
+
 def test_email_login_creates_session_and_profile_uses_db_user(auth_app):
     _, setup_client, db_path = auth_app
     register(setup_client)

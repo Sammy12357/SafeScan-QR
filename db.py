@@ -33,6 +33,7 @@ ADMIN_ONLY = {
     "breach_reports",
     "api_keys",
     "waitlist_signups",
+    "alpha_subscriptions",
     "users",
     "scan_results",
 }
