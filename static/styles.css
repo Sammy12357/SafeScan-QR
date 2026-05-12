@@ -336,11 +336,12 @@ body.qr-camera-open { overflow: hidden; }
 .wallet-spinner { width: 34px; height: 34px; border: 3px solid rgba(255, 255, 255, 0.13); border-top-color: var(--accent); border-radius: 50%; animation: walletSpin 0.8s linear infinite; }
 .wallet-status a { color: var(--accent); text-decoration: none; font-weight: 800; }
 @keyframes walletSpin { to { transform: rotate(360deg); } }
-.payment-panel { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 22px; }
-.payment-panel > div { padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.04); }
-.payment-panel h3 { margin: 8px 0 10px; font-family: var(--display-font); font-size: 1.2rem; }
-.payment-button { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; margin-top: 8px; text-align: center; }
-.payment-disabled { opacity: 0.62; cursor: not-allowed; }
+.payment-panel { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 22px; align-items: stretch; }
+.payment-panel > div { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.04); }
+.payment-panel h3 { margin: 0; font-family: var(--display-font); font-size: 1.2rem; }
+.payment-panel p { margin-top: 0; }
+.payment-button { display: flex; align-items: center; justify-content: center; width: 100%; max-width: 360px; min-height: 48px; margin-top: auto; box-sizing: border-box; text-align: center; white-space: normal; overflow-wrap: anywhere; line-height: 1.25; }
+.payment-disabled { opacity: 0.62; cursor: not-allowed; transform: none; }
 .payment-note { color: var(--muted); font-size: 0.95rem; line-height: 1.6; }
 .payment-note code { color: var(--accent); overflow-wrap: anywhere; }
 
