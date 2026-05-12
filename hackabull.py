@@ -4207,7 +4207,6 @@ async def alpha_payment_page(request: Request):
         {stripe_button}
       </div>
       <div class="payment-option payment-option-wallet">
-        <p class="eyebrow">Solana</p>
         <h3>Wallet payment</h3>
         <p>Use this for a Solana Pay transfer. Access approval still needs manual or webhook confirmation.</p>
         {solana_button}
