@@ -3,7 +3,7 @@ import sqlite3
 
 
 def _db_path():
-    return os.path.join(os.getenv("DATA_DIR", "/app/data"), "qr_cache.db")
+    return os.getenv("SQLITE_DB_PATH") or os.path.join(os.getenv("DATA_DIR", "/var/data"), "qr_cache.db")
 
 def migrate():
     conn = sqlite3.connect(_db_path())

@@ -17,7 +17,7 @@ services:
       - AIRDROP_ENABLED=false
       - SOLANA_MAINNET_ENABLED=false
     volumes:
-      - db_data:/app/data
+      - db_data:/var/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health/ready"]
@@ -41,7 +41,7 @@ services:
       - AIRDROP_ENABLED=false
       - SOLANA_MAINNET_ENABLED=false
     volumes:
-      - db_staging:/app/data
+      - db_staging:/var/data
     restart: unless-stopped
     profiles:
       - staging

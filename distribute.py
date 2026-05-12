@@ -256,7 +256,7 @@ async def airdrop_sweep():
             )
 
         # 1. Connect to Database
-        conn = sqlite3.connect(os.path.join(os.getenv("DATA_DIR", "/app/data"), "qr_cache.db"))
+        conn = sqlite3.connect(os.getenv("SQLITE_DB_PATH") or os.path.join(os.getenv("DATA_DIR", "/var/data"), "qr_cache.db"))
         cursor = conn.cursor()
         ensure_distribution_columns(cursor)
         conn.commit()
