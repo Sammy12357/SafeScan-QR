@@ -47,6 +47,7 @@ def database_path() -> str:
         return unquote(parsed.path.lstrip("/")) if os.name == "nt" else unquote(parsed.path)
     data_dir = os.getenv("DATA_DIR")
     if data_dir:
+        os.makedirs(data_dir, exist_ok=True)
         return os.path.join(data_dir, "qr_cache.db")
     sqlite_path = os.getenv("SQLITE_DB_PATH")
     if sqlite_path:
@@ -58,13 +59,15 @@ def database_path() -> str:
     return "qr_cache.db"
 
 
-def set_rls_context(user_id: str | None, role: str = "user"):
+def set_rls_context(user_id: str | None, role: str = "user", email: str | None = None):
     _local.user_id = user_id
     _local.role = role
+    _local.email = email
 
 
 def clear_rls_context():
     _local.user_id = None
+    _local.email = None
     _local.role = "guest"
 
 
@@ -74,6 +77,10 @@ def rls_user_id() -> str | None:
 
 def rls_role() -> str:
     return getattr(_local, "role", "guest")
+
+
+def rls_email() -> str | None:
+    return getattr(_local, "email", None)
 
 
 def is_admin() -> bool:
@@ -120,6 +127,23 @@ def user_scoped_select(conn, table: str, extra_where: str = "", params: tuple = 
     if not uid:
         return []
 
+    email = rls_email()
+    if table in ("scans", "scan_events", "scan_history"):
+        owner_clause = "email = ?"
+        owner_params = [uid]
+        if email and email != uid:
+            owner_clause = "(user_id = ? OR lower(email) = lower(?))" if table != "scan_events" else "lower(email) = lower(?)"
+            owner_params = [uid, email] if table != "scan_events" else [email]
+        elif table != "scan_events":
+            owner_clause = "(user_id = ? OR email = ?)"
+            owner_params = [uid, uid]
+        if extra_where:
+            return conn.execute(
+                f"SELECT * FROM {table} WHERE {owner_clause} AND ({extra_where})",
+                (*owner_params, *params),
+            ).fetchall()
+        return conn.execute(f"SELECT * FROM {table} WHERE {owner_clause}", tuple(owner_params)).fetchall()
+
     if extra_where:
         return conn.execute(
             f"SELECT * FROM {table} WHERE {col} = ? AND ({extra_where})",
@@ -146,6 +170,13 @@ def assert_owns_row(conn, table: str, row_id: str):
     col = USER_COLUMN.get(table)
     if not col:
         raise ValueError(f"Unknown table: {table}")
+
+    if table in ("scans", "scan_history"):
+        row = conn.execute(f"SELECT email, user_id FROM {table} WHERE id = ?", (row_id,)).fetchone()
+        email = rls_email()
+        if row and (str(row["user_id"] or "") == str(uid) or (email and str(row["email"]).lower() == str(email).lower())):
+            return
+        raise PermissionError("You do not own this resource.")
 
     row = conn.execute(f"SELECT {col} FROM {table} WHERE id = ?", (row_id,)).fetchone()
     if not row or str(row[col]) != str(uid):

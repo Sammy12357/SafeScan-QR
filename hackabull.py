@@ -205,7 +205,7 @@ def init_db():
     cursor.execute('''CREATE TABLE IF NOT EXISTS scans (email TEXT PRIMARY KEY, url_found TEXT, scan_count INTEGER DEFAULT 0, wallet_address TEXT, tokens_sent INTEGER DEFAULT 0)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS scan_events
                         (email TEXT NOT NULL, payload_hash TEXT NOT NULL, url_found TEXT NOT NULL,
-                         first_scanned_at TEXT NOT NULL,
+                         first_scanned_at TEXT NOT NULL, user_id TEXT,
                          PRIMARY KEY (email, payload_hash))''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS consent_logs
                         (id TEXT PRIMARY KEY, user_id TEXT, ip_hash TEXT NOT NULL,
@@ -366,8 +366,43 @@ def init_db():
     scan_history_columns = {row[1] for row in cursor.fetchall()}
     if "user_id" not in scan_history_columns:
         cursor.execute("ALTER TABLE scan_history ADD COLUMN user_id TEXT")
+    cursor.execute("PRAGMA table_info(scan_events)")
+    scan_event_columns = {row[1] for row in cursor.fetchall()}
+    if "user_id" not in scan_event_columns:
+        cursor.execute("ALTER TABLE scan_events ADD COLUMN user_id TEXT")
+    cursor.execute("""
+        UPDATE scan_history
+        SET user_id = (
+            SELECT users.google_id
+            FROM users
+            WHERE lower(users.email) = lower(scan_history.email)
+            LIMIT 1
+        )
+        WHERE user_id IS NULL
+    """)
+    cursor.execute("""
+        UPDATE scans
+        SET user_id = (
+            SELECT users.google_id
+            FROM users
+            WHERE lower(users.email) = lower(scans.email)
+            LIMIT 1
+        )
+        WHERE user_id IS NULL
+    """)
+    cursor.execute("""
+        UPDATE scan_events
+        SET user_id = (
+            SELECT users.google_id
+            FROM users
+            WHERE lower(users.email) = lower(scan_events.email)
+            LIMIT 1
+        )
+        WHERE user_id IS NULL
+    """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_scan_history_user_id ON scan_history(user_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_scans_user_id ON scans(user_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_scan_events_user_id ON scan_events(user_id)")
     cursor.execute('''CREATE TABLE IF NOT EXISTS local_credentials
                         (email TEXT PRIMARY KEY,
                          password_hash TEXT NOT NULL,
@@ -1251,9 +1286,9 @@ def record_unique_scan(email, url, wallet, user_id=None):
         previous_url, current_count = cursor.fetchone()
 
         cursor.execute("""
-            INSERT OR IGNORE INTO scan_events (email, payload_hash, url_found, first_scanned_at)
-            VALUES (?, ?, ?, ?)
-        """, (normalized_email, payload_hash, normalized_payload, datetime.now().isoformat()))
+            INSERT OR IGNORE INTO scan_events (email, payload_hash, url_found, first_scanned_at, user_id)
+            VALUES (?, ?, ?, ?, ?)
+        """, (normalized_email, payload_hash, normalized_payload, datetime.now().isoformat(), resolved_user_id))
 
         if cursor.rowcount == 0:
             cursor.execute("SELECT first_scanned_at FROM scan_events WHERE email = ? AND payload_hash = ?", (normalized_email, payload_hash))
@@ -2723,8 +2758,9 @@ async def rls_context_middleware(request: Request, call_next):
         user = get_session_user(request)
         if user:
             set_rls_context(
-                user_id=user.get("email") or user.get("google_id"),
+                user_id=user.get("google_id") or user.get("email"),
                 role=user.get("role", "user"),
+                email=user.get("email"),
             )
         else:
             set_rls_context(None, "guest")
