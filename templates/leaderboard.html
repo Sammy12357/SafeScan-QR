@@ -55,7 +55,7 @@
       <thead>
         <tr>
           <th>Rank</th>
-          <th>Username</th>
+          <th>User</th>
           <th>Unique scans</th>
           <th>Total saved</th>
           <th>Last scan</th>
@@ -63,11 +63,11 @@
       </thead>
       <tbody>
         {% for row in leaders %}
-        <tr class="{{ 'current-user' if row.username == username else '' }}">
+        <tr class="{{ 'current-user' if row.user_id == current_user_id else '' }}">
           <td class="lb-rank {{ 'lb-rank-top' if loop.index <= 3 else '' }}">
             {% if loop.index == 1 %}<span class="medal">🥇</span>{% elif loop.index == 2 %}<span class="medal">🥈</span>{% elif loop.index == 3 %}<span class="medal">🥉</span>{% else %}{{ row.rank }}{% endif %}
           </td>
-          <td class="lb-username {{ 'lb-username-you' if row.username == username else '' }}">{{ row.username }}</td>
+          <td class="lb-username {{ 'lb-username-you' if row.user_id == current_user_id else '' }}">{{ row.public_name }}</td>
           <td class="lb-num">{{ row.scan_count }}</td>
           <td class="lb-num">{{ row.total_saved_scans }}</td>
           <td class="lb-date">{{ row.last_scanned_at or "—" }}</td>

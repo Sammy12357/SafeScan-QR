@@ -275,6 +275,26 @@ def test_global_leaderboard_recovers_count_from_saved_history(auth_app):
     assert leaders[0]["total_saved_scans"] == 2
 
 
+def test_global_leaderboard_includes_all_registered_users(auth_app):
+    module, client, db_path = auth_app
+    register(client, "scanner-no-name@example.com")
+    scanner = db_rows(db_path, "SELECT google_id FROM users WHERE email = ?", ("scanner-no-name@example.com",))[0]
+    module.record_unique_scan("scanner-no-name@example.com", "https://scan.example", "", user_id=scanner["google_id"])
+
+    other_client = TestClient(module.qr_app, base_url="https://testserver")
+    register(other_client, "zero@example.com")
+    zero_user = db_rows(db_path, "SELECT google_id FROM users WHERE email = ?", ("zero@example.com",))[0]
+
+    leaders = module.get_global_leaderboard()
+    by_user_id = {row["user_id"]: row for row in leaders}
+
+    assert scanner["google_id"] in by_user_id
+    assert zero_user["google_id"] in by_user_id
+    assert by_user_id[scanner["google_id"]]["scan_count"] == 1
+    assert by_user_id[scanner["google_id"]]["public_name"] == "sc***@example.com"
+    assert by_user_id[zero_user["google_id"]]["scan_count"] == 0
+
+
 def test_uploaded_qr_image_decodes_saves_history_and_increments_counter(auth_app):
     module, client, db_path = auth_app
     register(client, "upload@example.com")

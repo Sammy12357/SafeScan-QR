@@ -1212,6 +1212,20 @@ def safe_next_url(request: Request, raw="", fallback="/"):
         return raw
     return fallback
 
+def public_leaderboard_name(row):
+    username = (row.get("username") or "").strip()
+    if username:
+        return username
+    display_name = (row.get("display_name") or "").strip()
+    if display_name:
+        return display_name[:40]
+    email = (row.get("email") or "").strip()
+    if "@" in email:
+        local, domain = email.split("@", 1)
+        local_hint = local[:2] + "***" if len(local) > 2 else "***"
+        return f"{local_hint}@{domain}"
+    return "SafeScan user"
+
 def get_global_leaderboard(limit=50):
     bounded_limit = max(1, min(int(limit or 50), 100))
     with get_conn() as conn:
@@ -1220,7 +1234,9 @@ def get_global_leaderboard(limit=50):
             """
             SELECT
                 u.google_id AS user_id,
+                u.email,
                 u.username,
+                u.display_name,
                 MAX(COALESCE(s.scan_count, 0), COALESCE(se.unique_events, 0), COALESCE(h.unique_saved_scans, 0)) AS scan_count,
                 COALESCE(h.total_saved_scans, 0) AS total_saved_scans,
                 COALESCE(h.last_history_at, se.last_event_at) AS last_scanned_at
@@ -1238,9 +1254,7 @@ def get_global_leaderboard(limit=50):
                 GROUP BY lower(email)
             ) se ON se.email_key = lower(u.email)
             WHERE u.status != 'deleted'
-              AND COALESCE(u.username, '') != ''
-              AND (COALESCE(s.scan_count, 0) > 0 OR COALESCE(h.total_saved_scans, 0) > 0 OR COALESCE(se.unique_events, 0) > 0)
-            GROUP BY u.google_id, u.username, s.scan_count, h.total_saved_scans, h.unique_saved_scans, h.last_history_at, se.unique_events, se.last_event_at
+            GROUP BY u.google_id, u.email, u.username, u.display_name, s.scan_count, h.total_saved_scans, h.unique_saved_scans, h.last_history_at, se.unique_events, se.last_event_at
             ORDER BY scan_count DESC, total_saved_scans DESC, last_scanned_at DESC
             LIMIT ?
             """,
@@ -1250,6 +1264,7 @@ def get_global_leaderboard(limit=50):
     for index, row in enumerate(rows, start=1):
         item = dict(row)
         item["rank"] = index
+        item["public_name"] = public_leaderboard_name(item)
         leaders.append(item)
     return leaders
 
@@ -4760,6 +4775,7 @@ async def leaderboard_page(request: Request):
         "request": request,
         "email": email,
         "username": user.get("username") if user else "",
+        "current_user_id": user.get("google_id") if user else "",
         "leaders": get_global_leaderboard(50),
         "started_at": APP_STARTED_AT.isoformat() + "Z",
     })
