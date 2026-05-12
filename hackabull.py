@@ -165,6 +165,23 @@ templates = Jinja2Templates(directory="templates")
 _template_response = templates.TemplateResponse
 
 
+def format_time_only(value):
+    if value in (None, ""):
+        return ""
+    raw = str(value).strip()
+    if not raw:
+        return ""
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        return parsed.strftime("%H:%M:%S")
+    except ValueError:
+        match = re.search(r"T(\d{2}:\d{2}:\d{2})", raw) or re.search(r"\b(\d{2}:\d{2}:\d{2})\b", raw)
+        return match.group(1) if match else raw
+
+
+templates.env.filters["time_only"] = format_time_only
+
+
 def template_response_compat(*args, **kwargs):
     if args and isinstance(args[0], str):
         name = args[0]

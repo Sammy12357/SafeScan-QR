@@ -295,6 +295,13 @@ def test_global_leaderboard_includes_all_registered_users(auth_app):
     assert by_user_id[zero_user["google_id"]]["scan_count"] == 0
 
 
+def test_time_only_formatter_removes_iso_date(auth_app):
+    module, _, _ = auth_app
+
+    assert module.format_time_only("2026-05-12T04:52:11.952379Z") == "04:52:11"
+    assert module.format_time_only("2026-05-12T23:59:59Z") == "23:59:59"
+
+
 def test_uploaded_qr_image_decodes_saves_history_and_increments_counter(auth_app):
     module, client, db_path = auth_app
     register(client, "upload@example.com")

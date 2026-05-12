@@ -70,7 +70,7 @@
           <td class="lb-username {{ 'lb-username-you' if row.user_id == current_user_id else '' }}">{{ row.public_name }}</td>
           <td class="lb-num">{{ row.scan_count }}</td>
           <td class="lb-num">{{ row.total_saved_scans }}</td>
-          <td class="lb-date">{{ row.last_scanned_at or "—" }}</td>
+          <td class="lb-date">{{ (row.last_scanned_at | time_only) or "—" }}</td>
         </tr>
         {% endfor %}
       </tbody>
