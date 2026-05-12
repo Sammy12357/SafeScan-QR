@@ -493,7 +493,6 @@ dom.copyTokenAddressButton?.addEventListener("click", async () => {
 });
 
 dom.topCopyReferralButton?.addEventListener("click", async () => {
-  const originalText = dom.topCopyReferralButton.textContent;
   window.clearTimeout(dom.topCopyReferralButton.dataset.resetTimer);
   try {
     const response = await fetch("/api/referral", { credentials: "same-origin" });
@@ -507,7 +506,7 @@ dom.topCopyReferralButton?.addEventListener("click", async () => {
     showCopyToast("Sign in first");
   }
   dom.topCopyReferralButton.dataset.resetTimer = window.setTimeout(() => {
-    dom.topCopyReferralButton.textContent = originalText || "Referral link";
+    dom.topCopyReferralButton.textContent = "Referral link";
   }, 1800);
 });
 
