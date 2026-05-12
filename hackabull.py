@@ -4338,6 +4338,100 @@ async def resources_roadmap(request: Request):
     body = "<h2>Roadmap</h2><p>Next milestones: waitlist, mobile beta, Solana dApp Store submission, wallet integrations, threat-intelligence API, and expanded abuse reporting.</p>"
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Roadmap", body))
 
+@qr_app.get("/tokenomics", response_class=HTMLResponse)
+async def tokenomics_page(request: Request):
+    body = """
+    <h2>$SQR SafeScan Token Whitepaper</h2>
+    <p>$SQR is the proposed utility token for the SafeScan QR ecosystem. It is designed to support QR threat intelligence, wallet safety workflows, merchant integrations, community reporting, and access to advanced security features. This page is informational and does not offer financial, investment, tax, or legal advice.</p>
+
+    <h2>Mission</h2>
+    <p>SafeScan exists to make QR codes, wallet prompts, payment links, and app-deep-link actions understandable before a user continues. $SQR is intended to align the product, security contributors, integration partners, and active users around safer scan-before-you-sign behavior.</p>
+
+    <div class="risk-model-grid">
+      <section>
+        <h3>Network role</h3>
+        <ul>
+          <li>Support access to advanced QR risk intelligence features.</li>
+          <li>Power future merchant and developer API workflows.</li>
+          <li>Reward useful security participation, verified reports, and ecosystem contribution.</li>
+          <li>Create a shared identity layer for SafeScan-aligned security tooling.</li>
+        </ul>
+      </section>
+      <section>
+        <h3>Product utility</h3>
+        <ul>
+          <li>Risk scan credits for higher-volume API or merchant usage.</li>
+          <li>Access controls for premium intelligence endpoints.</li>
+          <li>Reputation markers for trusted reporters, merchants, and integrations.</li>
+          <li>Governance-style feedback on product priorities where legally appropriate.</li>
+        </ul>
+      </section>
+    </div>
+
+    <h2>Supply framework</h2>
+    <p>The $SQR supply framework is intended to be fixed, transparent, and published before any production token event. Allocation categories may include ecosystem growth, product development, security operations, liquidity support, treasury reserves, partnerships, and community participation. Final numbers should be published only after legal, tax, and launch review.</p>
+
+    <h2>Ecosystem participants</h2>
+    <div class="risk-model-grid">
+      <section>
+        <h3>Users</h3>
+        <ul>
+          <li>Scan suspicious QR codes before opening links or wallet prompts.</li>
+          <li>Review the risk explanation and report malicious payloads.</li>
+          <li>Build a portable SafeScan security profile over time.</li>
+        </ul>
+      </section>
+      <section>
+        <h3>Merchants and builders</h3>
+        <ul>
+          <li>Use SafeScan APIs to pre-check payment QR codes and customer-facing links.</li>
+          <li>Integrate risk labels into checkout, wallet, event, and campaign flows.</li>
+          <li>Use SafeScan reputation data to reduce spoofing and brand impersonation.</li>
+        </ul>
+      </section>
+      <section>
+        <h3>Security contributors</h3>
+        <ul>
+          <li>Submit high-quality reports on malicious QR payloads and wallet-drain patterns.</li>
+          <li>Help validate suspicious domains, redirects, and crypto transaction prompts.</li>
+          <li>Contribute documentation, test cases, and detection ideas.</li>
+        </ul>
+      </section>
+      <section>
+        <h3>SafeScan treasury</h3>
+        <ul>
+          <li>Fund product development, API infrastructure, abuse response, and audits.</li>
+          <li>Support integrations with wallets, merchants, browsers, and mobile clients.</li>
+          <li>Maintain reserves for responsible ecosystem operations.</li>
+        </ul>
+      </section>
+    </div>
+
+    <h2>Utility design principles</h2>
+    <ul>
+      <li><strong>Security first:</strong> utility should strengthen user safety rather than encourage risky behavior.</li>
+      <li><strong>Transparent rules:</strong> access, rewards, and contributor programs should be documented before launch.</li>
+      <li><strong>Regulatory aware:</strong> distribution and access rules should respect applicable law and platform policy.</li>
+      <li><strong>Product anchored:</strong> token utility should map to real SafeScan usage, not vague speculation.</li>
+      <li><strong>Abuse resistant:</strong> fraud controls should reduce bot activity, duplicate accounts, and low-quality reporting.</li>
+    </ul>
+
+    <h2>Risk controls</h2>
+    <p>SafeScan should continue to enforce account integrity, scan velocity checks, wallet reuse detection, report review workflows, admin audit logs, and anti-abuse controls. Token-related features should be gated by identity, reputation, and operational review where needed.</p>
+
+    <h2>Roadmap</h2>
+    <ol>
+      <li><strong>Phase 1:</strong> publish SafeScan risk engine, scan history, profile, wallet verification, and reporting flows.</li>
+      <li><strong>Phase 2:</strong> release developer documentation for QR risk scoring, merchant safety checks, and wallet-flow analysis.</li>
+      <li><strong>Phase 3:</strong> define $SQR access rules, contributor criteria, API credit mechanics, and ecosystem governance boundaries.</li>
+      <li><strong>Phase 4:</strong> complete legal, security, and operational review before any public token launch.</li>
+    </ol>
+
+    <h2>Disclaimer</h2>
+    <p>$SQR is a proposed utility design for the SafeScan QR ecosystem. Features, launch timing, access rules, and allocation categories may change. Nothing on this page is a promise of token value, profit, availability, or eligibility.</p>
+    """
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "$SQR Tokenomics", body))
+
 @qr_app.get("/legal/do-not-sell", response_class=HTMLResponse)
 async def do_not_sell(request: Request):
     body = """
