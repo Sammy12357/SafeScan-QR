@@ -94,6 +94,7 @@ _AUTH0_JWKS_TTL_SECONDS = 60 * 60
 api_key = os.getenv("GOOGLE_SAFE_BROWSING_API_KEY") or os.getenv("googe_api_key")
 AIRDROP_ADMIN_SECRET = os.getenv("AIRDROP_ADMIN_SECRET")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "safescanqr@gmail.com")
+ADMIN_EMAIL_GMAIL_COMPOSE_URL = f"https://mail.google.com/mail/?view=cm&fs=1&to={quote(ADMIN_EMAIL)}"
 DEFAULT_ADMIN_EMAILS = {"homzajoe@gmail.com", "restreposamuel2004@gmail.com"}
 ADMIN_EMAILS = DEFAULT_ADMIN_EMAILS | {email.strip().lower() for email in os.getenv("ADMIN_EMAILS", ADMIN_EMAIL).split(",") if email.strip()}
 OWNER_EMAILS = {email.strip().lower() for email in os.getenv("OWNER_EMAILS", "").split(",") if email.strip()} or {ADMIN_EMAIL.strip().lower()}
@@ -4154,7 +4155,7 @@ async def security_page(request: Request):
 async def contact_page(request: Request):
     body = f"""
     <h2>Contact</h2>
-    <p>For privacy, security, partnerships, or hackathon questions, contact <a href="mailto:{ADMIN_EMAIL}">{ADMIN_EMAIL}</a>.</p>
+    <p>For privacy, security, partnerships, or hackathon questions, contact <a href="{ADMIN_EMAIL_GMAIL_COMPOSE_URL}" target="_blank" rel="noopener noreferrer">{ADMIN_EMAIL}</a>.</p>
     """
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Contact", body))
 
