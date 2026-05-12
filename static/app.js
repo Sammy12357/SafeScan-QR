@@ -285,10 +285,11 @@ function showWalletModal(content) {
   removeWalletModal();
   const modal = document.createElement("div");
   modal.className = "wallet-modal";
-  modal.innerHTML = `<div class="wallet-modal-card">${content}</div>`;
+  modal.innerHTML = `<div class="wallet-modal-card"><button class="wallet-modal-close" type="button" aria-label="Close wallet dialog">X</button>${content}</div>`;
   modal.addEventListener("click", (event) => {
     if (event.target === modal) removeWalletModal();
   });
+  modal.querySelector(".wallet-modal-close")?.addEventListener("click", removeWalletModal);
   document.body.appendChild(modal);
   return modal;
 }
