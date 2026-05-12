@@ -37,25 +37,60 @@ ADMIN_ONLY = {
     "scan_results",
 }
 
+LEGACY_SQLITE_PATH = "/app/data/qr_cache.db"
+DEFAULT_SQLITE_PATH = "/var/data/qr_cache.db"
+
+
+def _sqlite_data_weight(path: str) -> int:
+    if not path or not os.path.exists(path):
+        return 0
+    try:
+        with sqlite3.connect(path) as conn:
+            total = 0
+            for table in ("users", "scans", "scan_history", "sessions"):
+                exists = conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                    (table,),
+                ).fetchone()
+                if exists:
+                    total += int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] or 0)
+            return total
+    except sqlite3.Error:
+        return 0
+
+
+def _prefer_existing_database(candidate: str) -> str:
+    legacy_path = LEGACY_SQLITE_PATH
+    default_path = DEFAULT_SQLITE_PATH
+    if candidate not in (legacy_path, default_path):
+        return candidate
+    candidate_weight = _sqlite_data_weight(candidate)
+    alternate = legacy_path if candidate == default_path else default_path
+    alternate_weight = _sqlite_data_weight(alternate)
+    if alternate_weight > candidate_weight:
+        return alternate
+    return candidate
+
 
 def database_path() -> str:
     database_url = os.getenv("DATABASE_URL", "").strip()
     if database_url.startswith("sqlite:///"):
         parsed = urlparse(database_url)
-        if parsed.netloc:
-            return unquote(f"//{parsed.netloc}{parsed.path}")
-        return unquote(parsed.path.lstrip("/")) if os.name == "nt" else unquote(parsed.path)
+        path = unquote(f"//{parsed.netloc}{parsed.path}") if parsed.netloc else (unquote(parsed.path.lstrip("/")) if os.name == "nt" else unquote(parsed.path))
+        return _prefer_existing_database(path)
     data_dir = os.getenv("DATA_DIR")
     if data_dir:
         os.makedirs(data_dir, exist_ok=True)
-        return os.path.join(data_dir, "qr_cache.db")
+        return _prefer_existing_database(os.path.join(data_dir, "qr_cache.db"))
     sqlite_path = os.getenv("SQLITE_DB_PATH")
     if sqlite_path:
-        return sqlite_path
-    if os.path.isdir("/var/data") and os.access("/var/data", os.W_OK):
-        return "/var/data/qr_cache.db"
-    if os.path.exists("/app/data/qr_cache.db") or (os.path.isdir("/app/data") and os.access("/app/data", os.W_OK)):
-        return "/app/data/qr_cache.db"
+        return _prefer_existing_database(sqlite_path)
+    if _sqlite_data_weight(LEGACY_SQLITE_PATH) > _sqlite_data_weight(DEFAULT_SQLITE_PATH):
+        return LEGACY_SQLITE_PATH
+    if os.path.isdir(os.path.dirname(DEFAULT_SQLITE_PATH)) and os.access(os.path.dirname(DEFAULT_SQLITE_PATH), os.W_OK):
+        return DEFAULT_SQLITE_PATH
+    if os.path.exists(LEGACY_SQLITE_PATH) or (os.path.isdir(os.path.dirname(LEGACY_SQLITE_PATH)) and os.access(os.path.dirname(LEGACY_SQLITE_PATH), os.W_OK)):
+        return LEGACY_SQLITE_PATH
     return "qr_cache.db"
 
 

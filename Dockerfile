@@ -25,9 +25,6 @@ RUN groupadd --system safescan && useradd --system --gid safescan --no-create-ho
 
 WORKDIR /app
 
-ENV DATA_DIR=/var/data \
-    SQLITE_DB_PATH=/var/data/qr_cache.db
-
 # Copy installed packages from builder
 COPY --from=builder /install /usr/local
 
