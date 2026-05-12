@@ -494,6 +494,10 @@ dom.copyTokenAddressButton?.addEventListener("click", async () => {
 
 dom.topCopyReferralButton?.addEventListener("click", async () => {
   window.clearTimeout(dom.topCopyReferralButton.dataset.resetTimer);
+  if (dom.topCopyReferralButton.textContent.trim() === "Copied link") {
+    dom.topCopyReferralButton.textContent = "Referral link";
+    return;
+  }
   try {
     const response = await fetch("/api/referral", { credentials: "same-origin" });
     const body = await response.json();
