@@ -1,18 +1,19 @@
 """
-Loader for the secondary QR classifier (`final_model.keras`).
+Hybrid QR classifier mirroring the training notebook (SafeScanQR_Improved):
 
-This is an EfficientNet-style model with a 192x192x3 input and a single
-sigmoid output. We load it with Keras 3 + TensorFlow (lazy, cached).
+    1. Try the URL char-ngram classifier (url_classifier.joblib).
+       This is the workhorse and hit 99.29% accuracy in training. When a
+       QR decodes to a URL (the vast majority of real traffic), this is
+       all we need.
+    2. Fall back to the EfficientNetV2B0 CNN (final_model.keras) when the
+       URL classifier is unavailable or no URL was decoded. The CNN's
+       ceiling was ~88% in the notebook, so it's a safety net, not the
+       primary signal.
 
-The model's Lambda 'preprocess' layer references a function named
-`preprocess_input` that is not bundled with the .keras file; subsequent
-Rescaling + Normalization layers handle ImageNet-style normalization, so
-we register an identity stub.
-
-Output: a single sigmoid probability in [0,1]. By default we treat the
-positive class (high value) as 'malicious'. Set
-SAFESCAN_ML2_POSITIVE_CLASS=safe to invert.
+Both artifacts live in ./models/ and load lazily.
 """
+
+from __future__ import annotations
 
 import os
 import threading
@@ -24,55 +25,61 @@ MODEL_PATH = os.getenv(
     "SAFESCAN_ML2_MODEL_PATH",
     os.path.join(os.path.dirname(__file__), "models", "final_model.keras"),
 )
+URL_CLASSIFIER_PATH = os.getenv(
+    "SAFESCAN_URL_CLASSIFIER_PATH",
+    os.path.join(os.path.dirname(__file__), "models", "url_classifier.joblib"),
+)
 POSITIVE_CLASS = os.getenv("SAFESCAN_ML2_POSITIVE_CLASS", "malicious").lower()
 
-_model = None
+_cnn = None
+_url_classifier = None
+_url_classifier_missing = False
 _lock = threading.Lock()
 
 
-def _load_model():
-    global _model
-    if _model is not None:
-        return _model
+def _load_cnn():
+    global _cnn
+    if _cnn is not None:
+        return _cnn
     with _lock:
-        if _model is not None:
-            return _model
+        if _cnn is not None:
+            return _cnn
         os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
-        import keras  # noqa: E402
+        import keras
 
         @keras.saving.register_keras_serializable(name="preprocess_input")
         def preprocess_input(x):  # noqa: ARG001
             return x
 
-        _model = keras.models.load_model(
+        _cnn = keras.models.load_model(
             MODEL_PATH,
             compile=False,
             safe_mode=False,
             custom_objects={"preprocess_input": preprocess_input},
         )
-    return _model
+    return _cnn
 
 
-def predict(pil_image):
-    """
-    Run the EfficientNet classifier on a PIL image.
+def _load_url_classifier():
+    """Returns (vectorizer, classifier) or None if the joblib isn't present."""
+    global _url_classifier, _url_classifier_missing
+    if _url_classifier is not None:
+        return _url_classifier
+    if _url_classifier_missing:
+        return None
+    with _lock:
+        if _url_classifier is not None:
+            return _url_classifier
+        if not os.path.exists(URL_CLASSIFIER_PATH):
+            _url_classifier_missing = True
+            return None
+        import joblib
+        _url_classifier = joblib.load(URL_CLASSIFIER_PATH)
+    return _url_classifier
 
-    Returns the same dict shape as ml_model.predict():
-        safe_prob       float  0-100, 1dp
-        malicious_prob  float  0-100, 1dp
-        label           str    'safe' | 'malicious'
-        confidence_pct  int    0-100
-    """
-    model = _load_model()
-    img = pil_image.convert("RGB").resize((192, 192), Image.LANCZOS)
-    arr = np.asarray(img, dtype=np.float32)[None, ...]
-    raw = float(model.predict(arr, verbose=0).reshape(-1)[0])
 
-    if POSITIVE_CLASS == "safe":
-        safe_p, mal_p = raw, 1.0 - raw
-    else:
-        mal_p, safe_p = raw, 1.0 - raw
-
+def _result_from_probs(mal_p: float, source: str):
+    safe_p = 1.0 - mal_p
     label = "malicious" if mal_p > safe_p else "safe"
     confidence = round(max(safe_p, mal_p) * 100)
     return {
@@ -80,16 +87,45 @@ def predict(pil_image):
         "malicious_prob": round(mal_p * 100, 1),
         "label": label,
         "confidence_pct": confidence,
+        "source": source,
     }
 
 
-def predict_from_url(url: str):
-    try:
-        import qrcode
-        qr = qrcode.QRCode(box_size=4, border=2)
-        qr.add_data(url)
-        qr.make(fit=True)
-        img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
-        return predict(img)
-    except ImportError:
+def predict_url(url: str):
+    """Char-ngram URL classifier (notebook section 2). Returns None if missing."""
+    pair = _load_url_classifier()
+    if pair is None or not url:
         return None
+    vec, clf = pair
+    prob = float(clf.predict_proba(vec.transform([url]))[0, 1])
+    return _result_from_probs(prob, "url_classifier")
+
+
+def predict_image(pil_image):
+    """EfficientNet CNN (notebook section 6). Used as a fallback only."""
+    model = _load_cnn()
+    img = pil_image.convert("RGB").resize((192, 192), Image.LANCZOS)
+    arr = np.asarray(img, dtype=np.float32)[None, ...]
+    raw = float(model.predict(arr, verbose=0).reshape(-1)[0])
+    mal_p = raw if POSITIVE_CLASS != "safe" else 1.0 - raw
+    return _result_from_probs(mal_p, "cnn_fallback")
+
+
+def predict_hybrid(url: str | None = None, pil_image=None):
+    """Mirror notebook's hybrid_predict: URL classifier first, CNN fallback.
+
+    `url`   - decoded URL string (preferred path)
+    `pil_image` - PIL image used only if the URL classifier is unavailable
+    """
+    if url:
+        url_result = predict_url(url)
+        if url_result is not None:
+            return url_result
+    if pil_image is not None:
+        return predict_image(pil_image)
+    return None
+
+
+# Backwards-compat: existing call sites use predict(pil_image)
+def predict(pil_image):
+    return predict_image(pil_image)

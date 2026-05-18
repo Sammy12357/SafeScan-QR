@@ -1580,23 +1580,34 @@ def qr_image_from_payload(payload):
     return qr.make_image(fill_color="black", back_color="white").convert("RGB")
 
 def classify_qr_with_ml(payload, image=None, input_source="generated_qr"):
+    """Hybrid ML classification mirroring SafeScanQR_Improved notebook.
+
+    Routes the decoded URL through the char-ngram URL classifier first
+    (~99% accuracy in training). Falls back to the EfficientNet CNN only
+    when the URL classifier artifact isn't deployed.
+    """
     if not ML_MODEL_ENABLED:
         return {"enabled": False, "reason": "disabled"}
 
-    # Always classify a freshly generated QR of the decoded URL rather than
-    # the user's uploaded pixels. The model is sensitive to QR styling, so
-    # using a canonical rendering makes scoring depend on the URL (which is
-    # what the rule pipeline analyzes too) instead of the photo's framing,
-    # error-correction level, or color palette.
     generated_image = None
     try:
-        generated_image = qr_image_from_payload(payload)
-        image = generated_image
-        input_source = "generated_qr"
-
         ensure_ml_model_available()
         import ml_model_final as _ml_mod
-        result = _ml_mod.predict(image)
+
+        result = _ml_mod.predict_url(payload) if payload else None
+        if result is not None:
+            source_input = "decoded_url"
+            model_name = os.path.basename(os.getenv(
+                "SAFESCAN_URL_CLASSIFIER_PATH",
+                os.path.join(os.path.dirname(__file__), "models", "url_classifier.joblib"),
+            ))
+        else:
+            # CNN fallback - canonical rendering of the decoded URL so the
+            # score depends on the URL, not on how the QR was photographed.
+            generated_image = qr_image_from_payload(payload)
+            result = _ml_mod.predict_image(generated_image)
+            source_input = "generated_qr"
+            model_name = os.path.basename(ML_MODEL_PATH)
 
         mal_prob_float = result["malicious_prob"]
         safe_prob_float = result["safe_prob"]
@@ -1605,8 +1616,9 @@ def classify_qr_with_ml(payload, image=None, input_source="generated_qr"):
         label = "Malicious" if mal_prob_float >= 80 else ("Suspicious" if mal_prob_float >= 40 else "Benign")
         return {
             "enabled": True,
-            "model": os.path.basename(ML_MODEL_PATH),
-            "inputSource": input_source,
+            "model": model_name,
+            "source": result.get("source"),
+            "inputSource": source_input,
             "score": mal_prob_float,
             "label": label,
             "benignProbability": round(benign_probability, 4),
