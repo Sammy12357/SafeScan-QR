@@ -1674,7 +1674,12 @@ def blend_ml_score(rule_score, ml_results, signals):
         item.get("severity") == "high" and item.get("check") not in ml_signal_names
         for item in signals
     )
-    if non_ml_high and blended < 75:
+    # If a non-ML "high" signal fires, normally floor at 75. But if the ML
+    # strongly disagrees (<10% malicious) trust the classifier - the rule
+    # signals (often just an apex->www redirect or unknown domain age) are
+    # noisier than the trained URL classifier on the benign-side.
+    ml_strongly_safe = bool(enabled_scores) and max(enabled_scores) <= 10
+    if non_ml_high and blended < 75 and not ml_strongly_safe:
         blended = 75.0
     if enabled_scores:
         top_ml = max(enabled_scores)
@@ -1877,21 +1882,43 @@ def trace_redirect_chain(target_url):
             "redirectChain": []
         }
 
+    def _site_key(host):
+        """Approximate eTLD+1: strip common subdomain prefixes (www., m., mobile.)
+        and reduce to the last two dot-labels so apex/www/mobile variants of the
+        same site compare equal."""
+        h = (host or "").lower().strip(".")
+        for prefix in ("www.", "m.", "mobile.", "amp.", "en.", "us."):
+            if h.startswith(prefix):
+                h = h[len(prefix):]
+                break
+        parts = h.split(".")
+        return ".".join(parts[-2:]) if len(parts) > 2 else h
+
     original_domain = urlparse(target_url).hostname or ""
+    original_site = _site_key(original_domain)
     chain = []
     domain_changed = False
     has_shortener = False
     for item in all_responses:
         item_url = item.url
         domain = urlparse(item_url).hostname or ""
-        changed = bool(original_domain and domain and domain != original_domain)
+        # Only flag a "domain change" when the redirect actually leaves the
+        # site (e.g. bit.ly -> malware.tk), not for apex->www or m.* variants
+        # of the same eTLD+1.
+        changed = bool(original_site and domain and _site_key(domain) != original_site)
         domain_changed = domain_changed or changed
         has_shortener = has_shortener or domain.lower().removeprefix("www.") in URL_SHORTENERS
         chain.append({"url": item_url, "domain": domain, "statusCode": item.status_code, "domainChanged": changed})
 
     hop_count = max(0, len(chain) - 1)
-    suspicious = hop_count > 2 or domain_changed or has_shortener
-    severity = "high" if suspicious else ("medium" if hop_count else "low")
+    # Severity gradient:
+    #   - shorteners or >2 hops or (2 hops AND cross-domain): high
+    #   - single cross-domain hop (e.g. twitter.com -> x.com): medium
+    #   - hops within the same site (apex<->www, etc.): low
+    is_high = has_shortener or hop_count > 2 or (hop_count >= 2 and domain_changed)
+    is_medium = (hop_count >= 1 and domain_changed) or hop_count == 2
+    severity = "high" if is_high else ("medium" if is_medium else "low")
+    suspicious = is_high or is_medium
     details = []
     if hop_count > 2:
         details.append("more than 2 redirect hops")

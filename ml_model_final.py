@@ -67,13 +67,53 @@ def _load_cnn():
         def preprocess_input(x):  # noqa: ARG001
             return x
 
+        # ModelWrapper is a custom layer used by the SafeScanQR ensemble
+        # build (safescanqr_final_ensemble.keras). Register a shim so we
+        # can load either the simple single-model file or the ensemble.
+        @keras.saving.register_keras_serializable(name="ModelWrapper")
+        class ModelWrapper(keras.layers.Layer):
+            def __init__(self, model_config=None, model_name=None, **kwargs):
+                super().__init__(**kwargs)
+                self.model_config = model_config
+                self.model_name = model_name
+                self.inner = (
+                    keras.saving.deserialize_keras_object(model_config)
+                    if model_config else None
+                )
+
+            def call(self, inputs):
+                return self.inner(inputs)
+
+            def get_config(self):
+                base = super().get_config()
+                base["model_config"] = self.model_config
+                base["model_name"] = self.model_name
+                return base
+
         _cnn = keras.models.load_model(
             MODEL_PATH,
             compile=False,
             safe_mode=False,
-            custom_objects={"preprocess_input": preprocess_input},
+            custom_objects={
+                "preprocess_input": preprocess_input,
+                "ModelWrapper": ModelWrapper,
+            },
         )
     return _cnn
+
+
+def _cnn_input_size():
+    model = _load_cnn()
+    shape = model.input_shape
+    # Functional model.input_shape is (None, H, W, 3); fall back to 192.
+    if isinstance(shape, tuple) and len(shape) == 4 and shape[1] and shape[2]:
+        return int(shape[1]), int(shape[2])
+    return 192, 192
+
+
+def _cnn_needs_rescale():
+    """Some ensembles expect [0,1] inputs; the original final_model.keras has its own Rescaling layer."""
+    return os.getenv("SAFESCAN_ML2_RESCALE", "auto").lower() in ("1", "true", "yes", "on")
 
 
 def _load_url_classifier():
@@ -121,10 +161,14 @@ def predict_url(url: str):
 
 
 def predict_image(pil_image):
-    """EfficientNet CNN (notebook section 6). Used as a fallback only."""
+    """CNN fallback. Auto-detects input size from the loaded model."""
     model = _load_cnn()
-    img = pil_image.convert("RGB").resize((192, 192), Image.LANCZOS)
-    arr = np.asarray(img, dtype=np.float32)[None, ...]
+    h, w = _cnn_input_size()
+    img = pil_image.convert("RGB").resize((w, h), Image.LANCZOS)
+    arr = np.asarray(img, dtype=np.float32)
+    if _cnn_needs_rescale():
+        arr = arr / 255.0
+    arr = arr[None, ...]
     raw = float(model.predict(arr, verbose=0).reshape(-1)[0])
     mal_p = raw if POSITIVE_CLASS != "safe" else 1.0 - raw
     return _result_from_probs(mal_p, "cnn_fallback")
