@@ -29,7 +29,7 @@ WORKDIR /app
 COPY --from=builder /install /usr/local
 
 # Copy only application code
-COPY hackabull.py distribute.py scrop.py db.py storage.py ml_model.py ./
+COPY hackabull.py distribute.py scrop.py db.py storage.py ml_model_final.py ./
 COPY templates/ ./templates/
 COPY static/ ./static/
 COPY models/ ./models/

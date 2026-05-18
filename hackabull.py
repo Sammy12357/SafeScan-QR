@@ -1583,12 +1583,16 @@ def classify_qr_with_ml(payload, image=None, input_source="generated_qr"):
     if not ML_MODEL_ENABLED:
         return {"enabled": False, "reason": "disabled"}
 
+    # Always classify a freshly generated QR of the decoded URL rather than
+    # the user's uploaded pixels. The model is sensitive to QR styling, so
+    # using a canonical rendering makes scoring depend on the URL (which is
+    # what the rule pipeline analyzes too) instead of the photo's framing,
+    # error-correction level, or color palette.
     generated_image = None
     try:
-        if image is None:
-            generated_image = qr_image_from_payload(payload)
-            image = generated_image
-            input_source = "generated_qr"
+        generated_image = qr_image_from_payload(payload)
+        image = generated_image
+        input_source = "generated_qr"
 
         ensure_ml_model_available()
         import ml_model_final as _ml_mod
