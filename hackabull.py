@@ -1675,11 +1675,12 @@ def blend_ml_score(rule_score, ml_results, signals):
         for item in signals
     )
     # If a non-ML "high" signal fires, normally floor at 75. But if the ML
-    # strongly disagrees (<10% malicious) trust the classifier - the rule
-    # signals (often just an apex->www redirect or unknown domain age) are
-    # noisier than the trained URL classifier on the benign-side.
-    ml_strongly_safe = bool(enabled_scores) and max(enabled_scores) <= 10
-    if non_ml_high and blended < 75 and not ml_strongly_safe:
+    # labels the URL as Benign (<40% malicious - the system's own benign
+    # threshold), trust the trained classifier over noisy rule signals
+    # (SSO/auth redirect chains, unknown domain age, etc. fire as "high"
+    # but don't mean the URL itself is unsafe).
+    ml_says_benign = bool(enabled_scores) and max(enabled_scores) < 40
+    if non_ml_high and blended < 75 and not ml_says_benign:
         blended = 75.0
     if enabled_scores:
         top_ml = max(enabled_scores)
