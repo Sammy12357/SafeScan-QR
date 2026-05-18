@@ -1,3 +1,4 @@
+from __future__ import annotations
 import requests
 import json
 import warnings
@@ -136,12 +137,10 @@ ALPHA_SOLANA_AMOUNT_SOL = os.getenv("ALPHA_SOLANA_AMOUNT_SOL", "").strip()
 ALPHA_SOLANA_LABEL = os.getenv("ALPHA_SOLANA_LABEL", "SafeScan QR Alpha").strip()
 ALPHA_SOLANA_MESSAGE = os.getenv("ALPHA_SOLANA_MESSAGE", "Alpha access to SafeScan QR premium API docs and endpoints.").strip()
 MOCK_MODE = os.getenv("MOCK_MODE", "false").lower() in ("1", "true", "yes", "on")
-ML_MODEL_ENABLED = os.getenv("SAFESCAN_ML_ENABLED", "true").lower() in ("1", "true", "yes", "on")
-ML_MODEL_PATH = os.getenv("SAFESCAN_ML_MODEL_PATH", os.path.join(os.path.dirname(__file__), "models", "safescan_qr_model.keras"))
-os.environ["SAFESCAN_ML_MODEL_PATH"] = ML_MODEL_PATH
-ML_MODEL_OBJECT_KEY = os.getenv("ML_MODEL_OBJECT_KEY", "models/safescan_qr_model.keras")
-ML_MODEL_WEIGHT = max(0.0, min(1.0, float(os.getenv("SAFESCAN_ML_WEIGHT", "0.65"))))
-ML_MALICIOUS_CLASS_INDEX = int(os.getenv("SAFESCAN_ML_MALICIOUS_CLASS_INDEX", "1"))
+ML_MODEL_ENABLED = os.getenv("SAFESCAN_ML2_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+ML_MODEL_PATH = os.getenv("SAFESCAN_ML2_MODEL_PATH", os.path.join(os.path.dirname(__file__), "models", "final_model.keras"))
+os.environ["SAFESCAN_ML2_MODEL_PATH"] = ML_MODEL_PATH
+ML_MODEL_OBJECT_KEY = os.getenv("ML2_MODEL_OBJECT_KEY", "models/final_model.keras")
 LOCAL_AUTH_ENABLED = MOCK_MODE or APP_URL.startswith("http://127.0.0.1") or APP_URL.startswith("http://localhost")
 APP_STARTED_AT = datetime.utcnow()
 REQUEST_COUNT = build_metric(Counter, "safescan_requests_total", "Total HTTP requests", ["method", "path", "status"])
@@ -1592,10 +1591,10 @@ def classify_qr_with_ml(payload, image=None, input_source="generated_qr"):
             input_source = "generated_qr"
 
         ensure_ml_model_available()
-        import ml_model as _ml_mod
+        import ml_model_final as _ml_mod
         result = _ml_mod.predict(image)
 
-        mal_prob_float = result["malicious_prob"]          # e.g. 73.4  (0–100, 1 dp)
+        mal_prob_float = result["malicious_prob"]
         safe_prob_float = result["safe_prob"]
         malicious_probability = mal_prob_float / 100.0
         benign_probability = safe_prob_float / 100.0
@@ -1604,7 +1603,7 @@ def classify_qr_with_ml(payload, image=None, input_source="generated_qr"):
             "enabled": True,
             "model": os.path.basename(ML_MODEL_PATH),
             "inputSource": input_source,
-            "score": mal_prob_float,                       # float, not rounded to int
+            "score": mal_prob_float,
             "label": label,
             "benignProbability": round(benign_probability, 4),
             "maliciousProbability": round(malicious_probability, 4),
@@ -1616,7 +1615,7 @@ def classify_qr_with_ml(payload, image=None, input_source="generated_qr"):
         if generated_image is not None:
             generated_image.close()
 
-def ml_signal_from_result(ml_result):
+def ml_signal_from_result(ml_result, label="ML Risk Model", description_prefix="CNN QR classifier"):
     if not ml_result or not ml_result.get("enabled"):
         return None
     score_raw = float(ml_result["score"])
@@ -1624,10 +1623,10 @@ def ml_signal_from_result(ml_result):
     mal_pct = round(ml_result["maliciousProbability"] * 100, 1)
     safe_pct = round(ml_result["benignProbability"] * 100, 1)
     model_signal = signal(
-        "ML Risk Model",
+        label,
         f"{round(score_raw, 1)}/100 ML probability",
         severity,
-        f"CNN QR classifier: {safe_pct}% safe, {mal_pct}% malicious.",
+        f"{description_prefix}: {safe_pct}% safe, {mal_pct}% malicious.",
         score_raw < 40
     )
     model_signal["distribution"] = {
@@ -1637,29 +1636,53 @@ def ml_signal_from_result(ml_result):
     model_signal["model"] = ml_result.get("model")
     return model_signal
 
-def blend_ml_score(rule_score, ml_result, signals):
-    rule_score = clamp_score(rule_score)
-    if not ml_result or not ml_result.get("enabled"):
-        return rule_score
+def blend_ml_score(rule_score, ml_results, signals):
+    """Average the rule score and each available ML score with equal weight.
 
-    ml_score_raw = float(ml_result["score"])               # preserve decimal e.g. 73.4
-    blended = (rule_score * (1.0 - ML_MODEL_WEIGHT)) + (ml_score_raw * ML_MODEL_WEIGHT)
-    non_ml_high = any(item.get("severity") == "high" and item.get("check") != "ML Risk Model" for item in signals)
+    `ml_results` may be a single dict (legacy) or a list of dicts. Each
+    enabled entry contributes one input. So with rule + 2 ML models you get
+    three 33.3% weights; with rule + 3 ML models you get four 25% weights.
+    """
+    rule_score = clamp_score(rule_score)
+    if isinstance(ml_results, dict) or ml_results is None:
+        ml_results = [ml_results]
+
+    enabled_scores = [
+        float(r["score"]) for r in ml_results if r and r.get("enabled")
+    ]
+    inputs = [float(rule_score)] + enabled_scores
+    blended = sum(inputs) / len(inputs)
+
+    ml_signal_names = {"ML Risk Model", "ML Risk Model (EfficientNet)"}
+    non_ml_high = any(
+        item.get("severity") == "high" and item.get("check") not in ml_signal_names
+        for item in signals
+    )
     if non_ml_high and blended < 75:
         blended = 75.0
-    if ml_score_raw >= 90:
-        blended = max(blended, 85.0)
-    if ml_score_raw <= 15 and not non_ml_high:
-        blended = min(blended, max(float(rule_score), 34.0))
+    if enabled_scores:
+        top_ml = max(enabled_scores)
+        bottom_ml = min(enabled_scores)
+        if top_ml >= 90:
+            blended = max(blended, 85.0)
+        if bottom_ml <= 15 and not non_ml_high and len(enabled_scores) == len(ml_results):
+            blended = min(blended, max(float(rule_score), 34.0))
     return clamp_score(blended)
 
-def verdict_with_ml(base_verdict, final_score, ml_result, signals):
+def verdict_with_ml(base_verdict, final_score, ml_results, signals):
+    if isinstance(ml_results, dict) or ml_results is None:
+        ml_results = [ml_results]
     overall_risk = risk_from_score(final_score)
     high_checks = [item["check"] for item in signals if item["severity"] == "high"]
     medium_checks = [item["check"] for item in signals if item["severity"] == "medium"]
     ml_phrase = ""
-    if ml_result and ml_result.get("enabled"):
-        ml_phrase = f" The ML model gives {round(float(ml_result['score']), 1)}/100 risk ({round(ml_result['maliciousProbability'] * 100, 1)}% malicious probability)."
+    enabled = [r for r in ml_results if r and r.get("enabled")]
+    if enabled:
+        parts = []
+        for r in enabled:
+            name = r.get("model") or "model"
+            parts.append(f"{name} {round(float(r['score']), 1)}/100 ({round(r['maliciousProbability'] * 100, 1)}% malicious)")
+        ml_phrase = " ML scores: " + "; ".join(parts) + "."
 
     if overall_risk == "high":
         if high_checks:
@@ -1672,12 +1695,15 @@ def verdict_with_ml(base_verdict, final_score, ml_result, signals):
         return f"This QR code lands in SafeScan's review range.{ml_phrase} Confirm the destination before taking action."
     return f"SafeScan did not find strong phishing or wallet-drain indicators in this QR payload.{ml_phrase} Still verify the destination before connecting a wallet or sending funds."
 
-def threat_type_for_analysis(overall_risk, signals, ml_result=None):
+def threat_type_for_analysis(overall_risk, signals, ml_results=None):
     if overall_risk == "safe":
         return "Benign"
-    if ml_result and ml_result.get("enabled") and ml_result.get("label") == "Malicious":
+    if isinstance(ml_results, dict) or ml_results is None:
+        ml_results = [ml_results]
+    if any(r and r.get("enabled") and r.get("label") == "Malicious" for r in ml_results):
         return "Malicious QR"
-    first_high = next((item for item in signals if item["severity"] == "high" and item["check"] != "ML Risk Model"), None)
+    ml_signal_names = {"ML Risk Model", "ML Risk Model (EfficientNet)"}
+    first_high = next((item for item in signals if item["severity"] == "high" and item["check"] not in ml_signal_names), None)
     if first_high:
         return first_high["check"]
     return "Suspicious QR"
@@ -2112,8 +2138,11 @@ async def analyze_full_pipeline(target_url, qr_image=None):
     redirect_task = asyncio.to_thread(trace_redirect_chain, normalized)
     reputation_task = asyncio.to_thread(check_reputation_signals, normalized)
     crypto_task = asyncio.to_thread(check_crypto_pattern_signals, normalized)
-    ml_task = asyncio.to_thread(classify_qr_with_ml, normalized, qr_image, "uploaded_qr" if qr_image is not None else "generated_qr")
-    domain_result, redirect_result, reputation_signals, crypto_signals, ml_result = await asyncio.gather(domain_task, redirect_task, reputation_task, crypto_task, ml_task)
+    input_source = "uploaded_qr" if qr_image is not None else "generated_qr"
+    ml_task = asyncio.to_thread(classify_qr_with_ml, normalized, qr_image, input_source)
+    domain_result, redirect_result, reputation_signals, crypto_signals, ml_result = await asyncio.gather(
+        domain_task, redirect_task, reputation_task, crypto_task, ml_task
+    )
 
     signals = []
     signals.extend(domain_result if isinstance(domain_result, list) else [domain_result])
@@ -2122,7 +2151,7 @@ async def analyze_full_pipeline(target_url, qr_image=None):
     signals.extend(reputation_signals)
     signals.append(virustotal_breakdown_signal(vt_result))
     signals.extend(crypto_signals)
-    ml_signal = ml_signal_from_result(ml_result)
+    ml_signal = ml_signal_from_result(ml_result, label="ML Risk Model", description_prefix="EfficientNet QR classifier")
     if ml_signal:
         signals.append(ml_signal)
     signals = sorted(signals, key=severity_rank)
