@@ -1895,41 +1895,102 @@ def trace_redirect_chain(target_url):
         parts = h.split(".")
         return ".".join(parts[-2:]) if len(parts) > 2 else h
 
+    # SSO / federated-auth indicators. If any hop matches one of these, the
+    # cross-domain redirect is almost certainly a legitimate auth bounce
+    # (school portal -> idp -> portal, app -> oauth provider -> app, etc.)
+    # rather than a wallet-drain or phishing chain.
+    SSO_HOST_PREFIXES = ("idp.", "auth.", "sso.", "login.", "accounts.", "id.", "signin.", "secure.")
+    SSO_HOST_SUFFIXES = (
+        ".okta.com", ".auth0.com", ".onelogin.com", ".duosecurity.com",
+        ".pingidentity.com", ".ping.cloud", ".cas.edu",
+        "accounts.google.com", "login.microsoftonline.com",
+        "login.live.com", "appleid.apple.com", "login.yahoo.com",
+        "github.com/login", "shibboleth",
+    )
+    SSO_PATH_TOKENS = (
+        "/login", "/signin", "/sign-in", "/sso", "/saml", "/openid",
+        "/oauth", "/oauth2", "/auth/callback", "/cas/login", "/idp",
+        "/shibboleth", "/adfs/ls", "/auth/realms/",
+    )
+
+    def _looks_like_sso(host, path):
+        host_l = (host or "").lower()
+        path_l = (path or "").lower()
+        if any(host_l.startswith(p) for p in SSO_HOST_PREFIXES):
+            return True
+        if any(host_l.endswith(s) or s in host_l for s in SSO_HOST_SUFFIXES):
+            return True
+        if any(tok in path_l for tok in SSO_PATH_TOKENS):
+            return True
+        return False
+
     original_domain = urlparse(target_url).hostname or ""
     original_site = _site_key(original_domain)
     chain = []
     domain_changed = False
     has_shortener = False
+    saw_sso_hop = False
+    returned_to_origin = False
     for item in all_responses:
         item_url = item.url
-        domain = urlparse(item_url).hostname or ""
+        parsed = urlparse(item_url)
+        domain = parsed.hostname or ""
         # Only flag a "domain change" when the redirect actually leaves the
         # site (e.g. bit.ly -> malware.tk), not for apex->www or m.* variants
         # of the same eTLD+1.
-        changed = bool(original_site and domain and _site_key(domain) != original_site)
+        site = _site_key(domain)
+        changed = bool(original_site and domain and site != original_site)
         domain_changed = domain_changed or changed
         has_shortener = has_shortener or domain.lower().removeprefix("www.") in URL_SHORTENERS
+        if _looks_like_sso(domain, parsed.path):
+            saw_sso_hop = True
+        if original_site and site == original_site and changed is False:
+            # We returned to the original site at some hop (typical for
+            # SSO: portal -> idp -> portal).
+            returned_to_origin = True
         chain.append({"url": item_url, "domain": domain, "statusCode": item.status_code, "domainChanged": changed})
 
     hop_count = max(0, len(chain) - 1)
+    # SSO is only "recognized" when it's a typical bounce: at least one hop
+    # to an identity provider, returns to the original site, no shortener,
+    # and short overall (3 hops max). Anything more elaborate stays graded
+    # by the normal rules below.
+    sso_flow = (
+        saw_sso_hop and returned_to_origin and not has_shortener and hop_count <= 3
+    )
     # Severity gradient:
     #   - shorteners or >2 hops or (2 hops AND cross-domain): high
     #   - single cross-domain hop (e.g. twitter.com -> x.com): medium
     #   - hops within the same site (apex<->www, etc.): low
     is_high = has_shortener or hop_count > 2 or (hop_count >= 2 and domain_changed)
     is_medium = (hop_count >= 1 and domain_changed) or hop_count == 2
+    # Recognized SSO/auth bounces are normal web auth, not phishing -
+    # treat the whole chain as low severity (passes).
+    if sso_flow:
+        is_high = False
+        is_medium = False
     severity = "high" if is_high else ("medium" if is_medium else "low")
     suspicious = is_high or is_medium
     details = []
     if hop_count > 2:
         details.append("more than 2 redirect hops")
-    if domain_changed:
+    if domain_changed and not sso_flow:
         details.append("final or intermediate domain differs from the original")
     if has_shortener:
         details.append("known URL shortener appears in the chain")
-    description = "Redirect chain is simple." if not details else "Suspicious redirect pattern: " + ", ".join(details) + "."
+    if sso_flow:
+        details.append("recognized SSO/auth bounce (cross-domain hop into a federated identity provider and back)")
+    if sso_flow:
+        description = f"Recognized SSO/auth bounce ({hop_count} hop(s) into a federated identity provider and back)."
+        result_label = f"{hop_count} hop(s) (SSO)"
+    elif not details:
+        description = "Redirect chain is simple."
+        result_label = f"{hop_count} hop(s)"
+    else:
+        description = "Suspicious redirect pattern: " + ", ".join(details) + "."
+        result_label = f"{hop_count} hop(s)"
     return {
-        "signal": signal("Redirect Chain", f"{hop_count} hop(s)", severity, description, not suspicious),
+        "signal": signal("Redirect Chain", result_label, severity, description, not suspicious),
         "redirectChain": chain
     }
 
