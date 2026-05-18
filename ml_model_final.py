@@ -16,10 +16,26 @@ Both artifacts live in ./models/ and load lazily.
 from __future__ import annotations
 
 import os
+import re
 import threading
 
 import numpy as np
 from PIL import Image
+
+_SCHEME_RE = re.compile(r"^[a-z][a-z0-9+\-.]*://", re.IGNORECASE)
+
+
+def _normalize_url(url: str) -> str:
+    """Match the training-time normalization: strip scheme, lowercase, no trailing slash.
+
+    The dataset encodes benign QRs as bare domains (google.com) and
+    malicious ones as full URLs (https://drain.tk/...). Without stripping
+    the scheme, the classifier would learn 'has https:// = malicious' and
+    misclassify every well-formed URL from the deployment.
+    """
+    url = (url or "").strip()
+    url = _SCHEME_RE.sub("", url, count=1)
+    return url.lower().rstrip("/")
 
 MODEL_PATH = os.getenv(
     "SAFESCAN_ML2_MODEL_PATH",
@@ -97,7 +113,10 @@ def predict_url(url: str):
     if pair is None or not url:
         return None
     vec, clf = pair
-    prob = float(clf.predict_proba(vec.transform([url]))[0, 1])
+    normalized = _normalize_url(url)
+    if not normalized:
+        return None
+    prob = float(clf.predict_proba(vec.transform([normalized]))[0, 1])
     return _result_from_probs(prob, "url_classifier")
 
 
