@@ -1,7 +1,7 @@
 const brokers = [
   ["fastpeoplesearch", "FastPeopleSearch", "High traffic", "https://www.fastpeoplesearch.com/removal", (p) => `https://www.fastpeoplesearch.com/name/${encodeURIComponent(p.name || "")}${p.location ? `_${encodeURIComponent(p.location)}` : ""}`],
   ["whitepages", "Whitepages", "High traffic", "https://www.whitepages.com/suppression-requests", (p) => `https://www.whitepages.com/name/${encodeURIComponent(p.name || "")}${p.location ? `/${encodeURIComponent(p.location)}` : ""}`],
-  ["spokeo", "Spokeo", "High traffic", "https://www.spokeo.com/optout", (p) => `https://www.spokeo.com/${encodeURIComponent(p.name || "")}${p.location ? `/${encodeURIComponent(p.location)}` : ""}`],
+  ["spokeo", "Spokeo", "High traffic", "https://www.spokeo.com/optout", (p) => `https://www.spokeo.com/${nameSlug(p.name)}`],
   ["beenverified", "BeenVerified", "High traffic", "https://www.beenverified.com/app/optout/search", (p) => `https://www.beenverified.com/app/optout/search?fn=${encodeURIComponent(p.name || "")}`],
   ["truepeoplesearch", "TruePeopleSearch", "High traffic", "https://www.truepeoplesearch.com/removal", (p) => `https://www.truepeoplesearch.com/results?name=${encodeURIComponent(p.name || "")}&citystatezip=${encodeURIComponent(p.location || "")}`],
   ["thatsthem", "Thatsthem", "Address and phone", "https://thatsthem.com/optout", (p) => `https://thatsthem.com/name/${encodeURIComponent(p.name || "")}`],
@@ -39,6 +39,13 @@ const store = {
 };
 
 const byId = (id) => document.getElementById(id);
+
+function nameSlug(value) {
+  return String(value || "")
+    .trim()
+    .replace(/[^A-Za-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
 
 function read(key, fallback) {
   try {
