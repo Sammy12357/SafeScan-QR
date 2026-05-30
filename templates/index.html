@@ -12,6 +12,7 @@
     <div class="top-auth">
       <button id="topCopyReferralButton" class="top-action-button" type="button">Referral link</button>
       <button id="topConnectWalletButton" class="top-action-button" type="button">Connect wallet</button>
+      <a href="/static/go-ghost.html" class="top-action-button">Go Ghost</a>
       {% if logged_in %}
         <a href="/history" class="top-action-button">Scan history</a>
         <a href="/leaderboard" class="top-action-button">Leaderboard</a>
@@ -43,7 +44,7 @@
         <h1>SafeScan QR</h1>
         <p class="hero-problem">{{ "Stop malicious QR links before they open." if test_site else "Can you distinguish a malicious QR?" }}</p>
         <p class="hero-text">{{ "SafeScan turns every QR scan into a clear security decision: decode the payload, trace redirects, inspect wallet actions, score the risk, and let users continue only when they understand what is happening." if test_site else "A trust layer for QR links, wallet prompts, and payment redirects. Decode the payload, score the risk, and keep the user in control before anything runs." }}</p>
-        <div class="hero-actions"><a class="primary-button" href="#scanner">Scan QR</a><a class="secondary-button" href="{{ '#pricing-test' if test_site else '#airdrop' }}">{{ "Pricing" if test_site else "Airdrop" }}</a></div>
+        <div class="hero-actions"><a class="primary-button" href="#scanner">Scan QR</a><a class="secondary-button" href="/static/go-ghost.html">Go Ghost</a></div>
         <div class="hero-metrics" aria-label="SafeScan QR demo capabilities">
           <div><span>AI</span><p>Risk verdicts</p></div>
           <div><span>ZBar</span><p>QR decoding</p></div>
@@ -249,7 +250,7 @@
                 <div>
                   <p class="engine-label">ML model analysis</p>
                   {% if ml_risk.enabled %}
-                  <h3>{{ ml_risk.label }} · {{ ml_risk.score | round(1) }}/100 risk</h3>
+                  <h3>{{ ml_risk.label }} Â· {{ ml_risk.score | round(1) }}/100 risk</h3>
                   <p>The local QR model estimated {{ (ml_risk.benignProbability * 100) | round(1) }}% safe and {{ (ml_risk.maliciousProbability * 100) | round(1) }}% malicious probability.</p>
                   {% else %}
                   <h3>Model unavailable</h3>
@@ -306,7 +307,7 @@
               </div>
               <div class="vt-badge-row">
                 <button class="vt-tab active" type="button" data-vt-tab="clean">OK {{ virus_total.summary.clean }} Clean</button>
-                <button class="vt-tab" type="button" data-vt-tab="unrated">○ {{ virus_total.summary.unrated }} Unrated</button>
+                <button class="vt-tab" type="button" data-vt-tab="unrated">â—‹ {{ virus_total.summary.unrated }} Unrated</button>
                 <button class="vt-tab" type="button" data-vt-tab="malicious">X {{ virus_total.summary.malicious }} Malicious</button>
               </div>
               <input class="vt-engine-search" type="search" placeholder="Search security engines" aria-label="Search VirusTotal engines">
@@ -370,9 +371,9 @@
               <div><p class="engine-label">Risk score</p><p class="score-value">{{ score }}</p></div>
               <div><p class="engine-label">Threat class</p><p>{{ threat_class }}</p></div>
               <div><p class="engine-label">Reputation</p><p>{{ reputation.status if reputation else source }}</p></div>
-              {% if domain_age %}<div><p class="engine-label">Domain age</p><p>{{ domain_age.ageLabel }} · {{ domain_age.riskLabel }}</p></div>{% endif %}
-              {% if virus_total %}<div><p class="engine-label">VirusTotal</p><p>{{ virus_total.summary.clean }} clean · {{ virus_total.summary.unrated }} unrated · {{ virus_total.summary.malicious }} malicious</p></div>{% endif %}
-              {% if ml_risk and ml_risk.enabled %}<div><p class="engine-label">ML model</p><p>{{ ml_risk.label }} · {{ ml_risk.score | round(1) }}/100</p></div>{% endif %}
+              {% if domain_age %}<div><p class="engine-label">Domain age</p><p>{{ domain_age.ageLabel }} Â· {{ domain_age.riskLabel }}</p></div>{% endif %}
+              {% if virus_total %}<div><p class="engine-label">VirusTotal</p><p>{{ virus_total.summary.clean }} clean Â· {{ virus_total.summary.unrated }} unrated Â· {{ virus_total.summary.malicious }} malicious</p></div>{% endif %}
+              {% if ml_risk and ml_risk.enabled %}<div><p class="engine-label">ML model</p><p>{{ ml_risk.label }} Â· {{ ml_risk.score | round(1) }}/100</p></div>{% endif %}
             </div>
             <p class="engine-copy"><a href="/risk-engine">Risk Engine details</a></p>
           </article>
