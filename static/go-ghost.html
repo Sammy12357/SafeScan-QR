@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Go Ghost | SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/go-ghost.css?v=1">
+  <link rel="stylesheet" href="/static/go-ghost.css?v=2">
 </head>
 <body>
   <div class="shell">
@@ -26,31 +26,31 @@
     </header>
 
     <main class="layout" id="goGhostWorkspace" hidden>
-      <section class="card">
-        <div class="header"><div><p class="eyebrow">Step 1</p><h2>Build your search kit</h2></div><span class="badge">Local only</span></div>
-        <p class="copy">Use only the minimum identifiers needed to find your record. This data stays in your browser and is used to generate search links.</p>
-        <form id="goGhostProfileForm">
-          <label>Full name<input id="ghostNameInput" type="text" autocomplete="name" placeholder="Jane A. Doe"></label>
-          <label>City and state<input id="ghostLocationInput" type="text" placeholder="Tampa, FL"></label>
-          <label>Phone or email<input id="ghostIdentifierInput" type="text" autocomplete="off" placeholder="Optional, use one identifier"></label>
-          <div class="actions"><button class="primary" type="submit">Generate search links</button><button id="clearGhostDataButton" type="button">Clear local data</button></div>
-        </form>
-      </section>
-
-      <section class="card">
-        <div class="header"><div><p class="eyebrow">Step 2</p><h2>Start with the highest-impact sites</h2></div></div>
-        <p class="copy">Open a search, copy the matching profile URL, submit the opt-out, verify the email, then mark it submitted and removed.</p>
-        <div id="goGhostBrokerList" class="brokers"></div>
-      </section>
-
       <section class="card wide">
-        <div class="header"><div><p class="eyebrow">Step 3</p><h2>Search cleanup and maintenance</h2></div></div>
+        <div class="header"><div><p class="eyebrow">Step 1</p><h2>Search cleanup and breach checks</h2></div></div>
         <div class="maintenance">
           <a href="https://haveibeenpwned.com/" target="_blank" rel="noopener noreferrer">Check breaches</a>
           <a href="https://myactivity.google.com/results-about-you" target="_blank" rel="noopener noreferrer">Google Results About You</a>
           <a href="https://support.google.com/websearch/troubleshooter/9685456" target="_blank" rel="noopener noreferrer">Remove exposed Google result</a>
           <a href="https://www.bing.com/webmasters/tools/content-removal" target="_blank" rel="noopener noreferrer">Bing content removal</a>
         </div>
+      </section>
+
+      <section class="card">
+        <div class="header"><div><p class="eyebrow">Step 2</p><h2>Build your search kit</h2></div><span class="badge">Local only</span></div>
+        <p class="copy">Use only the minimum identifiers needed to find your record. This data stays in your browser and is used to generate search links.</p>
+        <form id="goGhostProfileForm">
+          <label>Full name<input id="ghostNameInput" type="text" autocomplete="name" placeholder="Jane A. Doe"></label>
+          <label>City and state<input id="ghostLocationInput" type="text" placeholder="Tampa, FL"></label>
+          <label>Phone or email<input id="ghostIdentifierInput" type="text" autocomplete="off" placeholder="Optional, use one identifier"></label>
+          <div class="actions"><button class="primary" type="submit">Generate search links</button><button id="clearGhostDataButton" type="button">Clear local data</button></div>
+          <p id="ghostLinkStatus" class="link-status" role="status" aria-live="polite">Search links are ready.</p>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="header"><div><p class="eyebrow">Step 3</p><h2>Data broker removals</h2></div></div>
+        <div id="goGhostBrokerList" class="brokers"></div>
       </section>
     </main>
   </div>
@@ -65,6 +65,6 @@
     </div>
   </div>
 
-  <script src="/static/go-ghost.js?v=1"></script>
+  <script src="/static/go-ghost.js?v=2"></script>
 </body>
 </html>
