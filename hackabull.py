@@ -141,6 +141,18 @@ ML_MODEL_ENABLED = os.getenv("SAFESCAN_ML2_ENABLED", "true").lower() in ("1", "t
 ML_MODEL_PATH = os.getenv("SAFESCAN_ML2_MODEL_PATH", os.path.join(os.path.dirname(__file__), "models", "final_model.keras"))
 os.environ["SAFESCAN_ML2_MODEL_PATH"] = ML_MODEL_PATH
 ML_MODEL_OBJECT_KEY = os.getenv("ML2_MODEL_OBJECT_KEY", "models/final_model.keras")
+# How much the ML classifier(s) influence the final risk score, vs the
+# deterministic rule-based score. Default 0.20 = ML is a 20% contributor.
+# Intentionally low because trained classifiers will sometimes misfire on
+# well-known safe domains (a fresh model was flagging youtube.com at 98.5%
+# malicious); rule signals are the source of truth. Override with
+# SAFESCAN_ML_WEIGHT (0.0 disables ML influence entirely; clamped to 0.6).
+ML_AGGREGATE_WEIGHT = max(0.0, min(0.6, float(os.getenv("SAFESCAN_ML_WEIGHT", "0.20"))))
+# Hide the per-ML-model row from the user-visible signals list. The ML data
+# still lives in the response's `mlRisk` field for backend logging / audit,
+# but we don't expose model field names ("url_classifier.joblib") in the
+# user-facing UI. Flip to "true" if you need ML row visible for debugging.
+ML_SIGNAL_VISIBLE = os.getenv("SAFESCAN_ML_SIGNAL_VISIBLE", "false").lower() in ("1", "true", "yes", "on")
 LOCAL_AUTH_ENABLED = MOCK_MODE or APP_URL.startswith("http://127.0.0.1") or APP_URL.startswith("http://localhost")
 APP_STARTED_AT = datetime.utcnow()
 REQUEST_COUNT = build_metric(Counter, "safescan_requests_total", "Total HTTP requests", ["method", "path", "status"])
@@ -1653,11 +1665,18 @@ def ml_signal_from_result(ml_result, label="ML Risk Model", description_prefix="
     return model_signal
 
 def blend_ml_score(rule_score, ml_results, signals):
-    """Average the rule score and each available ML score with equal weight.
+    """Weighted blend of the rule score and the available ML score(s).
 
-    `ml_results` may be a single dict (legacy) or a list of dicts. Each
-    enabled entry contributes one input. So with rule + 2 ML models you get
-    three 33.3% weights; with rule + 3 ML models you get four 25% weights.
+    Rule signals (domain age, redirect chain, reputation, crypto patterns,
+    VirusTotal, Google Safe Browsing) are the source of truth and account
+    for `1 - ML_AGGREGATE_WEIGHT` of the final score (default 80%). The
+    enabled ML models share the remaining `ML_AGGREGATE_WEIGHT` equally
+    (default 20%, averaged across enabled models). With no enabled ML
+    models, the rule score is returned unchanged.
+
+    This is intentionally conservative: a misfiring URL classifier that
+    labels youtube.com at 98.5% malicious moves the final score by at most
+    ~20 points instead of dragging it from "safe" to "high" on its own.
     """
     rule_score = clamp_score(rule_score)
     if isinstance(ml_results, dict) or ml_results is None:
@@ -1666,68 +1685,82 @@ def blend_ml_score(rule_score, ml_results, signals):
     enabled_scores = [
         float(r["score"]) for r in ml_results if r and r.get("enabled")
     ]
-    inputs = [float(rule_score)] + enabled_scores
-    blended = sum(inputs) / len(inputs)
+    if not enabled_scores:
+        return clamp_score(rule_score)
+
+    ml_weight = ML_AGGREGATE_WEIGHT
+    rule_weight = 1.0 - ml_weight
+    ml_mean = sum(enabled_scores) / len(enabled_scores)
+    blended = (rule_weight * float(rule_score)) + (ml_weight * ml_mean)
 
     ml_signal_names = {"ML Risk Model", "ML Risk Model (EfficientNet)"}
     non_ml_high = any(
         item.get("severity") == "high" and item.get("check") not in ml_signal_names
         for item in signals
     )
-    # If a non-ML "high" signal fires, normally floor at 75. But if the ML
-    # labels the URL as Benign (<40% malicious - the system's own benign
-    # threshold), trust the trained classifier over noisy rule signals
-    # (SSO/auth redirect chains, unknown domain age, etc. fire as "high"
-    # but don't mean the URL itself is unsafe).
-    ml_says_benign = bool(enabled_scores) and max(enabled_scores) < 40
+    # When deterministic rule signals fire "high" (e.g. blocklist hit, VT
+    # detection), preserve the high-risk floor — ML's confidence shouldn't
+    # talk us out of a known-bad signal. But never the other way around:
+    # ML alone cannot push the score into the danger band.
+    ml_says_benign = max(enabled_scores) < 40
     if non_ml_high and blended < 75 and not ml_says_benign:
         blended = 75.0
-    if enabled_scores:
-        top_ml = max(enabled_scores)
-        bottom_ml = min(enabled_scores)
-        if top_ml >= 90:
-            blended = max(blended, 85.0)
-        if bottom_ml <= 15 and not non_ml_high and len(enabled_scores) == len(ml_results):
-            blended = min(blended, max(float(rule_score), 34.0))
+    # If every ML input is confidently benign AND no rule signal flagged
+    # high-risk, allow the score to drift slightly below the rule score
+    # to reward consensus — but cap how far it can drop.
+    if not non_ml_high and max(enabled_scores) <= 15:
+        blended = min(blended, max(float(rule_score), 34.0))
     return clamp_score(blended)
 
 def verdict_with_ml(base_verdict, final_score, ml_results, signals):
-    if isinstance(ml_results, dict) or ml_results is None:
-        ml_results = [ml_results]
+    """Compose the user-facing verdict text.
+
+    ML inputs are intentionally NOT mentioned in the user-facing copy — the
+    classifier names ("url_classifier.joblib") and raw probabilities are
+    confusing for end users and risk eroding trust when the model misfires.
+    ML's contribution lives inside `final_score` already via blend_ml_score,
+    and the raw distribution is still returned in the response's `mlRisk`
+    field for backend logging.
+    """
+    # `base_verdict` / `ml_results` are accepted for API parity with callers
+    # but no longer affect the user-visible string.
+    del base_verdict, ml_results
     overall_risk = risk_from_score(final_score)
     high_checks = [item["check"] for item in signals if item["severity"] == "high"]
     medium_checks = [item["check"] for item in signals if item["severity"] == "medium"]
-    ml_phrase = ""
-    enabled = [r for r in ml_results if r and r.get("enabled")]
-    if enabled:
-        parts = []
-        for r in enabled:
-            name = r.get("model") or "model"
-            parts.append(f"{name} {round(float(r['score']), 1)}/100 ({round(r['maliciousProbability'] * 100, 1)}% malicious)")
-        ml_phrase = " ML scores: " + "; ".join(parts) + "."
 
     if overall_risk == "high":
         if high_checks:
-            return f"This QR code shows high-risk indicators in {', '.join(high_checks[:3])}.{ml_phrase} Do not continue unless you can independently verify the destination and sender."
-        return f"This QR code lands in SafeScan's high-risk range.{ml_phrase} Do not continue unless you can independently verify the destination and sender."
+            return f"This QR code shows high-risk indicators in {', '.join(high_checks[:3])}. Do not continue unless you can independently verify the destination and sender."
+        return "This QR code lands in SafeScan's high-risk range. Do not continue unless you can independently verify the destination and sender."
     if overall_risk == "suspicious":
         checks = medium_checks or high_checks
         if checks:
-            return f"This QR code looks suspicious because {', '.join(checks[:3])} need review.{ml_phrase} Continue only after confirming the domain, redirect path, and wallet action."
-        return f"This QR code lands in SafeScan's review range.{ml_phrase} Confirm the destination before taking action."
-    return f"SafeScan did not find strong phishing or wallet-drain indicators in this QR payload.{ml_phrase} Still verify the destination before connecting a wallet or sending funds."
+            return f"This QR code looks suspicious because {', '.join(checks[:3])} need review. Continue only after confirming the domain, redirect path, and wallet action."
+        return "This QR code lands in SafeScan's review range. Confirm the destination before taking action."
+    return "SafeScan did not find strong phishing or wallet-drain indicators in this QR payload. Still verify the destination before connecting a wallet or sending funds."
 
 def threat_type_for_analysis(overall_risk, signals, ml_results=None):
+    """Threat type label shown to the user.
+
+    Prefer the most severe deterministic rule signal — those are explainable
+    (e.g. "Domain Age", "VirusTotal Reputation"). Only fall back to the ML
+    label when the overall risk is already high AND no rule signal qualifies,
+    so a misfiring URL classifier can't single-handedly label a known-good
+    domain as "Malicious QR".
+    """
     if overall_risk == "safe":
         return "Benign"
-    if isinstance(ml_results, dict) or ml_results is None:
-        ml_results = [ml_results]
-    if any(r and r.get("enabled") and r.get("label") == "Malicious" for r in ml_results):
-        return "Malicious QR"
     ml_signal_names = {"ML Risk Model", "ML Risk Model (EfficientNet)"}
     first_high = next((item for item in signals if item["severity"] == "high" and item["check"] not in ml_signal_names), None)
     if first_high:
         return first_high["check"]
+    if isinstance(ml_results, dict) or ml_results is None:
+        ml_results = [ml_results]
+    # Only let ML drive the threat type when the overall risk is already
+    # high — i.e. the blended score independently agrees this looks bad.
+    if overall_risk == "high" and any(r and r.get("enabled") and r.get("label") == "Malicious" for r in ml_results):
+        return "Malicious QR"
     return "Suspicious QR"
 
 def mock_analysis_response(target_url):
@@ -2256,8 +2289,14 @@ async def analyze_full_pipeline(target_url, qr_image=None):
     signals.extend(reputation_signals)
     signals.append(virustotal_breakdown_signal(vt_result))
     signals.extend(crypto_signals)
+    # ML signal is kept around so the score blend + audit trail can use it,
+    # but it's NOT appended to the user-visible signals list by default —
+    # exposing classifier internals ("url_classifier.joblib 98.5% malicious")
+    # is confusing UX, especially when the trained model misfires on safe
+    # consumer domains. Flip SAFESCAN_ML_SIGNAL_VISIBLE=true to show it
+    # again for debugging.
     ml_signal = ml_signal_from_result(ml_result, label="ML Risk Model", description_prefix="EfficientNet QR classifier")
-    if ml_signal:
+    if ml_signal and ML_SIGNAL_VISIBLE:
         signals.append(ml_signal)
     signals = sorted(signals, key=severity_rank)
     ai_verdict = generate_ai_verdict(signals)
