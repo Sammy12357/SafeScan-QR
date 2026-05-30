@@ -3841,6 +3841,98 @@ async def api_scan_file(request: Request, file: UploadFile = File(...)):
         if qr_image_for_ml is not None:
             qr_image_for_ml.close()
 
+@qr_app.post("/api/qr/generate")
+async def api_qr_generate(request: Request, payload: dict = Body(...)):
+    """Generate a SafeScan-verified QR PNG for a URL.
+
+    Runs the URL through the same risk pipeline as `/api/scan` and only
+    renders the QR if the verdict is "safe". URLs flagged as suspicious or
+    high-risk are refused — the whole point of the endpoint is that any QR
+    coming out of it has been screened.
+
+    Returns a PNG image with a small SafeScan badge overlaid in the centre
+    (high error correction tolerates the badge without breaking scanning).
+    """
+    user = require_user(request)
+    rate_limit = enforce_rate_limit(request, "qr_generate", 20, 60 * 60, user_key=user.get("google_id"))
+    if rate_limit:
+        return rate_limit
+
+    validate_strict_payload(payload, {"url"})
+    target_url = validate_public_url((payload.get("url") or "").strip())
+
+    analysis = await analyze_full_pipeline(target_url)
+    overall_risk = (analysis.get("overallRisk") or "").lower()
+    verdict_text = analysis.get("verdict") or overall_risk or "unknown"
+
+    if overall_risk == "high":
+        raise SafeScanError(
+            f"Refused to generate QR. SafeScan flagged this URL as dangerous ({verdict_text}).",
+            400,
+        )
+    if overall_risk == "suspicious":
+        raise SafeScanError(
+            "Refused to generate QR. SafeScan flagged this URL as suspicious — review the scan report before publishing.",
+            400,
+        )
+
+    # Lazy-imports keep boot-time fast for non-generator requests.
+    import qrcode
+    from qrcode.constants import ERROR_CORRECT_H
+    from PIL import Image, ImageDraw
+
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=ERROR_CORRECT_H,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(target_url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="#03080f", back_color="white").convert("RGB")
+
+    # Centre-overlay SafeScan badge. High error correction (~30% of modules)
+    # tolerates this without breaking scanning.
+    img_w, img_h = img.size
+    badge_size = max(48, img_w // 5)
+    bx = (img_w - badge_size) // 2
+    by = (img_h - badge_size) // 2
+    draw = ImageDraw.Draw(img)
+    pad = 8
+    draw.rectangle([bx - pad, by - pad, bx + badge_size + pad, by + badge_size + pad], fill="white")
+    draw.rectangle([bx, by, bx + badge_size, by + badge_size], outline="#67f2c8", width=4)
+    # Checkmark stroke.
+    cx, cy = img_w // 2, img_h // 2
+    s = badge_size // 3
+    draw.line(
+        [(cx - s // 2, cy + 2), (cx - s // 8, cy + s // 3), (cx + s // 2, cy - s // 3)],
+        fill="#03080f",
+        width=max(4, badge_size // 14),
+    )
+
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG", optimize=True)
+    png_bytes = buffer.getvalue()
+
+    audit_log(
+        "qr.generated",
+        request=request,
+        actor_user_id=user.get("google_id"),
+        target_type="url",
+        metadata={"url": target_url, "risk": overall_risk, "score": int(analysis.get("confidenceScore") or 0)},
+    )
+
+    return Response(
+        content=png_bytes,
+        media_type="image/png",
+        headers={
+            "X-SafeScan-Verdict": overall_risk or "safe",
+            "X-SafeScan-Score": str(int(analysis.get("confidenceScore") or 0)),
+            "Cache-Control": "no-store",
+            "Content-Disposition": 'inline; filename="safescan-qr.png"',
+        },
+    )
+
 async def analyze_and_record_scan(request, user, raw_payload, device_fingerprint="", qr_image_for_ml=None):
     if len(raw_payload) > 4096:
         raise SafeScanError("QR payload is too large.", 400)
@@ -5000,6 +5092,14 @@ async def auth_google(
 
 @qr_app.post("/auth/verify")
 async def auth_verify(request: Request, payload: dict = Body(...)):
+    # Per-IP throttle BEFORE any token validation work. Without this, an
+    # attacker can hammer the JWKS verifier with garbage tokens and burn
+    # CPU + Auth0 JWKS fetches. 20 attempts per 15 min from a single IP is
+    # generous for real users (re-login retries, etc.) but kills brute force.
+    ip_rate_limit = enforce_rate_limit(request, "auth_verify_ip", 20, 15 * 60)
+    if ip_rate_limit:
+        return ip_rate_limit
+
     validate_strict_payload(payload, {"token"})
     credential = (payload.get("token") or "").strip()
     if not credential:

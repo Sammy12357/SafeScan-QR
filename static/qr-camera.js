@@ -102,7 +102,8 @@
   }
 
   async function buildDecoder() {
-    if ("BarcodeDetector" in window) {
+    const hasNativeDetector = "BarcodeDetector" in window;
+    if (hasNativeDetector) {
       try {
         const supported = await window.BarcodeDetector.getSupportedFormats();
         if (supported.indexOf("qr_code") !== -1) {
@@ -112,6 +113,9 @@
             decode: async (video, canvas, ctx) => {
               const codes = await detector.detect(video);
               if (codes && codes[0]) return codes[0].rawValue;
+              // Only try the jsQR enhancement pass if it's already loaded —
+              // don't block the BarcodeDetector path on a CDN fetch.
+              if (typeof window.jsQR !== "function") return null;
               fallbackFrameCount += 1;
               return decodeWithJsQRFallback(video, canvas, ctx, fallbackFrameCount % ENHANCED_SCAN_EVERY_N_FRAMES === 0);
             }
@@ -121,7 +125,21 @@
         // Some Android builds throw on getSupportedFormats — fall through.
       }
     }
-    const jsQR = await loadJsQR();
+    // No native detector available (iOS Safari < 17, older browsers). Load
+    // jsQR from the CDN; surface a clear, actionable message if it fails so
+    // the user can switch to the upload path instead of staring at a frozen
+    // viewfinder.
+    let jsQR;
+    try {
+      jsQR = await loadJsQR();
+    } catch (err) {
+      const reason = hasNativeDetector
+        ? "Live scanning isn't supported in this browser and the fallback decoder failed to load."
+        : "Live scanning isn't supported in this browser, and the fallback decoder could not be reached (check your connection).";
+      const richError = new Error(reason + " Use \"Upload QR file/photo\" instead.");
+      richError.code = "qr_decoder_unavailable";
+      throw richError;
+    }
     return {
       kind: "jsQR",
       decode: (video, canvas, ctx) => {
