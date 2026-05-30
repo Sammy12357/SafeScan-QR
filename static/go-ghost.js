@@ -84,9 +84,16 @@ function renderBrokers() {
     const searchUrl = profile.name
       ? search(profile)
       : `https://www.google.com/search?q=${encodeURIComponent([profile.name, profile.location, name].filter(Boolean).join(" "))}`;
-    return `<article class="broker"><div><span class="priority">${escapeHtml(priority)}</span><h3>${escapeHtml(name)}</h3><p>Search for your record, copy the matching profile URL, submit the opt-out, then verify the broker email.</p></div><div class="broker-actions"><a class="button" href="${searchUrl}" target="_blank" rel="noopener noreferrer">Search</a><a class="button primary" href="${removalUrl}" target="_blank" rel="noopener noreferrer">Opt out</a></div><div class="broker-checks"><label><input type="checkbox" data-site="${id}" data-field="submitted" ${item.submitted ? "checked" : ""}> Submitted</label><label><input type="checkbox" data-site="${id}" data-field="removed" ${item.removed ? "checked" : ""}> Removed</label></div></article>`;
+    return `<article class="broker"><div><span class="priority">${escapeHtml(priority)}</span><h3>${escapeHtml(name)}</h3></div><div class="broker-actions"><a class="button" href="${searchUrl}" target="_blank" rel="noopener noreferrer" data-search-link="${id}">Search</a><a class="button primary" href="${removalUrl}" target="_blank" rel="noopener noreferrer">Opt out</a></div><div class="broker-checks"><label><input type="checkbox" data-site="${id}" data-field="submitted" ${item.submitted ? "checked" : ""}> Submitted</label><label><input type="checkbox" data-site="${id}" data-field="removed" ${item.removed ? "checked" : ""}> Removed</label></div></article>`;
   }).join("");
   updateProgress();
+}
+
+function updateLinkStatus(message, ready = false) {
+  const status = byId("ghostLinkStatus");
+  if (!status) return;
+  status.textContent = message;
+  status.classList.toggle("ready", ready);
 }
 
 function hydrateProfile() {
@@ -102,6 +109,7 @@ function startGoGhost() {
   byId("goGhostWorkspace").hidden = false;
   hydrateProfile();
   renderBrokers();
+  updateLinkStatus("Search links are ready.", false);
 }
 
 byId("startGoGhostButton").addEventListener("click", startGoGhost);
@@ -113,6 +121,21 @@ byId("goGhostProfileForm").addEventListener("submit", (event) => {
     identifier: byId("ghostIdentifierInput").value.trim(),
   });
   renderBrokers();
+  const profile = getProfile();
+  updateLinkStatus(profile.name ? "Search links updated with your details." : "Add a name to personalize the search links.", Boolean(profile.name));
+});
+
+["ghostNameInput", "ghostLocationInput", "ghostIdentifierInput"].forEach((id) => {
+  byId(id).addEventListener("input", () => {
+    write(keys.profile, {
+      name: byId("ghostNameInput").value.trim(),
+      location: byId("ghostLocationInput").value.trim(),
+      identifier: byId("ghostIdentifierInput").value.trim(),
+    });
+    renderBrokers();
+    const profile = getProfile();
+    updateLinkStatus(profile.name ? "Search links updated." : "Add a name to personalize the search links.", Boolean(profile.name));
+  });
 });
 
 byId("clearGhostDataButton").addEventListener("click", () => {
@@ -122,6 +145,7 @@ byId("clearGhostDataButton").addEventListener("click", () => {
   byId("ghostLocationInput").value = "";
   byId("ghostIdentifierInput").value = "";
   renderBrokers();
+  updateLinkStatus("Search links cleared.", false);
 });
 
 byId("goGhostBrokerList").addEventListener("change", (event) => {
