@@ -87,6 +87,11 @@ warnings.filterwarnings("ignore", category=ImportWarning)
 load_dotenv()
 
 CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID") or os.getenv("googe_client_id")
+# Auth0 config for mobile sign-in. The fallback dev-tenant values exist so the
+# server still boots in local dev; production MUST set both env vars (see
+# .env.example and SECURITY.md). If a mobile client signs in via a different
+# Auth0 tenant than the one configured here, /auth/verify returns 401 because
+# the iss claim won't match AUTH0_ISSUER.
 AUTH0_DOMAIN = (os.getenv("AUTH0_DOMAIN") or "dev-vnllaqnkkegs4xni.us.auth0.com").strip().rstrip("/")
 AUTH0_AUDIENCES = {audience.strip() for audience in (os.getenv("AUTH0_CLIENT_IDS") or os.getenv("AUTH0_CLIENT_ID") or "1XfWxWOtDtN18JCCztRehzcJ1jOSBBic").split(",") if audience.strip()}
 AUTH0_ISSUER = f"https://{AUTH0_DOMAIN}/"

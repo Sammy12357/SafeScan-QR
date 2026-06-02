@@ -16,6 +16,8 @@ SafeScan QR currently runs as a FastAPI/Python application with SQLite storage i
 - Scan submission no longer trusts the hidden `user_email` form field; the server derives the email from the session.
 - URL analysis validates URL shape, max length, scheme, hostname, and blocks localhost/private/internal Render targets before reputation checks or redirects.
 - Redirect tracing follows redirects manually and validates every hop before requesting it.
+- Auth0 ID tokens (mobile sign-in) are verified server-side: RS256 signature against the tenant JWKS, `iss` against `AUTH0_DOMAIN`, `aud` against the `AUTH0_CLIENT_IDS` allowlist, and `exp` against current time. JWKS is cached for 1 hour with one forced refresh on `kid` mismatch to handle key rotation.
+- `/auth/verify` branches on the token's `iss` claim to pick the Auth0 or Google verifier and rejects either path with a generic 401 on failure. Throttled to 20 attempts per 15 minutes per IP before any token validation work.
 - Wallet connection now uses a server-issued 5-minute nonce and Ed25519 message-signature verification before a wallet is stored.
 - Wallet nonces are single-use, rotated after failed verification, rate-limited per wallet address, and cleaned up by a background task.
 - Verified wallets are stored in the `wallets` table; scan submission no longer trusts client-submitted wallet addresses.
@@ -80,6 +82,8 @@ SafeScan QR currently runs as a FastAPI/Python application with SQLite storage i
 Update these environment variables in Render, redeploy, and invalidate sessions by clearing the `sessions` table if auth secrets or session behavior changes:
 
 - `GOOGLE_CLIENT_SECRET`
+- `AUTH0_DOMAIN` (mobile sign-in tenant; without this `/auth/verify` falls back to the dev tenant fixed in `hackabull.py:90`)
+- `AUTH0_CLIENT_IDS` (comma-separated list of Auth0 application client IDs allowed as `aud`)
 - `SESSION_SECRET`
 - `JWT_SECRET`
 - `AIRDROP_ADMIN_SECRET`
