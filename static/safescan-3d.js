@@ -4,7 +4,7 @@ let THREE = null;
 
 if (canvas && showcase && !showcase.dataset.splineSrc?.trim()) {
   try {
-    THREE = await import("/static/vendor/three.module.js?v=local-three-v2");
+    THREE = await import("/static/vendor/three.module.js?v=local-three-v3");
   } catch (error) {
     console.error("SafeScan 3D model failed to load Three.js", error);
     showcase.classList.add("webgl-fallback");
