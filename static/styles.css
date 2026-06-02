@@ -441,9 +441,47 @@ body.qr-camera-open { overflow: hidden; }
 .reveal-on-scroll { opacity: 0; transform: translateY(22px); transition: opacity 0.6s ease, transform 0.6s ease; transition-delay: var(--reveal-delay, 0ms); }
 .reveal-on-scroll.is-visible { opacity: 1; transform: translateY(0); }
 
+.go-ghost-shell { padding-bottom: 0; }
+.go-ghost-hero, .go-ghost-card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: var(--shadow); }
+.go-ghost-hero { display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: end; margin-bottom: 20px; padding: 34px; }
+.go-ghost-hero h1 { margin: 10px 0 12px; font-family: var(--display-font); font-size: clamp(3rem, 8vw, 6rem); line-height: 0.92; letter-spacing: 0; }
+.go-ghost-lede, .go-ghost-copy, .broker-card p, .ghost-consent-card p { color: var(--muted); line-height: 1.6; }
+.go-ghost-lede { max-width: 740px; margin: 0; font-size: 1.08rem; }
+.go-ghost-status { display: grid; place-items: center; min-width: 180px; min-height: 132px; padding: 18px; border: 1px solid rgba(103, 242, 200, 0.24); border-radius: 8px; background: rgba(103, 242, 200, 0.08); text-align: center; }
+.go-ghost-status span { display: block; color: var(--accent); font-family: var(--display-font); font-size: 1.8rem; font-weight: 900; }
+.go-ghost-status p { margin: 8px 0 0; color: var(--muted); }
+.go-ghost-layout { display: grid; grid-template-columns: minmax(280px, 0.86fr) minmax(0, 1.14fr); gap: 18px; align-items: start; }
+.go-ghost-card { padding: 24px; }
+.go-ghost-form { display: grid; gap: 14px; margin-top: 18px; }
+.go-ghost-form label { display: grid; gap: 8px; color: var(--text); font-weight: 800; }
+.go-ghost-form input { width: 100%; padding: 14px 16px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05); color: var(--text); font: inherit; }
+.go-ghost-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 16px; }
+.privacy-local-badge, .broker-priority { display: inline-grid; place-items: center; min-height: 30px; padding: 0 10px; border: 1px solid rgba(103, 242, 200, 0.24); border-radius: 999px; background: rgba(103, 242, 200, 0.08); color: var(--accent); font-size: 0.75rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.08em; }
+.broker-list { display: grid; gap: 12px; margin-top: 18px; }
+.broker-card { display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: center; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-strong); }
+.broker-card h3 { margin: 8px 0 6px; font-size: 1.18rem; }
+.broker-card p { margin: 0; font-size: 0.94rem; }
+.broker-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.broker-actions .primary-button, .broker-actions .secondary-button { padding: 11px 14px; }
+.broker-checks { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line); }
+.broker-checks label { display: inline-flex; gap: 8px; align-items: center; min-height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: rgba(255, 255, 255, 0.04); font-weight: 800; }
+.broker-checks input { accent-color: var(--accent); }
+.maintenance-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+.maintenance-grid a { display: grid; place-items: center; min-height: 62px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.04); color: var(--text); text-align: center; text-decoration: none; font-weight: 900; }
+.maintenance-grid a:hover { border-color: rgba(103, 242, 200, 0.42); background: rgba(103, 242, 200, 0.08); }
+.ghost-consent-modal { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 18px; background: rgba(3, 8, 15, 0.82); backdrop-filter: blur(16px); }
+.ghost-consent-card { width: min(620px, 100%); padding: 26px; border: 1px solid rgba(103, 242, 200, 0.26); border-radius: 8px; background: rgba(8, 16, 29, 0.98); box-shadow: var(--shadow); }
+.ghost-consent-card h2 { margin: 10px 0 12px; font-family: var(--display-font); font-size: clamp(1.8rem, 5vw, 3.2rem); line-height: 1.04; }
+.ghost-safety-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
+.ghost-safety-list span { min-height: 54px; padding: 12px; border: 1px solid rgba(103, 242, 200, 0.18); border-radius: 8px; background: rgba(103, 242, 200, 0.07); color: var(--text); font-weight: 900; text-align: center; }
+
 @media (max-width: 900px) {
-  .hero, .top-profile, .story-grid, .token-strip, .airdrop-progress, .wallet-panel, .referral-panel, .airdrop-grid, .scanner-grid, .results-grid, .panel-header, .results-header, .decision-bar, .engine-header, .test-proof-grid, .test-pricing-grid, .test-social { grid-template-columns: 1fr; flex-direction: column; align-items: stretch; }
+  .hero, .top-profile, .story-grid, .token-strip, .airdrop-progress, .wallet-panel, .referral-panel, .airdrop-grid, .scanner-grid, .results-grid, .panel-header, .results-header, .decision-bar, .engine-header, .test-proof-grid, .test-pricing-grid, .test-social, .go-ghost-hero, .go-ghost-layout, .broker-card, .maintenance-grid, .ghost-safety-list { grid-template-columns: 1fr; flex-direction: column; align-items: stretch; }
   .hero { min-height: auto; padding: 24px; }
+  .go-ghost-hero, .go-ghost-card { padding: 20px; }
+  .go-ghost-status { min-width: 0; }
+  .broker-actions { justify-content: stretch; }
+  .broker-actions a, .go-ghost-actions button, .go-ghost-actions a { flex: 1 1 100%; text-align: center; }
   .test-section { padding: 22px; }
   .test-stat-row { grid-template-columns: 1fr; }
   .spline-showcase { min-height: 460px; }

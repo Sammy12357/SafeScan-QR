@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Go Ghost | SafeScan QR</title>
+  <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css?v=go-ghost-v1">
+</head>
+<body>
+  <div class="page-shell go-ghost-shell">
+    <div class="top-auth">
+      <button id="topCopyReferralButton" class="top-action-button" type="button">Referral link</button>
+      <button id="topConnectWalletButton" class="top-action-button" type="button">Connect wallet</button>
+      <a href="/go-ghost" class="top-action-button">Go Ghost</a>
+      {% if logged_in %}
+        <a href="/history" class="top-action-button">Scan history</a>
+        <a href="/leaderboard" class="top-action-button">Leaderboard</a>
+      {% endif %}
+      <div class="top-auth-spacer"></div>
+      {% if not logged_in %}
+        <a href="/login" class="top-action-button">Sign in / Sign up</a>
+      {% else %}
+        <div id="airdropProfile" class="top-profile">
+          <div><p class="profile-name">{{ profile_display_name }}</p><p class="profile-email" data-email="{{ email }}">{{ profile_subtitle }}</p></div>
+          <a href="/profile" class="profile-button">Profile</a>
+          {% if is_admin %}
+            <span class="admin-role-badge">{{ user_role | upper }}</span>
+            <a href="/admin" class="admin-dashboard-button">Admin dashboard</a>
+          {% endif %}
+          <form class="sign-out-form" action="/auth/logout" method="post">
+            <button class="sign-out-button" type="submit">Sign out</button>
+          </form>
+        </div>
+      {% endif %}
+    </div>
+
+    <header class="go-ghost-hero">
+      <div>
+        <p class="eyebrow">Privacy cleanup</p>
+        <h1>Go Ghost</h1>
+        <p class="go-ghost-lede">Find exposed profiles, open the right opt-out pages, and track removals without storing your personal details on SafeScan servers.</p>
+      </div>
+      <div class="go-ghost-status" aria-label="Go Ghost progress">
+        <span id="ghostProgressCount">0 / 0</span>
+        <p>removals tracked</p>
+      </div>
+    </header>
+
+    <main class="go-ghost-layout" id="goGhostWorkspace" hidden>
+      <section class="go-ghost-card">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Step 1</p>
+            <h2>Build your search kit</h2>
+          </div>
+          <span class="privacy-local-badge">Local only</span>
+        </div>
+        <p class="go-ghost-copy">Use only the minimum identifiers needed to find your record. This data stays in your browser and is used to generate search links.</p>
+
+        <form id="goGhostProfileForm" class="go-ghost-form">
+          <label>Full name
+            <input id="ghostNameInput" type="text" autocomplete="name" placeholder="Jane A. Doe">
+          </label>
+          <label>City and state
+            <input id="ghostLocationInput" type="text" autocomplete="address-level2" placeholder="Tampa, FL">
+          </label>
+          <label>Phone or email
+            <input id="ghostIdentifierInput" type="text" autocomplete="off" placeholder="Optional, use one identifier">
+          </label>
+          <div class="go-ghost-actions">
+            <button class="primary-button" type="submit">Generate search links</button>
+            <button class="secondary-button" id="clearGhostDataButton" type="button">Clear local data</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="go-ghost-card">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Step 2</p>
+            <h2>Start with the highest-impact sites</h2>
+          </div>
+        </div>
+        <p class="go-ghost-copy">Open a search, copy the matching profile URL, submit the opt-out, verify the email, then mark it submitted and removed.</p>
+        <div id="goGhostBrokerList" class="broker-list"></div>
+      </section>
+
+      <section class="go-ghost-card result-card-wide">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Step 3</p>
+            <h2>Search cleanup and maintenance</h2>
+          </div>
+        </div>
+        <div class="maintenance-grid">
+          <a href="https://haveibeenpwned.com/" target="_blank" rel="noopener noreferrer">Check breaches</a>
+          <a href="https://myactivity.google.com/results-about-you" target="_blank" rel="noopener noreferrer">Google Results About You</a>
+          <a href="https://support.google.com/websearch/troubleshooter/9685456" target="_blank" rel="noopener noreferrer">Remove exposed Google result</a>
+          <a href="https://www.bing.com/webmasters/tools/content-removal" target="_blank" rel="noopener noreferrer">Bing content removal</a>
+        </div>
+      </section>
+    </main>
+
+    {% include "footer.html" %}
+  </div>
+
+  <div id="goGhostConsentModal" class="ghost-consent-modal" role="dialog" aria-modal="true" aria-labelledby="goGhostConsentTitle">
+    <div class="ghost-consent-card">
+      <p class="eyebrow">Confirm intent</p>
+      <h2 id="goGhostConsentTitle">Do you want your personal data taken off the internet?</h2>
+      <p>Go Ghost helps you find broker profiles and submit removals. You will still confirm each request yourself, because many brokers require email verification or CAPTCHA.</p>
+      <div class="ghost-safety-list">
+        <span>Use minimum info only</span>
+        <span>Never provide SSN</span>
+        <span>Track each confirmation</span>
+      </div>
+      <div class="go-ghost-actions">
+        <button id="startGoGhostButton" class="primary-button" type="button">Yes, start Go Ghost</button>
+        <a class="secondary-button" href="/">Not now</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js?v=go-ghost-v1"></script>
+</body>
+</html>

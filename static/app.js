@@ -754,3 +754,191 @@ document.querySelectorAll(".vt-panel").forEach((panel) => {
   });
   applyFilter();
 });
+
+const goGhostWorkspace = document.getElementById("goGhostWorkspace");
+const goGhostConsentModal = document.getElementById("goGhostConsentModal");
+const startGoGhostButton = document.getElementById("startGoGhostButton");
+const goGhostProfileForm = document.getElementById("goGhostProfileForm");
+const clearGhostDataButton = document.getElementById("clearGhostDataButton");
+const goGhostBrokerList = document.getElementById("goGhostBrokerList");
+const ghostProgressCount = document.getElementById("ghostProgressCount");
+const ghostNameInput = document.getElementById("ghostNameInput");
+const ghostLocationInput = document.getElementById("ghostLocationInput");
+const ghostIdentifierInput = document.getElementById("ghostIdentifierInput");
+const GO_GHOST_PROFILE_KEY = "safeScanGoGhostProfile";
+const GO_GHOST_PROGRESS_KEY = "safeScanGoGhostProgress";
+const GO_GHOST_CONSENT_KEY = "safeScanGoGhostConsent";
+
+const goGhostBrokers = [
+  {
+    id: "fastpeoplesearch",
+    name: "FastPeopleSearch",
+    priority: "High traffic",
+    removalUrl: "https://www.fastpeoplesearch.com/removal",
+    searchUrl: ({ name, location }) => `https://www.fastpeoplesearch.com/name/${encodeURIComponent(name || "")}${location ? `_${encodeURIComponent(location)}` : ""}`
+  },
+  {
+    id: "whitepages",
+    name: "Whitepages",
+    priority: "High traffic",
+    removalUrl: "https://www.whitepages.com/suppression-requests",
+    searchUrl: ({ name, location }) => `https://www.whitepages.com/name/${encodeURIComponent(name || "")}${location ? `/${encodeURIComponent(location)}` : ""}`
+  },
+  {
+    id: "spokeo",
+    name: "Spokeo",
+    priority: "High traffic",
+    removalUrl: "https://www.spokeo.com/optout",
+    searchUrl: ({ name, location }) => `https://www.spokeo.com/${encodeURIComponent(name || "")}${location ? `/${encodeURIComponent(location)}` : ""}`
+  },
+  {
+    id: "beenverified",
+    name: "BeenVerified",
+    priority: "High traffic",
+    removalUrl: "https://www.beenverified.com/app/optout/search",
+    searchUrl: ({ name }) => `https://www.beenverified.com/app/optout/search?fn=${encodeURIComponent(name || "")}`
+  },
+  {
+    id: "truepeoplesearch",
+    name: "TruePeopleSearch",
+    priority: "High traffic",
+    removalUrl: "https://www.truepeoplesearch.com/removal",
+    searchUrl: ({ name, location }) => `https://www.truepeoplesearch.com/results?name=${encodeURIComponent(name || "")}&citystatezip=${encodeURIComponent(location || "")}`
+  },
+  {
+    id: "thatsthem",
+    name: "Thatsthem",
+    priority: "Address and phone",
+    removalUrl: "https://thatsthem.com/optout",
+    searchUrl: ({ name }) => `https://thatsthem.com/name/${encodeURIComponent(name || "")}`
+  },
+  {
+    id: "nuwber",
+    name: "Nuwber",
+    priority: "Profile-link based",
+    removalUrl: "https://nuwber.com/removal/link",
+    searchUrl: ({ name, location }) => `https://nuwber.com/search?name=${encodeURIComponent(name || "")}&location=${encodeURIComponent(location || "")}`
+  },
+  {
+    id: "radaris",
+    name: "Radaris",
+    priority: "Duplicate profiles",
+    removalUrl: "https://radaris.com/page/how-to-remove",
+    searchUrl: ({ name, location }) => `https://radaris.com/p/${encodeURIComponent(name || "")}/${encodeURIComponent(location || "")}`
+  }
+];
+
+function readJsonStorage(key, fallback) {
+  try {
+    return JSON.parse(window.localStorage.getItem(key)) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeJsonStorage(key, value) {
+  window.localStorage.setItem(key, JSON.stringify(value));
+}
+
+function getGhostProfile() {
+  return readJsonStorage(GO_GHOST_PROFILE_KEY, { name: "", location: "", identifier: "" });
+}
+
+function getGhostProgress() {
+  return readJsonStorage(GO_GHOST_PROGRESS_KEY, {});
+}
+
+function setGhostProgress(siteId, field, checked) {
+  const progress = getGhostProgress();
+  progress[siteId] = { ...(progress[siteId] || {}), [field]: checked, updatedAt: new Date().toISOString() };
+  writeJsonStorage(GO_GHOST_PROGRESS_KEY, progress);
+  renderGoGhostBrokers();
+}
+
+function ghostSearchFallback(profile, brokerName) {
+  const query = [profile.name, profile.location, brokerName].filter(Boolean).join(" ");
+  return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+}
+
+function renderGoGhostProgress() {
+  if (!ghostProgressCount) return;
+  const progress = getGhostProgress();
+  const removed = goGhostBrokers.filter((broker) => progress[broker.id]?.removed).length;
+  ghostProgressCount.textContent = `${removed} / ${goGhostBrokers.length}`;
+}
+
+function renderGoGhostBrokers() {
+  if (!goGhostBrokerList) return;
+  const profile = getGhostProfile();
+  const progress = getGhostProgress();
+  goGhostBrokerList.innerHTML = goGhostBrokers.map((broker) => {
+    const state = progress[broker.id] || {};
+    const searchUrl = profile.name ? broker.searchUrl(profile) : ghostSearchFallback(profile, broker.name);
+    return `
+      <article class="broker-card">
+        <div>
+          <span class="broker-priority">${escapeHtml(broker.priority)}</span>
+          <h3>${escapeHtml(broker.name)}</h3>
+          <p>Search for your record, copy the matching profile URL, submit the opt-out, then verify the broker email.</p>
+        </div>
+        <div class="broker-actions">
+          <a class="secondary-button" href="${searchUrl}" target="_blank" rel="noopener noreferrer">Search</a>
+          <a class="primary-button" href="${broker.removalUrl}" target="_blank" rel="noopener noreferrer">Opt out</a>
+        </div>
+        <div class="broker-checks">
+          <label><input type="checkbox" data-ghost-site="${broker.id}" data-ghost-field="submitted" ${state.submitted ? "checked" : ""}> Submitted</label>
+          <label><input type="checkbox" data-ghost-site="${broker.id}" data-ghost-field="removed" ${state.removed ? "checked" : ""}> Removed</label>
+        </div>
+      </article>
+    `;
+  }).join("");
+  renderGoGhostProgress();
+}
+
+function hydrateGoGhostProfile() {
+  const profile = getGhostProfile();
+  if (ghostNameInput) ghostNameInput.value = profile.name || "";
+  if (ghostLocationInput) ghostLocationInput.value = profile.location || "";
+  if (ghostIdentifierInput) ghostIdentifierInput.value = profile.identifier || "";
+}
+
+function startGoGhost() {
+  writeJsonStorage(GO_GHOST_CONSENT_KEY, { acceptedAt: new Date().toISOString() });
+  goGhostConsentModal?.classList.add("hidden");
+  if (goGhostWorkspace) goGhostWorkspace.hidden = false;
+  hydrateGoGhostProfile();
+  renderGoGhostBrokers();
+}
+
+if (goGhostWorkspace) {
+  const hasConsent = Boolean(readJsonStorage(GO_GHOST_CONSENT_KEY, null));
+  if (hasConsent) startGoGhost();
+  else goGhostConsentModal?.classList.remove("hidden");
+
+  startGoGhostButton?.addEventListener("click", startGoGhost);
+
+  goGhostProfileForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    writeJsonStorage(GO_GHOST_PROFILE_KEY, {
+      name: ghostNameInput?.value?.trim() || "",
+      location: ghostLocationInput?.value?.trim() || "",
+      identifier: ghostIdentifierInput?.value?.trim() || ""
+    });
+    renderGoGhostBrokers();
+    showCopyToast("Search links updated");
+  });
+
+  clearGhostDataButton?.addEventListener("click", () => {
+    window.localStorage.removeItem(GO_GHOST_PROFILE_KEY);
+    window.localStorage.removeItem(GO_GHOST_PROGRESS_KEY);
+    hydrateGoGhostProfile();
+    renderGoGhostBrokers();
+    showCopyToast("Go Ghost data cleared");
+  });
+
+  goGhostBrokerList?.addEventListener("change", (event) => {
+    const checkbox = event.target.closest("[data-ghost-site][data-ghost-field]");
+    if (!checkbox) return;
+    setGhostProgress(checkbox.dataset.ghostSite, checkbox.dataset.ghostField, checkbox.checked);
+  });
+}

@@ -4438,6 +4438,17 @@ async def read_test_site(request: Request):
         **index_user_context(user)
     })
 
+@qr_app.get("/go-ghost", response_class=HTMLResponse)
+async def go_ghost_page(request: Request):
+    user = get_session_user(request)
+    return templates.TemplateResponse("go_ghost.html", {
+        "request": request,
+        "logged_in": bool(user),
+        "email": user["email"] if user else "",
+        "version": LEGAL_VERSION,
+        **index_user_context(user),
+    })
+
 @qr_app.get("/legal/privacy-policy", response_class=HTMLResponse)
 async def privacy_policy(request: Request):
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Privacy Policy", PRIVACY_POLICY_HTML))
