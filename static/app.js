@@ -538,7 +538,8 @@ qrImageInput?.addEventListener("change", () => {
 // into the existing manual-URL form so the same /search_qr_api pipeline
 // runs on the result.
 const scanCameraButton = document.getElementById("scanCameraButton");
-scanCameraButton?.addEventListener("click", () => {
+const heroScanCameraButton = document.getElementById("heroScanCameraButton");
+function openCameraScanner() {
   if (!window.SafeScanQrCamera || typeof window.SafeScanQrCamera.open !== "function") {
     window.alert("Camera scanner is still loading. Please try again in a moment.");
     return;
@@ -560,7 +561,9 @@ scanCameraButton?.addEventListener("click", () => {
       if (message) window.alert(message);
     }
   });
-});
+}
+scanCameraButton?.addEventListener("click", openCameraScanner);
+heroScanCameraButton?.addEventListener("click", openCameraScanner);
 
 function renderAirdropProfile(profile) {
   if (!profile) {

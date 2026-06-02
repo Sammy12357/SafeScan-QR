@@ -44,7 +44,7 @@
         <h1>SafeScan QR</h1>
         <p class="hero-problem">{{ "Stop malicious QR links before they open." if test_site else "Can you distinguish a malicious QR?" }}</p>
         <p class="hero-text">{{ "SafeScan turns every QR scan into a clear security decision: decode the payload, trace redirects, inspect wallet actions, score the risk, and let users continue only when they understand what is happening." if test_site else "A trust layer for QR links, wallet prompts, and payment redirects. Decode the payload, score the risk, and keep the user in control before anything runs." }}</p>
-        <div class="hero-actions"><a class="primary-button" href="#scanner">Scan QR</a><a class="secondary-button" href="{{ '/#scanner' if test_site_path else '/go-ghost' }}">{{ "Scanner" if test_site_path else "Go Ghost" }}</a></div>
+        <div class="hero-actions"><button id="heroScanCameraButton" class="primary-button" type="button">Scan QR</button><a class="secondary-button" href="{{ '/#scanner' if test_site_path else '/go-ghost' }}">{{ "Scanner" if test_site_path else "Go Ghost" }}</a></div>
         <div class="hero-metrics" aria-label="SafeScan QR demo capabilities">
           <div><span>AI</span><p>Risk verdicts</p></div>
           <div><span>ZBar</span><p>QR decoding</p></div>
