@@ -62,6 +62,7 @@ body {
 .danger-button { padding: 14px 20px; background: rgba(255, 110, 127, 0.12); border-color: rgba(255, 110, 127, 0.34); color: var(--danger); font-weight: 800; }
 .sample-button, .upload-chip { padding: 10px 14px; background: rgba(255, 255, 255, 0.05); border-color: rgba(255, 255, 255, 0.08); color: var(--text); }
 #scanner .sample-button, #scanner .upload-chip, #scanner .secondary-button, #scanner .primary-button, #scanner .scan-status { font-family: var(--body-font); }
+#scanner .upload-chip { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; margin: 0 0 10px; font-size: 1rem; font-weight: 700; line-height: 1.2; text-align: center; }
 .primary-button:hover, .secondary-button:hover, .sample-button:hover, .upload-chip:hover, .danger-button:hover { transform: translateY(-1px); }
 
 .hero-card, .story-card, .airdrop-card, .scanner-card, .result-card, .toggle-card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel-strong); }
