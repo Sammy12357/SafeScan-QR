@@ -1,31 +1,58 @@
 const canvas = document.getElementById("safeScanModel");
 const showcase = document.querySelector(".spline-showcase");
 let THREE = null;
+let frameCount = 0;
+let lastFrameAt = performance.now();
+
+function activateFallback(reason) {
+  if (!showcase) return;
+  if (reason) {
+    showcase.dataset.webglFallbackReason = reason;
+  }
+  showcase.classList.remove("webgl-ready");
+  showcase.classList.add("webgl-fallback");
+  if (canvas) {
+    canvas.style.setProperty("opacity", "0", "important");
+    canvas.style.setProperty("visibility", "hidden", "important");
+    canvas.style.setProperty("pointer-events", "none", "important");
+  }
+}
 
 if (canvas && showcase && !showcase.dataset.splineSrc?.trim()) {
   canvas.style.setProperty("display", "block", "important");
   canvas.style.setProperty("opacity", "1", "important");
   canvas.style.setProperty("visibility", "visible", "important");
   canvas.style.setProperty("z-index", "1", "important");
+  canvas.addEventListener("webglcontextlost", (event) => {
+    event.preventDefault();
+    activateFallback("context-lost");
+  });
   try {
-    THREE = await import("/static/vendor/three.module.js?v=local-three-v4");
+    THREE = await import("/static/vendor/three.module.js?v=local-three-v5");
   } catch (error) {
     console.error("SafeScan 3D model failed to load Three.js", error);
-    showcase.classList.add("webgl-fallback");
+    activateFallback("three-import");
   }
 }
 
-if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim()) {
+if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim() && !showcase.classList.contains("webgl-fallback")) {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
   camera.position.set(0, 0.45, 7.2);
 
-  const renderer = new THREE.WebGLRenderer({
-    canvas,
-    alpha: true,
-    antialias: true,
-    powerPreference: "high-performance"
-  });
+  let renderer = null;
+  try {
+    renderer = new THREE.WebGLRenderer({
+      canvas,
+      alpha: true,
+      antialias: true,
+      powerPreference: "high-performance"
+    });
+  } catch (error) {
+    console.error("SafeScan 3D model failed to create WebGL renderer", error);
+    activateFallback("renderer");
+  }
+  if (renderer) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -652,8 +679,22 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim()) {
   canvas.style.setProperty("visibility", "visible", "important");
   canvas.style.setProperty("z-index", "1", "important");
 
+  const stallWatchdog = window.setInterval(() => {
+    if (showcase.classList.contains("webgl-fallback")) {
+      window.clearInterval(stallWatchdog);
+      return;
+    }
+    const stalled = frameCount < 3 || performance.now() - lastFrameAt > 2600;
+    if (stalled) {
+      activateFallback("stalled");
+      window.clearInterval(stallWatchdog);
+    }
+  }, 3200);
+
   const clock = new THREE.Clock();
   function animate() {
+    frameCount += 1;
+    lastFrameAt = performance.now();
     const time = clock.getElapsedTime();
     rig.rotation.y += (target.x - rig.rotation.y) * 0.055;
     rig.rotation.x += (target.y - rig.rotation.x) * 0.055;
@@ -678,9 +719,17 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim()) {
       tile.material.opacity = Math.min(1, 0.72 + lightResponse * 0.32 + shimmer * 0.06);
       tile.position.z = tile.userData.baseZ + Math.sin(time * 1.8 + index * 0.31) * 0.007;
     });
-    renderer.render(scene, camera);
+    try {
+      renderer.render(scene, camera);
+    } catch (error) {
+      console.error("SafeScan 3D model render stopped", error);
+      activateFallback("render");
+      window.clearInterval(stallWatchdog);
+      return;
+    }
     requestAnimationFrame(animate);
   }
 
   animate();
+  }
 }

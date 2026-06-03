@@ -85,7 +85,9 @@ body {
 .spline-showcase.spline-loaded::before { opacity: 0 !important; }
 .spline-showcase.spline-loaded .device-orbit { opacity: 0 !important; pointer-events: none; }
 .spline-showcase.spline-loaded .three-scene { opacity: 0 !important; pointer-events: none; }
-.spline-showcase.webgl-fallback .device-orbit { opacity: 1; }
+.spline-showcase.webgl-fallback .three-scene { opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; }
+.spline-showcase.webgl-fallback .device-orbit { opacity: 1; z-index: 1; }
+.spline-showcase.webgl-fallback::before { opacity: 0.28 !important; }
 .spline-embed, .spline-embed iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 .spline-embed:not(:empty) ~ .device-orbit { opacity: 0; pointer-events: none; }
 .device-orbit { position: absolute; inset: 24px; display: grid; place-items: center; perspective: 1100px; opacity: 0; pointer-events: none; }
@@ -201,6 +203,8 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: 0.001ms !important; }
   .scan-line { animation-duration: 2.6s !important; animation-iteration-count: infinite !important; }
+  .spline-showcase.webgl-fallback .phone-model { animation-duration: 7s !important; animation-iteration-count: infinite !important; }
+  .spline-showcase.webgl-fallback .scan-beam { animation-duration: 3.8s !important; animation-iteration-count: infinite !important; }
 }
 
 .verdict-badge { padding: 12px 16px; border-radius: 999px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
