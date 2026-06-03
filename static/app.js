@@ -422,7 +422,7 @@ async function verifySelectedWallet(wallet) {
     const updatedProfile = { ...profile, walletAddress: verifyBody.walletAddress, walletVerified: true };
     setStoredAirdropProfile(updatedProfile);
     renderWalletState(updatedProfile);
-    showWalletModal(`<h3>Wallet verified</h3><p class="wallet-success">Connected ${truncateAddress(verifyBody.walletAddress)}</p><a href="https://solscan.io/account/${verifyBody.walletAddress}" target="_blank" rel="noopener">View on Solscan</a><button class="primary-button wallet-close-button" type="button">Done</button>`);
+    showWalletModal(`<h3>Wallet verified</h3><p class="wallet-success">Wallet verified</p><button class="primary-button wallet-close-button" type="button">Done</button>`);
     document.querySelector(".wallet-close-button")?.addEventListener("click", removeWalletModal);
   } catch (error) {
     renderWalletState(getCurrentProfile());
