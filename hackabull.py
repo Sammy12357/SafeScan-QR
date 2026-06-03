@@ -3250,7 +3250,7 @@ CSP_POLICY = "; ".join([
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: https://lh3.googleusercontent.com https://ssl.gstatic.com https://www.gstatic.com",
     "connect-src 'self' https://safescan-qr.onrender.com https://accounts.google.com https://safebrowsing.googleapis.com https://www.virustotal.com https://api.virustotal.com https://api.mainnet-beta.solana.com https://api.anthropic.com https://api.openai.com https://cdn.jsdelivr.net",
-    "frame-src https://accounts.google.com",
+    "frame-src https://accounts.google.com https://www.youtube.com https://www.youtube-nocookie.com",
     "object-src 'none'",
     "frame-ancestors 'none'",
     "form-action 'self'",
