@@ -43,9 +43,11 @@ COPY data/ ./data/
 
 RUN python -m playwright install --with-deps chromium
 
-# Data directory owned by app user. Use chown -R so the bundled CSV stays
-# readable; the /var/data path is the writable runtime mount.
-RUN chown -R safescan:safescan /app/data /var/data /ms-playwright
+# /app/data already exists from the COPY above; /var/data is the Render
+# persistent volume mount and only appears at runtime, so we have to
+# create it here before chowning. -p so re-runs / cached layers don't
+# fail if the dir already exists.
+RUN mkdir -p /var/data && chown -R safescan:safescan /app/data /var/data /ms-playwright
 
 USER safescan
 
