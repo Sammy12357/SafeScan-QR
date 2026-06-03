@@ -492,6 +492,12 @@ body.qr-camera-open { overflow: hidden; }
 .broker-checks { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line); }
 .broker-checks label { display: inline-flex; gap: 8px; align-items: center; min-height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: rgba(255, 255, 255, 0.04); font-weight: 800; }
 .broker-checks input { accent-color: var(--accent); }
+.ghost-automation-stack { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.ghost-automation-stack span { display: inline-grid; place-items: center; min-height: 34px; padding: 0 12px; border: 1px solid rgba(103, 242, 200, 0.2); border-radius: 999px; background: rgba(103, 242, 200, 0.07); color: var(--accent); font-size: 0.78rem; font-weight: 900; }
+.ghost-automation-table { display: grid; gap: 6px; margin-top: 12px; }
+.ghost-automation-row { display: grid; grid-template-columns: minmax(150px, 1.4fr) repeat(3, minmax(72px, 0.6fr)); gap: 8px; align-items: center; padding: 9px 10px; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; background: rgba(255, 255, 255, 0.035); color: var(--muted); font-size: 0.88rem; font-weight: 800; }
+.ghost-automation-row span:not(:first-child) { text-align: center; }
+.ghost-automation-head { color: var(--accent); background: rgba(103, 242, 200, 0.07); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72rem; }
 .maintenance-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
 .maintenance-grid a { display: grid; place-items: center; min-height: 62px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.04); color: var(--text); text-align: center; text-decoration: none; font-weight: 900; }
 .maintenance-grid a:hover { border-color: rgba(103, 242, 200, 0.42); background: rgba(103, 242, 200, 0.08); }
