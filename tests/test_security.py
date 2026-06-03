@@ -191,3 +191,37 @@ def test_waitlist_export_requires_owner(security_app):
     assert allowed.status_code == 200
     assert allowed.headers["content-type"].startswith("text/csv")
     assert "lead@example.com" in allowed.text
+
+
+def test_admin_access_denylist_removes_contact_email_access(tmp_path, monkeypatch):
+    db_path = tmp_path / "denylist.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path.as_posix()}")
+    monkeypatch.setenv("APP_URL", "https://testserver")
+    monkeypatch.setenv("ADMIN_EMAIL", "safescanqr@gmail.com")
+    monkeypatch.setenv("ADMIN_EMAILS", "admin@example.com,safescanqr@gmail.com")
+    monkeypatch.setenv("OWNER_EMAILS", "owner@example.com,safescanqr@gmail.com")
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "test-client")
+
+    sys.modules.pop("hackabull", None)
+    sys.modules.pop("db", None)
+    module = importlib.import_module("hackabull")
+
+    assert module.role_for_email("safescanqr@gmail.com") == "user"
+    assert module.role_for_email("admin@example.com") == "admin"
+    assert module.role_for_email("owner@example.com") == "owner"
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO users (google_id, email, display_name, role) VALUES (?, ?, ?, ?)",
+            ("google_safescan", "safescanqr@gmail.com", "SafeScan Contact", "owner"),
+        )
+
+    module.init_db()
+
+    with sqlite3.connect(db_path) as conn:
+        role = conn.execute("SELECT role FROM users WHERE lower(email) = ?", ("safescanqr@gmail.com",)).fetchone()[0]
+
+    assert role == "user"
+
+    sys.modules.pop("hackabull", None)
+    sys.modules.pop("db", None)
