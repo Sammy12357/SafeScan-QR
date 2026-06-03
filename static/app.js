@@ -343,7 +343,7 @@ function renderWalletState(profile = getCurrentProfile()) {
   if (dom.hiddenWalletInput) dom.hiddenWalletInput.value = verified ? walletAddr : "";
 
   if (!profile) {
-    if (dom.walletStatus) dom.walletStatus.textContent = "Sign in to unlock verified wallet connection.";
+    if (dom.walletStatus) dom.walletStatus.textContent = "Sign in to unlock wallet connection.";
     dom.connectWalletButton?.classList.remove("hidden");
     dom.topConnectWalletButton?.classList.remove("hidden");
     dom.disconnectWalletButton?.classList.add("hidden");
@@ -367,13 +367,13 @@ function renderWalletState(profile = getCurrentProfile()) {
   }
 
   if (dom.walletStatus) {
-    dom.walletStatus.innerHTML = `Verified: <a href="https://solscan.io/account/${walletAddr}" target="_blank" rel="noopener">${truncateAddress(walletAddr)}</a>`;
+    dom.walletStatus.innerHTML = `Connected: <a href="https://solscan.io/account/${walletAddr}" target="_blank" rel="noopener">${truncateAddress(walletAddr)}</a>`;
   }
   dom.connectWalletButton?.classList.add("hidden");
   dom.disconnectWalletButton?.classList.remove("hidden");
 
   if (dom.topConnectWalletButton) {
-    dom.topConnectWalletButton.textContent = "Wallet verified";
+    dom.topConnectWalletButton.textContent = "Wallet connected";
     dom.topConnectWalletButton.disabled = true;
   }
 }
@@ -443,16 +443,16 @@ async function verifySelectedWallet(wallet) {
       body: JSON.stringify({ walletAddress, signature })
     });
     const verifyBody = await verifyResponse.json();
-    if (!verifyResponse.ok) throw new Error(verifyBody.error || "Wallet verification failed.");
+    if (!verifyResponse.ok) throw new Error(verifyBody.error || "Wallet connection failed.");
 
     const updatedProfile = { ...profile, walletAddress: verifyBody.walletAddress, walletVerified: true };
     setStoredAirdropProfile(updatedProfile);
     renderWalletState(updatedProfile);
-    showWalletModal(`<h3>Wallet verified</h3><div class="wallet-success-spacer" aria-hidden="true"></div><button class="primary-button wallet-close-button" type="button">Done</button>`);
+    showWalletModal(`<h3>Wallet connected</h3><div class="wallet-success-spacer" aria-hidden="true"></div><button class="primary-button wallet-close-button" type="button">Done</button>`);
     document.querySelector(".wallet-close-button")?.addEventListener("click", removeWalletModal);
   } catch (error) {
     renderWalletState(getCurrentProfile());
-    showWalletModal(`<h3>Wallet verification failed</h3><p class="wallet-error">${escapeHtml(error.message || "Signature rejected. Try again.")}</p><button class="primary-button wallet-retry-button" type="button">Try Again</button>`);
+    showWalletModal(`<h3>Wallet connection failed</h3><p class="wallet-error">${escapeHtml(error.message || "Signature rejected. Try again.")}</p><button class="primary-button wallet-retry-button" type="button">Try Again</button>`);
     document.querySelector(".wallet-retry-button")?.addEventListener("click", connectWallet);
   } finally {
     clearWalletBusy();
