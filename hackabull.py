@@ -87,6 +87,8 @@ def build_metric(factory, *args, **kwargs):
 warnings.filterwarnings("ignore", category=ImportWarning)
 load_dotenv()
 
+from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain
+
 CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID") or os.getenv("googe_client_id")
 AUTH0_DOMAIN = (os.getenv("AUTH0_DOMAIN") or "dev-vnllaqnkkegs4xni.us.auth0.com").strip().rstrip("/")
 AUTH0_AUDIENCES = {audience.strip() for audience in (os.getenv("AUTH0_CLIENT_IDS") or os.getenv("AUTH0_CLIENT_ID") or "1XfWxWOtDtN18JCCztRehzcJ1jOSBBic").split(",") if audience.strip()}
@@ -2438,6 +2440,40 @@ async def analyze_full_pipeline(target_url, qr_image=None):
     normalized = validate_public_url(target_url)
     if MOCK_MODE:
         return mock_analysis_response(normalized)
+
+    fast_path_ok, fast_path_reason = should_short_circuit(normalized)
+    if fast_path_ok:
+        # Run only the cheap reputation check before declaring safe. If Google
+        # Safe Browsing flags the URL (compromised popular site, abused open
+        # redirect that slipped past the screen, etc.) we fall through to the
+        # full pipeline for a real verdict.
+        gsb_signal = await asyncio.to_thread(google_reputation_signal, normalized)
+        if gsb_signal.get("passed", False) and gsb_signal.get("severity") == "low":
+            allowlist_signal = signal(
+                "Allowlist match",
+                f"{allowlist_registrable_domain(normalized.split('//', 1)[-1].split('/', 1)[0])} on Tranco top 10K",
+                "low",
+                "SafeScan recognized this destination as a widely-trafficked, popular domain that passed structural safety screening (HTTPS, no homograph chars, no shorteners, no redirect parameters). The full ML and reputation pipeline was skipped because no expensive analysis is warranted; Google Safe Browsing was still consulted for compromised-site detection.",
+                True,
+            )
+            fast_signals = sorted([allowlist_signal, gsb_signal], key=severity_rank)
+            fast_score = clamp_score(8)
+            return {
+                "url": normalized,
+                "overallRisk": "safe",
+                "confidenceScore": fast_score,
+                "ruleScore": fast_score,
+                "mlRisk": {"enabled": False, "reason": "allowlist short-circuit"},
+                "threatType": "Benign popular destination",
+                "verdict": "safe",
+                "signals": fast_signals,
+                "virusTotal": None,
+                "domainAge": None,
+                "redirectChain": [],
+                "scannedAt": datetime.utcnow().isoformat() + "Z",
+                "fastPath": {"hit": True, "reason": "tranco_allowlist"},
+            }
+        # GSB returned a non-trivial signal - fall through to full pipeline.
 
     vt_result = virustotal_seed_result(normalized)
     domain_task = asyncio.to_thread(check_domain_intelligence, normalized)

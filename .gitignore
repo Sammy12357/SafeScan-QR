@@ -8,4 +8,6 @@ qr_cache.db
 .codex_server_*.log
 .codex_tmp_deps/
 .codex_tmp_deps2/
-data/
+data/*
+# Tranco allowlist ships with the code so the short-circuit is hermetic.
+!data/tranco_top_10k.csv
