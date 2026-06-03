@@ -3,6 +3,7 @@ const showcase = document.querySelector(".spline-showcase");
 let THREE = null;
 let frameCount = 0;
 let lastFrameAt = performance.now();
+let pageWasHidden = document.visibilityState === "hidden";
 
 function activateFallback(reason) {
   if (!showcase) return;
@@ -43,7 +44,7 @@ if (canvas && showcase && !showcase.dataset.splineSrc?.trim()) {
     activateFallback("mac-brave");
   } else {
     try {
-      THREE = await import("/static/vendor/three.module.js?v=local-three-v7");
+      THREE = await import("/static/vendor/three.module.js?v=local-three-v8");
     } catch (error) {
       console.error("SafeScan 3D model failed to load Three.js", error);
       activateFallback("three-import");
@@ -695,17 +696,27 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim() && !showc
   canvas.style.setProperty("visibility", "visible", "important");
   canvas.style.setProperty("z-index", "1", "important");
 
+  document.addEventListener("visibilitychange", () => {
+    pageWasHidden = document.visibilityState === "hidden";
+    if (!pageWasHidden) {
+      lastFrameAt = performance.now();
+    }
+  });
+
   const stallWatchdog = window.setInterval(() => {
     if (showcase.classList.contains("webgl-fallback")) {
       window.clearInterval(stallWatchdog);
       return;
     }
-    const stalled = frameCount < 3 || performance.now() - lastFrameAt > 2600;
+    if (document.visibilityState === "hidden" || pageWasHidden) {
+      return;
+    }
+    const stalled = frameCount < 3 || performance.now() - lastFrameAt > 9000;
     if (stalled) {
       activateFallback("stalled");
       window.clearInterval(stallWatchdog);
     }
-  }, 3200);
+  }, 5000);
 
   const clock = new THREE.Clock();
   function animate() {
