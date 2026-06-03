@@ -5305,6 +5305,30 @@ async def report_breach(
     body = f"<h2>Breach Report {report_id}</h2><pre class='legal-json'>{template}</pre>"
     return templates.TemplateResponse("admin_table.html", {"request": request, "title": "Breach Template", "body_html": body, "message": "Report logged. Connect email provider for live admin notifications."})
 
+@qr_app.get("/api/health")
+async def api_health():
+    """Cheap liveness check the mobile pre-warm hits on app boot.
+
+    Without this, every cold-start ping from `services/endpoints/system.py`
+    landed a 404 in the Render logs - the app handled it gracefully via
+    a fallback POST /api/analyze, but the noise made it hard to spot
+    real 404s in the log stream.
+    """
+    return {"ok": True, "service": "safescan-qr", "time": now_iso()}
+
+
+@qr_app.get("/search_qr_api")
+async def search_qr_api_get():
+    """GET on the form endpoint -> bounce to home.
+
+    `/search_qr_api` is the multipart-upload sibling of the homepage scan
+    form. Direct browser visits, social-share previews, and stale-form
+    refreshes that land here should not see a partial homepage HTML; they
+    should be redirected to the canonical `/` URL.
+    """
+    return RedirectResponse("/", status_code=303)
+
+
 @qr_app.post("/search_qr_api", response_class=HTMLResponse)
 async def scan_qr(
     request: Request,
