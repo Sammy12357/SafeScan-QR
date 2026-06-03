@@ -880,7 +880,6 @@ function renderGoGhostBrokers() {
         <div>
           <span class="broker-priority">${escapeHtml(broker.priority)}</span>
           <h3>${escapeHtml(broker.name)}</h3>
-          <p>Search for your record, copy the matching profile URL, submit the opt-out, then verify the broker email.</p>
         </div>
         <div class="broker-actions">
           <a class="secondary-button" href="${searchUrl}" target="_blank" rel="noopener noreferrer">Search</a>
