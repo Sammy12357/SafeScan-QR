@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Go Ghost | SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=go-ghost-contact-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=go-ghost-queue-v1">
 </head>
 <body>
   <div class="page-shell go-ghost-shell">
@@ -75,6 +75,10 @@
           <span>Headless submit jobs</span>
           <span>Email confirmation listener</span>
           <span>Weekly re-check queue</span>
+        </div>
+        <div class="ghost-automation-actions">
+          <button id="startGhostQueueButton" class="primary-button" type="button">Start assisted queue</button>
+          <button id="openNextGhostBrokerButton" class="secondary-button" type="button">Open next pending</button>
         </div>
         <div class="ghost-automation-table" aria-label="Go Ghost automation scope by broker">
           <div class="ghost-automation-row ghost-automation-head"><span>Site</span><span>Search</span><span>Submit</span><span>Manual</span></div>
@@ -153,6 +157,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=go-ghost-contact-v1"></script>
+  <script src="/static/app.js?v=go-ghost-queue-v1"></script>
 </body>
 </html>

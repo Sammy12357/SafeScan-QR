@@ -804,6 +804,8 @@ const startGoGhostButton = document.getElementById("startGoGhostButton");
 const goGhostProfileForm = document.getElementById("goGhostProfileForm");
 const clearGhostDataButton = document.getElementById("clearGhostDataButton");
 const goGhostBrokerList = document.getElementById("goGhostBrokerList");
+const startGhostQueueButton = document.getElementById("startGhostQueueButton");
+const openNextGhostBrokerButton = document.getElementById("openNextGhostBrokerButton");
 const ghostProgressCount = document.getElementById("ghostProgressCount");
 const ghostNameInput = document.getElementById("ghostNameInput");
 const ghostLocationInput = document.getElementById("ghostLocationInput");
@@ -950,6 +952,65 @@ function goGhostCopyPacket(broker, profile, searchUrl) {
   ].join("\n");
 }
 
+function goGhostBrokerSearchUrl(broker, profile) {
+  return profile.name ? broker.searchUrl(profile) : ghostSearchFallback(profile, broker.name);
+}
+
+function hasGhostSearchProfile(profile) {
+  return Boolean((profile.name || "").trim());
+}
+
+function nextPendingGhostBroker() {
+  const progress = getGhostProgress();
+  return goGhostBrokers.find((broker) => !progress[broker.id]?.submitted && !progress[broker.id]?.removed) || null;
+}
+
+function scrollToGhostProfile() {
+  goGhostProfileForm?.scrollIntoView({ behavior: "smooth", block: "center" });
+  ghostNameInput?.focus({ preventScroll: true });
+}
+
+function scrollToGhostBroker(broker) {
+  const card = broker ? goGhostBrokerList?.querySelector(`[data-ghost-broker="${broker.id}"]`) : goGhostBrokerList;
+  card?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function startGhostAssistedQueue() {
+  const profile = getGhostProfile();
+  if (!hasGhostSearchProfile(profile)) {
+    scrollToGhostProfile();
+    showCopyToast("Add a name first");
+    return;
+  }
+  const broker = nextPendingGhostBroker();
+  if (!broker) {
+    showCopyToast("All brokers tracked");
+    return;
+  }
+  scrollToGhostBroker(broker);
+  showCopyToast(`Next: ${broker.name}`);
+}
+
+async function openNextGhostBroker() {
+  const profile = getGhostProfile();
+  if (!hasGhostSearchProfile(profile)) {
+    scrollToGhostProfile();
+    showCopyToast("Add a name first");
+    return;
+  }
+  const broker = nextPendingGhostBroker();
+  if (!broker) {
+    showCopyToast("All brokers tracked");
+    return;
+  }
+  const searchUrl = goGhostBrokerSearchUrl(broker, profile);
+  const opened = window.open(searchUrl, "_blank", "noopener,noreferrer");
+  if (opened) opened.opener = null;
+  scrollToGhostBroker(broker);
+  const copied = await copyTextToClipboard(goGhostCopyPacket(broker, profile, searchUrl)).catch(() => false);
+  showCopyToast(copied ? `${broker.name} packet copied` : `Opened ${broker.name}`);
+}
+
 function renderGoGhostProgress() {
   if (!ghostProgressCount) return;
   const progress = getGhostProgress();
@@ -963,9 +1024,9 @@ function renderGoGhostBrokers() {
   const progress = getGhostProgress();
   goGhostBrokerList.innerHTML = goGhostBrokers.map((broker) => {
     const state = progress[broker.id] || {};
-    const searchUrl = profile.name ? broker.searchUrl(profile) : ghostSearchFallback(profile, broker.name);
+    const searchUrl = goGhostBrokerSearchUrl(broker, profile);
     return `
-      <article class="broker-card">
+      <article class="broker-card" data-ghost-broker="${broker.id}">
         <div>
           <span class="broker-priority" title="${escapeHtml(broker.priorityDescription || "")}">${escapeHtml(broker.priority)}</span>
           <h3>${escapeHtml(broker.name)}</h3>
@@ -1009,6 +1070,8 @@ if (goGhostWorkspace) {
   else goGhostConsentModal?.classList.remove("hidden");
 
   startGoGhostButton?.addEventListener("click", startGoGhost);
+  startGhostQueueButton?.addEventListener("click", startGhostAssistedQueue);
+  openNextGhostBrokerButton?.addEventListener("click", openNextGhostBroker);
 
   goGhostProfileForm?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -1043,7 +1106,7 @@ if (goGhostWorkspace) {
     const profile = getGhostProfile();
     const broker = goGhostBrokers.find((item) => item.id === copyButton.dataset.ghostCopy);
     if (!broker) return;
-    const searchUrl = profile.name ? broker.searchUrl(profile) : ghostSearchFallback(profile, broker.name);
+    const searchUrl = goGhostBrokerSearchUrl(broker, profile);
     const copied = await copyTextToClipboard(goGhostCopyPacket(broker, profile, searchUrl)).catch(() => false);
     showCopyToast(copied ? `${broker.name} details copied` : "Copy failed");
   });
