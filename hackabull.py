@@ -88,6 +88,7 @@ warnings.filterwarnings("ignore", category=ImportWarning)
 load_dotenv()
 
 from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain
+import safescan_model_calibration as sm_calibration
 
 CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID") or os.getenv("googe_client_id")
 AUTH0_DOMAIN = (os.getenv("AUTH0_DOMAIN") or "dev-vnllaqnkkegs4xni.us.auth0.com").strip().rstrip("/")
@@ -1762,14 +1763,29 @@ def qr_image_from_payload(payload):
     return qr.make_image(fill_color="black", back_color="white").convert("RGB")
 
 def classify_qr_with_ml(payload, image=None, input_source="generated_qr"):
-    """Hybrid ML classification mirroring SafeScanQR_Improved notebook.
+    """Hybrid ML classification with calibration, cache, and feature bonus.
 
     Routes the decoded URL through the char-ngram URL classifier first
-    (~99% accuracy in training). Falls back to the EfficientNet CNN only
-    when the URL classifier artifact isn't deployed.
+    (notebook reported 99% accuracy, F1-optimal threshold = 0.32). Falls
+    back to the EfficientNet CNN only when the URL classifier artifact
+    isn't deployed. Wraps the raw classifier output with:
+      - SQLite-backed prediction cache keyed on URL (1hr TTL by default)
+      - Calibrated decision bands (benign / uncertain / suspicious / mal)
+      - Hand-crafted lexical bonus the char-ngram model can't see
+      - Uncertain-band suppression: signal is hidden when probability
+        lands in [UNCERTAIN_LOWER, UNCERTAIN_UPPER] so it can't pollute
+        the score blend with low-confidence noise.
+
+    See safescan_model_calibration.py for tuning knobs.
     """
     if not ML_MODEL_ENABLED:
         return {"enabled": False, "reason": "disabled"}
+
+    # Cache hit short-circuits the entire ML stack and any image rendering.
+    cached = sm_calibration.cache_get(payload) if payload else None
+    if cached is not None:
+        cached["cacheHit"] = True
+        return cached
 
     generated_image = None
     try:
@@ -1791,22 +1807,32 @@ def classify_qr_with_ml(payload, image=None, input_source="generated_qr"):
             source_input = "generated_qr"
             model_name = os.path.basename(ML_MODEL_PATH)
 
-        mal_prob_float = result["malicious_prob"]
-        safe_prob_float = result["safe_prob"]
-        malicious_probability = mal_prob_float / 100.0
-        benign_probability = safe_prob_float / 100.0
-        label = "Malicious" if mal_prob_float >= 80 else ("Suspicious" if mal_prob_float >= 40 else "Benign")
-        return {
+        raw_mal_prob = float(result["malicious_prob"]) / 100.0
+        bonus, bonus_reasons = sm_calibration.lexical_feature_bonus(payload)
+        adjusted_prob = max(0.0, min(1.0, raw_mal_prob + bonus))
+        decision = sm_calibration.interpret_probability(adjusted_prob)
+
+        payload_obj = {
             "enabled": True,
+            "trustSignal": decision.trust_signal,
             "model": model_name,
             "source": result.get("source"),
             "inputSource": source_input,
-            "score": mal_prob_float,
-            "label": label,
-            "benignProbability": round(benign_probability, 4),
-            "maliciousProbability": round(malicious_probability, 4),
-            "raw": [round(safe_prob_float / 100.0, 6), round(malicious_probability, 6)],
+            "score": round(adjusted_prob * 100.0, 1),
+            "label": decision.label,
+            "bucket": decision.bucket,
+            "severity": decision.severity,
+            "benignProbability": round(1.0 - adjusted_prob, 4),
+            "maliciousProbability": round(adjusted_prob, 4),
+            "rawMaliciousProbability": round(raw_mal_prob, 4),
+            "lexicalBonus": round(bonus, 4),
+            "lexicalReasons": bonus_reasons,
+            "raw": [round(1.0 - adjusted_prob, 6), round(adjusted_prob, 6)],
+            "cacheHit": False,
         }
+        if payload:
+            sm_calibration.cache_put(payload, payload_obj)
+        return payload_obj
     except Exception as exc:
         return {"enabled": False, "reason": f"{type(exc).__name__}: {exc}"}
     finally:
@@ -1816,22 +1842,29 @@ def classify_qr_with_ml(payload, image=None, input_source="generated_qr"):
 def ml_signal_from_result(ml_result, label="ML Risk Model", description_prefix="CNN QR classifier"):
     if not ml_result or not ml_result.get("enabled"):
         return None
+    # Suppress the ML signal entirely when calibration marked it uncertain;
+    # forcing a binary call on a ~50/50 score only pollutes the score blend.
+    if ml_result.get("trustSignal") is False:
+        return None
     score_raw = float(ml_result["score"])
-    severity = "high" if score_raw >= 80 else ("medium" if score_raw >= 40 else "low")
+    severity = ml_result.get("severity") or (
+        "high" if score_raw >= 80 else ("medium" if score_raw >= 40 else "low")
+    )
     mal_pct = round(ml_result["maliciousProbability"] * 100, 1)
     safe_pct = round(ml_result["benignProbability"] * 100, 1)
-    model_signal = signal(
-        label,
-        f"{round(score_raw, 1)}/100 ML probability",
-        severity,
-        f"{description_prefix}: {safe_pct}% safe, {mal_pct}% malicious.",
-        score_raw < 40
-    )
+    description = f"{description_prefix}: {safe_pct}% safe, {mal_pct}% malicious."
+    reasons = ml_result.get("lexicalReasons") or []
+    if reasons:
+        description += f" Lexical bonus applied: {', '.join(reasons[:3])}."
+    bucket = ml_result.get("bucket")
+    passed = bucket == "benign" if bucket else score_raw < 40
+    model_signal = signal(label, f"{round(score_raw, 1)}/100 ML probability", severity, description, passed)
     model_signal["distribution"] = {
         "benign": ml_result["benignProbability"],
         "malicious": ml_result["maliciousProbability"]
     }
     model_signal["model"] = ml_result.get("model")
+    model_signal["bucket"] = bucket
     return model_signal
 
 def blend_ml_score(rule_score, ml_results, signals):
@@ -1929,7 +1962,10 @@ def threat_type_for_analysis(overall_risk, signals, ml_results=None):
         ml_results = [ml_results]
     # Only let ML drive the threat type when the overall risk is already
     # high — i.e. the blended score independently agrees this looks bad.
-    if overall_risk == "high" and any(r and r.get("enabled") and r.get("label") == "Malicious" for r in ml_results):
+    if overall_risk == "high" and any(
+        r and r.get("enabled") and (r.get("bucket") == "malicious" or r.get("label") == "Malicious")
+        for r in ml_results
+    ):
         return "Malicious QR"
     return "Suspicious QR"
 
