@@ -3,8 +3,12 @@ const showcase = document.querySelector(".spline-showcase");
 let THREE = null;
 
 if (canvas && showcase && !showcase.dataset.splineSrc?.trim()) {
+  canvas.style.setProperty("display", "block", "important");
+  canvas.style.setProperty("opacity", "1", "important");
+  canvas.style.setProperty("visibility", "visible", "important");
+  canvas.style.setProperty("z-index", "1", "important");
   try {
-    THREE = await import("/static/vendor/three.module.js?v=local-three-v3");
+    THREE = await import("/static/vendor/three.module.js?v=local-three-v4");
   } catch (error) {
     console.error("SafeScan 3D model failed to load Three.js", error);
     showcase.classList.add("webgl-fallback");
@@ -641,9 +645,12 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim()) {
 
   new ResizeObserver(resize).observe(showcase);
   resize();
+  showcase.classList.remove("webgl-fallback");
   showcase.classList.add("webgl-ready");
-  canvas.style.opacity = "1";
-  canvas.style.visibility = "visible";
+  canvas.style.setProperty("display", "block", "important");
+  canvas.style.setProperty("opacity", "1", "important");
+  canvas.style.setProperty("visibility", "visible", "important");
+  canvas.style.setProperty("z-index", "1", "important");
 
   const clock = new THREE.Clock();
   function animate() {

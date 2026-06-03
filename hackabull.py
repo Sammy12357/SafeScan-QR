@@ -113,6 +113,9 @@ ALLOWED_ORIGINS = sorted({
 SESSION_COOKIE_NAME = "__Host-safescan_session"
 SESSION_TTL_SECONDS = 24 * 60 * 60
 SESSION_IDLE_SECONDS = 7 * 24 * 60 * 60
+REMEMBER_ME_COOKIE_NAME = "__Host-safescan_remember"
+REMEMBER_ME_TTL_DAYS = int(os.getenv("REMEMBER_ME_TTL_DAYS", "30"))
+REMEMBER_ME_TTL_SECONDS = REMEMBER_ME_TTL_DAYS * 24 * 60 * 60
 MAX_QR_UPLOAD_BYTES = int(os.getenv("MAX_QR_UPLOAD_BYTES", str(8 * 1024 * 1024)))
 MAX_QR_PDF_PAGES = int(os.getenv("MAX_QR_PDF_PAGES", "5"))
 VALID_ROLES = ("user", "admin", "owner")
@@ -265,6 +268,13 @@ def init_db():
                          last_active TEXT NOT NULL, revoked_at TEXT,
                          ip_hash TEXT, user_agent TEXT,
                          FOREIGN KEY(google_id) REFERENCES users(google_id))''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS persistent_sessions
+                        (id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+                         token_hash TEXT NOT NULL UNIQUE,
+                         created_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+                         last_used TEXT, revoked_at TEXT,
+                         ip_hash TEXT, user_agent TEXT,
+                         FOREIGN KEY(user_id) REFERENCES users(google_id))''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS audit_logs
                         (id TEXT PRIMARY KEY, actor_user_id TEXT, action TEXT NOT NULL,
                          target_type TEXT, target_id TEXT, metadata TEXT,
@@ -338,6 +348,8 @@ def init_db():
                          created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
                          UNIQUE(user_id, tier, provider))''')
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sessions_google_id ON sessions(google_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_persistent_sessions_token_hash ON persistent_sessions(token_hash)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_persistent_sessions_user_id ON persistent_sessions(user_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_logs(created_at)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_abuse_email ON abuse_flags(email)")
@@ -530,6 +542,134 @@ def clear_session_cookie(response):
         samesite="strict",
     )
 
+def wants_remember_me(value):
+    if value is None:
+        return True
+    return str(value).strip().lower() not in ("0", "false", "off", "no")
+
+def remember_token_hash(token):
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+def set_remember_me_cookie(response, token):
+    response.set_cookie(
+        REMEMBER_ME_COOKIE_NAME,
+        token,
+        max_age=REMEMBER_ME_TTL_SECONDS,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+        path="/",
+    )
+
+def clear_remember_me_cookie(response):
+    response.delete_cookie(
+        REMEMBER_ME_COOKIE_NAME,
+        path="/",
+        httponly=True,
+        secure=True,
+        samesite="strict",
+    )
+
+def create_remember_me_token(user_id, request):
+    raw_token = secrets.token_urlsafe(48)
+    created = datetime.utcnow()
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO persistent_sessions
+                (id, user_id, token_hash, created_at, expires_at, last_used, revoked_at, ip_hash, user_agent)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                make_id("remember"),
+                user_id,
+                remember_token_hash(raw_token),
+                created.isoformat() + "Z",
+                (created + timedelta(seconds=REMEMBER_ME_TTL_SECONDS)).isoformat() + "Z",
+                created.isoformat() + "Z",
+                None,
+                hash_ip(request_ip(request)),
+                request.headers.get("user-agent", ""),
+            ),
+        )
+    return raw_token
+
+def issue_remember_me_cookie(response, user_id, request):
+    set_remember_me_cookie(response, create_remember_me_token(user_id, request))
+
+def validate_and_rotate_remember_me(request):
+    raw_token = request.cookies.get(REMEMBER_ME_COOKIE_NAME)
+    if not raw_token:
+        return None, None
+    token_hash = remember_token_hash(raw_token)
+    with get_conn() as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            """
+            SELECT ps.id AS persistent_session_id, ps.expires_at, ps.revoked_at,
+                   u.google_id, u.email, u.username, u.display_name, u.picture,
+                   u.role, u.status, u.last_login_at, u.login_ip, u.google_sub
+            FROM persistent_sessions ps
+            JOIN users u ON u.google_id = ps.user_id
+            WHERE ps.token_hash = ?
+            """,
+            (token_hash,),
+        ).fetchone()
+        if not row:
+            return None, None
+        try:
+            expires_at = datetime.fromisoformat(str(row["expires_at"]).replace("Z", ""))
+        except ValueError:
+            conn.execute("UPDATE persistent_sessions SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ?", (now_iso(), row["persistent_session_id"]))
+            return None, None
+        if row["revoked_at"] or expires_at < datetime.utcnow() or row["status"] != "active":
+            conn.execute("UPDATE persistent_sessions SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ?", (now_iso(), row["persistent_session_id"]))
+            return None, None
+
+        new_token = secrets.token_urlsafe(48)
+        now = datetime.utcnow()
+        conn.execute(
+            "UPDATE persistent_sessions SET last_used = ?, revoked_at = ? WHERE id = ?",
+            (now.isoformat() + "Z", now.isoformat() + "Z", row["persistent_session_id"]),
+        )
+        conn.execute(
+            """
+            INSERT INTO persistent_sessions
+                (id, user_id, token_hash, created_at, expires_at, last_used, revoked_at, ip_hash, user_agent)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                make_id("remember"),
+                row["google_id"],
+                remember_token_hash(new_token),
+                now.isoformat() + "Z",
+                (now + timedelta(seconds=REMEMBER_ME_TTL_SECONDS)).isoformat() + "Z",
+                now.isoformat() + "Z",
+                None,
+                hash_ip(request_ip(request)),
+                request.headers.get("user-agent", ""),
+            ),
+        )
+        user = dict(row)
+        user.pop("persistent_session_id", None)
+        user.pop("expires_at", None)
+        user.pop("revoked_at", None)
+        return user, new_token
+
+def revoke_all_remember_me(user_id):
+    if not user_id:
+        return
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE persistent_sessions SET revoked_at = COALESCE(revoked_at, ?) WHERE user_id = ?",
+            (now_iso(), user_id),
+        )
+
+def cleanup_persistent_sessions():
+    cutoff = now_iso()
+    with get_conn() as conn:
+        conn.execute("DELETE FROM persistent_sessions WHERE expires_at < ?", (cutoff,))
+
 def _b64url_decode(value):
     padding = "=" * (-len(value) % 4)
     return base64.urlsafe_b64decode(value + padding)
@@ -630,6 +770,10 @@ def get_session_user(request):
         request.state.session_user_loaded = True
         request.state.session_user = user
         return user
+
+    remembered_user = getattr(request.state, "remembered_user", None)
+    if remembered_user and remembered_user.get("status") == "active":
+        return cache_session_user(remembered_user)
 
     session_id = request_session_id(request)
     if not session_id:
@@ -1258,7 +1402,10 @@ def set_user_username(user_id, username):
     return cleaned
 
 def response_after_login(user_id, request, next_url=""):
-    return RedirectResponse(safe_next_url(request, next_url), status_code=303)
+    destination = safe_next_url(request, next_url)
+    if destination == "/" and username_required(require_user_from_google_id(user_id)):
+        destination = "/onboarding/username"
+    return RedirectResponse(destination, status_code=303)
 
 def safe_next_url(request: Request, raw="", fallback="/"):
     raw = raw or ""
@@ -3061,6 +3208,26 @@ async def rls_context_middleware(request: Request, call_next):
     finally:
         clear_rls_context()
 
+@qr_app.middleware("http")
+async def remember_me_middleware(request: Request, call_next):
+    path = request.url.path
+    if path.startswith("/static/") or request.cookies.get(SESSION_COOKIE_NAME):
+        return await call_next(request)
+
+    remembered_user, rotated_token = validate_and_rotate_remember_me(request)
+    if remembered_user:
+        request.state.remembered_user = remembered_user
+        session_id = create_session(remembered_user["google_id"], request)
+        response = await call_next(request)
+        set_session_cookie(response, session_id)
+        set_remember_me_cookie(response, rotated_token)
+        return response
+
+    response = await call_next(request)
+    if request.cookies.get(REMEMBER_ME_COOKIE_NAME):
+        clear_remember_me_cookie(response)
+    return response
+
 CSP_POLICY = "; ".join([
     "default-src 'self'",
     "script-src 'self' https://accounts.google.com https://apis.google.com https://cdn.jsdelivr.net",
@@ -3113,6 +3280,7 @@ async def wallet_nonce_cleanup_loop():
 
 @qr_app.on_event("startup")
 async def start_wallet_nonce_cleanup():
+    cleanup_persistent_sessions()
     asyncio.create_task(wallet_nonce_cleanup_loop())
 
 @qr_app.middleware("http")
@@ -5057,6 +5225,7 @@ async def scan_qr(
 async def auth_google(
     request: Request,
     credential: str = Form(None),
+    remember_me: str = Form("1"),
     next_url: str = Form("", alias="next"),
     next_query: str = Query("", alias="next"),
     state: str = Form("", alias="state"),
@@ -5090,6 +5259,8 @@ async def auth_google(
     if return_to != "/":
         response = RedirectResponse(return_to, status_code=303)
         set_session_cookie(response, session_id)
+        if wants_remember_me(remember_me):
+            issue_remember_me_cookie(response, google_id, request)
         return response
     response = templates.TemplateResponse("index.html", {
         "request": request, "logged_in": True, "results_visible": False,
@@ -5100,6 +5271,8 @@ async def auth_google(
         **index_user_context(user)
     })
     set_session_cookie(response, session_id)
+    if wants_remember_me(remember_me):
+        issue_remember_me_cookie(response, google_id, request)
     return response
 
 @qr_app.post("/auth/verify")
@@ -5174,9 +5347,12 @@ async def _do_logout(request: Request):
     if session_id:
         with get_conn() as conn:
             conn.execute("UPDATE sessions SET revoked_at = ? WHERE id = ?", (now_iso(), session_id))
+    if user:
+        revoke_all_remember_me(user.get("google_id"))
     audit_log("user.logout", request=request, actor_user_id=user.get("google_id") if user else None)
     response = RedirectResponse("/", status_code=303)
     clear_session_cookie(response)
+    clear_remember_me_cookie(response)
     return response
 
 @qr_app.post("/auth/logout")
@@ -5197,7 +5373,7 @@ async def login_page(request: Request, error: str = Query(""), tab: str = Query(
     return templates.TemplateResponse("login.html", {"request": request, "error": error, "tab": tab, "next_url": return_to, "local_auth_enabled": LOCAL_AUTH_ENABLED, "google_client_id": CLIENT_ID or "", "auth_google_url": auth_google_url})
 
 @qr_app.post("/auth/register", response_class=HTMLResponse)
-async def auth_register(request: Request, email: str = Form(...), password: str = Form(...), next_url: str = Form("/", alias="next")):
+async def auth_register(request: Request, email: str = Form(...), password: str = Form(...), remember_me: str = Form("1"), next_url: str = Form("/", alias="next")):
     rate_limited = enforce_rate_limit(request, "register", 5, 3600)
     if rate_limited:
         return rate_limited
@@ -5224,10 +5400,12 @@ async def auth_register(request: Request, email: str = Form(...), password: str 
     audit_log("user.register", request=request, actor_user_id=lid)
     response = response_after_login(lid, request, next_url)
     set_session_cookie(response, session_id)
+    if wants_remember_me(remember_me):
+        issue_remember_me_cookie(response, lid, request)
     return response
 
 @qr_app.post("/auth/login", response_class=HTMLResponse)
-async def auth_login_local(request: Request, email: str = Form(...), password: str = Form(...), next_url: str = Form("/", alias="next")):
+async def auth_login_local(request: Request, email: str = Form(...), password: str = Form(...), remember_me: str = Form("1"), next_url: str = Form("/", alias="next")):
     rate_limited = enforce_rate_limit(request, "login_local", 10, 600)
     if rate_limited:
         return rate_limited
@@ -5247,10 +5425,12 @@ async def auth_login_local(request: Request, email: str = Form(...), password: s
     audit_log("user.login", request=request, actor_user_id=lid, metadata={"provider": "local"})
     response = response_after_login(lid, request, next_url)
     set_session_cookie(response, session_id)
+    if wants_remember_me(remember_me):
+        issue_remember_me_cookie(response, lid, request)
     return response
 
 @qr_app.post("/auth/dev-google")
-async def auth_dev_google(request: Request, next_url: str = Form("/", alias="next")):
+async def auth_dev_google(request: Request, remember_me: str = Form("1"), next_url: str = Form("/", alias="next")):
     if not LOCAL_AUTH_ENABLED:
         raise HTTPException(status_code=404, detail="Not found.")
     google_id = "dev-google-local"
@@ -5264,6 +5444,8 @@ async def auth_dev_google(request: Request, next_url: str = Form("/", alias="nex
     audit_log("user.login", request=request, actor_user_id=google_id, metadata={"provider": "google_local"})
     response = response_after_login(google_id, request, next_url)
     set_session_cookie(response, session_id)
+    if wants_remember_me(remember_me):
+        issue_remember_me_cookie(response, google_id, request)
     return response
 
 @qr_app.get("/onboarding/username", response_class=HTMLResponse)
@@ -5305,7 +5487,8 @@ async def profile_username_submit(request: Request, username: str = Form(...)):
             "error": str(exc),
         }, status_code=400)
     audit_log("user.username_set", request=request, actor_user_id=user["google_id"])
-    return RedirectResponse("/profile", status_code=303)
+    destination = "/" if request.url.path == "/onboarding/username" else "/profile"
+    return RedirectResponse(destination, status_code=303)
 
 @qr_app.get("/history", response_class=HTMLResponse)
 async def history_page(request: Request):

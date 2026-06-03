@@ -103,6 +103,31 @@ def test_email_login_creates_session_and_profile_uses_db_user(auth_app):
     assert len(db_rows(db_path, "SELECT * FROM users WHERE lower(email) = ?", ("person@example.com",))) == 1
 
 
+def test_remembered_device_restores_session_when_short_cookie_is_missing(auth_app):
+    module, setup_client, db_path = auth_app
+    register(setup_client, "remember@example.com")
+    remember_token = setup_client.cookies.get(module.REMEMBER_ME_COOKIE_NAME)
+    assert remember_token
+
+    returning_client = TestClient(module.qr_app, base_url="https://testserver")
+    returning_client.cookies.set(module.REMEMBER_ME_COOKIE_NAME, remember_token)
+
+    profile = returning_client.get("/api/user/profile")
+
+    assert profile.status_code == 200
+    assert profile.json()["email"] == "remember@example.com"
+    assert module.SESSION_COOKIE_NAME in returning_client.cookies
+    remember_values = [cookie.value for cookie in returning_client.cookies.jar if cookie.name == module.REMEMBER_ME_COOKIE_NAME]
+    assert any(value != remember_token for value in remember_values)
+    persistent_sessions = db_rows(
+        db_path,
+        "SELECT revoked_at FROM persistent_sessions ORDER BY created_at",
+    )
+    assert len(persistent_sessions) == 2
+    assert persistent_sessions[0]["revoked_at"] is not None
+    assert persistent_sessions[1]["revoked_at"] is None
+
+
 def test_invalid_credentials_do_not_create_session(auth_app):
     _, setup_client, db_path = auth_app
     register(setup_client)
