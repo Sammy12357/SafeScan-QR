@@ -330,6 +330,7 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
 .wallet-modal-actions { display: grid; gap: 10px; margin-top: 12px; }
 .wallet-hint { color: var(--warning) !important; font-size: 0.9rem; }
 .wallet-success { color: var(--safe) !important; font-weight: 800; }
+.wallet-success-spacer { height: 44px; }
 .wallet-error { color: var(--danger) !important; font-weight: 800; }
 
 /* Live QR camera scanner modal. */

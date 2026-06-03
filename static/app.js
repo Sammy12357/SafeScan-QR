@@ -422,7 +422,7 @@ async function verifySelectedWallet(wallet) {
     const updatedProfile = { ...profile, walletAddress: verifyBody.walletAddress, walletVerified: true };
     setStoredAirdropProfile(updatedProfile);
     renderWalletState(updatedProfile);
-    showWalletModal(`<h3>Wallet verified</h3><p class="wallet-success">Wallet verified</p><button class="primary-button wallet-close-button" type="button">Done</button>`);
+    showWalletModal(`<h3>Wallet verified</h3><div class="wallet-success-spacer" aria-hidden="true"></div><button class="primary-button wallet-close-button" type="button">Done</button>`);
     document.querySelector(".wallet-close-button")?.addEventListener("click", removeWalletModal);
   } catch (error) {
     renderWalletState(getCurrentProfile());
