@@ -20,15 +20,7 @@ function activateFallback(reason) {
 }
 
 async function shouldPreferFallback() {
-  const isMac = /Macintosh|Mac OS X/.test(navigator.userAgent || "");
-  if (!isMac || !navigator.brave || typeof navigator.brave.isBrave !== "function") {
-    return false;
-  }
-  try {
-    return await navigator.brave.isBrave();
-  } catch (error) {
-    return false;
-  }
+  return false;
 }
 
 if (canvas && showcase && !showcase.dataset.splineSrc?.trim()) {
