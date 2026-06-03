@@ -33,6 +33,7 @@ from db import (
     assert_owns_row,
     clear_rls_context,
     database_path,
+    database_storage_status,
     get_conn,
     rls_user_id,
     set_rls_context,
@@ -3168,7 +3169,8 @@ async def health_ready():
         with sqlite3.connect(database_path(), timeout=2) as conn:
             conn.execute("SELECT 1")
         storage = storage_backend_status()
-        return {"status": "ready", "storage": storage["backend"]}
+        database = database_storage_status()
+        return {"status": "ready", "storage": storage["backend"], "database": database}
     except Exception as exc:
         return JSONResponse({"status": "not_ready", "error": str(exc)}, status_code=503)
 

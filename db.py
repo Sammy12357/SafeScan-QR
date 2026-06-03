@@ -96,6 +96,26 @@ def database_path() -> str:
     return "qr_cache.db"
 
 
+def database_storage_status() -> dict:
+    path = database_path()
+    absolute_path = os.path.abspath(path)
+    persistent_dir = os.path.abspath(os.getenv("PERSISTENT_DATA_DIR", os.path.dirname(DEFAULT_SQLITE_PATH)))
+    explicit_persistent = os.getenv("LEADERBOARD_STORAGE_PERSISTENT", "").strip().lower() in {"1", "true", "yes"}
+    is_persistent = explicit_persistent or absolute_path == persistent_dir or absolute_path.startswith(persistent_dir + os.sep)
+    warning = None
+    if not is_persistent:
+        warning = (
+            "Database is not under persistent storage. Leaderboard, sessions, and scan history "
+            "can reset after deploys or restarts."
+        )
+    return {
+        "path": absolute_path,
+        "persistent": is_persistent,
+        "persistent_dir": persistent_dir,
+        "warning": warning,
+    }
+
+
 def set_rls_context(user_id: str | None, role: str = "user", email: str | None = None):
     _local.user_id = user_id
     _local.role = role

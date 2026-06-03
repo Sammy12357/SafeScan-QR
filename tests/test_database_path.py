@@ -42,3 +42,32 @@ def test_database_path_keeps_explicit_default_when_it_has_more_data(tmp_path, mo
     monkeypatch.setenv("SQLITE_DB_PATH", str(default_path))
 
     assert module.database_path() == str(default_path)
+
+
+def test_database_storage_status_marks_default_path_persistent(tmp_path, monkeypatch):
+    legacy_path = tmp_path / "app" / "data" / "qr_cache.db"
+    default_path = tmp_path / "var" / "data" / "qr_cache.db"
+    create_db(default_path, users=1, scans=1)
+    module = load_db_module(monkeypatch, legacy_path, default_path)
+
+    status = module.database_storage_status()
+
+    assert status["path"] == str(default_path)
+    assert status["persistent"] is True
+    assert status["warning"] is None
+
+
+def test_database_storage_status_warns_on_volatile_fallback(tmp_path, monkeypatch):
+    legacy_path = tmp_path / "app" / "data" / "qr_cache.db"
+    default_path = tmp_path / "var" / "data" / "qr_cache.db"
+    volatile_dir = tmp_path / "tmp"
+    volatile_path = volatile_dir / "qr_cache.db"
+    volatile_dir.mkdir()
+    module = load_db_module(monkeypatch, legacy_path, default_path)
+    monkeypatch.setenv("SQLITE_DB_PATH", str(volatile_path))
+
+    status = module.database_storage_status()
+
+    assert status["path"] == str(volatile_path)
+    assert status["persistent"] is False
+    assert "can reset" in status["warning"]

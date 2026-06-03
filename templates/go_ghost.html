@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Go Ghost | SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=go-ghost-v2">
+  <link rel="stylesheet" href="/static/styles.css?v=go-ghost-v3">
 </head>
 <body>
   <div class="page-shell go-ghost-shell">
@@ -67,6 +67,17 @@
         <div class="panel-header">
           <div>
             <p class="eyebrow">Step 2</p>
+            <h2>Start with the highest-impact sites</h2>
+          </div>
+        </div>
+        <p class="go-ghost-copy">Open a search, copy the matching profile URL, submit the opt-out, verify the email, then mark it submitted and removed.</p>
+        <div id="goGhostBrokerList" class="broker-list"></div>
+      </section>
+
+      <section class="go-ghost-card">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Step 3</p>
             <h2>Build your search kit</h2>
           </div>
           <span class="privacy-local-badge">Local only</span>
@@ -92,17 +103,6 @@
           </div>
         </form>
       </section>
-
-      <section class="go-ghost-card">
-        <div class="panel-header">
-          <div>
-            <p class="eyebrow">Step 3</p>
-            <h2>Start with the highest-impact sites</h2>
-          </div>
-        </div>
-        <p class="go-ghost-copy">Open a search, copy the matching profile URL, submit the opt-out, verify the email, then mark it submitted and removed.</p>
-        <div id="goGhostBrokerList" class="broker-list"></div>
-      </section>
     </main>
 
     {% include "footer.html" %}
@@ -125,6 +125,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=go-ghost-assisted-v1"></script>
+  <script src="/static/app.js?v=go-ghost-assisted-v2"></script>
 </body>
 </html>
