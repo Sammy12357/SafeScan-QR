@@ -117,7 +117,15 @@ def _cnn_needs_rescale():
 
 
 def _load_url_classifier():
-    """Returns (vectorizer, classifier) or None if the joblib isn't present."""
+    """Returns (vectorizer, classifier) or None if the joblib can't be loaded.
+
+    Treats EVERY load failure (file missing, scikit-learn version mismatch,
+    corrupt pickle, etc.) as a soft miss. The caller falls back to the CNN
+    or, when ML is fully unavailable, the rule pipeline still produces a
+    verdict. The previous version of this function let joblib exceptions
+    propagate, which surfaced as `ModuleNotFoundError: No module named
+    '_loss'` on the result page whenever sklearn drifted across versions.
+    """
     global _url_classifier, _url_classifier_missing
     if _url_classifier is not None:
         return _url_classifier
@@ -129,9 +137,33 @@ def _load_url_classifier():
         if not os.path.exists(URL_CLASSIFIER_PATH):
             _url_classifier_missing = True
             return None
-        import joblib
-        _url_classifier = joblib.load(URL_CLASSIFIER_PATH)
+        try:
+            import joblib
+            _url_classifier = joblib.load(URL_CLASSIFIER_PATH)
+        except Exception as exc:
+            print({"warning": "url_classifier load failed", "error": f"{type(exc).__name__}: {exc}"})
+            _url_classifier_missing = True
+            return None
     return _url_classifier
+
+
+def predict_url(url: str):
+    """Char-ngram URL classifier. Returns None if the classifier is
+    unavailable, the URL is empty, or the predict call itself errors
+    (sklearn version drift can break predict_proba on a loaded model)."""
+    pair = _load_url_classifier()
+    if pair is None or not url:
+        return None
+    vec, clf = pair
+    normalized = _normalize_url(url)
+    if not normalized:
+        return None
+    try:
+        prob = float(clf.predict_proba(vec.transform([normalized]))[0, 1])
+    except Exception as exc:
+        print({"warning": "url_classifier predict failed", "error": f"{type(exc).__name__}: {exc}"})
+        return None
+    return _result_from_probs(prob, "url_classifier")
 
 
 def _result_from_probs(mal_p: float, source: str):
@@ -145,19 +177,6 @@ def _result_from_probs(mal_p: float, source: str):
         "confidence_pct": confidence,
         "source": source,
     }
-
-
-def predict_url(url: str):
-    """Char-ngram URL classifier (notebook section 2). Returns None if missing."""
-    pair = _load_url_classifier()
-    if pair is None or not url:
-        return None
-    vec, clf = pair
-    normalized = _normalize_url(url)
-    if not normalized:
-        return None
-    prob = float(clf.predict_proba(vec.transform([normalized]))[0, 1])
-    return _result_from_probs(prob, "url_classifier")
 
 
 def predict_image(pil_image):
