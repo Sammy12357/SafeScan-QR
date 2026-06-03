@@ -1083,7 +1083,7 @@ if (goGhostWorkspace) {
       email: ghostEmailInput?.value?.trim() || ""
     });
     renderGoGhostBrokers();
-    showCopyToast("Search links updated");
+    showCopyToast("Search updated");
   });
 
   clearGhostDataButton?.addEventListener("click", () => {

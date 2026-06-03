@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Go Ghost | SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=go-ghost-queue-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=go-ghost-input-v1">
 </head>
 <body>
   <div class="page-shell go-ghost-shell">
@@ -107,30 +107,29 @@
         <div class="panel-header">
           <div>
             <p class="eyebrow">Step 3</p>
-            <h2>Build your search kit</h2>
+            <h2>First input info</h2>
           </div>
           <span class="privacy-local-badge">Local only</span>
         </div>
-        <p class="go-ghost-copy">Use only the minimum identifiers needed to find your record. This data stays in your browser and is used to generate search links.</p>
 
         <form id="goGhostProfileForm" class="go-ghost-form">
           <label>Full name
-            <input id="ghostNameInput" type="text" autocomplete="name" placeholder="Jane A. Doe">
+            <input id="ghostNameInput" type="text" autocomplete="name">
           </label>
           <label>City and state
-            <input id="ghostLocationInput" type="text" autocomplete="address-level2" placeholder="Tampa, FL">
+            <input id="ghostLocationInput" type="text" autocomplete="address-level2">
           </label>
           <label>Street address
-            <input id="ghostAddressInput" type="text" autocomplete="street-address" placeholder="Optional, helps some opt-outs">
+            <input id="ghostAddressInput" type="text" autocomplete="street-address">
           </label>
           <label>Phone number
-            <input id="ghostPhoneInput" type="tel" autocomplete="tel" placeholder="Optional, helps phone-based records">
+            <input id="ghostPhoneInput" type="tel" autocomplete="tel">
           </label>
           <label>Email
-            <input id="ghostEmailInput" type="email" autocomplete="email" placeholder="Optional, for confirmation links">
+            <input id="ghostEmailInput" type="email" autocomplete="email">
           </label>
           <div class="go-ghost-actions">
-            <button class="primary-button" type="submit">Generate search links</button>
+            <button class="primary-button" type="submit">Update search</button>
             <button class="secondary-button" id="clearGhostDataButton" type="button">Clear local data</button>
           </div>
         </form>
@@ -157,6 +156,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=go-ghost-queue-v1"></script>
+  <script src="/static/app.js?v=go-ghost-input-v1"></script>
 </body>
 </html>
