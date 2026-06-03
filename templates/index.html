@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=model-refresh-v3">
+  <link rel="stylesheet" href="/static/styles.css?v=scanner-video-v1">
 </head>
 <body class="{{ 'test-site-page' if test_site else '' }}">
   <div class="page-shell">
@@ -186,6 +186,15 @@
               <button type="submit" class="primary-button" style="margin-top:15px; width:100%;">Analyze Payload</button>
               <div id="analysisLoadingState" class="scan-status hidden" aria-live="polite">Tracing redirects...</div>
             </form>
+            <div class="scanner-video-frame">
+              <iframe
+                src="https://www.youtube-nocookie.com/embed/vzyejbEqMLs"
+                title="SafeScan QR video"
+                loading="lazy"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowfullscreen
+              ></iframe>
+            </div>
           </div>
           <div class="scanner-card visual-card">
             <p class="visual-label">Scan simulator</p>
