@@ -822,9 +822,10 @@ const goGhostBrokers = [
     name: "FastPeopleSearch",
     priority: "High traffic",
     priorityDescription: "One of the most visible people-search sites, so it is a good place to remove first.",
-    removalUrl: "https://www.fastpeoplesearch.com/removal",
+    removalUrl: "https://www.fastpeoplesearch.com/optout",
     requiredInfo: ["Full name", "Street address", "City/state", "Email confirmation"],
-    automationNote: "Assisted: copy name and address, open the removal page, paste the matching profile URL, then confirm by email.",
+    automationEnabled: true,
+    automationNote: "Backend assisted: fill the opt-out form and pause for CAPTCHA or email confirmation.",
     searchUrl: ({ name, location }) => `https://www.fastpeoplesearch.com/name/${encodeURIComponent(name || "")}${location ? `_${encodeURIComponent(location)}` : ""}`
   },
   {
@@ -932,6 +933,25 @@ function setGhostProgress(siteId, field, checked) {
   renderGoGhostBrokers();
 }
 
+function updateGhostAutomationState(siteId, automation) {
+  const progress = getGhostProgress();
+  progress[siteId] = { ...(progress[siteId] || {}), automation, updatedAt: new Date().toISOString() };
+  writeJsonStorage(GO_GHOST_PROGRESS_KEY, progress);
+  renderGoGhostBrokers();
+}
+
+function formatGhostAutomationStatus(status) {
+  const labels = {
+    captcha_required: "CAPTCHA checkpoint",
+    filled: "Form filled",
+    submitted: "Submitted",
+    unavailable: "Automation unavailable",
+    failed: "Automation failed",
+    running: "Running"
+  };
+  return labels[status] || "Updated";
+}
+
 function ghostSearchFallback(profile, brokerName) {
   const query = [profile.name, profile.address, profile.location, brokerName].filter(Boolean).join(" ");
   return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
@@ -1011,6 +1031,68 @@ async function openNextGhostBroker() {
   showCopyToast(copied ? `${broker.name} packet copied` : `Opened ${broker.name}`);
 }
 
+async function runGhostBrokerAutomation(broker, triggerButton) {
+  const profile = getGhostProfile();
+  if (!profile.name?.trim()) {
+    scrollToGhostProfile();
+    showCopyToast("Add a name first");
+    return;
+  }
+  if (!profile.email?.trim()) {
+    scrollToGhostProfile();
+    ghostEmailInput?.focus({ preventScroll: true });
+    showCopyToast("Add an email first");
+    return;
+  }
+
+  const originalText = triggerButton?.textContent || "";
+  if (triggerButton) {
+    triggerButton.disabled = true;
+    triggerButton.textContent = "Running...";
+  }
+  updateGhostAutomationState(broker.id, { status: "running", detail: "Automation started.", updatedAt: new Date().toISOString() });
+
+  try {
+    const response = await fetch(`/api/go-ghost/removals/${encodeURIComponent(broker.id)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: profile.name,
+        address: profile.address,
+        cityState: profile.location,
+        phone: profile.phone,
+        email: profile.email
+      })
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(body.error || "Automation failed");
+    }
+    const automation = {
+      status: body.status || "failed",
+      detail: body.detail || "",
+      jobId: body.jobId || "",
+      targetUrl: body.targetUrl || broker.removalUrl,
+      updatedAt: new Date().toISOString()
+    };
+    updateGhostAutomationState(broker.id, automation);
+    if (automation.status === "submitted") setGhostProgress(broker.id, "submitted", true);
+    showCopyToast(formatGhostAutomationStatus(automation.status));
+  } catch (error) {
+    updateGhostAutomationState(broker.id, {
+      status: "failed",
+      detail: error.message || "Automation failed.",
+      updatedAt: new Date().toISOString()
+    });
+    showCopyToast(error.message || "Automation failed");
+  } finally {
+    if (triggerButton) {
+      triggerButton.disabled = false;
+      triggerButton.textContent = originalText;
+    }
+  }
+}
+
 function renderGoGhostProgress() {
   if (!ghostProgressCount) return;
   const progress = getGhostProgress();
@@ -1034,9 +1116,11 @@ function renderGoGhostBrokers() {
         <div class="broker-actions">
           <a class="secondary-button" href="${searchUrl}" target="_blank" rel="noopener noreferrer">Search</a>
           <a class="primary-button" href="${broker.removalUrl}" target="_blank" rel="noopener noreferrer">Opt out</a>
+          ${broker.automationEnabled ? `<button class="primary-button" type="button" data-ghost-auto="${broker.id}">Run auto fill</button>` : ""}
           <button class="secondary-button" type="button" data-ghost-copy="${broker.id}">Copy details</button>
         </div>
         <div class="broker-requirements">${(broker.requiredInfo || []).map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
+        ${state.automation ? `<div class="broker-automation-status"><strong>${escapeHtml(formatGhostAutomationStatus(state.automation.status))}</strong><span>${escapeHtml(state.automation.detail || "")}</span></div>` : ""}
         <div class="broker-checks">
           <label><input type="checkbox" data-ghost-site="${broker.id}" data-ghost-field="submitted" ${state.submitted ? "checked" : ""}> Submitted</label>
           <label><input type="checkbox" data-ghost-site="${broker.id}" data-ghost-field="removed" ${state.removed ? "checked" : ""}> Removed</label>
@@ -1101,6 +1185,13 @@ if (goGhostWorkspace) {
   });
 
   goGhostBrokerList?.addEventListener("click", async (event) => {
+    const autoButton = event.target.closest("[data-ghost-auto]");
+    if (autoButton) {
+      const broker = goGhostBrokers.find((item) => item.id === autoButton.dataset.ghostAuto);
+      if (broker) await runGhostBrokerAutomation(broker, autoButton);
+      return;
+    }
+
     const copyButton = event.target.closest("[data-ghost-copy]");
     if (!copyButton) return;
     const profile = getGhostProfile();

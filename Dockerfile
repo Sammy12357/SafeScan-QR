@@ -14,6 +14,8 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 # -- Stage 2: runtime ------------------------------------------------
 FROM python:3.11-slim AS runtime
 
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+
 # System deps only - no build tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libzbar0 \
@@ -33,9 +35,12 @@ COPY hackabull.py distribute.py scrop.py db.py storage.py ml_model_final.py ./
 COPY templates/ ./templates/
 COPY static/ ./static/
 COPY models/ ./models/
+COPY removals/ ./removals/
+
+RUN python -m playwright install --with-deps chromium
 
 # Data directory owned by app user
-RUN mkdir -p /app/data /var/data && chown safescan:safescan /app/data /var/data
+RUN mkdir -p /app/data /var/data && chown -R safescan:safescan /app/data /var/data /ms-playwright
 
 USER safescan
 

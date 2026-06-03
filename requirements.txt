@@ -24,3 +24,4 @@ solders
 base58
 boto3==1.35.99
 prometheus-client==0.21.1
+playwright>=1.49,<2

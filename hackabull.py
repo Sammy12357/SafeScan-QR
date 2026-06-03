@@ -355,6 +355,10 @@ def init_db():
                          client_reference_id TEXT, metadata TEXT,
                          created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
                          UNIQUE(user_id, tier, provider))''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS go_ghost_removal_jobs
+                        (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, email TEXT NOT NULL,
+                         broker TEXT NOT NULL, status TEXT NOT NULL, detail TEXT,
+                         target_url TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)''')
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sessions_google_id ON sessions(google_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_persistent_sessions_token_hash ON persistent_sessions(token_hash)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_persistent_sessions_user_id ON persistent_sessions(user_id)")
@@ -375,6 +379,8 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_wallet_nonces_wallet ON wallet_nonces(wallet_address)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_alpha_subscriptions_email ON alpha_subscriptions(email)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_alpha_subscriptions_purchased ON alpha_subscriptions(purchased_at)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_go_ghost_jobs_user ON go_ghost_removal_jobs(user_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_go_ghost_jobs_broker ON go_ghost_removal_jobs(broker)")
     cursor.execute("PRAGMA table_info(users)")
     user_columns = {row[1] for row in cursor.fetchall()}
     user_migrations = {
@@ -4631,6 +4637,85 @@ async def go_ghost_page(request: Request):
         "version": LEGAL_VERSION,
         **index_user_context(user),
     })
+
+@qr_app.post("/api/go-ghost/removals/{broker}")
+async def api_go_ghost_removal(request: Request, broker: str, payload: dict = Body(...)):
+    user = require_user(request)
+    normalized_broker = (broker or "").strip().lower()
+    if normalized_broker != "fastpeoplesearch":
+        raise SafeScanError("Backend automation is available for FastPeopleSearch first.", 400)
+    validate_strict_payload(payload, {"name", "address", "cityState", "phone", "email"})
+
+    profile_payload = {
+        "name": str(payload.get("name") or "").strip()[:160],
+        "address": str(payload.get("address") or "").strip()[:220],
+        "city_state": str(payload.get("cityState") or "").strip()[:140],
+        "phone": str(payload.get("phone") or "").strip()[:80],
+        "email": str(payload.get("email") or "").strip()[:180],
+    }
+    if not profile_payload["name"]:
+        raise SafeScanError("Add a full name before running automation.", 400)
+    if not profile_payload["email"]:
+        raise SafeScanError("Add an email before running automation.", 400)
+
+    job_id = make_id("ghostjob")
+    account_email = (user.get("email") or "").strip().lower()
+    created_at = now_iso()
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO go_ghost_removal_jobs
+               (id, user_id, email, broker, status, detail, target_url, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                job_id,
+                user.get("google_id"),
+                account_email,
+                normalized_broker,
+                "running",
+                "Automation started.",
+                "https://www.fastpeoplesearch.com/optout",
+                created_at,
+                created_at,
+            ),
+        )
+
+    try:
+        from removals.engine import RemovalProfile, run_fastpeoplesearch_removal
+
+        result = await run_fastpeoplesearch_removal(RemovalProfile(**profile_payload))
+    except RuntimeError as exc:
+        result = {
+            "status": "unavailable",
+            "detail": str(exc),
+            "targetUrl": "https://www.fastpeoplesearch.com/optout",
+        }
+    except Exception:
+        result = {
+            "status": "failed",
+            "detail": "FastPeopleSearch automation failed before submission.",
+            "targetUrl": "https://www.fastpeoplesearch.com/optout",
+        }
+
+    status = str(result.get("status") or "failed")[:40]
+    detail = str(result.get("detail") or "")[:500]
+    target_url = str(result.get("targetUrl") or "https://www.fastpeoplesearch.com/optout")[:500]
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE go_ghost_removal_jobs
+               SET status = ?, detail = ?, target_url = ?, updated_at = ?
+               WHERE id = ?""",
+            (status, detail, target_url, now_iso(), job_id),
+        )
+
+    audit_log(
+        "go_ghost.removal_attempted",
+        request=request,
+        actor_user_id=user.get("google_id"),
+        target_type="broker",
+        target_id=normalized_broker,
+        metadata={"jobId": job_id, "status": status},
+    )
+    return {"jobId": job_id, "broker": normalized_broker, "status": status, "detail": detail, "targetUrl": target_url}
 
 @qr_app.get("/legal/privacy-policy", response_class=HTMLResponse)
 async def privacy_policy(request: Request):
