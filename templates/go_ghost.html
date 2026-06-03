@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Go Ghost | SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=go-ghost-automation-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=go-ghost-contact-v1">
 </head>
 <body>
   <div class="page-shell go-ghost-shell">
@@ -119,8 +119,11 @@
           <label>Street address
             <input id="ghostAddressInput" type="text" autocomplete="street-address" placeholder="Optional, helps some opt-outs">
           </label>
-          <label>Phone or email
-            <input id="ghostIdentifierInput" type="text" autocomplete="off" placeholder="Optional, use one identifier">
+          <label>Phone number
+            <input id="ghostPhoneInput" type="tel" autocomplete="tel" placeholder="Optional, helps phone-based records">
+          </label>
+          <label>Email
+            <input id="ghostEmailInput" type="email" autocomplete="email" placeholder="Optional, for confirmation links">
           </label>
           <div class="go-ghost-actions">
             <button class="primary-button" type="submit">Generate search links</button>
@@ -150,6 +153,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=go-ghost-automation-v1"></script>
+  <script src="/static/app.js?v=go-ghost-contact-v1"></script>
 </body>
 </html>

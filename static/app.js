@@ -808,7 +808,8 @@ const ghostProgressCount = document.getElementById("ghostProgressCount");
 const ghostNameInput = document.getElementById("ghostNameInput");
 const ghostLocationInput = document.getElementById("ghostLocationInput");
 const ghostAddressInput = document.getElementById("ghostAddressInput");
-const ghostIdentifierInput = document.getElementById("ghostIdentifierInput");
+const ghostPhoneInput = document.getElementById("ghostPhoneInput");
+const ghostEmailInput = document.getElementById("ghostEmailInput");
 const GO_GHOST_PROFILE_KEY = "safeScanGoGhostProfile";
 const GO_GHOST_PROGRESS_KEY = "safeScanGoGhostProgress";
 const GO_GHOST_CONSENT_KEY = "safeScanGoGhostConsent";
@@ -909,7 +910,13 @@ function writeJsonStorage(key, value) {
 }
 
 function getGhostProfile() {
-  return readJsonStorage(GO_GHOST_PROFILE_KEY, { name: "", location: "", address: "", identifier: "" });
+  const profile = readJsonStorage(GO_GHOST_PROFILE_KEY, { name: "", location: "", address: "", phone: "", email: "", identifier: "" });
+  return {
+    ...profile,
+    phone: profile.phone || "",
+    email: profile.email || "",
+    identifier: profile.identifier || ""
+  };
 }
 
 function getGhostProgress() {
@@ -934,7 +941,8 @@ function goGhostCopyPacket(broker, profile, searchUrl) {
     `Name: ${profile.name || ""}`,
     `Street address: ${profile.address || ""}`,
     `City/state: ${profile.location || ""}`,
-    `Phone or email: ${profile.identifier || ""}`,
+    `Phone: ${profile.phone || profile.identifier || ""}`,
+    `Email: ${profile.email || ""}`,
     `Search link: ${searchUrl}`,
     `Opt-out link: ${broker.removalUrl}`,
     `Needed: ${(broker.requiredInfo || []).join(", ")}`,
@@ -983,7 +991,8 @@ function hydrateGoGhostProfile() {
   if (ghostNameInput) ghostNameInput.value = profile.name || "";
   if (ghostLocationInput) ghostLocationInput.value = profile.location || "";
   if (ghostAddressInput) ghostAddressInput.value = profile.address || "";
-  if (ghostIdentifierInput) ghostIdentifierInput.value = profile.identifier || "";
+  if (ghostPhoneInput) ghostPhoneInput.value = profile.phone || profile.identifier || "";
+  if (ghostEmailInput) ghostEmailInput.value = profile.email || "";
 }
 
 function startGoGhost() {
@@ -1007,7 +1016,8 @@ if (goGhostWorkspace) {
       name: ghostNameInput?.value?.trim() || "",
       location: ghostLocationInput?.value?.trim() || "",
       address: ghostAddressInput?.value?.trim() || "",
-      identifier: ghostIdentifierInput?.value?.trim() || ""
+      phone: ghostPhoneInput?.value?.trim() || "",
+      email: ghostEmailInput?.value?.trim() || ""
     });
     renderGoGhostBrokers();
     showCopyToast("Search links updated");
