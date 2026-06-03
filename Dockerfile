@@ -31,16 +31,21 @@ WORKDIR /app
 COPY --from=builder /install /usr/local
 
 # Copy only application code
-COPY hackabull.py distribute.py scrop.py db.py storage.py ml_model_final.py ./
+COPY hackabull.py distribute.py scrop.py db.py storage.py ml_model_final.py \
+     safescan_allowlist.py safescan_model_calibration.py ./
 COPY templates/ ./templates/
 COPY static/ ./static/
 COPY models/ ./models/
 COPY removals/ ./removals/
+# Tranco top-10K CSV ships with the code so the allowlist short-circuit is
+# hermetic - no external fetch at boot, no failure mode if Tranco is down.
+COPY data/ ./data/
 
 RUN python -m playwright install --with-deps chromium
 
-# Data directory owned by app user
-RUN mkdir -p /app/data /var/data && chown -R safescan:safescan /app/data /var/data /ms-playwright
+# Data directory owned by app user. Use chown -R so the bundled CSV stays
+# readable; the /var/data path is the writable runtime mount.
+RUN chown -R safescan:safescan /app/data /var/data /ms-playwright
 
 USER safescan
 
