@@ -74,7 +74,7 @@ body {
 .hero-metrics span { display: block; color: var(--accent); font-family: var(--display-font); font-size: 1rem; font-weight: 800; }
 .hero-metrics p { margin: 6px 0 0; color: var(--muted); font-size: 0.88rem; }
 .spline-showcase { min-height: 530px; padding: 0; overflow: hidden; transform-style: preserve-3d; background: #070b12; }
-.spline-showcase::before { content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 1; background: url("./safescan-3d-fallback.png") center / cover no-repeat; transition: opacity 0.42s ease; }
+.spline-showcase::before { content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 1; background: url("./safescan-3d-fallback.png?v=opening-model-v1") center / cover no-repeat; transition: opacity 0.42s ease; }
 .spline-showcase::after { content: none; }
 .three-scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block !important; opacity: 1 !important; visibility: visible !important; cursor: grab; touch-action: none; z-index: 1 !important; }
 .three-scene:active { cursor: grabbing; }
