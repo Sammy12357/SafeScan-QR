@@ -483,9 +483,9 @@ body.qr-camera-open { overflow: hidden; }
 .go-ghost-form input { width: 100%; padding: 14px 16px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05); color: var(--text); font: inherit; }
 .go-ghost-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 16px; }
 .privacy-local-badge, .broker-priority { display: inline-grid; place-items: center; min-height: 30px; padding: 0 10px; border: 1px solid rgba(103, 242, 200, 0.24); border-radius: 999px; background: rgba(103, 242, 200, 0.08); color: var(--accent); font-size: 0.75rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.08em; }
-.broker-list { display: grid; gap: 12px; margin-top: 18px; }
-.broker-card { display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: center; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-strong); }
-.broker-card h3 { margin: 8px 0 6px; font-size: 1.18rem; }
+.broker-list { display: grid; gap: 10px; margin-top: 14px; }
+.broker-card { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: center; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-strong); }
+.broker-card h3 { margin: 8px 0 0; font-size: 1.18rem; }
 .broker-card p { margin: 0; font-size: 0.94rem; }
 .broker-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .broker-actions .primary-button, .broker-actions .secondary-button { padding: 11px 14px; }
