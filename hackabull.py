@@ -4683,8 +4683,35 @@ async def security_page(request: Request):
 @qr_app.get("/contact", response_class=HTMLResponse)
 async def contact_page(request: Request):
     body = f"""
-    <h2>Contact</h2>
-    <p>For privacy, security, partnerships, or hackathon questions, contact <a href="{ADMIN_EMAIL_GMAIL_COMPOSE_URL}" target="_blank" rel="noopener noreferrer">{ADMIN_EMAIL}</a>.</p>
+    <section class="contact-hero">
+      <h2>Contact SafeScan QR</h2>
+      <p>For community updates, support, security reports, partnerships, or privacy questions, use the best channel below.</p>
+    </section>
+
+    <div class="contact-grid">
+      <a class="contact-card contact-card-primary" href="https://discord.gg/hqHBQ22z" target="_blank" rel="noopener noreferrer">
+        <span class="contact-label">Community</span>
+        <strong>Join the Discord</strong>
+        <p>Ask questions, follow release updates, and connect with the SafeScan QR community.</p>
+      </a>
+      <a class="contact-card" href="{ADMIN_EMAIL_GMAIL_COMPOSE_URL}" target="_blank" rel="noopener noreferrer">
+        <span class="contact-label">Email</span>
+        <strong>{ADMIN_EMAIL}</strong>
+        <p>Best for account, privacy, partnership, and general support questions.</p>
+      </a>
+      <a class="contact-card" href="/legal/security">
+        <span class="contact-label">Security</span>
+        <strong>Report a vulnerability</strong>
+        <p>Send affected routes, reproduction steps, and potential impact so we can investigate quickly.</p>
+      </a>
+      <a class="contact-card" href="https://github.com/Sammy12357/SafeScan-QR" target="_blank" rel="noopener noreferrer">
+        <span class="contact-label">Code</span>
+        <strong>GitHub</strong>
+        <p>View the project repository and track public development.</p>
+      </a>
+    </div>
+
+    <p class="contact-note">For privacy rights requests, use the <a href="/legal/data-request">Data Request portal</a>. For sale/sharing opt-outs, use <a href="/legal/do-not-sell">Do Not Sell or Share</a>.</p>
     """
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Contact", body))
 

@@ -413,6 +413,17 @@ body.qr-camera-open { overflow: hidden; }
 .checkbox-row { grid-template-columns: auto 1fr !important; align-items: start; }
 .checkbox-row input { width: auto; margin-top: 5px; }
 .request-message { padding: 13px 14px; border: 1px solid rgba(103, 242, 200, 0.28); border-radius: 8px; background: rgba(103, 242, 200, 0.09); color: var(--accent); font-weight: 800; }
+.contact-hero { margin-top: 18px; padding: 20px; border: 1px solid rgba(103, 242, 200, 0.18); border-radius: 8px; background: rgba(103, 242, 200, 0.055); }
+.contact-hero h2 { margin-top: 0; }
+.contact-hero p { margin-bottom: 0; }
+.contact-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 20px 0; }
+.contact-card { display: grid; gap: 8px; min-height: 168px; padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.045); color: var(--text) !important; text-decoration: none !important; transition: border-color 0.18s ease, transform 0.18s ease, background 0.18s ease; }
+.contact-card:hover { border-color: rgba(103, 242, 200, 0.45); background: rgba(103, 242, 200, 0.07); transform: translateY(-1px); }
+.contact-card strong { color: var(--text); font-family: var(--display-font); font-size: 1.05rem; }
+.contact-card p { margin: 0; }
+.contact-card-primary { border-color: rgba(103, 242, 200, 0.36); background: rgba(103, 242, 200, 0.09); }
+.contact-label { color: var(--accent); font-size: 0.74rem; font-weight: 900; letter-spacing: 0.12em; text-transform: uppercase; }
+.contact-note { margin-top: 10px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px; background: rgba(0, 0, 0, 0.18); }
 .rights-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
 .rights-grid article { padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.035); }
 .rights-grid h2 { margin-top: 0; font-size: 1.05rem; }
@@ -529,6 +540,7 @@ body.qr-camera-open { overflow: hidden; }
   .consent-actions { justify-content: stretch; }
   .consent-actions button { width: 100%; }
   .legal-document { padding: 20px; }
+  .contact-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 520px) {
