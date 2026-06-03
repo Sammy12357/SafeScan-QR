@@ -3729,7 +3729,7 @@ COOKIE_POLICY_HTML = """
 </table>
 <p>No third-party advertising cookies are used. If Google Analytics or similar analytics is added, it must be listed here before deployment and gated by consent where required.</p>
 <h2>Disable Cookies</h2>
-<p>You can manage cookies in <a href="https://support.google.com/chrome/answer/95647">Chrome</a>, <a href="https://support.mozilla.org/en-US/kb/clear-cookies-and-site-data-firefox">Firefox</a>, <a href="https://support.apple.com/guide/safari/manage-cookies-sfri11471/mac">Safari</a>, and <a href="https://support.microsoft.com/microsoft-edge">Edge</a>.</p>
+<p>You can manage cookies in <a href="https://support.google.com/chrome/answer/95647" target="_blank" rel="noopener noreferrer">Chrome</a>, <a href="https://support.mozilla.org/en-US/kb/clear-cookies-and-site-data-firefox" target="_blank" rel="noopener noreferrer">Firefox</a>, <a href="https://support.apple.com/guide/safari/manage-cookies-sfri11471/mac" target="_blank" rel="noopener noreferrer">Safari</a>, and <a href="https://support.microsoft.com/microsoft-edge" target="_blank" rel="noopener noreferrer">Edge</a>.</p>
 """
 
 @qr_app.get("/admin", response_class=HTMLResponse)

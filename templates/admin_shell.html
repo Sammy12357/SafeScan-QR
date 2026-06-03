@@ -147,7 +147,7 @@
         </form>
         <table class="admin-table">
           <thead><tr><th>Email</th><th>Wallet</th><th>Tier</th><th>Scans</th><th>Referrals</th><th>SQR Allocation</th><th>Status</th><th>Fraud</th><th>Actions</th></tr></thead>
-          <tbody>{% for user in data.wallet_users %}<tr><td>{{ user.email }}</td><td class="truncate"><a href="https://solscan.io/account/{{ user.wallet_address }}">{{ user.wallet_address }}</a></td><td>{{ user.tier }}</td><td>{{ user.scan_count }}</td><td>{{ user.referral_count }}</td><td>{{ user.estimated_sqr }}</td><td>{{ user.distribution_status }}</td><td>{{ 'yes' if user.fraud_flags else 'no' }}</td><td><form action="/admin/airdrop/{{ user.email }}/status" method="post"><input name="reason" placeholder="Reason"><button name="status" value="disqualified">Disqualify</button><button name="status" value="cleared">Verify Manually</button></form></td></tr>{% endfor %}</tbody>
+          <tbody>{% for user in data.wallet_users %}<tr><td>{{ user.email }}</td><td class="truncate"><a href="https://solscan.io/account/{{ user.wallet_address }}" target="_blank" rel="noopener noreferrer">{{ user.wallet_address }}</a></td><td>{{ user.tier }}</td><td>{{ user.scan_count }}</td><td>{{ user.referral_count }}</td><td>{{ user.estimated_sqr }}</td><td>{{ user.distribution_status }}</td><td>{{ 'yes' if user.fraud_flags else 'no' }}</td><td><form action="/admin/airdrop/{{ user.email }}/status" method="post"><input name="reason" placeholder="Reason"><button name="status" value="disqualified">Disqualify</button><button name="status" value="cleared">Verify Manually</button></form></td></tr>{% endfor %}</tbody>
         </table>
       </section>
 
