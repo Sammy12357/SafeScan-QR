@@ -665,8 +665,22 @@ if (riskModal) {
     }
   });
 
+  // Park the modal at the top of its content on every open.
+  // - blockReportButton.focus() without preventScroll: true used to scroll
+  //   the focus target (which sits at the BOTTOM of the modal card) into
+  //   view, leaving users staring at the report buttons instead of the
+  //   verdict header. preventScroll: true keeps keyboard focus working
+  //   without dragging the viewport down.
+  // - The card has its own internal scroll on overflow, and window /
+  //   document have the natural page scroll - reset both so the verdict
+  //   is always the first thing visible.
+  const riskModalCard = riskModal.querySelector(".risk-modal-card");
+  if (riskModalCard) riskModalCard.scrollTop = 0;
+  riskModal.scrollTop = 0;
+  if ("scrollTo" in window) window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+
   window.setTimeout(() => {
-    blockReportButton?.focus();
+    blockReportButton?.focus({ preventScroll: true });
   }, 0);
 }
 
