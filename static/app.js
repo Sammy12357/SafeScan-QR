@@ -818,6 +818,7 @@ const goGhostBrokers = [
     id: "fastpeoplesearch",
     name: "FastPeopleSearch",
     priority: "High traffic",
+    priorityDescription: "One of the most visible people-search sites, so it is a good place to remove first.",
     removalUrl: "https://www.fastpeoplesearch.com/removal",
     requiredInfo: ["Full name", "Street address", "City/state", "Email confirmation"],
     automationNote: "Assisted: copy name and address, open the removal page, paste the matching profile URL, then confirm by email.",
@@ -827,6 +828,7 @@ const goGhostBrokers = [
     id: "whitepages",
     name: "Whitepages",
     priority: "High traffic",
+    priorityDescription: "One of the most visible people-search sites, so it is a good place to remove first.",
     removalUrl: "https://www.whitepages.com/suppression-requests",
     requiredInfo: ["Full name", "City/state", "Matching profile", "Email confirmation"],
     automationNote: "Assisted: search with your name and location, copy the matching listing details, then complete the suppression form.",
@@ -836,6 +838,7 @@ const goGhostBrokers = [
     id: "spokeo",
     name: "Spokeo",
     priority: "High traffic",
+    priorityDescription: "One of the most visible people-search sites, so it is a good place to remove first.",
     removalUrl: "https://www.spokeo.com/optout",
     requiredInfo: ["Profile URL", "Email confirmation"],
     automationNote: "Assisted: find the matching profile, copy its URL, paste it into Spokeo opt-out, then verify the email.",
@@ -845,6 +848,7 @@ const goGhostBrokers = [
     id: "beenverified",
     name: "BeenVerified",
     priority: "High traffic",
+    priorityDescription: "One of the most visible people-search sites, so it is a good place to remove first.",
     removalUrl: "https://www.beenverified.com/app/optout/search",
     requiredInfo: ["Full name", "State/city", "Matching record", "Email confirmation"],
     automationNote: "Assisted: use the opt-out search, choose the matching record, and complete email verification.",
@@ -854,6 +858,7 @@ const goGhostBrokers = [
     id: "truepeoplesearch",
     name: "TruePeopleSearch",
     priority: "High traffic",
+    priorityDescription: "One of the most visible people-search sites, so it is a good place to remove first.",
     removalUrl: "https://www.truepeoplesearch.com/removal",
     requiredInfo: ["Full name", "City/state", "Matching profile", "Email confirmation"],
     automationNote: "Assisted: search, open the matching record, then use the removal flow and verify by email.",
@@ -862,7 +867,8 @@ const goGhostBrokers = [
   {
     id: "thatsthem",
     name: "Thatsthem",
-    priority: "Address and phone",
+    priority: "Address match",
+    priorityDescription: "This site often finds records through address or phone details.",
     removalUrl: "https://thatsthem.com/optout",
     requiredInfo: ["Full name", "Street address or phone", "Email confirmation"],
     automationNote: "Assisted: copy the address/phone details, open opt-out, then submit only the fields Thatsthem requests.",
@@ -871,7 +877,8 @@ const goGhostBrokers = [
   {
     id: "nuwber",
     name: "Nuwber",
-    priority: "Profile-link based",
+    priority: "Profile link",
+    priorityDescription: "This opt-out usually needs the exact profile URL before removal can be submitted.",
     removalUrl: "https://nuwber.com/removal/link",
     requiredInfo: ["Profile URL", "Email confirmation"],
     automationNote: "Assisted: find the matching Nuwber profile, paste its URL into the removal form, then verify by email.",
@@ -880,7 +887,8 @@ const goGhostBrokers = [
   {
     id: "radaris",
     name: "Radaris",
-    priority: "Duplicate profiles",
+    priority: "Duplicate check",
+    priorityDescription: "This site can show multiple records for one person, so check for duplicates before marking it removed.",
     removalUrl: "https://radaris.com/page/how-to-remove",
     requiredInfo: ["Profile URL", "Matching record", "Email confirmation"],
     automationNote: "Assisted: Radaris may show duplicate records, so confirm the exact profile before submitting removal.",
@@ -951,7 +959,7 @@ function renderGoGhostBrokers() {
     return `
       <article class="broker-card">
         <div>
-          <span class="broker-priority">${escapeHtml(broker.priority)}</span>
+          <span class="broker-priority" title="${escapeHtml(broker.priorityDescription || "")}">${escapeHtml(broker.priority)}</span>
           <h3>${escapeHtml(broker.name)}</h3>
         </div>
         <div class="broker-actions">
