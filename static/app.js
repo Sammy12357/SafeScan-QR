@@ -252,14 +252,40 @@ function normalizeSignature(signatureBytes) {
   return base58Encode(signatureBytes || []);
 }
 
+function walletProviderName(provider, fallbackName) {
+  const candidate = [
+    provider?.walletName,
+    provider?._walletName,
+    provider?.displayName,
+    provider?.name,
+    provider?.constructor?.name
+  ].find((value) => typeof value === "string" && value.trim());
+  const normalized = (candidate || "").toLowerCase();
+  if (provider?.isBraveWallet || provider?.isBrave || normalized.includes("brave")) return "Brave Wallet";
+  if (provider?.isSolflare || normalized.includes("solflare")) return "Solflare";
+  if (provider?.isBackpack || normalized.includes("backpack")) return "Backpack";
+  if (provider?.isCoinbaseWallet || normalized.includes("coinbase")) return "Coinbase Wallet";
+  if (provider?.isGlow || normalized.includes("glow")) return "Glow";
+  if (provider?.isExodus || normalized.includes("exodus")) return "Exodus";
+  if (provider?.isPhantom || normalized.includes("phantom")) return "Phantom";
+  return fallbackName;
+}
+
+function walletDisconnectButtonHtml(wallet, index) {
+  const profile = getCurrentProfile();
+  if (typeof wallet?.provider?.disconnect !== "function" && !profile?.walletVerified) return "";
+  return `<button class="secondary-button wallet-disconnect-button" data-wallet-disconnect-index="${index}" type="button">Disconnect wallet</button>`;
+}
+
 function detectedSolanaWallets() {
   const wallets = [];
   const seen = new Set();
   const add = (name, provider, url) => {
     if (!provider || seen.has(provider)) return;
     seen.add(provider);
-    wallets.push({ name, provider, url });
+    wallets.push({ name: walletProviderName(provider, name), provider, url });
   };
+  add("Brave Wallet", window.brave?.solana || window.braveSolana || (window.solana?.isBraveWallet || window.solana?.isBrave ? window.solana : null), "https://wallet.brave.com/");
   add("Phantom", window.phantom?.solana || (window.solana?.isPhantom ? window.solana : null), "https://phantom.app/");
   add("Solflare", window.solflare || (window.solana?.isSolflare ? window.solana : null), "https://solflare.com/");
   add("Backpack", window.backpack?.solana, "https://backpack.app/");
@@ -449,32 +475,48 @@ async function connectWallet() {
     document.querySelector(".wallet-retry-button")?.addEventListener("click", connectWallet);
     return;
   }
-  const modal = showWalletModal(`<h3>Select wallet</h3><div class="wallet-choice-list">${wallets.map((wallet, index) => `<button class="secondary-button wallet-choice-button" data-wallet-index="${index}" type="button">${wallet.name}</button>`).join("")}</div>`);
+  const modal = showWalletModal(`<h3>Select wallet</h3><div class="wallet-choice-list">${wallets.map((wallet, index) => `<div class="wallet-choice-row"><button class="secondary-button wallet-choice-button" data-wallet-index="${index}" type="button">${escapeHtml(wallet.name)}</button>${walletDisconnectButtonHtml(wallet, index)}</div>`).join("")}</div>`);
   modal.querySelectorAll("[data-wallet-index]").forEach((button) => {
     button.addEventListener("click", () => verifySelectedWallet(wallets[Number(button.dataset.walletIndex)]));
+  });
+  modal.querySelectorAll("[data-wallet-disconnect-index]").forEach((button) => {
+    button.addEventListener("click", () => disconnectWalletConnection(wallets[Number(button.dataset.walletDisconnectIndex)], { closeModal: true }));
   });
 }
 
 dom.connectWalletButton?.addEventListener("click", connectWallet);
 dom.topConnectWalletButton?.addEventListener("click", connectWallet);
 
-dom.disconnectWalletButton?.addEventListener("click", async () => {
+async function disconnectWalletConnection(wallet = null, options = {}) {
+  const { closeModal = false, notify = true } = options;
   const profile = getCurrentProfile();
-  if (!profile) return;
   try {
-    const response = await fetch("/api/wallet", { method: "DELETE" });
-    const body = await response.json();
-    if (!response.ok) throw new Error(body.error || "Wallet disconnect failed.");
-    const updatedProfile = { ...profile };
-    delete updatedProfile.walletAddress;
-    delete updatedProfile.walletVerified;
-    setStoredAirdropProfile(updatedProfile);
-    renderWalletState(updatedProfile);
-    window.alert("Wallet disconnected.");
+    if (typeof wallet?.provider?.disconnect === "function") {
+      await wallet.provider.disconnect();
+    }
+    if (profile?.walletAddress || profile?.walletVerified) {
+      const response = await fetch("/api/wallet", { method: "DELETE" });
+      let body = {};
+      try {
+        body = await response.json();
+      } catch (_) {
+        body = {};
+      }
+      if (!response.ok && response.status !== 404) throw new Error(body.error || "Wallet disconnect failed.");
+      const updatedProfile = { ...profile };
+      delete updatedProfile.walletAddress;
+      delete updatedProfile.walletVerified;
+      setStoredAirdropProfile(updatedProfile);
+      renderWalletState(updatedProfile);
+    }
+    if (closeModal) removeWalletModal();
+    if (notify) window.alert("Wallet disconnected.");
   } catch (error) {
     window.alert(error.message || "Wallet disconnect failed.");
   }
-});
+}
+
+dom.disconnectWalletButton?.addEventListener("click", () => disconnectWalletConnection());
 
 dom.demoWalletButton?.addEventListener("click", () => {
   window.alert("Demo wallets cannot be used for airdrop verification. Connect a real wallet and approve the signature request.");
