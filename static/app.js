@@ -765,6 +765,7 @@ const goGhostBrokerList = document.getElementById("goGhostBrokerList");
 const ghostProgressCount = document.getElementById("ghostProgressCount");
 const ghostNameInput = document.getElementById("ghostNameInput");
 const ghostLocationInput = document.getElementById("ghostLocationInput");
+const ghostAddressInput = document.getElementById("ghostAddressInput");
 const ghostIdentifierInput = document.getElementById("ghostIdentifierInput");
 const GO_GHOST_PROFILE_KEY = "safeScanGoGhostProfile";
 const GO_GHOST_PROGRESS_KEY = "safeScanGoGhostProgress";
@@ -776,6 +777,8 @@ const goGhostBrokers = [
     name: "FastPeopleSearch",
     priority: "High traffic",
     removalUrl: "https://www.fastpeoplesearch.com/removal",
+    requiredInfo: ["Full name", "Street address", "City/state", "Email confirmation"],
+    automationNote: "Assisted: copy name and address, open the removal page, paste the matching profile URL, then confirm by email.",
     searchUrl: ({ name, location }) => `https://www.fastpeoplesearch.com/name/${encodeURIComponent(name || "")}${location ? `_${encodeURIComponent(location)}` : ""}`
   },
   {
@@ -783,6 +786,8 @@ const goGhostBrokers = [
     name: "Whitepages",
     priority: "High traffic",
     removalUrl: "https://www.whitepages.com/suppression-requests",
+    requiredInfo: ["Full name", "City/state", "Matching profile", "Email confirmation"],
+    automationNote: "Assisted: search with your name and location, copy the matching listing details, then complete the suppression form.",
     searchUrl: ({ name, location }) => `https://www.whitepages.com/name/${encodeURIComponent(name || "")}${location ? `/${encodeURIComponent(location)}` : ""}`
   },
   {
@@ -790,6 +795,8 @@ const goGhostBrokers = [
     name: "Spokeo",
     priority: "High traffic",
     removalUrl: "https://www.spokeo.com/optout",
+    requiredInfo: ["Profile URL", "Email confirmation"],
+    automationNote: "Assisted: find the matching profile, copy its URL, paste it into Spokeo opt-out, then verify the email.",
     searchUrl: ({ name, location }) => `https://www.spokeo.com/${encodeURIComponent(name || "")}${location ? `/${encodeURIComponent(location)}` : ""}`
   },
   {
@@ -797,6 +804,8 @@ const goGhostBrokers = [
     name: "BeenVerified",
     priority: "High traffic",
     removalUrl: "https://www.beenverified.com/app/optout/search",
+    requiredInfo: ["Full name", "State/city", "Matching record", "Email confirmation"],
+    automationNote: "Assisted: use the opt-out search, choose the matching record, and complete email verification.",
     searchUrl: ({ name }) => `https://www.beenverified.com/app/optout/search?fn=${encodeURIComponent(name || "")}`
   },
   {
@@ -804,6 +813,8 @@ const goGhostBrokers = [
     name: "TruePeopleSearch",
     priority: "High traffic",
     removalUrl: "https://www.truepeoplesearch.com/removal",
+    requiredInfo: ["Full name", "City/state", "Matching profile", "Email confirmation"],
+    automationNote: "Assisted: search, open the matching record, then use the removal flow and verify by email.",
     searchUrl: ({ name, location }) => `https://www.truepeoplesearch.com/results?name=${encodeURIComponent(name || "")}&citystatezip=${encodeURIComponent(location || "")}`
   },
   {
@@ -811,6 +822,8 @@ const goGhostBrokers = [
     name: "Thatsthem",
     priority: "Address and phone",
     removalUrl: "https://thatsthem.com/optout",
+    requiredInfo: ["Full name", "Street address or phone", "Email confirmation"],
+    automationNote: "Assisted: copy the address/phone details, open opt-out, then submit only the fields Thatsthem requests.",
     searchUrl: ({ name }) => `https://thatsthem.com/name/${encodeURIComponent(name || "")}`
   },
   {
@@ -818,6 +831,8 @@ const goGhostBrokers = [
     name: "Nuwber",
     priority: "Profile-link based",
     removalUrl: "https://nuwber.com/removal/link",
+    requiredInfo: ["Profile URL", "Email confirmation"],
+    automationNote: "Assisted: find the matching Nuwber profile, paste its URL into the removal form, then verify by email.",
     searchUrl: ({ name, location }) => `https://nuwber.com/search?name=${encodeURIComponent(name || "")}&location=${encodeURIComponent(location || "")}`
   },
   {
@@ -825,6 +840,8 @@ const goGhostBrokers = [
     name: "Radaris",
     priority: "Duplicate profiles",
     removalUrl: "https://radaris.com/page/how-to-remove",
+    requiredInfo: ["Profile URL", "Matching record", "Email confirmation"],
+    automationNote: "Assisted: Radaris may show duplicate records, so confirm the exact profile before submitting removal.",
     searchUrl: ({ name, location }) => `https://radaris.com/p/${encodeURIComponent(name || "")}/${encodeURIComponent(location || "")}`
   }
 ];
@@ -842,7 +859,7 @@ function writeJsonStorage(key, value) {
 }
 
 function getGhostProfile() {
-  return readJsonStorage(GO_GHOST_PROFILE_KEY, { name: "", location: "", identifier: "" });
+  return readJsonStorage(GO_GHOST_PROFILE_KEY, { name: "", location: "", address: "", identifier: "" });
 }
 
 function getGhostProgress() {
@@ -857,8 +874,22 @@ function setGhostProgress(siteId, field, checked) {
 }
 
 function ghostSearchFallback(profile, brokerName) {
-  const query = [profile.name, profile.location, brokerName].filter(Boolean).join(" ");
+  const query = [profile.name, profile.address, profile.location, brokerName].filter(Boolean).join(" ");
   return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+}
+
+function goGhostCopyPacket(broker, profile, searchUrl) {
+  return [
+    `${broker.name} opt-out packet`,
+    `Name: ${profile.name || ""}`,
+    `Street address: ${profile.address || ""}`,
+    `City/state: ${profile.location || ""}`,
+    `Phone or email: ${profile.identifier || ""}`,
+    `Search link: ${searchUrl}`,
+    `Opt-out link: ${broker.removalUrl}`,
+    `Needed: ${(broker.requiredInfo || []).join(", ")}`,
+    `Next step: ${broker.automationNote || "Open the matching profile and complete the broker opt-out form."}`,
+  ].join("\n");
 }
 
 function renderGoGhostProgress() {
@@ -880,11 +911,14 @@ function renderGoGhostBrokers() {
         <div>
           <span class="broker-priority">${escapeHtml(broker.priority)}</span>
           <h3>${escapeHtml(broker.name)}</h3>
+          <p>${escapeHtml(broker.automationNote || "")}</p>
         </div>
         <div class="broker-actions">
           <a class="secondary-button" href="${searchUrl}" target="_blank" rel="noopener noreferrer">Search</a>
           <a class="primary-button" href="${broker.removalUrl}" target="_blank" rel="noopener noreferrer">Opt out</a>
+          <button class="secondary-button" type="button" data-ghost-copy="${broker.id}">Copy details</button>
         </div>
+        <div class="broker-requirements">${(broker.requiredInfo || []).map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
         <div class="broker-checks">
           <label><input type="checkbox" data-ghost-site="${broker.id}" data-ghost-field="submitted" ${state.submitted ? "checked" : ""}> Submitted</label>
           <label><input type="checkbox" data-ghost-site="${broker.id}" data-ghost-field="removed" ${state.removed ? "checked" : ""}> Removed</label>
@@ -899,6 +933,7 @@ function hydrateGoGhostProfile() {
   const profile = getGhostProfile();
   if (ghostNameInput) ghostNameInput.value = profile.name || "";
   if (ghostLocationInput) ghostLocationInput.value = profile.location || "";
+  if (ghostAddressInput) ghostAddressInput.value = profile.address || "";
   if (ghostIdentifierInput) ghostIdentifierInput.value = profile.identifier || "";
 }
 
@@ -922,6 +957,7 @@ if (goGhostWorkspace) {
     writeJsonStorage(GO_GHOST_PROFILE_KEY, {
       name: ghostNameInput?.value?.trim() || "",
       location: ghostLocationInput?.value?.trim() || "",
+      address: ghostAddressInput?.value?.trim() || "",
       identifier: ghostIdentifierInput?.value?.trim() || ""
     });
     renderGoGhostBrokers();
@@ -940,5 +976,16 @@ if (goGhostWorkspace) {
     const checkbox = event.target.closest("[data-ghost-site][data-ghost-field]");
     if (!checkbox) return;
     setGhostProgress(checkbox.dataset.ghostSite, checkbox.dataset.ghostField, checkbox.checked);
+  });
+
+  goGhostBrokerList?.addEventListener("click", async (event) => {
+    const copyButton = event.target.closest("[data-ghost-copy]");
+    if (!copyButton) return;
+    const profile = getGhostProfile();
+    const broker = goGhostBrokers.find((item) => item.id === copyButton.dataset.ghostCopy);
+    if (!broker) return;
+    const searchUrl = profile.name ? broker.searchUrl(profile) : ghostSearchFallback(profile, broker.name);
+    const copied = await copyTextToClipboard(goGhostCopyPacket(broker, profile, searchUrl)).catch(() => false);
+    showCopyToast(copied ? `${broker.name} details copied` : "Copy failed");
   });
 }

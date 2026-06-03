@@ -485,6 +485,8 @@ body.qr-camera-open { overflow: hidden; }
 .broker-card p { margin: 0; font-size: 0.94rem; }
 .broker-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .broker-actions .primary-button, .broker-actions .secondary-button { padding: 11px 14px; }
+.broker-requirements { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+.broker-requirements span { display: inline-flex; align-items: center; min-height: 30px; padding: 0 10px; border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 999px; background: rgba(255, 255, 255, 0.045); color: var(--muted); font-size: 0.78rem; font-weight: 800; }
 .broker-checks { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line); }
 .broker-checks label { display: inline-flex; gap: 8px; align-items: center; min-height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: rgba(255, 255, 255, 0.04); font-weight: 800; }
 .broker-checks input { accent-color: var(--accent); }

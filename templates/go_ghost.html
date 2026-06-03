@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Go Ghost | SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=go-ghost-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=go-ghost-v2">
 </head>
 <body>
   <div class="page-shell go-ghost-shell">
@@ -80,6 +80,9 @@
           <label>City and state
             <input id="ghostLocationInput" type="text" autocomplete="address-level2" placeholder="Tampa, FL">
           </label>
+          <label>Street address
+            <input id="ghostAddressInput" type="text" autocomplete="street-address" placeholder="Optional, helps some opt-outs">
+          </label>
           <label>Phone or email
             <input id="ghostIdentifierInput" type="text" autocomplete="off" placeholder="Optional, use one identifier">
           </label>
@@ -122,6 +125,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=go-ghost-cleanup-v2"></script>
+  <script src="/static/app.js?v=go-ghost-assisted-v1"></script>
 </body>
 </html>
