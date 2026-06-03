@@ -86,8 +86,9 @@ body {
 .spline-showcase.spline-loaded .device-orbit { opacity: 0 !important; pointer-events: none; }
 .spline-showcase.spline-loaded .three-scene { opacity: 0 !important; pointer-events: none; }
 .spline-showcase.webgl-fallback .three-scene { opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; }
-.spline-showcase.webgl-fallback .device-orbit { opacity: 1; z-index: 1; }
-.spline-showcase.webgl-fallback::before { opacity: 0.28 !important; }
+.spline-showcase.webgl-fallback .device-orbit { inset: 18px 24px 116px; opacity: 1; z-index: 1; }
+.spline-showcase.webgl-fallback::before { opacity: 0 !important; }
+.spline-showcase.webgl-fallback .phone-model { width: min(54%, 260px); max-height: 100%; }
 .spline-embed, .spline-embed iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 .spline-embed:not(:empty) ~ .device-orbit { opacity: 0; pointer-events: none; }
 .device-orbit { position: absolute; inset: 24px; display: grid; place-items: center; perspective: 1100px; opacity: 0; pointer-events: none; }
@@ -96,6 +97,9 @@ body {
 .phone-sensor { width: 72px; height: 7px; margin: 0 auto 18px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); }
 .screen-grid { display: grid; place-items: center; height: 68%; padding: 22px; border: 1px solid rgba(114, 255, 212, 0.1); border-radius: 24px; background: #000307; }
 .screen-grid img { width: 100%; max-width: 210px; border-radius: 20px; display: block; }
+.fallback-qr-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 7px; width: min(100%, 190px); aspect-ratio: 1; }
+.fallback-qr-grid span, .fallback-qr-grid i { display: block; min-width: 0; min-height: 0; border-radius: 3px; background: rgba(103, 242, 200, 0.95); box-shadow: 0 0 14px rgba(103, 242, 200, 0.56); animation: fallbackQrPulse 3.4s infinite ease-in-out; }
+.fallback-qr-grid i { background: rgba(219, 255, 247, 0.96); box-shadow: 0 0 16px rgba(219, 255, 247, 0.62); animation-delay: -1.2s; }
 .screen-verdict { margin-top: 18px; padding: 12px; border-radius: 8px; background: rgba(80, 227, 164, 0.13); border: 1px solid rgba(80, 227, 164, 0.32); color: var(--safe); font-family: var(--display-font); font-weight: 800; text-align: center; letter-spacing: 0.08em; }
 .scan-beam { position: absolute; width: 76%; height: 2px; top: 46%; background: linear-gradient(90deg, transparent, var(--accent), #ffffff, var(--accent), transparent); box-shadow: 0 0 28px rgba(103, 242, 200, 0.75); animation: showcaseSweep 3.8s ease-in-out infinite; }
 .model-caption { position: absolute; left: 18px; right: 18px; bottom: 16px; z-index: 2; padding: 16px 18px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 16px; background: rgba(5, 8, 13, 0.72); backdrop-filter: blur(14px); opacity: 1; pointer-events: none; }
@@ -197,6 +201,7 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
 @keyframes qrPulse { 0%, 100% { transform: scale(1); } 45% { transform: scale(0.94); } }
 @keyframes modelFloat { 0%, 100% { transform: rotateY(-18deg) rotateX(10deg) translateY(0); } 50% { transform: rotateY(-10deg) rotateX(13deg) translateY(-16px); } }
 @keyframes showcaseSweep { 0%, 100% { opacity: 0.1; transform: translateY(-150px) rotate(-8deg); } 45%, 58% { opacity: 1; } 50% { transform: translateY(150px) rotate(-8deg); } }
+@keyframes fallbackQrPulse { 0%, 100% { opacity: 0.68; transform: scale(0.92); } 48% { opacity: 1; transform: scale(1); } }
 @keyframes tokenCopiedPulse { 0% { border-color: rgba(103, 242, 200, 0.24); background: rgba(0, 0, 0, 0.16); box-shadow: none; } 22% { border-color: rgba(103, 242, 200, 0.95); background: rgba(103, 242, 200, 0.16); box-shadow: 0 0 0 3px rgba(103, 242, 200, 0.16), 0 0 28px rgba(103, 242, 200, 0.26); } 100% { border-color: var(--line); background: rgba(0, 0, 0, 0.16); box-shadow: none; } }
 
 @media (prefers-reduced-motion: reduce) {

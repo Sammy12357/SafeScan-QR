@@ -43,7 +43,7 @@ if (canvas && showcase && !showcase.dataset.splineSrc?.trim()) {
     activateFallback("mac-brave");
   } else {
     try {
-      THREE = await import("/static/vendor/three.module.js?v=local-three-v6");
+      THREE = await import("/static/vendor/three.module.js?v=local-three-v7");
     } catch (error) {
       console.error("SafeScan 3D model failed to load Three.js", error);
       activateFallback("three-import");
