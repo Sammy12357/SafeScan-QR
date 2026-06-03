@@ -18,6 +18,18 @@ function activateFallback(reason) {
   }
 }
 
+async function shouldPreferFallback() {
+  const isMac = /Macintosh|Mac OS X/.test(navigator.userAgent || "");
+  if (!isMac || !navigator.brave || typeof navigator.brave.isBrave !== "function") {
+    return false;
+  }
+  try {
+    return await navigator.brave.isBrave();
+  } catch (error) {
+    return false;
+  }
+}
+
 if (canvas && showcase && !showcase.dataset.splineSrc?.trim()) {
   canvas.style.setProperty("display", "block", "important");
   canvas.style.setProperty("opacity", "1", "important");
@@ -27,11 +39,15 @@ if (canvas && showcase && !showcase.dataset.splineSrc?.trim()) {
     event.preventDefault();
     activateFallback("context-lost");
   });
-  try {
-    THREE = await import("/static/vendor/three.module.js?v=local-three-v5");
-  } catch (error) {
-    console.error("SafeScan 3D model failed to load Three.js", error);
-    activateFallback("three-import");
+  if (await shouldPreferFallback()) {
+    activateFallback("mac-brave");
+  } else {
+    try {
+      THREE = await import("/static/vendor/three.module.js?v=local-three-v6");
+    } catch (error) {
+      console.error("SafeScan 3D model failed to load Three.js", error);
+      activateFallback("three-import");
+    }
   }
 }
 
