@@ -172,8 +172,9 @@
       <section class="scanner-panel" id="scanner">
         <div class="panel-header"><div><p class="eyebrow">SafeScan Tool</p><h2>Analyze Payload</h2></div></div>
         <div class="scanner-grid">
-          <div class="scanner-card">
-            <form id="qrForm" action="/search_qr_api" method="post" enctype="multipart/form-data">
+          <div class="scanner-card scanner-card-stack">
+            <form id="qrForm" action="/search_qr_api" method="post" enctype="multipart/form-data" class="scanner-subcard">
+              <p class="scanner-subcard-eyebrow">Upload or scan</p>
               <input type="hidden" name="template_variant" value="{{ 'test_site' if test_site_path else ('main_site' if test_site else '') }}">
               <input type="hidden" name="user_email" value="{{ email }}">
               <input type="hidden" id="hiddenWalletInput" name="wallet_address">
@@ -181,10 +182,24 @@
               <label class="upload-chip" for="qrImageInput">Upload QR file/photo</label>
               <input id="qrImageInput" name="file" type="file" accept="image/*,.svg,application/pdf,.pdf" hidden>
               <button id="scanCameraButton" type="button" class="upload-chip">Scan with camera</button>
-              <label for="urlInput" style="margin-top:20px; display:block;">Or paste a URL manually</label>
-              <input id="urlInput" name="manual_url" type="text" placeholder="https://example.com">
-              <button type="submit" class="primary-button" style="margin-top:15px; width:100%;">Analyze Payload</button>
               <div id="analysisLoadingState" class="scan-status hidden" aria-live="polite">Tracing redirects...</div>
+            </form>
+
+            <form id="urlForm" action="/search_qr_api" method="post" class="scanner-subcard scanner-subcard-url">
+              <p class="scanner-subcard-eyebrow">Or paste a URL</p>
+              <input type="hidden" name="template_variant" value="{{ 'test_site' if test_site_path else ('main_site' if test_site else '') }}">
+              <input type="hidden" name="user_email" value="{{ email }}">
+              <label for="urlInput" class="scanner-subcard-label">Destination URL</label>
+              <input id="urlInput" name="manual_url" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://example.com">
+              <div class="scanner-subcard-actions">
+                <button type="submit" class="primary-button">Analyze Payload</button>
+                <button id="generateQrButton" type="button" class="secondary-button">Generate QR</button>
+              </div>
+              <div id="generatedQrWrap" class="generated-qr-wrap hidden" aria-live="polite">
+                <img id="generatedQrImage" class="generated-qr-image" alt="Generated QR code">
+                <a id="generatedQrDownload" class="secondary-button" download="safescan-qr.png" href="#">Download PNG</a>
+              </div>
+              <p id="generateQrError" class="generated-qr-error hidden" role="alert"></p>
             </form>
             <div class="scanner-video-frame">
               <iframe
@@ -262,27 +277,26 @@
               <div class="verdict-badge {{ 'verdict-safe' if status == 'SAFE' else ('verdict-caution' if status == 'CAUTION' else 'verdict-dangerous') }}">{{ status }}</div>
             </div>
 
-            {% if ml_risk %}
+            {# Only show the ML panel when a model actually produced a signal
+               we trust. When ml_risk.enabled is False (model disabled, file
+               missing, allowlist short-circuit, calibrated uncertain band,
+               etc.) we hide the panel entirely so users do not see a
+               confusing "model unavailable" notice for a deliberate skip.
+               The rule pipeline + reputation checks still drive the verdict. #}
+            {% if ml_risk and ml_risk.enabled %}
             <div class="ml-panel">
               <div class="ml-panel-top">
                 <div>
                   <p class="engine-label">ML model analysis</p>
-                  {% if ml_risk.enabled %}
-                  <h3>{{ ml_risk.label }} Â· {{ ml_risk.score | round(1) }}/100 risk</h3>
+                  <h3>{{ ml_risk.label }} · {{ ml_risk.score | round(1) }}/100 risk</h3>
                   <p>The local QR model estimated {{ (ml_risk.benignProbability * 100) | round(1) }}% safe and {{ (ml_risk.maliciousProbability * 100) | round(1) }}% malicious probability.</p>
-                  {% else %}
-                  <h3>Model unavailable</h3>
-                  <p>{{ ml_risk.reason or "The local QR model could not run for this scan." }}</p>
-                  {% endif %}
                 </div>
                 {% if ml_risk.model %}<span class="ml-model-pill">{{ ml_risk.model }}</span>{% endif %}
               </div>
-              {% if ml_risk.enabled %}
               <div class="ml-probability-bars" aria-label="ML model probability split">
                 <span class="ml-safe-bar" style="width: {{ (ml_risk.benignProbability * 100) | round(2) }}%;"></span>
                 <span class="ml-malicious-bar" style="width: {{ (ml_risk.maliciousProbability * 100) | round(2) }}%;"></span>
               </div>
-              {% endif %}
             </div>
             {% endif %}
 

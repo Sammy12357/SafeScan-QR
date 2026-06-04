@@ -1,4 +1,13 @@
 const GOOGLE_CLIENT_ID = "230684501873-4aauu1triudaaopdcus2k7achvesr3el.apps.googleusercontent.com";
+
+// Disable browser scroll restoration so a POST-back to / (e.g. after
+// submitting the scan form) does NOT inherit the previous page's
+// scroll offset. Without this, the risk modal can open scrolled past
+// its verdict header on some browsers because the underlying document
+// scroll position was restored from history.
+if ("scrollRestoration" in window.history) {
+  window.history.scrollRestoration = "manual";
+}
 const AIRDROP_STORAGE_KEY = "phishproofAirdropProfile";
 const PHANTOM_BROWSE_BASE = "https://phantom.app/ul/browse/";
 const PHANTOM_DOWNLOAD_URL = "https://phantom.app/download";
@@ -665,22 +674,34 @@ if (riskModal) {
     }
   });
 
-  // Park the modal at the top of its content on every open.
-  // - blockReportButton.focus() without preventScroll: true used to scroll
-  //   the focus target (which sits at the BOTTOM of the modal card) into
-  //   view, leaving users staring at the report buttons instead of the
-  //   verdict header. preventScroll: true keeps keyboard focus working
-  //   without dragging the viewport down.
-  // - The card has its own internal scroll on overflow, and window /
-  //   document have the natural page scroll - reset both so the verdict
-  //   is always the first thing visible.
+  // Park the modal at the top of its scroll containers on every open.
+  // Three scroll surfaces matter:
+  //   - window/document (the page behind the modal)
+  //   - .risk-modal       (the overlay; itself overflow: auto)
+  //   - .risk-modal-card  (the inner card; max-height + overflow: auto)
+  // We reset all three immediately, again on the next animation frame
+  // (after layout settles), and once more after the focus call - the
+  // browser sometimes restores a scroll position between those points
+  // when navigating from a form POST, so a single reset is not enough.
   const riskModalCard = riskModal.querySelector(".risk-modal-card");
-  if (riskModalCard) riskModalCard.scrollTop = 0;
-  riskModal.scrollTop = 0;
-  if ("scrollTo" in window) window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  const resetScroll = () => {
+    if (riskModalCard) riskModalCard.scrollTop = 0;
+    riskModal.scrollTop = 0;
+    if (typeof window.scrollTo === "function") {
+      try {
+        window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+      } catch (_err) {
+        window.scrollTo(0, 0);
+      }
+    }
+    if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
+  };
+  resetScroll();
+  window.requestAnimationFrame(resetScroll);
 
   window.setTimeout(() => {
     blockReportButton?.focus({ preventScroll: true });
+    resetScroll();
   }, 0);
 }
 
@@ -1216,3 +1237,77 @@ if (goGhostWorkspace) {
     showCopyToast(copied ? `${broker.name} details copied` : "Copy failed");
   });
 }
+
+
+// Generate QR: takes whatever URL is currently typed into the paste-URL
+// input and asks the backend to render a SafeScan-verified QR PNG for it.
+// The backend runs the URL through the full risk pipeline and refuses to
+// render anything flagged as suspicious or dangerous, so the button is a
+// "publish a safe QR" tool, not a generic QR maker.
+(() => {
+  const generateBtn = document.getElementById("generateQrButton");
+  const urlInputField = document.getElementById("urlInput");
+  const wrap = document.getElementById("generatedQrWrap");
+  const img = document.getElementById("generatedQrImage");
+  const dl = document.getElementById("generatedQrDownload");
+  const errEl = document.getElementById("generateQrError");
+  if (!generateBtn || !urlInputField || !wrap || !img || !errEl) return;
+
+  const showError = (message) => {
+    errEl.textContent = message;
+    errEl.classList.remove("hidden");
+    wrap.classList.add("hidden");
+  };
+  const clearError = () => {
+    errEl.textContent = "";
+    errEl.classList.add("hidden");
+  };
+
+  generateBtn.addEventListener("click", async () => {
+    clearError();
+    const raw = urlInputField.value.trim();
+    if (!raw) {
+      showError("Paste a URL above first.");
+      return;
+    }
+    let normalized = raw;
+    if (!/^https?:\/\//i.test(normalized)) normalized = `https://${normalized}`;
+    try {
+      new URL(normalized);
+    } catch (_err) {
+      showError("That does not look like a valid URL.");
+      return;
+    }
+
+    generateBtn.disabled = true;
+    generateBtn.textContent = "Generating...";
+    try {
+      const res = await fetch("/api/qr/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: normalized })
+      });
+      if (!res.ok) {
+        let detail = "Could not generate QR.";
+        try {
+          const body = await res.json();
+          detail = body.detail || body.error || detail;
+        } catch (_err) {
+          /* non-JSON 4xx body */
+        }
+        showError(detail);
+        return;
+      }
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      img.src = objectUrl;
+      dl.href = objectUrl;
+      wrap.classList.remove("hidden");
+    } catch (err) {
+      showError("Network error while generating QR.");
+    } finally {
+      generateBtn.disabled = false;
+      generateBtn.textContent = "Generate QR";
+    }
+  });
+})();

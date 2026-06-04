@@ -4115,8 +4115,12 @@ async def api_qr_generate(request: Request, payload: dict = Body(...)):
     Returns a PNG image with a small SafeScan badge overlaid in the centre
     (high error correction tolerates the badge without breaking scanning).
     """
-    user = require_user(request)
-    rate_limit = enforce_rate_limit(request, "qr_generate", 20, 60 * 60, user_key=user.get("google_id"))
+    user = get_session_user(request)
+    user_key = user.get("google_id") if user else None
+    # Guests on the homepage get 5/hour per IP; signed-in users still get 20/hour
+    # under their user key. The analyzer still refuses to render risky URLs.
+    limit = 20 if user else 5
+    rate_limit = enforce_rate_limit(request, "qr_generate", limit, 60 * 60, user_key=user_key)
     if rate_limit:
         return rate_limit
 
