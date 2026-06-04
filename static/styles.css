@@ -648,3 +648,45 @@ body.qr-camera-open { overflow: hidden; }
   color: var(--danger);
   font-size: 0.9rem;
 }
+
+
+/* Standalone "Generate Safe QR" panel sits between Analyze Payload and
+   Plans. Same panel chrome as the other sections; the form row is a
+   horizontal flex with the URL field stretching to fill. */
+.generate-qr-panel {
+  padding: 28px 26px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.generate-qr-copy {
+  margin: 14px 0 18px;
+  color: var(--muted);
+  max-width: 720px;
+  line-height: 1.55;
+}
+.generate-qr-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: stretch;
+  margin-bottom: 4px;
+}
+.generate-qr-form-row input[type="url"] {
+  flex: 1 1 320px;
+  min-width: 0;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font: inherit;
+}
+.generate-qr-form-row .primary-button {
+  flex: 0 0 auto;
+  padding: 12px 22px;
+}
+@media (max-width: 640px) {
+  .generate-qr-form-row .primary-button { flex: 1 1 100%; }
+}

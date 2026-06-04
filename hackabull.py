@@ -162,7 +162,12 @@ ML_MODEL_OBJECT_KEY = os.getenv("ML2_MODEL_OBJECT_KEY", "models/final_model.kera
 # original cap, so the model gets equal sway here. Override with
 # SAFESCAN_ML_WEIGHT (0.0 disables ML influence entirely; clamped to 0.7
 # so a runaway model still can't single-handedly dictate the verdict).
-ML_AGGREGATE_WEIGHT = max(0.0, min(0.7, float(os.getenv("SAFESCAN_ML_WEIGHT", "0.50"))))
+# Default bumped 0.50 -> 0.70 and cap raised 0.70 -> 0.85 (2026-06-04): when
+# the ML model fires a high-confidence signal it now drives 70% of the blend
+# by default, so a strong malicious prediction can pull a borderline rule
+# score into the danger band. The non_ml_high "high-rule floor" at line 1881
+# still prevents ML from dragging a confirmed-bad URL into safe territory.
+ML_AGGREGATE_WEIGHT = max(0.0, min(0.85, float(os.getenv("SAFESCAN_ML_WEIGHT", "0.70"))))
 # Hide the per-ML-model row from the user-visible signals list. The ML data
 # still lives in the response's `mlRisk` field for backend logging / audit,
 # but we don't expose model field names ("url_classifier.joblib") in the

@@ -674,19 +674,23 @@ if (riskModal) {
     }
   });
 
-  // Park the modal at the top of its scroll containers on every open.
-  // Three scroll surfaces matter:
-  //   - window/document (the page behind the modal)
-  //   - .risk-modal       (the overlay; itself overflow: auto)
-  //   - .risk-modal-card  (the inner card; max-height + overflow: auto)
-  // We reset all three immediately, again on the next animation frame
-  // (after layout settles), and once more after the focus call - the
-  // browser sometimes restores a scroll position between those points
-  // when navigating from a form POST, so a single reset is not enough.
+  // Park the modal at the TOP of all scroll surfaces, and KEEP it there
+  // for the first 500ms after open. Earlier attempts failed because:
+  //   1. focus()ing blockReportButton (at bottom of card) scrolled the
+  //      target into view. preventScroll is not honoured everywhere
+  //      (older WebKit, in-app browsers). Reliable fix: focus a target
+  //      that is already AT the top - the modal close button.
+  //   2. The score-gauge animation triggers layout reflows for ~1s
+  //      after open. Chrome scroll-restoration heuristics can latch on
+  //      to the post-POST document scroll during that window. A single
+  //      reset is not enough; we poll every 50ms for the first 500ms.
   const riskModalCard = riskModal.querySelector(".risk-modal-card");
   const resetScroll = () => {
     if (riskModalCard) riskModalCard.scrollTop = 0;
     riskModal.scrollTop = 0;
+    if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
+    if (document.documentElement) document.documentElement.scrollTop = 0;
+    if (document.body) document.body.scrollTop = 0;
     if (typeof window.scrollTo === "function") {
       try {
         window.scrollTo({ top: 0, left: 0, behavior: "instant" });
@@ -694,13 +698,32 @@ if (riskModal) {
         window.scrollTo(0, 0);
       }
     }
-    if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
   };
   resetScroll();
-  window.requestAnimationFrame(resetScroll);
+  window.requestAnimationFrame(() => {
+    resetScroll();
+    window.requestAnimationFrame(resetScroll);
+  });
 
+  let scrollGuardTicks = 0;
+  const scrollGuard = window.setInterval(() => {
+    resetScroll();
+    scrollGuardTicks += 1;
+    if (scrollGuardTicks >= 10) window.clearInterval(scrollGuard);
+  }, 50);
+
+  // Focus the close (X) button - it is sticky at top of the card so
+  // browser focus-scroll behaviour is harmless. Falls back to focusing
+  // the modal itself if the close button is not in the DOM yet.
   window.setTimeout(() => {
-    blockReportButton?.focus({ preventScroll: true });
+    const topFocusTarget = riskModalCloseButton || riskModal;
+    if (topFocusTarget && typeof topFocusTarget.focus === "function") {
+      try {
+        topFocusTarget.focus({ preventScroll: true });
+      } catch (_err) {
+        topFocusTarget.focus();
+      }
+    }
     resetScroll();
   }, 0);
 }
@@ -1246,7 +1269,7 @@ if (goGhostWorkspace) {
 // "publish a safe QR" tool, not a generic QR maker.
 (() => {
   const generateBtn = document.getElementById("generateQrButton");
-  const urlInputField = document.getElementById("urlInput");
+  const urlInputField = document.getElementById("generateQrUrlInput");
   const wrap = document.getElementById("generatedQrWrap");
   const img = document.getElementById("generatedQrImage");
   const dl = document.getElementById("generatedQrDownload");
