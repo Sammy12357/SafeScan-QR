@@ -4188,9 +4188,14 @@ async def api_qr_generate(request: Request, payload: dict = Body(...)):
     audit_log(
         "qr.generated",
         request=request,
-        actor_user_id=user.get("google_id"),
+        actor_user_id=user.get("google_id") if user else None,
         target_type="url",
-        metadata={"url": target_url, "risk": overall_risk, "score": int(analysis.get("confidenceScore") or 0)},
+        metadata={
+            "url": target_url,
+            "risk": overall_risk,
+            "score": int(analysis.get("confidenceScore") or 0),
+            "guest": not bool(user),
+        },
     )
 
     return Response(
