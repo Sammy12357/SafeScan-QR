@@ -6306,6 +6306,38 @@ async def history_page(request: Request):
             scans = [dict(r) for r in rows]
     return templates.TemplateResponse("history.html", {"request": request, "email": email, "scans": scans})
 
+@qr_app.get("/api/leaderboard")
+async def api_leaderboard(request: Request, limit: int = Query(50)):
+    """Live global leaderboard as JSON for the mobile app.
+
+    Aggregates every recorded scan across the scans / scan_history /
+    scan_events tables (same source as the website leaderboard page) and
+    returns the top N users by scan count. Session is optional - when
+    present we flag the current user so the app can highlight their row.
+    """
+    user = get_session_user(request)
+    current_id = user.get("google_id") if user else None
+    current_email = (user.get("email") or "").strip().lower() if user else None
+    leaders = get_global_leaderboard(limit)
+    entries = []
+    for row in leaders:
+        row_email = (row.get("email") or "").strip().lower()
+        is_current = bool(
+            (current_id and row.get("user_id") == current_id)
+            or (current_email and row_email and row_email == current_email)
+        )
+        entries.append({
+            "rank": row.get("rank"),
+            "name": row.get("public_name") or "SafeScan user",
+            "scans": int(row.get("scan_count") or 0),
+            "isCurrentUser": is_current,
+        })
+    return {
+        "entries": entries,
+        "total": len(entries),
+        "updatedAt": now_iso(),
+    }
+
 @qr_app.get("/leaderboard", response_class=HTMLResponse)
 async def leaderboard_page(request: Request):
     user = get_session_user(request)
