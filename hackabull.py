@@ -6330,6 +6330,8 @@ async def api_leaderboard(request: Request, limit: int = Query(50)):
             "rank": row.get("rank"),
             "name": row.get("public_name") or "SafeScan user",
             "scans": int(row.get("scan_count") or 0),
+            "totalSaved": int(row.get("total_saved_scans") or 0),
+            "lastScannedAt": row.get("last_scanned_at"),
             "isCurrentUser": is_current,
         })
     return {
