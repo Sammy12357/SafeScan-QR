@@ -5522,7 +5522,7 @@ async def alpha_payment_page(request: Request):
     )
     body = f"""
     <h2>Alpha Premium</h2>
-    <p>Pay $1/mo for Alpha access to SafeScan QR premium API docs, risk scoring endpoints, and merchant QR safety workflows.</p>
+    <p>Pay $1/mo for Alpha access to Go Ghost privacy cleanup, SafeScan QR premium API docs, risk scoring endpoints, and merchant QR safety workflows.</p>
     <div class="payment-panel">
       <div class="payment-option">
         <p class="eyebrow">Card</p>
