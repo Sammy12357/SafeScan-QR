@@ -4995,8 +4995,9 @@ async def product_pricing(request: Request):
 @qr_app.get("/pay/alpha", response_class=HTMLResponse)
 async def alpha_payment_page(request: Request):
     stripe_url = alpha_stripe_checkout_url(request)
+    success_url = f"{APP_URL}/pay/alpha/success"
     stripe_button = (
-        f"<a class='primary-button payment-button' href='{stripe_url}' rel='noopener noreferrer'>Pay by card with Stripe</a>"
+        f"<a class='primary-button payment-button' href='{stripe_url}' target='_blank' rel='noopener noreferrer'>Pay by card with Stripe</a>"
         if stripe_url else
         "<span class='secondary-button payment-button payment-disabled'>Stripe checkout not configured</span>"
     )
@@ -5020,6 +5021,7 @@ async def alpha_payment_page(request: Request):
         <h3>Stripe checkout</h3>
         <p>Use this for credit card and subscription billing.</p>
         {stripe_button}
+        <p class="payment-note">Stripe confirmation page: <a href="{success_url}">{success_url}</a></p>
       </div>
       <div class="payment-option payment-option-wallet">
         <h3>Wallet payment</h3>

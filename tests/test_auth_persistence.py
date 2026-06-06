@@ -73,6 +73,7 @@ def test_alpha_payment_uses_stripe_link_and_records_purchase_date(auth_app):
 
     assert payment.status_code == 200
     assert "https://buy.stripe.com/00w3cxfdAb7OcKB4sC87K01" in payment.text
+    assert "https://testserver/pay/alpha/success" in payment.text
     assert "prefilled_email=alpha%40example.com" in payment.text
     assert success.status_code == 200
     assert "Subscription start saved for alpha@example.com" in success.text
