@@ -14,6 +14,8 @@ import secrets
 import socket
 import time
 import csv
+from decimal import Decimal, InvalidOperation
+from html import escape as escape_html
 from urllib.parse import quote, urlencode, urljoin, urlparse, parse_qsl
 from datetime import datetime, timedelta
 from xml.etree import ElementTree
@@ -149,6 +151,7 @@ ALPHA_STRIPE_PAYMENT_LINK = os.getenv("ALPHA_STRIPE_PAYMENT_LINK", "https://buy.
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()
 ALPHA_SOLANA_RECIPIENT = os.getenv("ALPHA_SOLANA_RECIPIENT", "").strip()
 ALPHA_SOLANA_AMOUNT_SOL = os.getenv("ALPHA_SOLANA_AMOUNT_SOL", "").strip()
+ALPHA_SOLANA_ACCESS_DAYS = int(os.getenv("ALPHA_SOLANA_ACCESS_DAYS", "30"))
 ALPHA_SOLANA_LABEL = os.getenv("ALPHA_SOLANA_LABEL", "SafeScan QR Alpha").strip()
 ALPHA_SOLANA_MESSAGE = os.getenv("ALPHA_SOLANA_MESSAGE", "Alpha access to SafeScan QR premium API docs and endpoints.").strip()
 MOCK_MODE = os.getenv("MOCK_MODE", "false").lower() in ("1", "true", "yes", "on")
@@ -364,6 +367,14 @@ def init_db():
                          client_reference_id TEXT, metadata TEXT,
                          created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
                          UNIQUE(user_id, tier, provider))''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS alpha_solana_payment_references
+                        (id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+                         email TEXT NOT NULL, reference TEXT NOT NULL UNIQUE,
+                         recipient TEXT NOT NULL, amount_sol TEXT NOT NULL,
+                         status TEXT NOT NULL DEFAULT 'pending',
+                         signature TEXT, created_at TEXT NOT NULL,
+                         updated_at TEXT NOT NULL, expires_at TEXT,
+                         UNIQUE(user_id, recipient, amount_sol, status))''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS go_ghost_removal_jobs
                         (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, email TEXT NOT NULL,
                          broker TEXT NOT NULL, status TEXT NOT NULL, detail TEXT,
@@ -388,6 +399,8 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_wallet_nonces_wallet ON wallet_nonces(wallet_address)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_alpha_subscriptions_email ON alpha_subscriptions(email)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_alpha_subscriptions_purchased ON alpha_subscriptions(purchased_at)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_alpha_solana_reference ON alpha_solana_payment_references(reference)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_alpha_solana_user ON alpha_solana_payment_references(user_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_go_ghost_jobs_user ON go_ghost_removal_jobs(user_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_go_ghost_jobs_broker ON go_ghost_removal_jobs(broker)")
     cursor.execute("PRAGMA table_info(users)")
@@ -983,6 +996,15 @@ def decode_base58(value):
     leading_zeroes = len(value) - len(value.lstrip("1"))
     return b"\x00" * leading_zeroes + encoded
 
+def encode_base58(data):
+    number = int.from_bytes(data, "big") if data else 0
+    output = ""
+    while number:
+        number, remainder = divmod(number, 58)
+        output = BASE58_ALPHABET[remainder] + output
+    leading_zeroes = len(data) - len(data.lstrip(b"\x00"))
+    return "1" * leading_zeroes + (output or "")
+
 def is_valid_solana_address(address):
     clean = (address or "").strip()
     if not re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{32,44}", clean):
@@ -1012,6 +1034,17 @@ def cleanup_wallet_nonces():
         conn.execute(
             "DELETE FROM wallet_nonces WHERE expires_at < ? OR (used = 1 AND created_at < ?)",
             (now_iso(), cutoff)
+        )
+
+def expire_alpha_subscriptions():
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE alpha_subscriptions
+               SET status = 'expired', updated_at = ?
+               WHERE status = 'active'
+                 AND expires_at IS NOT NULL
+                 AND expires_at <= ?""",
+            (now_iso(), now_iso()),
         )
 
 def get_verified_wallet(user_id):
@@ -2599,13 +2632,66 @@ def normalize_url(target_url):
         return f"https://{trimmed}"
     return trimmed
 
-def alpha_solana_pay_url():
+def alpha_solana_amount_lamports():
+    if not ALPHA_SOLANA_AMOUNT_SOL:
+        return 0
+    try:
+        amount = Decimal(ALPHA_SOLANA_AMOUNT_SOL)
+    except InvalidOperation as exc:
+        raise SafeScanError("ALPHA_SOLANA_AMOUNT_SOL is invalid.", 500) from exc
+    if amount <= 0:
+        return 0
+    return int(amount * Decimal("1000000000"))
+
+def alpha_subscription_expires_at():
+    return (datetime.utcnow() + timedelta(days=ALPHA_SOLANA_ACCESS_DAYS)).isoformat() + "Z"
+
+def get_or_create_alpha_solana_reference(user):
+    if not user:
+        return ""
+    if not ALPHA_SOLANA_RECIPIENT or not ALPHA_SOLANA_AMOUNT_SOL:
+        return ""
+    if not is_valid_solana_address(ALPHA_SOLANA_RECIPIENT):
+        raise SafeScanError("ALPHA_SOLANA_RECIPIENT is not a valid Solana address.", 500)
+    now = now_iso()
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT reference FROM alpha_solana_payment_references
+               WHERE user_id = ? AND recipient = ? AND amount_sol = ? AND status = 'pending'
+               ORDER BY created_at DESC LIMIT 1""",
+            (user["google_id"], ALPHA_SOLANA_RECIPIENT, ALPHA_SOLANA_AMOUNT_SOL),
+        ).fetchone()
+        if row:
+            return row["reference"]
+        reference = encode_base58(os.urandom(32))
+        conn.execute(
+            """INSERT INTO alpha_solana_payment_references
+               (id, user_id, email, reference, recipient, amount_sol, status, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
+            (
+                make_id("solpay"),
+                user["google_id"],
+                user["email"],
+                reference,
+                ALPHA_SOLANA_RECIPIENT,
+                ALPHA_SOLANA_AMOUNT_SOL,
+                now,
+                now,
+            ),
+        )
+    return reference
+
+def alpha_solana_pay_url(request: Request | None = None):
     if not ALPHA_SOLANA_RECIPIENT:
         return ""
 
     params = []
     if ALPHA_SOLANA_AMOUNT_SOL:
         params.append(("amount", ALPHA_SOLANA_AMOUNT_SOL))
+    if request:
+        reference = get_or_create_alpha_solana_reference(get_session_user(request))
+        if reference:
+            params.append(("reference", reference))
     if ALPHA_SOLANA_LABEL:
         params.append(("label", ALPHA_SOLANA_LABEL))
     if ALPHA_SOLANA_MESSAGE:
@@ -2614,6 +2700,106 @@ def alpha_solana_pay_url():
 
     query = "&".join(f"{quote(key, safe='')}={quote(value, safe='')}" for key, value in params)
     return f"solana:{ALPHA_SOLANA_RECIPIENT}?{query}" if query else f"solana:{ALPHA_SOLANA_RECIPIENT}"
+
+def solana_rpc(method, params):
+    response = requests.post(
+        SOLANA_RPC_URL,
+        json={"jsonrpc": "2.0", "id": f"safescan-{method}", "method": method, "params": params},
+        timeout=10,
+    )
+    response.raise_for_status()
+    body = response.json()
+    if body.get("error"):
+        raise SafeScanError(f"Solana RPC error: {body['error'].get('message', 'unknown error')}", 502)
+    return body.get("result")
+
+def transaction_account_keys(transaction):
+    message = ((transaction or {}).get("transaction") or {}).get("message") or {}
+    keys = []
+    for item in message.get("accountKeys") or []:
+        if isinstance(item, str):
+            keys.append(item)
+        elif isinstance(item, dict):
+            keys.append(item.get("pubkey", ""))
+    return keys
+
+def transaction_recipient_delta_lamports(transaction, recipient):
+    keys = transaction_account_keys(transaction)
+    try:
+        recipient_index = keys.index(recipient)
+    except ValueError:
+        return 0
+    meta = (transaction or {}).get("meta") or {}
+    pre = meta.get("preBalances") or []
+    post = meta.get("postBalances") or []
+    if recipient_index >= len(pre) or recipient_index >= len(post):
+        return 0
+    return int(post[recipient_index]) - int(pre[recipient_index])
+
+def verify_alpha_solana_payment(reference):
+    required_lamports = alpha_solana_amount_lamports()
+    if not ALPHA_SOLANA_RECIPIENT or not required_lamports:
+        raise SafeScanError("Solana payment is not configured.", 400)
+    signatures = solana_rpc("getSignaturesForAddress", [reference, {"limit": 12, "commitment": "confirmed"}]) or []
+    for item in signatures:
+        signature = item.get("signature")
+        if not signature or item.get("err"):
+            continue
+        tx = solana_rpc(
+            "getTransaction",
+            [signature, {"encoding": "jsonParsed", "commitment": "confirmed", "maxSupportedTransactionVersion": 0}],
+        )
+        keys = transaction_account_keys(tx)
+        if reference not in keys or ALPHA_SOLANA_RECIPIENT not in keys:
+            continue
+        if transaction_recipient_delta_lamports(tx, ALPHA_SOLANA_RECIPIENT) >= required_lamports:
+            return signature
+    return ""
+
+def record_alpha_solana_subscription(user, reference, signature):
+    purchased_at = now_iso()
+    expires_at = alpha_subscription_expires_at()
+    metadata = {
+        "source": "solana_payment_verification",
+        "reference": reference,
+        "signature": signature,
+        "recipient": ALPHA_SOLANA_RECIPIENT,
+        "amountSol": ALPHA_SOLANA_AMOUNT_SOL,
+    }
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE alpha_solana_payment_references
+               SET status = 'verified', signature = ?, updated_at = ?, expires_at = ?
+               WHERE user_id = ? AND reference = ?""",
+            (signature, purchased_at, expires_at, user["google_id"], reference),
+        )
+        conn.execute(
+            """
+            INSERT INTO alpha_subscriptions
+                (id, user_id, email, tier, provider, status, purchased_at,
+                 client_reference_id, metadata, expires_at, created_at, updated_at)
+            VALUES (?, ?, ?, 'alpha_premium', 'solana', 'active', ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, tier, provider) DO UPDATE SET
+                email = excluded.email,
+                status = 'active',
+                client_reference_id = excluded.client_reference_id,
+                metadata = excluded.metadata,
+                expires_at = excluded.expires_at,
+                updated_at = excluded.updated_at
+            """,
+            (
+                make_id("sub"),
+                user["google_id"],
+                user["email"],
+                purchased_at,
+                reference,
+                json.dumps(metadata),
+                expires_at,
+                purchased_at,
+                purchased_at,
+            ),
+        )
+    return {"email": user["email"], "purchased_at": purchased_at, "expires_at": expires_at, "signature": signature}
 
 def alpha_stripe_checkout_url(request: Request):
     if not ALPHA_STRIPE_PAYMENT_LINK:
@@ -3552,6 +3738,7 @@ async def wallet_nonce_cleanup_loop():
 @qr_app.on_event("startup")
 async def start_wallet_nonce_cleanup():
     cleanup_persistent_sessions()
+    expire_alpha_subscriptions()
     asyncio.create_task(wallet_nonce_cleanup_loop())
 
 @qr_app.middleware("http")
@@ -5167,13 +5354,22 @@ async def product_pricing(request: Request):
 
 @qr_app.get("/pay/alpha", response_class=HTMLResponse)
 async def alpha_payment_page(request: Request):
+    expire_alpha_subscriptions()
+    user = get_session_user(request)
     stripe_url = alpha_stripe_checkout_url(request)
     stripe_button = (
         f"<a class='primary-button payment-button' href='{stripe_url}' target='_blank' rel='noopener noreferrer'>Pay by card with Stripe</a>"
         if stripe_url else
         "<span class='secondary-button payment-button payment-disabled'>Stripe checkout not configured</span>"
     )
-    solana_url = alpha_solana_pay_url()
+    solana_url = alpha_solana_pay_url(request)
+    solana_verify = (
+        """<form action="/pay/alpha/solana/verify" method="post">
+          <button class="secondary-button payment-button" type="submit">Verify Solana payment</button>
+        </form>"""
+        if solana_url and user else
+        "<p class='payment-note'>Sign in before paying with Solana so SafeScan can attach the payment to your account.</p>"
+    )
     solana_button = (
         f"<a class='secondary-button payment-button' href='{solana_url}'>Pay with Solana</a>"
         if solana_url else
@@ -5196,13 +5392,40 @@ async def alpha_payment_page(request: Request):
       </div>
       <div class="payment-option payment-option-wallet">
         <h3>Wallet payment</h3>
-        <p>Use this for a Solana Pay transfer. Access approval still needs manual or webhook confirmation.</p>
+        <p>Use this for a Solana Pay transfer, then verify it on-chain to activate Alpha access.</p>
         {solana_button}
+        {solana_verify}
         {solana_note}
       </div>
     </div>
     """
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Alpha Payment", body))
+
+@qr_app.post("/pay/alpha/solana/verify", response_class=HTMLResponse)
+async def alpha_solana_payment_verify(request: Request):
+    user = require_user(request)
+    try:
+        reference = get_or_create_alpha_solana_reference(user)
+        signature = verify_alpha_solana_payment(reference)
+        if not signature:
+            body = """
+            <h2>Solana payment not found yet</h2>
+            <p>SafeScan could not find a confirmed Solana payment for your payment reference yet. If you just paid, wait a few seconds and try verification again.</p>
+            <p><a class="primary-button payment-button" href="/pay/alpha">Back to Alpha payment</a></p>
+            """
+            return templates.TemplateResponse("legal_page.html", legal_context(request, "Solana Payment Pending", body), status_code=202)
+        record = record_alpha_solana_subscription(user, reference, signature)
+    except SafeScanError as exc:
+        body = f"<h2>Solana verification unavailable</h2><p>{escape_html(exc.args[0])}</p><p><a class='primary-button payment-button' href='/pay/alpha'>Back to Alpha payment</a></p>"
+        return templates.TemplateResponse("legal_page.html", legal_context(request, "Solana Payment Error", body), status_code=exc.status_code)
+
+    body = f"""
+    <h2>Solana payment verified</h2>
+    <p>Alpha access is active for {record['email']} until {record['expires_at']}.</p>
+    <p class="payment-note">Transaction signature: <code>{record['signature']}</code></p>
+    <p><a class="primary-button payment-button" href="/resources/docs">Open docs</a></p>
+    """
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Solana Payment Verified", body))
 
 @qr_app.post("/webhooks/stripe")
 async def stripe_webhook(request: Request):
@@ -5217,6 +5440,7 @@ async def stripe_webhook(request: Request):
 
 @qr_app.get("/pay/alpha/success", response_class=HTMLResponse)
 async def alpha_payment_success_page(request: Request):
+    expire_alpha_subscriptions()
     recorded_purchase = record_alpha_subscription_purchase(request)
     storage_note = (
         f"<p class='payment-note'>Subscription start saved for {recorded_purchase['email']} on {recorded_purchase['purchased_at']}.</p>"

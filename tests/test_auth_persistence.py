@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import io
 import json
+import re
 from pathlib import Path
 import sqlite3
 import sys
@@ -20,6 +21,9 @@ def auth_app(tmp_path, monkeypatch):
     monkeypatch.setenv("APP_URL", "https://testserver")
     monkeypatch.setenv("GOOGLE_CLIENT_ID", "test-client")
     monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test_secret")
+    monkeypatch.setenv("ALPHA_SOLANA_RECIPIENT", "11111111111111111111111111111111")
+    monkeypatch.setenv("ALPHA_SOLANA_AMOUNT_SOL", "0.01")
+    monkeypatch.setenv("ALPHA_SOLANA_ACCESS_DAYS", "30")
 
     sys.modules.pop("hackabull", None)
     module = importlib.import_module("hackabull")
@@ -161,6 +165,50 @@ def test_stripe_webhook_stores_and_cancels_subscription(auth_app):
     assert rows[0]["status"] == "canceled"
     assert rows[0]["canceled_at"].endswith("Z")
     assert rows[0]["expires_at"] == rows[0]["canceled_at"]
+
+
+def test_solana_payment_link_and_verification_store_subscription(auth_app):
+    module, client, db_path = auth_app
+    register(client, "solana@example.com")
+
+    payment = client.get("/pay/alpha")
+
+    assert payment.status_code == 200
+    assert "Pay with Solana" in payment.text
+    assert "reference=" in payment.text
+    reference = re.search(r"reference=([1-9A-HJ-NP-Za-km-z]{32,44})", payment.text).group(1)
+    rows = db_rows(db_path, "SELECT email, status, reference FROM alpha_solana_payment_references WHERE email = ?", ("solana@example.com",))
+    assert rows == [{"email": "solana@example.com", "status": "pending", "reference": reference}]
+
+    module.verify_alpha_solana_payment = lambda ref: ""
+    pending = client.post("/pay/alpha/solana/verify")
+    assert pending.status_code == 202
+    assert not db_rows(db_path, "SELECT * FROM alpha_subscriptions WHERE email = ? AND provider = 'solana'", ("solana@example.com",))
+
+    module.verify_alpha_solana_payment = lambda ref: "solana_signature_123"
+    verified = client.post("/pay/alpha/solana/verify")
+
+    assert verified.status_code == 200
+    assert "Solana payment verified" in verified.text
+    subscriptions = db_rows(
+        db_path,
+        "SELECT email, provider, status, client_reference_id, expires_at FROM alpha_subscriptions WHERE email = ? AND provider = 'solana'",
+        ("solana@example.com",),
+    )
+    assert len(subscriptions) == 1
+    assert subscriptions[0]["provider"] == "solana"
+    assert subscriptions[0]["status"] == "active"
+    assert subscriptions[0]["client_reference_id"] == reference
+    assert subscriptions[0]["expires_at"].endswith("Z")
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE alpha_subscriptions SET expires_at = '2000-01-01T00:00:00Z' WHERE email = ? AND provider = 'solana'",
+            ("solana@example.com",),
+        )
+    client.get("/pay/alpha")
+    expired = db_rows(db_path, "SELECT status FROM alpha_subscriptions WHERE email = ? AND provider = 'solana'", ("solana@example.com",))
+    assert expired[0]["status"] == "expired"
 
 
 def test_email_login_creates_session_and_profile_uses_db_user(auth_app):
