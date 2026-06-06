@@ -151,6 +151,10 @@ ALPHA_STRIPE_PAYMENT_LINK = os.getenv("ALPHA_STRIPE_PAYMENT_LINK", "https://buy.
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()
 ALPHA_SOLANA_RECIPIENT = os.getenv("ALPHA_SOLANA_RECIPIENT", "").strip()
 ALPHA_SOLANA_AMOUNT_SOL = os.getenv("ALPHA_SOLANA_AMOUNT_SOL", "").strip()
+ALPHA_SOLANA_PRICE_USD = Decimal(os.getenv("ALPHA_SOLANA_PRICE_USD", "1.00"))
+ALPHA_SOLANA_QUOTE_TTL_SECONDS = int(os.getenv("ALPHA_SOLANA_QUOTE_TTL_SECONDS", "600"))
+SOLANA_USD_PRICE_FALLBACK = os.getenv("SOLANA_USD_PRICE_FALLBACK", "").strip()
+SOLANA_USD_PRICE_URL = os.getenv("SOLANA_USD_PRICE_URL", "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd").strip()
 ALPHA_SOLANA_ACCESS_DAYS = int(os.getenv("ALPHA_SOLANA_ACCESS_DAYS", "30"))
 ALPHA_SOLANA_LABEL = os.getenv("ALPHA_SOLANA_LABEL", "SafeScan QR Alpha").strip()
 ALPHA_SOLANA_MESSAGE = os.getenv("ALPHA_SOLANA_MESSAGE", "Alpha access to SafeScan QR premium API docs and endpoints.").strip()
@@ -371,6 +375,8 @@ def init_db():
                         (id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
                          email TEXT NOT NULL, reference TEXT NOT NULL UNIQUE,
                          recipient TEXT NOT NULL, amount_sol TEXT NOT NULL,
+                         amount_usd TEXT, sol_usd_price TEXT,
+                         amount_lamports INTEGER, quote_expires_at TEXT,
                          status TEXT NOT NULL DEFAULT 'pending',
                          signature TEXT, created_at TEXT NOT NULL,
                          updated_at TEXT NOT NULL, expires_at TEXT,
@@ -436,6 +442,17 @@ def init_db():
         if column not in alpha_subscription_columns:
             cursor.execute(ddl)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_alpha_subscriptions_stripe_subscription ON alpha_subscriptions(stripe_subscription_id)")
+    cursor.execute("PRAGMA table_info(alpha_solana_payment_references)")
+    alpha_solana_columns = {row[1] for row in cursor.fetchall()}
+    alpha_solana_migrations = {
+        "amount_usd": "ALTER TABLE alpha_solana_payment_references ADD COLUMN amount_usd TEXT",
+        "sol_usd_price": "ALTER TABLE alpha_solana_payment_references ADD COLUMN sol_usd_price TEXT",
+        "amount_lamports": "ALTER TABLE alpha_solana_payment_references ADD COLUMN amount_lamports INTEGER",
+        "quote_expires_at": "ALTER TABLE alpha_solana_payment_references ADD COLUMN quote_expires_at TEXT",
+    }
+    for column, ddl in alpha_solana_migrations.items():
+        if column not in alpha_solana_columns:
+            cursor.execute(ddl)
     if "google_sub" not in user_columns:
         cursor.execute("ALTER TABLE users ADD COLUMN google_sub TEXT")
     if "username" not in user_columns:
@@ -2632,66 +2649,161 @@ def normalize_url(target_url):
         return f"https://{trimmed}"
     return trimmed
 
-def alpha_solana_amount_lamports():
+def decimal_text(value, places=9):
+    quantized = value.quantize(Decimal(1).scaleb(-places))
+    return format(quantized.normalize(), "f")
+
+def solana_amount_to_lamports(amount):
+    return int((amount * Decimal("1000000000")).to_integral_value(rounding="ROUND_CEILING"))
+
+def solana_lamports_to_amount(lamports):
+    return Decimal(int(lamports)) / Decimal("1000000000")
+
+def fetch_sol_usd_price():
+    if SOLANA_USD_PRICE_URL:
+        try:
+            response = requests.get(SOLANA_USD_PRICE_URL, timeout=6)
+            response.raise_for_status()
+            body = response.json()
+            price = body.get("solana", {}).get("usd") if isinstance(body, dict) else None
+            if price:
+                value = Decimal(str(price))
+                if value > 0:
+                    return value
+        except Exception:
+            pass
+    if SOLANA_USD_PRICE_FALLBACK:
+        try:
+            value = Decimal(SOLANA_USD_PRICE_FALLBACK)
+            if value > 0:
+                return value
+        except InvalidOperation:
+            pass
+    return None
+
+def fallback_alpha_solana_lamports():
     if not ALPHA_SOLANA_AMOUNT_SOL:
-        return 0
+        return 0, ""
     try:
         amount = Decimal(ALPHA_SOLANA_AMOUNT_SOL)
     except InvalidOperation as exc:
         raise SafeScanError("ALPHA_SOLANA_AMOUNT_SOL is invalid.", 500) from exc
     if amount <= 0:
-        return 0
-    return int(amount * Decimal("1000000000"))
+        return 0, ""
+    return solana_amount_to_lamports(amount), decimal_text(amount)
+
+def create_alpha_solana_quote():
+    if ALPHA_SOLANA_PRICE_USD <= 0:
+        raise SafeScanError("ALPHA_SOLANA_PRICE_USD must be greater than 0.", 500)
+    sol_usd = fetch_sol_usd_price()
+    if sol_usd:
+        amount_sol = ALPHA_SOLANA_PRICE_USD / sol_usd
+        lamports = solana_amount_to_lamports(amount_sol)
+        amount_sol_text = decimal_text(solana_lamports_to_amount(lamports))
+        return {
+            "amountUsd": decimal_text(ALPHA_SOLANA_PRICE_USD, places=2),
+            "solUsdPrice": decimal_text(sol_usd, places=6),
+            "amountSol": amount_sol_text,
+            "amountLamports": lamports,
+            "quoteExpiresAt": (datetime.utcnow() + timedelta(seconds=ALPHA_SOLANA_QUOTE_TTL_SECONDS)).isoformat() + "Z",
+        }
+    fallback_lamports, fallback_amount = fallback_alpha_solana_lamports()
+    if fallback_lamports:
+        return {
+            "amountUsd": decimal_text(ALPHA_SOLANA_PRICE_USD, places=2),
+            "solUsdPrice": None,
+            "amountSol": fallback_amount,
+            "amountLamports": fallback_lamports,
+            "quoteExpiresAt": (datetime.utcnow() + timedelta(seconds=ALPHA_SOLANA_QUOTE_TTL_SECONDS)).isoformat() + "Z",
+        }
+    raise SafeScanError("SOL/USD price is unavailable and no fallback SOL amount is configured.", 503)
+
+def normalize_alpha_solana_quote(row):
+    if not row:
+        return None
+    data = dict(row)
+    return {
+        "reference": data.get("reference"),
+        "recipient": data.get("recipient"),
+        "amountUsd": data.get("amountUsd") or data.get("amount_usd"),
+        "solUsdPrice": data.get("solUsdPrice") or data.get("sol_usd_price"),
+        "amountSol": data.get("amountSol") or data.get("amount_sol"),
+        "amountLamports": data.get("amountLamports") or data.get("amount_lamports"),
+        "quoteExpiresAt": data.get("quoteExpiresAt") or data.get("quote_expires_at"),
+        "status": data.get("status"),
+    }
 
 def alpha_subscription_expires_at():
     return (datetime.utcnow() + timedelta(days=ALPHA_SOLANA_ACCESS_DAYS)).isoformat() + "Z"
 
 def get_or_create_alpha_solana_reference(user):
     if not user:
-        return ""
-    if not ALPHA_SOLANA_RECIPIENT or not ALPHA_SOLANA_AMOUNT_SOL:
-        return ""
+        return None
+    if not ALPHA_SOLANA_RECIPIENT:
+        return None
     if not is_valid_solana_address(ALPHA_SOLANA_RECIPIENT):
         raise SafeScanError("ALPHA_SOLANA_RECIPIENT is not a valid Solana address.", 500)
     now = now_iso()
     with get_conn() as conn:
         row = conn.execute(
-            """SELECT reference FROM alpha_solana_payment_references
-               WHERE user_id = ? AND recipient = ? AND amount_sol = ? AND status = 'pending'
+            """SELECT * FROM alpha_solana_payment_references
+               WHERE user_id = ? AND recipient = ? AND status = 'pending'
+                 AND quote_expires_at IS NOT NULL AND quote_expires_at > ?
                ORDER BY created_at DESC LIMIT 1""",
-            (user["google_id"], ALPHA_SOLANA_RECIPIENT, ALPHA_SOLANA_AMOUNT_SOL),
+            (user["google_id"], ALPHA_SOLANA_RECIPIENT, now),
         ).fetchone()
         if row:
-            return row["reference"]
+            return normalize_alpha_solana_quote(row)
+        conn.execute(
+            """UPDATE alpha_solana_payment_references
+               SET status = 'expired_' || substr(reference, -8), updated_at = ?
+               WHERE user_id = ? AND recipient = ? AND status = 'pending'
+                 AND quote_expires_at IS NOT NULL AND quote_expires_at <= ?""",
+            (now, user["google_id"], ALPHA_SOLANA_RECIPIENT, now),
+        )
+        quote_data = create_alpha_solana_quote()
         reference = encode_base58(os.urandom(32))
         conn.execute(
             """INSERT INTO alpha_solana_payment_references
-               (id, user_id, email, reference, recipient, amount_sol, status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
+               (id, user_id, email, reference, recipient, amount_sol, amount_usd,
+                sol_usd_price, amount_lamports, quote_expires_at, status, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
             (
                 make_id("solpay"),
                 user["google_id"],
                 user["email"],
                 reference,
                 ALPHA_SOLANA_RECIPIENT,
-                ALPHA_SOLANA_AMOUNT_SOL,
+                quote_data["amountSol"],
+                quote_data["amountUsd"],
+                quote_data["solUsdPrice"],
+                quote_data["amountLamports"],
+                quote_data["quoteExpiresAt"],
                 now,
                 now,
             ),
         )
-    return reference
+    return {**quote_data, "reference": reference, "recipient": ALPHA_SOLANA_RECIPIENT, "status": "pending"}
+
+def alpha_solana_quote_for_user(user):
+    quote_row = get_or_create_alpha_solana_reference(user)
+    if not quote_row:
+        return None
+    return quote_row
 
 def alpha_solana_pay_url(request: Request | None = None):
     if not ALPHA_SOLANA_RECIPIENT:
         return ""
 
     params = []
-    if ALPHA_SOLANA_AMOUNT_SOL:
-        params.append(("amount", ALPHA_SOLANA_AMOUNT_SOL))
+    quote_row = None
     if request:
-        reference = get_or_create_alpha_solana_reference(get_session_user(request))
-        if reference:
-            params.append(("reference", reference))
+        quote_row = alpha_solana_quote_for_user(get_session_user(request))
+    if quote_row:
+        params.append(("amount", str(quote_row["amountSol"])))
+        params.append(("reference", str(quote_row["reference"])))
+    elif ALPHA_SOLANA_AMOUNT_SOL:
+        params.append(("amount", ALPHA_SOLANA_AMOUNT_SOL))
     if ALPHA_SOLANA_LABEL:
         params.append(("label", ALPHA_SOLANA_LABEL))
     if ALPHA_SOLANA_MESSAGE:
@@ -2737,9 +2849,18 @@ def transaction_recipient_delta_lamports(transaction, recipient):
     return int(post[recipient_index]) - int(pre[recipient_index])
 
 def verify_alpha_solana_payment(reference):
-    required_lamports = alpha_solana_amount_lamports()
+    with get_conn() as conn:
+        quote_row = conn.execute(
+            "SELECT * FROM alpha_solana_payment_references WHERE reference = ? AND status = 'pending'",
+            (reference,),
+        ).fetchone()
+    if not quote_row:
+        raise SafeScanError("No pending Solana payment quote was found.", 400)
+    required_lamports = int(quote_row["amount_lamports"] or 0)
     if not ALPHA_SOLANA_RECIPIENT or not required_lamports:
         raise SafeScanError("Solana payment is not configured.", 400)
+    if quote_row["quote_expires_at"] and quote_row["quote_expires_at"] <= now_iso():
+        raise SafeScanError("This Solana payment quote expired. Open the payment page to generate a fresh quote.", 400)
     signatures = solana_rpc("getSignaturesForAddress", [reference, {"limit": 12, "commitment": "confirmed"}]) or []
     for item in signatures:
         signature = item.get("signature")
@@ -2764,12 +2885,23 @@ def record_alpha_solana_subscription(user, reference, signature):
         "reference": reference,
         "signature": signature,
         "recipient": ALPHA_SOLANA_RECIPIENT,
-        "amountSol": ALPHA_SOLANA_AMOUNT_SOL,
     }
     with get_conn() as conn:
+        quote_row = conn.execute(
+            "SELECT * FROM alpha_solana_payment_references WHERE user_id = ? AND reference = ?",
+            (user["google_id"], reference),
+        ).fetchone()
+        if quote_row:
+            metadata.update({
+                "amountUsd": quote_row["amount_usd"],
+                "solUsdPrice": quote_row["sol_usd_price"],
+                "amountSol": quote_row["amount_sol"],
+                "amountLamports": quote_row["amount_lamports"],
+                "quoteExpiresAt": quote_row["quote_expires_at"],
+            })
         conn.execute(
             """UPDATE alpha_solana_payment_references
-               SET status = 'verified', signature = ?, updated_at = ?, expires_at = ?
+               SET status = 'verified_' || substr(reference, -8), signature = ?, updated_at = ?, expires_at = ?
                WHERE user_id = ? AND reference = ?""",
             (signature, purchased_at, expires_at, user["google_id"], reference),
         )
@@ -5363,6 +5495,7 @@ async def alpha_payment_page(request: Request):
         "<span class='secondary-button payment-button payment-disabled'>Stripe checkout not configured</span>"
     )
     solana_url = alpha_solana_pay_url(request)
+    solana_quote = alpha_solana_quote_for_user(user) if user and solana_url else None
     solana_verify = (
         """<form action="/pay/alpha/solana/verify" method="post">
           <button class="secondary-button payment-button" type="submit">Verify Solana payment</button>
@@ -5376,6 +5509,13 @@ async def alpha_payment_page(request: Request):
         "<span class='secondary-button payment-button payment-disabled'>Solana Pay not configured</span>"
     )
     solana_note = (
+        (
+            f"<p class='payment-note'>Quote: ${solana_quote['amountUsd']} = {solana_quote['amountSol']} SOL"
+            + (f" at ${solana_quote['solUsdPrice']}/SOL" if solana_quote.get("solUsdPrice") else " using fallback SOL pricing")
+            + f". Valid until {solana_quote['quoteExpiresAt']}.</p>"
+            + f"<p class='payment-note'>Solana payment recipient: <code>{ALPHA_SOLANA_RECIPIENT}</code></p>"
+        )
+        if solana_quote else
         f"<p class='payment-note'>Solana payment recipient: <code>{ALPHA_SOLANA_RECIPIENT}</code></p>"
         if ALPHA_SOLANA_RECIPIENT else
         "<p class='payment-note'>Add ALPHA_SOLANA_RECIPIENT in Render to enable wallet checkout.</p>"
@@ -5405,7 +5545,8 @@ async def alpha_payment_page(request: Request):
 async def alpha_solana_payment_verify(request: Request):
     user = require_user(request)
     try:
-        reference = get_or_create_alpha_solana_reference(user)
+        quote_row = get_or_create_alpha_solana_reference(user)
+        reference = quote_row["reference"] if quote_row else ""
         signature = verify_alpha_solana_payment(reference)
         if not signature:
             body = """

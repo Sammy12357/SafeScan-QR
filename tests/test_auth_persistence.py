@@ -23,6 +23,9 @@ def auth_app(tmp_path, monkeypatch):
     monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test_secret")
     monkeypatch.setenv("ALPHA_SOLANA_RECIPIENT", "11111111111111111111111111111111")
     monkeypatch.setenv("ALPHA_SOLANA_AMOUNT_SOL", "0.01")
+    monkeypatch.setenv("ALPHA_SOLANA_PRICE_USD", "1.00")
+    monkeypatch.setenv("SOLANA_USD_PRICE_URL", "")
+    monkeypatch.setenv("SOLANA_USD_PRICE_FALLBACK", "100")
     monkeypatch.setenv("ALPHA_SOLANA_ACCESS_DAYS", "30")
 
     sys.modules.pop("hackabull", None)
@@ -177,8 +180,20 @@ def test_solana_payment_link_and_verification_store_subscription(auth_app):
     assert "Pay with Solana" in payment.text
     assert "reference=" in payment.text
     reference = re.search(r"reference=([1-9A-HJ-NP-Za-km-z]{32,44})", payment.text).group(1)
-    rows = db_rows(db_path, "SELECT email, status, reference FROM alpha_solana_payment_references WHERE email = ?", ("solana@example.com",))
-    assert rows == [{"email": "solana@example.com", "status": "pending", "reference": reference}]
+    rows = db_rows(
+        db_path,
+        "SELECT email, status, reference, amount_usd, sol_usd_price, amount_sol, amount_lamports FROM alpha_solana_payment_references WHERE email = ?",
+        ("solana@example.com",),
+    )
+    assert rows == [{
+        "email": "solana@example.com",
+        "status": "pending",
+        "reference": reference,
+        "amount_usd": "1",
+        "sol_usd_price": "100",
+        "amount_sol": "0.01",
+        "amount_lamports": 10000000,
+    }]
 
     module.verify_alpha_solana_payment = lambda ref: ""
     pending = client.post("/pay/alpha/solana/verify")
