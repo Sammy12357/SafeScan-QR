@@ -3282,6 +3282,23 @@ def analyze_non_url_payload(raw_payload):
     if not reasons:
         reasons.append(risk_reason("No risky payload pattern detected", "low", "SafeScan did not find wallet-drainer, credential, redirect, or suspicious QR action indicators."))
 
+    # Run the ML classifier on non-URL payloads too. The full URL pipeline
+    # already does this, but a plain non-URL payload (e.g. "9995", a vCard,
+    # a Wi-Fi join) used to skip the model entirely - so a malicious custom
+    # payload never got a model opinion. We run it, blend it into the score
+    # so the model can raise the verdict, and attach mlRisk so the result
+    # page shows what the model thinks. Popular/trusted domains never reach
+    # this path (they short-circuit on the allowlist), so the model only
+    # surfaces for non-trusted destinations - which is the intent.
+    ml_result = classify_qr_with_ml(normalized)
+    blended = blend_ml_score(score, ml_result, reasons)
+    if blended != score:
+        score = blended
+        status = status_from_risk(risk_from_score(score))
+    ml_signal = ml_signal_from_result(ml_result, label="ML Risk Model", description_prefix="QR payload classifier")
+    if ml_signal and ML_SIGNAL_VISIBLE:
+        reasons.append(ml_signal)
+
     return {
         "status": status,
         "score": str(score),
@@ -3291,7 +3308,8 @@ def analyze_non_url_payload(raw_payload):
         "payload_type": payload_type,
         "action_description": action_description,
         "reputation": {"provider": "SafeScan Payload Analyzer", "status": "NOT_APPLICABLE", "matches": [], "detail": "Reputation lookup only runs for URL payloads."},
-        "reasons": reasons
+        "reasons": reasons,
+        "mlRisk": ml_result
     }
 
 def analyze_url_payload(raw_payload):
