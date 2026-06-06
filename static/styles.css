@@ -357,7 +357,7 @@ body.qr-camera-open { overflow: hidden; }
 .payment-panel h3 { margin: 0; font-family: var(--display-font); font-size: 1.2rem; }
 .payment-panel p { margin-top: 0; }
 .payment-button { display: flex; align-items: center; justify-content: center; width: 100%; max-width: 360px; min-height: 48px; margin-top: auto; box-sizing: border-box; text-align: center; white-space: normal; overflow-wrap: anywhere; line-height: 1.25; }
-.legal-document .primary-button.payment-button { color: #041019; }
+.legal-document .primary-button.payment-button { color: #041019 !important; }
 .payment-disabled { opacity: 0.62; cursor: not-allowed; transform: none; }
 .payment-note { color: var(--muted); font-size: 0.95rem; line-height: 1.6; }
 .payment-note code { color: var(--accent); overflow-wrap: anywhere; }

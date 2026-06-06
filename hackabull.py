@@ -146,6 +146,7 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SOLANA_RPC_URL = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
 ALPHA_STRIPE_PAYMENT_LINK = os.getenv("ALPHA_STRIPE_PAYMENT_LINK", "https://buy.stripe.com/00w3cxfdAb7OcKB4sC87K01").strip()
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()
 ALPHA_SOLANA_RECIPIENT = os.getenv("ALPHA_SOLANA_RECIPIENT", "").strip()
 ALPHA_SOLANA_AMOUNT_SOL = os.getenv("ALPHA_SOLANA_AMOUNT_SOL", "").strip()
 ALPHA_SOLANA_LABEL = os.getenv("ALPHA_SOLANA_LABEL", "SafeScan QR Alpha").strip()
@@ -407,6 +408,21 @@ def init_db():
     for column, ddl in user_migrations.items():
         if column not in user_columns:
             cursor.execute(ddl)
+    cursor.execute("PRAGMA table_info(alpha_subscriptions)")
+    alpha_subscription_columns = {row[1] for row in cursor.fetchall()}
+    alpha_subscription_migrations = {
+        "stripe_customer_id": "ALTER TABLE alpha_subscriptions ADD COLUMN stripe_customer_id TEXT",
+        "stripe_subscription_id": "ALTER TABLE alpha_subscriptions ADD COLUMN stripe_subscription_id TEXT",
+        "current_period_start": "ALTER TABLE alpha_subscriptions ADD COLUMN current_period_start TEXT",
+        "current_period_end": "ALTER TABLE alpha_subscriptions ADD COLUMN current_period_end TEXT",
+        "cancel_at_period_end": "ALTER TABLE alpha_subscriptions ADD COLUMN cancel_at_period_end INTEGER NOT NULL DEFAULT 0",
+        "canceled_at": "ALTER TABLE alpha_subscriptions ADD COLUMN canceled_at TEXT",
+        "expires_at": "ALTER TABLE alpha_subscriptions ADD COLUMN expires_at TEXT",
+    }
+    for column, ddl in alpha_subscription_migrations.items():
+        if column not in alpha_subscription_columns:
+            cursor.execute(ddl)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_alpha_subscriptions_stripe_subscription ON alpha_subscriptions(stripe_subscription_id)")
     if "google_sub" not in user_columns:
         cursor.execute("ALTER TABLE users ADD COLUMN google_sub TEXT")
     if "username" not in user_columns:
@@ -506,6 +522,14 @@ class SafeScanError(Exception):
 
 def now_iso():
     return datetime.utcnow().isoformat() + "Z"
+
+def iso_from_unix_timestamp(value):
+    if value in (None, ""):
+        return None
+    try:
+        return datetime.utcfromtimestamp(int(value)).isoformat() + "Z"
+    except (TypeError, ValueError, OSError):
+        return None
 
 def role_for_email(email):
     normalized = (email or "").strip().lower()
@@ -2649,6 +2673,155 @@ def record_alpha_subscription_purchase(request: Request, provider="stripe"):
             ),
         )
     return {**user, "purchased_at": purchased_at}
+
+def verify_stripe_webhook_signature(payload: bytes, signature_header: str):
+    if not STRIPE_WEBHOOK_SECRET:
+        raise HTTPException(status_code=503, detail="Stripe webhook secret is not configured.")
+    parts = {}
+    for item in (signature_header or "").split(","):
+        if "=" not in item:
+            continue
+        key, value = item.split("=", 1)
+        parts.setdefault(key, []).append(value)
+    timestamp = (parts.get("t") or [""])[0]
+    signatures = parts.get("v1") or []
+    if not timestamp or not signatures:
+        raise HTTPException(status_code=400, detail="Invalid Stripe signature header.")
+    try:
+        signed_payload = timestamp.encode("utf-8") + b"." + payload
+        expected = hmac.new(STRIPE_WEBHOOK_SECRET.encode("utf-8"), signed_payload, hashlib.sha256).hexdigest()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid Stripe signature.") from exc
+    if not any(hmac.compare_digest(expected, signature) for signature in signatures):
+        raise HTTPException(status_code=400, detail="Invalid Stripe signature.")
+
+def stripe_event_email(obj):
+    return (
+        obj.get("customer_email")
+        or (obj.get("customer_details") or {}).get("email")
+        or (obj.get("metadata") or {}).get("email")
+        or ""
+    ).strip().lower()
+
+def stripe_user_identity(email, client_reference_id=None):
+    normalized_email = (email or "").strip().lower()
+    with get_conn() as conn:
+        row = None
+        if client_reference_id:
+            row = conn.execute("SELECT google_id, email FROM users WHERE google_id = ?", (client_reference_id,)).fetchone()
+        if not row and normalized_email:
+            row = conn.execute("SELECT google_id, email FROM users WHERE lower(email) = ?", (normalized_email,)).fetchone()
+    if row:
+        return row["google_id"], (row["email"] or normalized_email)
+    fallback_id = client_reference_id or normalized_email or "stripe_unknown"
+    return fallback_id, normalized_email
+
+def upsert_alpha_subscription_from_stripe(obj, event_type):
+    metadata = obj.get("metadata") or {}
+    email = stripe_event_email(obj)
+    client_reference_id = obj.get("client_reference_id") or metadata.get("client_reference_id")
+    stripe_customer_id = obj.get("customer")
+    stripe_subscription_id = obj.get("subscription") or obj.get("id")
+    existing_identity = None
+    if not email and (stripe_subscription_id or stripe_customer_id):
+        with get_conn() as conn:
+            existing_identity = conn.execute(
+                """SELECT user_id, email FROM alpha_subscriptions
+                   WHERE (stripe_subscription_id = ? AND ? IS NOT NULL)
+                      OR (stripe_customer_id = ? AND ? IS NOT NULL)
+                   ORDER BY updated_at DESC LIMIT 1""",
+                (stripe_subscription_id, stripe_subscription_id, stripe_customer_id, stripe_customer_id),
+            ).fetchone()
+    if existing_identity:
+        user_id, stored_email = existing_identity["user_id"], existing_identity["email"]
+    else:
+        user_id, stored_email = stripe_user_identity(email, client_reference_id)
+    event_status = obj.get("status") or "active"
+    cancel_at_period_end = 1 if obj.get("cancel_at_period_end") else 0
+    current_period_start = iso_from_unix_timestamp(obj.get("current_period_start"))
+    current_period_end = iso_from_unix_timestamp(obj.get("current_period_end"))
+    canceled_at = iso_from_unix_timestamp(obj.get("canceled_at"))
+    purchased_at = iso_from_unix_timestamp(obj.get("created")) or now_iso()
+
+    if event_type == "checkout.session.completed":
+        event_status = "active" if obj.get("payment_status") in ("paid", "no_payment_required", None) else event_status
+    elif event_type == "invoice.paid":
+        event_status = "active"
+    elif event_type == "customer.subscription.deleted":
+        event_status = "canceled"
+        canceled_at = canceled_at or now_iso()
+    elif event_type == "customer.subscription.updated" and event_status == "canceled":
+        canceled_at = canceled_at or now_iso()
+
+    expires_at = canceled_at if event_status == "canceled" else current_period_end
+    updated_at = now_iso()
+    webhook_metadata = {
+        "source": "stripe_webhook",
+        "eventType": event_type,
+        "stripeObjectId": obj.get("id"),
+        "rawStatus": obj.get("status"),
+    }
+
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO alpha_subscriptions
+                (id, user_id, email, tier, provider, status, purchased_at,
+                 checkout_session_id, stripe_payment_link, client_reference_id, metadata,
+                 stripe_customer_id, stripe_subscription_id, current_period_start,
+                 current_period_end, cancel_at_period_end, canceled_at, expires_at,
+                 created_at, updated_at)
+            VALUES (?, ?, ?, 'alpha_premium', 'stripe', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, tier, provider) DO UPDATE SET
+                email = excluded.email,
+                status = excluded.status,
+                checkout_session_id = COALESCE(excluded.checkout_session_id, alpha_subscriptions.checkout_session_id),
+                stripe_payment_link = excluded.stripe_payment_link,
+                client_reference_id = COALESCE(excluded.client_reference_id, alpha_subscriptions.client_reference_id),
+                metadata = excluded.metadata,
+                stripe_customer_id = COALESCE(excluded.stripe_customer_id, alpha_subscriptions.stripe_customer_id),
+                stripe_subscription_id = COALESCE(excluded.stripe_subscription_id, alpha_subscriptions.stripe_subscription_id),
+                current_period_start = COALESCE(excluded.current_period_start, alpha_subscriptions.current_period_start),
+                current_period_end = COALESCE(excluded.current_period_end, alpha_subscriptions.current_period_end),
+                cancel_at_period_end = excluded.cancel_at_period_end,
+                canceled_at = COALESCE(excluded.canceled_at, alpha_subscriptions.canceled_at),
+                expires_at = COALESCE(excluded.expires_at, alpha_subscriptions.expires_at),
+                updated_at = excluded.updated_at
+            """,
+            (
+                make_id("sub"),
+                user_id,
+                stored_email,
+                event_status,
+                purchased_at,
+                obj.get("id") if obj.get("object") == "checkout.session" else None,
+                ALPHA_STRIPE_PAYMENT_LINK,
+                client_reference_id or user_id,
+                json.dumps(webhook_metadata),
+                stripe_customer_id,
+                stripe_subscription_id,
+                current_period_start,
+                current_period_end,
+                cancel_at_period_end,
+                canceled_at,
+                expires_at,
+                updated_at,
+                updated_at,
+            ),
+        )
+    return {"email": stored_email, "status": event_status, "stripeSubscriptionId": stripe_subscription_id}
+
+def process_stripe_webhook_event(event):
+    event_type = event.get("type")
+    obj = (event.get("data") or {}).get("object") or {}
+    if event_type in {
+        "checkout.session.completed",
+        "customer.subscription.updated",
+        "customer.subscription.deleted",
+        "invoice.paid",
+    }:
+        return upsert_alpha_subscription_from_stripe(obj, event_type)
+    return {"ignored": True, "type": event_type}
 
 def extract_urls(text):
     return re.findall(r"https?://[^\s<>'\"]+", text, flags=re.IGNORECASE)
@@ -4995,7 +5168,6 @@ async def product_pricing(request: Request):
 @qr_app.get("/pay/alpha", response_class=HTMLResponse)
 async def alpha_payment_page(request: Request):
     stripe_url = alpha_stripe_checkout_url(request)
-    success_url = f"{APP_URL}/pay/alpha/success"
     stripe_button = (
         f"<a class='primary-button payment-button' href='{stripe_url}' target='_blank' rel='noopener noreferrer'>Pay by card with Stripe</a>"
         if stripe_url else
@@ -5021,7 +5193,6 @@ async def alpha_payment_page(request: Request):
         <h3>Stripe checkout</h3>
         <p>Use this for credit card and subscription billing.</p>
         {stripe_button}
-        <p class="payment-note">Stripe confirmation page: <a href="{success_url}">{success_url}</a></p>
       </div>
       <div class="payment-option payment-option-wallet">
         <h3>Wallet payment</h3>
@@ -5032,6 +5203,17 @@ async def alpha_payment_page(request: Request):
     </div>
     """
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Alpha Payment", body))
+
+@qr_app.post("/webhooks/stripe")
+async def stripe_webhook(request: Request):
+    payload = await request.body()
+    verify_stripe_webhook_signature(payload, request.headers.get("stripe-signature", ""))
+    try:
+        event = json.loads(payload.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Invalid Stripe webhook payload.") from exc
+    result = process_stripe_webhook_event(event)
+    return {"received": True, "result": result}
 
 @qr_app.get("/pay/alpha/success", response_class=HTMLResponse)
 async def alpha_payment_success_page(request: Request):
@@ -5058,7 +5240,7 @@ async def alpha_payment_success_page(request: Request):
       </div>
     </div>
     {storage_note}
-    <p class="payment-note">For fully automatic Stripe verification, connect a Stripe webhook next so SafeScan can confirm paid checkout sessions directly from Stripe.</p>
+    <p class="payment-note">Stripe webhook events update subscription access automatically after checkout, renewal, cancellation, or period-end expiration.</p>
     """
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Alpha Payment Success", body))
 

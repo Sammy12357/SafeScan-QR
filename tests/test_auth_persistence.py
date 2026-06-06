@@ -1,8 +1,12 @@
 import importlib
+import hashlib
+import hmac
 import io
+import json
 from pathlib import Path
 import sqlite3
 import sys
+import time
 
 import pytest
 import qrcode
@@ -15,6 +19,7 @@ def auth_app(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path.as_posix()}")
     monkeypatch.setenv("APP_URL", "https://testserver")
     monkeypatch.setenv("GOOGLE_CLIENT_ID", "test-client")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test_secret")
 
     sys.modules.pop("hackabull", None)
     module = importlib.import_module("hackabull")
@@ -42,6 +47,12 @@ def register(client, email="person@example.com", password="password123"):
 
 def login(client, email="person@example.com", password="password123"):
     return client.post("/auth/login", data={"email": email, "password": password})
+
+
+def stripe_signature(payload, secret="whsec_test_secret"):
+    timestamp = str(int(time.time()))
+    signature = hmac.new(secret.encode("utf-8"), f"{timestamp}.{payload}".encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"t={timestamp},v1={signature}"
 
 
 def test_email_registration_persists_user_credentials_and_session(auth_app):
@@ -73,7 +84,7 @@ def test_alpha_payment_uses_stripe_link_and_records_purchase_date(auth_app):
 
     assert payment.status_code == 200
     assert "https://buy.stripe.com/00w3cxfdAb7OcKB4sC87K01" in payment.text
-    assert "https://testserver/pay/alpha/success" in payment.text
+    assert "https://testserver/pay/alpha/success" not in payment.text
     assert "prefilled_email=alpha%40example.com" in payment.text
     assert success.status_code == 200
     assert "Subscription start saved for alpha@example.com" in success.text
@@ -87,6 +98,69 @@ def test_alpha_payment_uses_stripe_link_and_records_purchase_date(auth_app):
     assert rows[0]["provider"] == "stripe"
     assert rows[0]["status"] == "active"
     assert rows[0]["purchased_at"].endswith("Z")
+
+
+def test_stripe_webhook_stores_and_cancels_subscription(auth_app):
+    _, client, db_path = auth_app
+    register(client, "stripe@example.com")
+    users = db_rows(db_path, "SELECT google_id FROM users WHERE email = ?", ("stripe@example.com",))
+    user_id = users[0]["google_id"]
+
+    checkout_event = {
+        "id": "evt_checkout",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": "cs_test_123",
+                "object": "checkout.session",
+                "customer": "cus_123",
+                "subscription": "sub_123",
+                "customer_details": {"email": "stripe@example.com"},
+                "client_reference_id": user_id,
+                "payment_status": "paid",
+                "created": 1780000000,
+            }
+        },
+    }
+    payload = json.dumps(checkout_event, separators=(",", ":"))
+    response = client.post("/webhooks/stripe", content=payload, headers={"stripe-signature": stripe_signature(payload)})
+
+    assert response.status_code == 200
+    rows = db_rows(
+        db_path,
+        "SELECT email, status, stripe_customer_id, stripe_subscription_id, checkout_session_id FROM alpha_subscriptions WHERE email = ?",
+        ("stripe@example.com",),
+    )
+    assert rows == [{
+        "email": "stripe@example.com",
+        "status": "active",
+        "stripe_customer_id": "cus_123",
+        "stripe_subscription_id": "sub_123",
+        "checkout_session_id": "cs_test_123",
+    }]
+
+    canceled_event = {
+        "id": "evt_deleted",
+        "type": "customer.subscription.deleted",
+        "data": {
+            "object": {
+                "id": "sub_123",
+                "customer": "cus_123",
+                "status": "canceled",
+                "customer_email": "stripe@example.com",
+                "metadata": {"client_reference_id": user_id},
+                "canceled_at": 1780003600,
+            }
+        },
+    }
+    canceled_payload = json.dumps(canceled_event, separators=(",", ":"))
+    canceled = client.post("/webhooks/stripe", content=canceled_payload, headers={"stripe-signature": stripe_signature(canceled_payload)})
+
+    assert canceled.status_code == 200
+    rows = db_rows(db_path, "SELECT status, canceled_at, expires_at FROM alpha_subscriptions WHERE email = ?", ("stripe@example.com",))
+    assert rows[0]["status"] == "canceled"
+    assert rows[0]["canceled_at"].endswith("Z")
+    assert rows[0]["expires_at"] == rows[0]["canceled_at"]
 
 
 def test_email_login_creates_session_and_profile_uses_db_user(auth_app):
