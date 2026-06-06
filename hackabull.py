@@ -5490,7 +5490,7 @@ async def alpha_payment_page(request: Request):
     user = get_session_user(request)
     stripe_url = alpha_stripe_checkout_url(request)
     stripe_button = (
-        f"<a class='primary-button payment-button stripe-payment-button' href='{stripe_url}' target='_blank' rel='noopener noreferrer'>Pay by card with Stripe</a>"
+        f"<a class='primary-button payment-button stripe-payment-button' style='color:#000 !important;-webkit-text-fill-color:#000;text-shadow:none;' href='{stripe_url}' target='_blank' rel='noopener noreferrer'>Pay by card with Stripe</a>"
         if stripe_url else
         "<span class='secondary-button payment-button payment-disabled'>Stripe checkout not configured</span>"
     )
