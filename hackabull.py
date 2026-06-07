@@ -5331,6 +5331,14 @@ async def waitlist_signup(request: Request, email: str = Form(...)):
 async def terms_of_use(request: Request):
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Terms of Use", TERMS_HTML))
 
+@qr_app.get("/legal/privacy", response_class=HTMLResponse)
+async def privacy_policy_alias(request: Request):
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Privacy Policy", PRIVACY_POLICY_HTML))
+
+@qr_app.get("/legal/terms", response_class=HTMLResponse)
+async def terms_of_use_alias(request: Request):
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Terms of Use", TERMS_HTML))
+
 @qr_app.get("/legal/cookie-policy", response_class=HTMLResponse)
 async def cookie_policy(request: Request):
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Cookie Policy", COOKIE_POLICY_HTML))
