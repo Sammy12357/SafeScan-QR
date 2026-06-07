@@ -881,6 +881,7 @@ const goGhostBrokers = [
     priority: "High traffic",
     priorityDescription: "One of the most visible people-search sites, so it is a good place to remove first.",
     removalUrl: "https://www.fastpeoplesearch.com/optout",
+    prefillMap: { name: "name", address: "address", location: "citystate", email: "email", phone: "phone", identifier: "phone" },
     requiredInfo: ["Full name", "Street address", "City/state", "Email confirmation"],
     automationEnabled: true,
     automationNote: "Backend assisted: fill the opt-out form and pause for CAPTCHA or email confirmation.",
@@ -892,6 +893,7 @@ const goGhostBrokers = [
     priority: "High traffic",
     priorityDescription: "One of the most visible people-search sites, so it is a good place to remove first.",
     removalUrl: "https://www.whitepages.com/suppression-requests",
+    prefillMap: { name: "name", address: "address", location: "location", email: "email", phone: "phone", identifier: "phone" },
     requiredInfo: ["Full name", "City/state", "Matching profile", "Email confirmation"],
     automationNote: "Assisted: search with your name and location, copy the matching listing details, then complete the suppression form.",
     searchUrl: ({ name, location }) => `https://www.whitepages.com/name/${encodeURIComponent(name || "")}${location ? `/${encodeURIComponent(location)}` : ""}`
@@ -902,6 +904,7 @@ const goGhostBrokers = [
     priority: "High traffic",
     priorityDescription: "One of the most visible people-search sites, so it is a good place to remove first.",
     removalUrl: "https://www.spokeo.com/optout",
+    prefillMap: { name: "name", address: "address", location: "location", email: "email", phone: "phone", identifier: "phone" },
     requiredInfo: ["Profile URL", "Email confirmation"],
     automationNote: "Assisted: find the matching profile, copy its URL, paste it into Spokeo opt-out, then verify the email.",
     searchUrl: ({ name, location }) => `https://www.spokeo.com/${encodeURIComponent(name || "")}${location ? `/${encodeURIComponent(location)}` : ""}`
@@ -912,6 +915,7 @@ const goGhostBrokers = [
     priority: "High traffic",
     priorityDescription: "One of the most visible people-search sites, so it is a good place to remove first.",
     removalUrl: "https://www.beenverified.com/app/optout/search",
+    prefillMap: { name: "fn", address: "address", location: "citystatezip", email: "email", phone: "phone", identifier: "phone" },
     requiredInfo: ["Full name", "State/city", "Matching record", "Email confirmation"],
     automationNote: "Assisted: use the opt-out search, choose the matching record, and complete email verification.",
     searchUrl: ({ name }) => `https://www.beenverified.com/app/optout/search?fn=${encodeURIComponent(name || "")}`
@@ -922,6 +926,7 @@ const goGhostBrokers = [
     priority: "High traffic",
     priorityDescription: "One of the most visible people-search sites, so it is a good place to remove first.",
     removalUrl: "https://www.truepeoplesearch.com/removal",
+    prefillMap: { name: "name", address: "address", location: "citystatezip", email: "email", phone: "phone", identifier: "phone" },
     requiredInfo: ["Full name", "City/state", "Matching profile", "Email confirmation"],
     automationNote: "Assisted: search, open the matching record, then use the removal flow and verify by email.",
     searchUrl: ({ name, location }) => `https://www.truepeoplesearch.com/results?name=${encodeURIComponent(name || "")}&citystatezip=${encodeURIComponent(location || "")}`
@@ -932,6 +937,7 @@ const goGhostBrokers = [
     priority: "Address match",
     priorityDescription: "This site often finds records through address or phone details.",
     removalUrl: "https://thatsthem.com/optout",
+    prefillMap: { name: "name", address: "address", location: "location", email: "email", phone: "phone", identifier: "phone" },
     requiredInfo: ["Full name", "Street address or phone", "Email confirmation"],
     automationNote: "Assisted: copy the address/phone details, open opt-out, then submit only the fields Thatsthem requests.",
     searchUrl: ({ name }) => `https://thatsthem.com/name/${encodeURIComponent(name || "")}`
@@ -942,6 +948,7 @@ const goGhostBrokers = [
     priority: "Profile link",
     priorityDescription: "This opt-out usually needs the exact profile URL before removal can be submitted.",
     removalUrl: "https://nuwber.com/removal/link",
+    prefillMap: { name: "name", address: "address", location: "location", email: "email", phone: "phone", identifier: "phone" },
     requiredInfo: ["Profile URL", "Email confirmation"],
     automationNote: "Assisted: find the matching Nuwber profile, paste its URL into the removal form, then verify by email.",
     searchUrl: ({ name, location }) => `https://nuwber.com/search?name=${encodeURIComponent(name || "")}&location=${encodeURIComponent(location || "")}`
@@ -952,9 +959,120 @@ const goGhostBrokers = [
     priority: "Duplicate check",
     priorityDescription: "This site can show multiple records for one person, so check for duplicates before marking it removed.",
     removalUrl: "https://radaris.com/page/how-to-remove",
+    prefillMap: { name: "name", address: "address", location: "location", email: "email", phone: "phone", identifier: "phone" },
     requiredInfo: ["Profile URL", "Matching record", "Email confirmation"],
     automationNote: "Assisted: Radaris may show duplicate records, so confirm the exact profile before submitting removal.",
     searchUrl: ({ name, location }) => `https://radaris.com/p/${encodeURIComponent(name || "")}/${encodeURIComponent(location || "")}`
+  },
+  {
+    id: "peoplefinders",
+    name: "PeopleFinders",
+    priority: "Second wave",
+    priorityDescription: "A high-volume data broker that often needs name plus location to find matching records.",
+    removalUrl: "https://www.peoplefinders.com/opt-out",
+    prefillMap: { name: "name", address: "address", location: "citystatezip", email: "email", phone: "phone", identifier: "phone" },
+    requiredInfo: ["Full name", "City/state", "Email confirmation"],
+    automationNote: "Assisted: pass saved details into the opt-out URL, then confirm the matching record.",
+    searchUrl: (profile) => ghostBrokerGoogleSearch(profile, "PeopleFinders", "peoplefinders.com")
+  },
+  {
+    id: "intelius",
+    name: "Intelius",
+    priority: "Second wave",
+    priorityDescription: "A people-search broker that can require enough detail to distinguish similar names.",
+    removalUrl: "https://www.intelius.com/opt-out/submit/",
+    prefillMap: { name: "name", address: "address", location: "citystatezip", email: "email", phone: "phone", identifier: "phone" },
+    requiredInfo: ["Full name", "City/state", "Email confirmation"],
+    automationNote: "Assisted: pass saved details into the opt-out URL, then complete any confirmation steps.",
+    searchUrl: (profile) => ghostBrokerGoogleSearch(profile, "Intelius", "intelius.com")
+  },
+  {
+    id: "ussearch",
+    name: "US Search",
+    priority: "Second wave",
+    priorityDescription: "A people-search broker that often needs name plus location to narrow matches.",
+    removalUrl: "https://www.ussearch.com/opt-out/submit/",
+    prefillMap: { name: "name", address: "address", location: "citystatezip", email: "email", phone: "phone", identifier: "phone" },
+    requiredInfo: ["Full name", "City/state", "Email confirmation"],
+    automationNote: "Assisted: pass saved details into the opt-out URL, then complete any confirmation steps.",
+    searchUrl: (profile) => ghostBrokerGoogleSearch(profile, "US Search", "ussearch.com")
+  },
+  {
+    id: "instantcheckmate",
+    name: "Instant Checkmate",
+    priority: "Second wave",
+    priorityDescription: "A background-check broker whose removal flow can use identity-matching details.",
+    removalUrl: "https://www.instantcheckmate.com/opt-out/submit/",
+    prefillMap: { name: "name", address: "address", location: "citystatezip", email: "email", phone: "phone", identifier: "phone" },
+    requiredInfo: ["Full name", "City/state", "Email confirmation"],
+    automationNote: "Assisted: pass saved details into the opt-out URL, then complete any confirmation steps.",
+    searchUrl: (profile) => ghostBrokerGoogleSearch(profile, "Instant Checkmate", "instantcheckmate.com")
+  },
+  {
+    id: "truthfinder",
+    name: "TruthFinder",
+    priority: "Second wave",
+    priorityDescription: "A background-check broker where similar names may require careful record matching.",
+    removalUrl: "https://www.truthfinder.com/opt-out/submit/",
+    prefillMap: { name: "name", address: "address", location: "citystatezip", email: "email", phone: "phone", identifier: "phone" },
+    requiredInfo: ["Full name", "City/state", "Email confirmation"],
+    automationNote: "Assisted: pass saved details into the opt-out URL, then complete any confirmation steps.",
+    searchUrl: (profile) => ghostBrokerGoogleSearch(profile, "TruthFinder", "truthfinder.com")
+  },
+  {
+    id: "peoplelooker",
+    name: "PeopleLooker",
+    priority: "Second wave",
+    priorityDescription: "A people-search broker with an opt-out submission flow similar to related sites.",
+    removalUrl: "https://www.peoplelooker.com/opt-out/submit/",
+    prefillMap: { name: "name", address: "address", location: "citystatezip", email: "email", phone: "phone", identifier: "phone" },
+    requiredInfo: ["Full name", "City/state", "Email confirmation"],
+    automationNote: "Assisted: pass saved details into the opt-out URL, then complete any confirmation steps.",
+    searchUrl: (profile) => ghostBrokerGoogleSearch(profile, "PeopleLooker", "peoplelooker.com")
+  },
+  {
+    id: "neighborwho",
+    name: "NeighborWho",
+    priority: "Second wave",
+    priorityDescription: "An address-heavy broker where street address and city/state help identify the right record.",
+    removalUrl: "https://www.neighborwho.com/opt-out/",
+    prefillMap: { name: "name", address: "address", location: "location", email: "email", phone: "phone", identifier: "phone" },
+    requiredInfo: ["Full name", "Street address", "City/state", "Email confirmation"],
+    automationNote: "Assisted: pass saved details into the opt-out URL, then confirm the matching address record.",
+    searchUrl: (profile) => ghostBrokerGoogleSearch(profile, "NeighborWho", "neighborwho.com")
+  },
+  {
+    id: "clustrmaps",
+    name: "ClustrMaps",
+    priority: "Second wave",
+    priorityDescription: "An address and profile broker where multiple entries can exist for one person.",
+    removalUrl: "https://clustrmaps.com/bl/opt-out",
+    prefillMap: { name: "name", address: "address", location: "location", email: "email", phone: "phone", identifier: "phone" },
+    requiredInfo: ["Full name", "Street address", "Email confirmation"],
+    automationNote: "Assisted: pass saved details into the opt-out URL, then confirm the matching profile.",
+    searchUrl: (profile) => ghostBrokerGoogleSearch(profile, "ClustrMaps", "clustrmaps.com")
+  },
+  {
+    id: "familytreenow",
+    name: "FamilyTreeNow",
+    priority: "Second wave",
+    priorityDescription: "A genealogy-style people-search site that commonly starts removal from a record search.",
+    removalUrl: "https://www.familytreenow.com/optout",
+    prefillMap: { name: "name", address: "address", location: "location", email: "email", phone: "phone", identifier: "phone" },
+    requiredInfo: ["Full name", "City/state", "Matching profile"],
+    automationNote: "Assisted: search for the matching record, then complete the opt-out flow.",
+    searchUrl: (profile) => ghostBrokerGoogleSearch(profile, "FamilyTreeNow", "familytreenow.com")
+  },
+  {
+    id: "cyberbackgroundchecks",
+    name: "CyberBackgroundChecks",
+    priority: "Second wave",
+    priorityDescription: "A profile-specific background-check site where exact record matching matters.",
+    removalUrl: "https://www.cyberbackgroundchecks.com/removal",
+    prefillMap: { name: "name", address: "address", location: "location", email: "email", phone: "phone", identifier: "phone" },
+    requiredInfo: ["Full name", "Street address", "Matching profile", "Email confirmation"],
+    automationNote: "Assisted: pass saved details into the opt-out URL, then verify the exact profile before submission.",
+    searchUrl: (profile) => ghostBrokerGoogleSearch(profile, "CyberBackgroundChecks", "cyberbackgroundchecks.com")
   }
 ];
 
@@ -1015,7 +1133,32 @@ function ghostSearchFallback(profile, brokerName) {
   return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
 }
 
+function ghostBrokerGoogleSearch(profile, brokerName, domain) {
+  const query = [profile.name, profile.address, profile.location, brokerName, `site:${domain}`].filter(Boolean).join(" ");
+  return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+}
+
+function goGhostBrokerOptOutUrl(broker, profile) {
+  const entries = [
+    ["name", profile.name],
+    ["address", profile.address],
+    ["location", profile.location],
+    ["phone", profile.phone || profile.identifier],
+    ["email", profile.email],
+  ].filter(([, value]) => Boolean(value));
+  if (!entries.length) return broker.removalUrl;
+
+  const url = new URL(broker.removalUrl);
+  entries.forEach(([field, value]) => {
+    const param = broker.prefillMap?.[field] || field;
+    url.searchParams.set(param, value);
+  });
+  url.searchParams.set("safescan_prefill", "1");
+  return url.toString();
+}
+
 function goGhostCopyPacket(broker, profile, searchUrl) {
+  const optOutUrl = goGhostBrokerOptOutUrl(broker, profile);
   return [
     `${broker.name} opt-out packet`,
     `Name: ${profile.name || ""}`,
@@ -1024,7 +1167,7 @@ function goGhostCopyPacket(broker, profile, searchUrl) {
     `Phone: ${profile.phone || profile.identifier || ""}`,
     `Email: ${profile.email || ""}`,
     `Search link: ${searchUrl}`,
-    `Opt-out link: ${broker.removalUrl}`,
+    `Opt-out link: ${optOutUrl}`,
     `Needed: ${(broker.requiredInfo || []).join(", ")}`,
     `Next step: ${broker.automationNote || "Open the matching profile and complete the broker opt-out form."}`,
   ].join("\n");
@@ -1165,6 +1308,7 @@ function renderGoGhostBrokers() {
   goGhostBrokerList.innerHTML = goGhostBrokers.map((broker) => {
     const state = progress[broker.id] || {};
     const searchUrl = goGhostBrokerSearchUrl(broker, profile);
+    const optOutUrl = goGhostBrokerOptOutUrl(broker, profile);
     return `
       <article class="broker-card" data-ghost-broker="${broker.id}">
         <div>
@@ -1173,7 +1317,7 @@ function renderGoGhostBrokers() {
         </div>
         <div class="broker-actions">
           <a class="secondary-button" href="${searchUrl}" target="_blank" rel="noopener noreferrer">Search</a>
-          <a class="primary-button" href="${broker.removalUrl}" target="_blank" rel="noopener noreferrer">Opt out</a>
+          <a class="primary-button" href="${optOutUrl}" target="_blank" rel="noopener noreferrer" data-ghost-optout="${broker.id}">Opt out</a>
           ${broker.automationEnabled ? `<button class="primary-button" type="button" data-ghost-auto="${broker.id}">Run auto fill</button>` : ""}
           <button class="secondary-button" type="button" data-ghost-copy="${broker.id}">Copy details</button>
         </div>
