@@ -1133,6 +1133,7 @@ function formatGhostAutomationStatus(status) {
   const labels = {
     captcha_required: "CAPTCHA checkpoint",
     filled: "Form filled",
+    opened: "Opt-out tab opened",
     submitted: "Submitted",
     unavailable: "Automation unavailable",
     failed: "Automation failed",
@@ -1203,6 +1204,7 @@ function goGhostBrokerSearchUrl(broker, profile) {
 function openGhostUrl(url) {
   const opened = window.open(url, "_blank", "noopener,noreferrer");
   if (opened) opened.opener = null;
+  return Boolean(opened);
 }
 
 function hasGhostSearchProfile(profile) {
@@ -1300,7 +1302,19 @@ async function runGhostBrokerAutomation(broker, triggerButton) {
     triggerButton.disabled = true;
     triggerButton.textContent = "Running...";
   }
-  updateGhostAutomationState(broker.id, { status: "running", detail: "Automation started.", updatedAt: new Date().toISOString() });
+  const searchUrl = goGhostBrokerSearchUrl(broker, profile);
+  const optOutUrl = goGhostBrokerOptOutUrl(broker, profile);
+  const opened = openGhostUrl(optOutUrl);
+  const copied = await copyTextToClipboard(goGhostCopyPacket(broker, profile, searchUrl)).catch(() => false);
+  updateGhostAutomationState(broker.id, {
+    status: opened ? "opened" : "running",
+    detail: opened
+      ? `Opened ${broker.name} opt-out with your saved details${copied ? " and copied the packet" : ""}.`
+      : "Popup blocked. Copy the details and open the opt-out page manually.",
+    targetUrl: optOutUrl,
+    updatedAt: new Date().toISOString()
+  });
+  showCopyToast(opened ? `${broker.name} opt-out opened` : "Popup blocked");
 
   try {
     const response = await fetch(`/api/go-ghost/removals/${encodeURIComponent(broker.id)}`, {
@@ -1325,10 +1339,25 @@ async function runGhostBrokerAutomation(broker, triggerButton) {
       targetUrl: body.targetUrl || broker.removalUrl,
       updatedAt: new Date().toISOString()
     };
+    if (opened && ["failed", "unavailable"].includes(automation.status)) {
+      automation.status = "opened";
+      automation.detail = `Browser-assisted opt-out opened. ${automation.detail || "Backend automation was not available."}`;
+      automation.targetUrl = optOutUrl;
+    }
     updateGhostAutomationState(broker.id, automation);
     if (automation.status === "submitted") setGhostProgress(broker.id, "submitted", true);
     showCopyToast(formatGhostAutomationStatus(automation.status));
   } catch (error) {
+    if (opened) {
+      updateGhostAutomationState(broker.id, {
+        status: "opened",
+        detail: `Browser-assisted opt-out opened. ${error.message || "Backend automation was not available."}`,
+        targetUrl: optOutUrl,
+        updatedAt: new Date().toISOString()
+      });
+      showCopyToast(copied ? "Details copied for the opt-out tab" : "Opt-out tab opened");
+      return;
+    }
     updateGhostAutomationState(broker.id, {
       status: "failed",
       detail: error.message || "Automation failed.",
