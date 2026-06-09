@@ -23,15 +23,17 @@
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; scroll-padding-top: 18px; -webkit-overflow-scrolling: touch; }
 .hidden { display: none !important; }
+html { min-height: 100%; background: #060b12; }
 body {
   margin: 0; min-height: 100vh; color: var(--text);
   background: linear-gradient(145deg, #060b12 0%, #0a1420 46%, #111827 100%);
+  background-attachment: fixed;
   font-family: var(--body-font);
   overscroll-behavior-y: contain;
   text-rendering: optimizeLegibility;
 }
 
-.page-shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0 44px; }
+.page-shell { width: min(1180px, calc(100% - 32px)); min-height: 100vh; margin: 0 auto; padding: 28px 0 44px; }
 /* Clean top navigation bar: brand on the left, minimal text links on the
    right with a subtle divider underneath — inspired by editorial/architecture
    site navs rather than a row of heavy pill buttons. */
@@ -415,7 +417,7 @@ body.qr-camera-open { overflow: hidden; }
 .payment-note { color: var(--muted); font-size: 0.95rem; line-height: 1.6; }
 .payment-note code { color: var(--accent); overflow-wrap: anywhere; }
 
-.site-footer { margin-top: 42px; margin-left: calc(50% - 50vw); width: 100vw; background-color: #07070a; border-top: 1px solid #1e293b; padding-top: 46px; overflow: visible; }
+.site-footer { margin-top: 42px; margin-left: calc(50% - 50vw); width: 100vw; background: transparent; border-top: 1px solid rgba(255, 255, 255, 0.09); padding-top: 46px; overflow: visible; }
 .footer-newsletter { width: min(864px, calc(100% - 48px)); min-height: 292px; margin: 0 auto 92px; padding: 42px 56px 54px; border: 1px solid #334155; border-radius: 10px; background: #10151d; text-align: center; overflow: visible; }
 .footer-newsletter h2 { margin: 0 0 16px; color: #f8fafc; font-size: 1.45rem; line-height: 1.2; }
 .footer-newsletter p { margin: 0; color: #94a3b8; line-height: 1.6; }
