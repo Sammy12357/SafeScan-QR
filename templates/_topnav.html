@@ -1,36 +1,65 @@
-{# Shared top navigation. Expects (all optional): logged_in, test_site_path,
-   active_nav, profile_display_name, profile_subtitle, email, is_admin,
-   user_role. Used by the home page and the standalone feature tabs. #}
-<div class="top-auth">
+{# Collapsible left side navigation (drawer). Shared across the home page,
+   Go Ghost, and the feature tabs. A hamburger button opens/closes the drawer,
+   which holds the brand, every feature link, and the profile/auth actions.
+   Toggle logic lives in /static/sidenav.js (external, CSP-safe). Expects (all
+   optional): logged_in, test_site_path, active_nav, profile_display_name,
+   profile_subtitle, email, is_admin, user_role. #}
+<div class="sidenav-header">
+  <button class="sidenav-toggle" type="button" aria-label="Open menu" aria-controls="sideNav" aria-expanded="false">
+    <span class="sidenav-toggle-bars" aria-hidden="true"></span>
+    <span class="sidenav-toggle-text">Menu</span>
+  </button>
   <a class="top-brand" href="/" aria-label="SafeScan QR home">
     <img class="top-brand-mark" src="/static/safescan-logo.svg" alt="">
     <span class="top-brand-name"><strong>SafeScan</strong> QR</span>
   </a>
-  <div class="top-auth-spacer"></div>
-  <a href="/generate-qr" class="top-action-button {{ 'is-active' if active_nav == 'generate' else '' }}">Generate QR</a>
-  <a href="/token" class="top-action-button {{ 'is-active' if active_nav == 'token' else '' }}">Token</a>
-  <a href="/plans" class="top-action-button {{ 'is-active' if active_nav == 'plans' else '' }}">Plans</a>
-  <a href="/malicious-database" class="top-action-button {{ 'is-active' if active_nav == 'threat' else '' }}">Threat database</a>
-  <a href="{{ '/#scanner' if test_site_path else '/go-ghost' }}" class="top-action-button {{ 'is-active' if active_nav == 'ghost' else '' }}">{{ "Scanner" if test_site_path else "Go Ghost" }}</a>
-  <button id="topCopyReferralButton" class="top-action-button" type="button">Referral link</button>
-  <button id="topConnectWalletButton" class="top-action-button" type="button">Connect wallet</button>
-  {% if logged_in %}
-    <a href="/history" class="top-action-button {{ 'is-active' if active_nav == 'history' else '' }}">Scan history</a>
-    <a href="/leaderboard" class="top-action-button {{ 'is-active' if active_nav == 'leaderboard' else '' }}">Leaderboard</a>
-  {% endif %}
-  {% if not logged_in %}
-    <a href="/login" class="top-action-button top-cta">Sign in / Sign up</a>
-  {% else %}
-    <div id="airdropProfile" class="top-profile">
-      <div><p class="profile-name">{{ profile_display_name }}</p><p class="profile-email" data-email="{{ email }}">{{ profile_subtitle }}</p></div>
-      <a href="/profile" class="profile-button">Profile</a>
-      {% if is_admin %}
-        <span class="admin-role-badge">{{ user_role | upper }}</span>
-        <a href="/admin" class="admin-dashboard-button">Admin dashboard</a>
-      {% endif %}
-      <form class="sign-out-form" action="/auth/logout" method="post">
-        <button class="sign-out-button" type="submit">Sign out</button>
-      </form>
-    </div>
-  {% endif %}
 </div>
+
+<div class="sidenav-backdrop" data-sidenav-close></div>
+
+<aside id="sideNav" class="sidenav" aria-label="Site navigation" aria-hidden="true">
+  <div class="sidenav-brand-row">
+    <a class="top-brand" href="/" aria-label="SafeScan QR home">
+      <img class="top-brand-mark" src="/static/safescan-logo.svg" alt="">
+      <span class="top-brand-name"><strong>SafeScan</strong> QR</span>
+    </a>
+    <button class="sidenav-close" type="button" aria-label="Close menu" data-sidenav-close>&times;</button>
+  </div>
+
+  <nav class="sidenav-links" aria-label="Features">
+    <a href="/" class="sidenav-link {{ 'is-active' if active_nav == 'home' else '' }}">Home</a>
+    <a href="/generate-qr" class="sidenav-link {{ 'is-active' if active_nav == 'generate' else '' }}">Generate QR</a>
+    <a href="/token" class="sidenav-link {{ 'is-active' if active_nav == 'token' else '' }}">Token</a>
+    <a href="/plans" class="sidenav-link {{ 'is-active' if active_nav == 'plans' else '' }}">Plans</a>
+    <a href="/malicious-database" class="sidenav-link {{ 'is-active' if active_nav == 'threat' else '' }}">Threat database</a>
+    <a href="{{ '/#scanner' if test_site_path else '/go-ghost' }}" class="sidenav-link {{ 'is-active' if active_nav == 'ghost' else '' }}">{{ "Scanner" if test_site_path else "Go Ghost" }}</a>
+    {% if logged_in %}
+    <a href="/history" class="sidenav-link {{ 'is-active' if active_nav == 'history' else '' }}">Scan history</a>
+    <a href="/leaderboard" class="sidenav-link {{ 'is-active' if active_nav == 'leaderboard' else '' }}">Leaderboard</a>
+    {% endif %}
+    <button id="topCopyReferralButton" class="sidenav-link sidenav-link-button" type="button">Referral link</button>
+    <button id="topConnectWalletButton" class="sidenav-link sidenav-link-button" type="button">Connect wallet</button>
+  </nav>
+
+  <div class="sidenav-foot">
+    {% if not logged_in %}
+      <a href="/login" class="sidenav-signin">Sign in / Sign up</a>
+    {% else %}
+      <div id="airdropProfile" class="sidenav-profile">
+        <div class="sidenav-profile-id">
+          <p class="profile-name">{{ profile_display_name }}</p>
+          <p class="profile-email" data-email="{{ email }}">{{ profile_subtitle }}</p>
+          {% if is_admin %}<span class="admin-role-badge">{{ user_role | upper }}</span>{% endif %}
+        </div>
+        <div class="sidenav-profile-actions">
+          <a href="/profile" class="profile-button">Profile</a>
+          {% if is_admin %}<a href="/admin" class="admin-dashboard-button">Admin dashboard</a>{% endif %}
+          <form class="sign-out-form" action="/auth/logout" method="post">
+            <button class="sign-out-button" type="submit">Sign out</button>
+          </form>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</aside>
+<script src="/static/sidenav.js?v=sidenav-v1" defer></script>
