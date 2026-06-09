@@ -881,6 +881,12 @@ def get_session_user(request):
 
     session_id = request_session_id(request)
     if not session_id:
+        remembered_user, rotated_token = validate_and_rotate_remember_me(request)
+        if remembered_user:
+            request.state.remembered_user = remembered_user
+            request.state.remembered_session_id = create_session(remembered_user["google_id"], request)
+            request.state.rotated_remember_token = rotated_token
+            return cache_session_user(remembered_user)
         return cache_session_user(None)
     with get_conn() as conn:
         conn.row_factory = sqlite3.Row
@@ -4133,6 +4139,16 @@ async def remember_me_middleware(request: Request, call_next):
     path = request.url.path
     if path.startswith("/static/") or request.cookies.get(SESSION_COOKIE_NAME):
         return await call_next(request)
+
+    if getattr(request.state, "remembered_user", None):
+        response = await call_next(request)
+        session_id = getattr(request.state, "remembered_session_id", None)
+        rotated_token = getattr(request.state, "rotated_remember_token", None)
+        if session_id:
+            set_session_cookie(response, session_id)
+        if rotated_token:
+            set_remember_me_cookie(response, rotated_token)
+        return response
 
     remembered_user, rotated_token = validate_and_rotate_remember_me(request)
     if remembered_user:

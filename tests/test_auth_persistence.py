@@ -266,6 +266,26 @@ def test_remembered_device_restores_session_when_short_cookie_is_missing(auth_ap
     assert persistent_sessions[1]["revoked_at"] is None
 
 
+def test_remembered_device_renders_homepage_as_signed_in_after_reopen(auth_app):
+    module, setup_client, _ = auth_app
+    register(setup_client, "reopen@example.com")
+    remember_token = setup_client.cookies.get(module.REMEMBER_ME_COOKIE_NAME)
+    assert remember_token
+
+    returning_client = TestClient(module.qr_app, base_url="https://testserver")
+    returning_client.cookies.set(module.REMEMBER_ME_COOKIE_NAME, remember_token)
+
+    response = returning_client.get("/")
+
+    assert response.status_code == 200
+    assert "reopen@example.com" in response.text
+    assert "Sign out" in response.text
+    assert "Sign in / Sign up" not in response.text
+    assert module.SESSION_COOKIE_NAME in returning_client.cookies
+    remember_values = [cookie.value for cookie in returning_client.cookies.jar if cookie.name == module.REMEMBER_ME_COOKIE_NAME]
+    assert any(value != remember_token for value in remember_values)
+
+
 def test_invalid_credentials_do_not_create_session(auth_app):
     _, setup_client, db_path = auth_app
     register(setup_client)
