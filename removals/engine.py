@@ -252,5 +252,17 @@ async def run_fastpeoplesearch_removal(
                 "detail": "FastPeopleSearch opt-out was submitted by backend automation. Check the confirmation email next: " + ", ".join(filled_summary),
                 "targetUrl": page.url,
             }
+        except PlaywrightTimeoutError as exc:
+            return {
+                "status": "failed",
+                "detail": f"FastPeopleSearch backend autofill timed out at {page.url}: {str(exc)[:320]}",
+                "targetUrl": page.url,
+            }
+        except Exception as exc:
+            return {
+                "status": "failed",
+                "detail": f"FastPeopleSearch backend autofill stopped at {page.url}: {type(exc).__name__}: {str(exc)[:320]}",
+                "targetUrl": page.url,
+            }
         finally:
             await browser.close()

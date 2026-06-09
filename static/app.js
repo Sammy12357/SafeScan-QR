@@ -1369,7 +1369,7 @@ async function runGhostBrokerAutomation(broker, triggerButton) {
     };
     updateGhostAutomationState(broker.id, automation);
     if (automation.status === "submitted") setGhostProgress(broker.id, "submitted", true);
-    showCopyToast(formatGhostAutomationStatus(automation.status));
+    showCopyToast(automation.detail || formatGhostAutomationStatus(automation.status));
   } catch (error) {
     if (error?.name === "AbortError") {
       updateGhostAutomationState(broker.id, {
@@ -1479,6 +1479,7 @@ function openGoGhostScopeModal(siteId) {
   if (!broker || !goGhostScopeModal) return;
   const profile = getGhostProfile();
   const scope = goGhostAutomationScope(broker);
+  const automation = getGhostProgress()[broker.id]?.automation;
   activeGhostScopeBrokerId = broker.id;
   if (goGhostScopeTitle) goGhostScopeTitle.textContent = broker.name;
   if (goGhostScopePriority) goGhostScopePriority.textContent = broker.priority;
@@ -1490,6 +1491,8 @@ function openGoGhostScopeModal(siteId) {
       <div class="ghost-scope-detail"><span>Submit</span><strong>${escapeHtml(scope.submit)}</strong></div>
       <div class="ghost-scope-detail"><span>Manual checkpoint</span><strong>${escapeHtml(scope.manual)}</strong></div>
       <div class="ghost-scope-detail ghost-scope-detail-wide"><span>Needed</span><strong>${escapeHtml((broker.requiredInfo || []).join(", "))}</strong></div>
+      ${automation ? `<div class="ghost-scope-detail ghost-scope-detail-wide"><span>Automation status</span><strong>${escapeHtml(formatGhostAutomationStatus(automation.status))}</strong></div>` : ""}
+      ${automation?.detail ? `<div class="ghost-scope-detail ghost-scope-detail-wide"><span>Automation detail</span><strong>${escapeHtml(automation.detail)}</strong></div>` : ""}
     `;
   }
   if (goGhostScopeAutoFillButton) {

@@ -5617,10 +5617,10 @@ async def api_go_ghost_removal(request: Request, broker: str, payload: dict = Bo
             "detail": str(exc),
             "targetUrl": "https://www.fastpeoplesearch.com/optout",
         }
-    except Exception:
+    except Exception as exc:
         result = {
             "status": "failed",
-            "detail": "FastPeopleSearch automation failed before submission.",
+            "detail": f"FastPeopleSearch automation failed before submission: {type(exc).__name__}: {str(exc)[:320]}",
             "targetUrl": "https://www.fastpeoplesearch.com/optout",
         }
 
