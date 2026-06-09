@@ -1334,19 +1334,14 @@ async function runGhostBrokerAutomation(broker, triggerButton) {
     triggerButton.textContent = "Cancel run";
     triggerButton.setAttribute("aria-pressed", "true");
   }
-  const searchUrl = goGhostBrokerSearchUrl(broker, profile);
   const optOutUrl = goGhostBrokerOptOutUrl(broker, profile);
-  const opened = openGhostUrl(optOutUrl);
-  const copied = await copyTextToClipboard(goGhostCopyPacket(broker, profile, searchUrl)).catch(() => false);
   updateGhostAutomationState(broker.id, {
     status: "running",
-    detail: opened
-      ? `Opened ${broker.name} opt-out and ${copied ? "copied" : "prepared"} your details. Browser privacy blocks SafeScan from typing into the third-party tab directly.`
-      : "Popup blocked. Copy the details and open the opt-out page manually.",
+    detail: `Running backend Playwright autofill for ${broker.name}. This fills a server-side browser session, not the visible tab.`,
     targetUrl: optOutUrl,
     updatedAt: new Date().toISOString()
   });
-  showCopyToast(opened ? `${broker.name} opt-out opened` : "Popup blocked");
+  showCopyToast(`Running ${broker.name} backend autofill`);
 
   try {
     const response = await fetch(`/api/go-ghost/removals/${encodeURIComponent(broker.id)}`, {
@@ -1372,11 +1367,6 @@ async function runGhostBrokerAutomation(broker, triggerButton) {
       targetUrl: body.targetUrl || broker.removalUrl,
       updatedAt: new Date().toISOString()
     };
-    if (opened && ["failed", "unavailable"].includes(automation.status)) {
-      automation.status = "opened";
-      automation.detail = `Browser-assisted opt-out opened. ${automation.detail || "Backend automation was not available."}`;
-      automation.targetUrl = optOutUrl;
-    }
     updateGhostAutomationState(broker.id, automation);
     if (automation.status === "submitted") setGhostProgress(broker.id, "submitted", true);
     showCopyToast(formatGhostAutomationStatus(automation.status));
@@ -1384,21 +1374,11 @@ async function runGhostBrokerAutomation(broker, triggerButton) {
     if (error?.name === "AbortError") {
       updateGhostAutomationState(broker.id, {
         status: "cancelled",
-        detail: "Backend automation was cancelled. Any opt-out tab that already opened stays open for manual review.",
+        detail: "Backend automation was cancelled before completion.",
         targetUrl: optOutUrl,
         updatedAt: new Date().toISOString()
       });
       showCopyToast(`${broker.name} run cancelled`);
-      return;
-    }
-    if (opened) {
-      updateGhostAutomationState(broker.id, {
-        status: "opened",
-        detail: `Browser-assisted opt-out opened. ${error.message || "Backend automation was not available."}`,
-        targetUrl: optOutUrl,
-        updatedAt: new Date().toISOString()
-      });
-      showCopyToast(copied ? "Details copied for the opt-out tab" : "Opt-out tab opened");
       return;
     }
     updateGhostAutomationState(broker.id, {

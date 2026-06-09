@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 
 
 FASTPEOPLESEARCH_OPTOUT_URL = "https://www.fastpeoplesearch.com/optout"
@@ -41,40 +42,56 @@ async def _fill_first_match(page, selectors: list[str], value: str) -> bool:
     return False
 
 
+async def _click_text_match(page, patterns: list[str]) -> bool:
+    for pattern in patterns:
+        try:
+            locator = page.get_by_text(re.compile(pattern, re.IGNORECASE)).first
+            if await locator.count() and await locator.is_visible():
+                await locator.click()
+                return True
+        except Exception:
+            continue
+    return False
+
+
 async def _select_requester_type(page) -> bool:
     select = page.locator("select").first
     try:
-        if not await select.count():
-            return False
-        options = await select.locator("option").evaluate_all(
-            """options => options.map((option, index) => ({
-                index,
-                value: option.value || "",
-                text: option.textContent || ""
-            }))"""
-        )
-        for option in options:
-            text = (option.get("text") or "").strip().lower()
-            value = (option.get("value") or "").strip()
-            if value and (
-                "i am the subject" in text
-                or "subject of this request" in text
-                or text in {"self", "myself", "me"}
-            ):
-                await select.select_option(value=value)
+        if await select.count():
+            options = await select.locator("option").evaluate_all(
+                """options => options.map((option, index) => ({
+                    index,
+                    value: option.value || "",
+                    text: option.textContent || ""
+                }))"""
+            )
+            for option in options:
+                text = (option.get("text") or "").strip().lower()
+                value = (option.get("value") or "").strip()
+                if value and (
+                    "i am the subject" in text
+                    or "subject of this request" in text
+                    or text in {"self", "myself", "me"}
+                ):
+                    await select.select_option(value=value)
+                    return True
+            for option in options:
+                text = (option.get("text") or "").strip().lower()
+                value = (option.get("value") or "").strip()
+                if value and "choose" not in text:
+                    await select.select_option(value=value)
+                    return True
+            if len(options) > 1:
+                await select.select_option(index=1)
                 return True
-        for option in options:
-            text = (option.get("text") or "").strip().lower()
-            value = (option.get("value") or "").strip()
-            if value and "choose" not in text:
-                await select.select_option(value=value)
-                return True
-        if len(options) > 1:
-            await select.select_option(index=1)
-            return True
     except Exception:
-        return False
-    return False
+        pass
+
+    return await _click_text_match(page, [
+        r"i\s+am\s+the\s+subject\s+of\s+this\s+request",
+        r"subject\s+of\s+this\s+request",
+        r"\bmyself\b",
+    ])
 
 
 async def _check_authorization(page) -> bool:
@@ -164,17 +181,57 @@ async def run_fastpeoplesearch_removal(
         page.set_default_timeout(timeout_ms)
         try:
             await page.goto(FASTPEOPLESEARCH_OPTOUT_URL, wait_until="domcontentloaded")
-            await _select_requester_type(page)
-            await _fill_first_match(page, ["input[placeholder='John']", "input[name*='first' i]", "input[id*='first' i]"], name["first"])
-            await _fill_first_match(page, ["input[placeholder='Middle']", "input[name*='middle' i]", "input[id*='middle' i]"], name["middle"])
-            await _fill_first_match(page, ["input[placeholder='Doe']", "input[name*='last' i]", "input[id*='last' i]"], name["last"])
-            await _fill_first_match(page, ["input[type='email']", "input[placeholder*='@']", "input[name*='email' i]"], profile.email.strip())
-            await _check_authorization(page)
+            selected_requester = await _select_requester_type(page)
+            filled_first = await _fill_first_match(page, [
+                "input[placeholder='John']",
+                "input[placeholder*='First' i]",
+                "input[name*='first' i]",
+                "input[id*='first' i]",
+                "input[aria-label*='first' i]",
+            ], name["first"])
+            filled_middle = await _fill_first_match(page, [
+                "input[placeholder='Middle']",
+                "input[placeholder*='Middle' i]",
+                "input[name*='middle' i]",
+                "input[id*='middle' i]",
+                "input[aria-label*='middle' i]",
+            ], name["middle"])
+            filled_last = await _fill_first_match(page, [
+                "input[placeholder='Doe']",
+                "input[placeholder*='Last' i]",
+                "input[name*='last' i]",
+                "input[id*='last' i]",
+                "input[aria-label*='last' i]",
+            ], name["last"])
+            filled_email = await _fill_first_match(page, [
+                "input[type='email']",
+                "input[placeholder*='@']",
+                "input[placeholder*='Email' i]",
+                "input[name*='email' i]",
+                "input[id*='email' i]",
+                "input[aria-label*='email' i]",
+            ], profile.email.strip())
+            checked_authorization = await _check_authorization(page)
+
+            filled_summary = [
+                f"requester={'yes' if selected_requester else 'no'}",
+                f"first={'yes' if filled_first else 'no'}",
+                f"middle={'yes' if filled_middle or not name['middle'] else 'no'}",
+                f"last={'yes' if filled_last else 'no'}",
+                f"email={'yes' if filled_email else 'no'}",
+                f"authorization={'yes' if checked_authorization else 'no'}",
+            ]
+            if not (selected_requester and filled_first and filled_last and filled_email):
+                return {
+                    "status": "failed",
+                    "detail": "FastPeopleSearch backend autofill could not complete required fields: " + ", ".join(filled_summary),
+                    "targetUrl": page.url,
+                }
 
             if await _captcha_present(page):
                 return {
                     "status": "captcha_required",
-                    "detail": "FastPeopleSearch fields were filled, but reCAPTCHA requires a human checkpoint before submission.",
+                    "detail": "FastPeopleSearch backend autofilled required fields, but reCAPTCHA requires a human checkpoint before submission: " + ", ".join(filled_summary),
                     "targetUrl": page.url,
                 }
 
@@ -182,7 +239,7 @@ async def run_fastpeoplesearch_removal(
             if not submitted:
                 return {
                     "status": "filled",
-                    "detail": "FastPeopleSearch fields were filled, but no submit button was available.",
+                    "detail": "FastPeopleSearch backend autofilled required fields, but no submit button was available: " + ", ".join(filled_summary),
                     "targetUrl": page.url,
                 }
 
@@ -192,7 +249,7 @@ async def run_fastpeoplesearch_removal(
                 pass
             return {
                 "status": "submitted",
-                "detail": "FastPeopleSearch opt-out was submitted. Check the confirmation email next.",
+                "detail": "FastPeopleSearch opt-out was submitted by backend automation. Check the confirmation email next: " + ", ".join(filled_summary),
                 "targetUrl": page.url,
             }
         finally:
