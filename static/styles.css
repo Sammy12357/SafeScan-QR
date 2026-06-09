@@ -509,9 +509,13 @@ body.qr-camera-open { overflow: hidden; }
 .ghost-automation-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
 .ghost-automation-actions button { min-width: 190px; }
 .ghost-automation-table { display: grid; gap: 6px; margin-top: 12px; }
-.ghost-automation-row { display: grid; grid-template-columns: minmax(150px, 1.4fr) repeat(3, minmax(72px, 0.6fr)); gap: 8px; align-items: center; padding: 9px 10px; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; background: rgba(255, 255, 255, 0.035); color: var(--muted); font-size: 0.88rem; font-weight: 800; }
+.ghost-automation-rows { display: grid; gap: 6px; }
+.ghost-automation-row { display: grid; grid-template-columns: minmax(150px, 1.4fr) repeat(3, minmax(72px, 0.6fr)); gap: 8px; align-items: center; width: 100%; padding: 9px 10px; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; background: rgba(255, 255, 255, 0.035); color: var(--muted); font: inherit; font-size: 0.88rem; font-weight: 800; text-align: left; }
 .ghost-automation-row span:not(:first-child) { text-align: center; }
 .ghost-automation-head { color: var(--accent); background: rgba(103, 242, 200, 0.07); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72rem; }
+.ghost-automation-site-row { cursor: pointer; transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease; }
+.ghost-automation-site-row:hover, .ghost-automation-site-row:focus-visible { border-color: rgba(103, 242, 200, 0.42); background: rgba(103, 242, 200, 0.08); outline: none; transform: translateY(-1px); }
+.go-ghost-keyword-form { margin-top: 16px; padding: 14px; border: 1px solid rgba(132, 217, 255, 0.18); border-radius: 8px; background: rgba(132, 217, 255, 0.045); }
 .maintenance-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
 .maintenance-grid a { display: grid; place-items: center; min-height: 62px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.04); color: var(--text); text-align: center; text-decoration: none; font-weight: 900; }
 .maintenance-grid a:hover { border-color: rgba(103, 242, 200, 0.42); background: rgba(103, 242, 200, 0.08); }
@@ -520,6 +524,17 @@ body.qr-camera-open { overflow: hidden; }
 .ghost-consent-card h2 { margin: 10px 0 12px; font-family: var(--display-font); font-size: clamp(1.8rem, 5vw, 3.2rem); line-height: 1.04; }
 .ghost-safety-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
 .ghost-safety-list span { min-height: 54px; padding: 12px; border: 1px solid rgba(103, 242, 200, 0.18); border-radius: 8px; background: rgba(103, 242, 200, 0.07); color: var(--text); font-weight: 900; text-align: center; }
+.ghost-scope-modal { position: fixed; inset: 0; z-index: 1001; display: grid; place-items: center; padding: 18px; background: rgba(3, 8, 15, 0.82); backdrop-filter: blur(16px); }
+.ghost-scope-card { position: relative; width: min(720px, 100%); max-height: min(90vh, 780px); overflow: auto; padding: 26px; border: 1px solid rgba(103, 242, 200, 0.26); border-radius: 8px; background: rgba(8, 16, 29, 0.98); box-shadow: var(--shadow); }
+.ghost-scope-close { position: absolute; top: 12px; right: 12px; display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid rgba(255, 110, 127, 0.54); border-radius: 8px; background: rgba(255, 110, 127, 0.12); color: var(--danger); font-family: var(--display-font); font-size: 1rem; font-weight: 900; line-height: 1; cursor: pointer; }
+.ghost-scope-close:hover, .ghost-scope-close:focus-visible { border-color: var(--danger); background: rgba(255, 110, 127, 0.22); outline: none; }
+.ghost-scope-card h2 { margin: 10px 44px 12px 0; font-family: var(--display-font); font-size: clamp(1.7rem, 4vw, 2.6rem); line-height: 1.08; }
+.ghost-scope-keywords, .ghost-scope-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+.ghost-scope-keyword, .ghost-scope-detail { display: grid; gap: 5px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.04); }
+.ghost-scope-keyword span, .ghost-scope-detail span { color: var(--muted); font-size: 0.78rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; }
+.ghost-scope-keyword strong, .ghost-scope-detail strong { color: var(--text); overflow-wrap: anywhere; }
+.ghost-scope-detail-wide { grid-column: 1 / -1; }
+.ghost-scope-actions { margin-top: 18px; }
 .go-ghost-mobile .go-ghost-layout { grid-template-columns: 1fr; }
 .go-ghost-mobile .go-ghost-broker-section { order: 2; }
 .go-ghost-mobile .automation-scope-card { order: 3; }
@@ -538,6 +553,8 @@ body.qr-camera-open { overflow: hidden; }
   .go-ghost-form input { min-height: 50px; font-size: 16px; }
   .go-ghost-device-notice { font-size: 0.94rem; }
   .ghost-automation-actions button { flex: 1 1 100%; min-height: 48px; }
+  .ghost-automation-row { grid-template-columns: minmax(112px, 1.3fr) repeat(3, minmax(54px, 0.7fr)); gap: 6px; padding: 10px 8px; font-size: 0.78rem; }
+  .ghost-scope-keywords, .ghost-scope-details { grid-template-columns: 1fr; }
   .test-section { padding: 22px; }
   .test-stat-row { grid-template-columns: 1fr; }
   .spline-showcase { min-height: 460px; }

@@ -862,6 +862,17 @@ const startGoGhostButton = document.getElementById("startGoGhostButton");
 const goGhostProfileForm = document.getElementById("goGhostProfileForm");
 const clearGhostDataButton = document.getElementById("clearGhostDataButton");
 const goGhostBrokerList = document.getElementById("goGhostBrokerList");
+const goGhostAutomationRows = document.getElementById("goGhostAutomationRows");
+const goGhostScopeModal = document.getElementById("goGhostScopeModal");
+const goGhostScopeTitle = document.getElementById("goGhostScopeTitle");
+const goGhostScopePriority = document.getElementById("goGhostScopePriority");
+const goGhostScopeDescription = document.getElementById("goGhostScopeDescription");
+const goGhostScopeKeywords = document.getElementById("goGhostScopeKeywords");
+const goGhostScopeDetails = document.getElementById("goGhostScopeDetails");
+const goGhostScopeSearchButton = document.getElementById("goGhostScopeSearchButton");
+const goGhostScopeOptOutButton = document.getElementById("goGhostScopeOptOutButton");
+const goGhostScopeAutoFillButton = document.getElementById("goGhostScopeAutoFillButton");
+const goGhostScopeCopyButton = document.getElementById("goGhostScopeCopyButton");
 const startGhostQueueButton = document.getElementById("startGhostQueueButton");
 const openNextGhostBrokerButton = document.getElementById("openNextGhostBrokerButton");
 const ghostProgressCount = document.getElementById("ghostProgressCount");
@@ -874,6 +885,7 @@ const goGhostDeviceNotice = document.getElementById("goGhostDeviceNotice");
 const GO_GHOST_PROFILE_KEY = "safeScanGoGhostProfile";
 const GO_GHOST_PROGRESS_KEY = "safeScanGoGhostProgress";
 const GO_GHOST_CONSENT_KEY = "safeScanGoGhostConsent";
+let activeGhostScopeBrokerId = "";
 
 const goGhostBrokers = [
   {
@@ -1129,6 +1141,16 @@ function formatGhostAutomationStatus(status) {
   return labels[status] || "Updated";
 }
 
+function goGhostAutomationScope(broker) {
+  const requiresProfileUrl = (broker.requiredInfo || []).some((item) => /profile url/i.test(item));
+  const requiresEmail = (broker.requiredInfo || []).some((item) => /email/i.test(item));
+  return {
+    search: requiresProfileUrl ? "Profile" : "Auto",
+    submit: requiresProfileUrl ? "URL" : "Auto",
+    manual: requiresEmail ? "Email" : "Review"
+  };
+}
+
 function ghostSearchFallback(profile, brokerName) {
   const query = [profile.name, profile.address, profile.location, brokerName].filter(Boolean).join(" ");
   return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
@@ -1176,6 +1198,11 @@ function goGhostCopyPacket(broker, profile, searchUrl) {
 
 function goGhostBrokerSearchUrl(broker, profile) {
   return profile.name ? broker.searchUrl(profile) : ghostSearchFallback(profile, broker.name);
+}
+
+function openGhostUrl(url) {
+  const opened = window.open(url, "_blank", "noopener,noreferrer");
+  if (opened) opened.opener = null;
 }
 
 function hasGhostSearchProfile(profile) {
@@ -1248,8 +1275,7 @@ async function openNextGhostBroker() {
     return;
   }
   const searchUrl = goGhostBrokerSearchUrl(broker, profile);
-  const opened = window.open(searchUrl, "_blank", "noopener,noreferrer");
-  if (opened) opened.opener = null;
+  openGhostUrl(searchUrl);
   scrollToGhostBroker(broker);
   const copied = await copyTextToClipboard(goGhostCopyPacket(broker, profile, searchUrl)).catch(() => false);
   showCopyToast(copied ? `${broker.name} packet copied` : `Opened ${broker.name}`);
@@ -1324,6 +1350,21 @@ function renderGoGhostProgress() {
   ghostProgressCount.textContent = `${removed} / ${goGhostBrokers.length}`;
 }
 
+function renderGoGhostAutomationScope() {
+  if (!goGhostAutomationRows) return;
+  goGhostAutomationRows.innerHTML = goGhostBrokers.slice(0, 8).map((broker) => {
+    const scope = goGhostAutomationScope(broker);
+    return `
+      <button class="ghost-automation-row ghost-automation-site-row" type="button" data-ghost-scope="${broker.id}" aria-label="Open ${escapeHtml(broker.name)} automation details">
+        <span>${escapeHtml(broker.name)}</span>
+        <span>${escapeHtml(scope.search)}</span>
+        <span>${escapeHtml(scope.submit)}</span>
+        <span>${escapeHtml(scope.manual)}</span>
+      </button>
+    `;
+  }).join("");
+}
+
 function renderGoGhostBrokers() {
   if (!goGhostBrokerList) return;
   const profile = getGhostProfile();
@@ -1356,6 +1397,78 @@ function renderGoGhostBrokers() {
   renderGoGhostProgress();
 }
 
+function closeGoGhostScopeModal() {
+  activeGhostScopeBrokerId = "";
+  goGhostScopeModal?.classList.add("hidden");
+}
+
+function renderGhostScopeKeywords(profile) {
+  if (!goGhostScopeKeywords) return;
+  const fields = [
+    ["Full name", profile.name],
+    ["City/state", profile.location],
+    ["Street address", profile.address],
+    ["Phone", profile.phone || profile.identifier],
+    ["Email", profile.email]
+  ];
+  goGhostScopeKeywords.innerHTML = fields.map(([label, value]) => `
+    <div class="ghost-scope-keyword">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value || "Not set")}</strong>
+    </div>
+  `).join("");
+}
+
+function openGoGhostScopeModal(siteId) {
+  const broker = goGhostBrokers.find((item) => item.id === siteId);
+  if (!broker || !goGhostScopeModal) return;
+  const profile = getGhostProfile();
+  const scope = goGhostAutomationScope(broker);
+  activeGhostScopeBrokerId = broker.id;
+  if (goGhostScopeTitle) goGhostScopeTitle.textContent = broker.name;
+  if (goGhostScopePriority) goGhostScopePriority.textContent = broker.priority;
+  if (goGhostScopeDescription) goGhostScopeDescription.textContent = broker.automationNote || broker.priorityDescription || "";
+  renderGhostScopeKeywords(profile);
+  if (goGhostScopeDetails) {
+    goGhostScopeDetails.innerHTML = `
+      <div class="ghost-scope-detail"><span>Search</span><strong>${escapeHtml(scope.search)}</strong></div>
+      <div class="ghost-scope-detail"><span>Submit</span><strong>${escapeHtml(scope.submit)}</strong></div>
+      <div class="ghost-scope-detail"><span>Manual checkpoint</span><strong>${escapeHtml(scope.manual)}</strong></div>
+      <div class="ghost-scope-detail ghost-scope-detail-wide"><span>Needed</span><strong>${escapeHtml((broker.requiredInfo || []).join(", "))}</strong></div>
+    `;
+  }
+  if (goGhostScopeAutoFillButton) goGhostScopeAutoFillButton.hidden = !broker.automationEnabled;
+  goGhostScopeModal.classList.remove("hidden");
+  goGhostScopeModal.querySelector(".ghost-scope-close")?.focus();
+}
+
+async function runGhostScopeAction(action) {
+  const broker = goGhostBrokers.find((item) => item.id === activeGhostScopeBrokerId);
+  if (!broker) return;
+  const profile = getGhostProfile();
+  const searchUrl = goGhostBrokerSearchUrl(broker, profile);
+
+  if (action === "search") {
+    openGhostUrl(searchUrl);
+    showCopyToast(`Opened ${broker.name} search`);
+    return;
+  }
+  if (action === "optout") {
+    openGhostUrl(goGhostBrokerOptOutUrl(broker, profile));
+    showCopyToast(`Opened ${broker.name} opt-out`);
+    return;
+  }
+  if (action === "copy") {
+    const copied = await copyTextToClipboard(goGhostCopyPacket(broker, profile, searchUrl)).catch(() => false);
+    showCopyToast(copied ? `${broker.name} details copied` : "Copy failed");
+    return;
+  }
+  if (action === "auto") {
+    await runGhostBrokerAutomation(broker, goGhostScopeAutoFillButton);
+    renderGhostScopeKeywords(getGhostProfile());
+  }
+}
+
 function hydrateGoGhostProfile() {
   const profile = getGhostProfile();
   if (ghostNameInput) ghostNameInput.value = profile.name || "";
@@ -1370,6 +1483,7 @@ function startGoGhost() {
   goGhostConsentModal?.classList.add("hidden");
   if (goGhostWorkspace) goGhostWorkspace.hidden = false;
   hydrateGoGhostProfile();
+  renderGoGhostAutomationScope();
   renderGoGhostBrokers();
 }
 
@@ -1388,6 +1502,7 @@ if (goGhostWorkspace) {
   goGhostProfileForm?.addEventListener("submit", (event) => {
     event.preventDefault();
     writeJsonStorage(GO_GHOST_PROFILE_KEY, getGhostFormProfile());
+    renderGoGhostAutomationScope();
     renderGoGhostBrokers();
     showCopyToast("Automation scope updated");
   });
@@ -1395,6 +1510,7 @@ if (goGhostWorkspace) {
   [ghostNameInput, ghostLocationInput, ghostAddressInput, ghostPhoneInput, ghostEmailInput].forEach((input) => {
     input?.addEventListener("input", () => {
       writeJsonStorage(GO_GHOST_PROFILE_KEY, getGhostFormProfile());
+      renderGoGhostAutomationScope();
       renderGoGhostBrokers();
     });
   });
@@ -1403,9 +1519,25 @@ if (goGhostWorkspace) {
     window.localStorage.removeItem(GO_GHOST_PROFILE_KEY);
     window.localStorage.removeItem(GO_GHOST_PROGRESS_KEY);
     hydrateGoGhostProfile();
+    renderGoGhostAutomationScope();
     renderGoGhostBrokers();
     showCopyToast("Go Ghost data cleared");
   });
+
+  goGhostAutomationRows?.addEventListener("click", (event) => {
+    const row = event.target.closest("[data-ghost-scope]");
+    if (!row) return;
+    openGoGhostScopeModal(row.dataset.ghostScope);
+  });
+
+  goGhostScopeModal?.addEventListener("click", (event) => {
+    if (event.target === goGhostScopeModal || event.target.closest(".ghost-scope-close")) closeGoGhostScopeModal();
+  });
+
+  goGhostScopeSearchButton?.addEventListener("click", () => runGhostScopeAction("search"));
+  goGhostScopeOptOutButton?.addEventListener("click", () => runGhostScopeAction("optout"));
+  goGhostScopeAutoFillButton?.addEventListener("click", () => runGhostScopeAction("auto"));
+  goGhostScopeCopyButton?.addEventListener("click", () => runGhostScopeAction("copy"));
 
   goGhostBrokerList?.addEventListener("change", (event) => {
     const checkbox = event.target.closest("[data-ghost-site][data-ghost-field]");
@@ -1429,6 +1561,10 @@ if (goGhostWorkspace) {
     const searchUrl = goGhostBrokerSearchUrl(broker, profile);
     const copied = await copyTextToClipboard(goGhostCopyPacket(broker, profile, searchUrl)).catch(() => false);
     showCopyToast(copied ? `${broker.name} details copied` : "Copy failed");
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !goGhostScopeModal?.classList.contains("hidden")) closeGoGhostScopeModal();
   });
 }
 

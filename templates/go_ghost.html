@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Go Ghost | SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=go-ghost-prefill-v2">
+  <link rel="stylesheet" href="/static/styles.css?v=go-ghost-prefill-v3">
 </head>
 <body>
   <div class="page-shell go-ghost-shell">
@@ -84,28 +84,8 @@
         </div>
         <p class="go-ghost-copy">Go Ghost can prepare searches and submissions for supported opt-outs using the minimum local details you choose. Email confirmation, CAPTCHA, and exact profile matching still need user-approved checkpoints.</p>
         <p id="goGhostDeviceNotice" class="go-ghost-device-notice" role="status" aria-live="polite">Desktop layout active.</p>
-        <div class="ghost-automation-stack">
-          <span>Headless submit jobs</span>
-          <span>Email confirmation listener</span>
-          <span>Weekly re-check queue</span>
-        </div>
-        <div class="ghost-automation-actions">
-          <button id="startGhostQueueButton" class="primary-button" type="button">Start assisted queue</button>
-          <button id="openNextGhostBrokerButton" class="secondary-button" type="button">Open next pending</button>
-        </div>
-        <div class="ghost-automation-table" aria-label="Go Ghost automation scope by broker">
-          <div class="ghost-automation-row ghost-automation-head"><span>Site</span><span>Search</span><span>Submit</span><span>Manual</span></div>
-          <div class="ghost-automation-row"><span>FastPeopleSearch</span><span>Auto</span><span>Auto</span><span>Email</span></div>
-          <div class="ghost-automation-row"><span>Whitepages</span><span>Auto</span><span>Auto</span><span>Email</span></div>
-          <div class="ghost-automation-row"><span>Spokeo</span><span>Profile</span><span>URL</span><span>Email</span></div>
-          <div class="ghost-automation-row"><span>BeenVerified</span><span>Auto</span><span>Auto</span><span>Email</span></div>
-          <div class="ghost-automation-row"><span>TruePeopleSearch</span><span>Auto</span><span>Auto</span><span>Email</span></div>
-          <div class="ghost-automation-row"><span>Thatsthem</span><span>Auto</span><span>Auto</span><span>Email</span></div>
-          <div class="ghost-automation-row"><span>Nuwber</span><span>Profile</span><span>URL</span><span>Email</span></div>
-          <div class="ghost-automation-row"><span>Radaris</span><span>Profile</span><span>URL</span><span>Email</span></div>
-        </div>
 
-        <form id="goGhostProfileForm" class="go-ghost-form">
+        <form id="goGhostProfileForm" class="go-ghost-form go-ghost-keyword-form">
           <label>Full name
             <input id="ghostNameInput" type="text" autocomplete="name">
           </label>
@@ -126,6 +106,20 @@
             <button class="secondary-button" id="clearGhostDataButton" type="button">Clear local data</button>
           </div>
         </form>
+
+        <div class="ghost-automation-stack">
+          <span>Headless submit jobs</span>
+          <span>Email confirmation listener</span>
+          <span>Weekly re-check queue</span>
+        </div>
+        <div class="ghost-automation-actions">
+          <button id="startGhostQueueButton" class="primary-button" type="button">Start assisted queue</button>
+          <button id="openNextGhostBrokerButton" class="secondary-button" type="button">Open next pending</button>
+        </div>
+        <div class="ghost-automation-table" aria-label="Go Ghost automation scope by broker">
+          <div class="ghost-automation-row ghost-automation-head"><span>Site</span><span>Search</span><span>Submit</span><span>Manual</span></div>
+          <div id="goGhostAutomationRows" class="ghost-automation-rows"></div>
+        </div>
       </section>
     </main>
 
@@ -149,6 +143,23 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=go-ghost-prefill-v2"></script>
+  <div id="goGhostScopeModal" class="ghost-scope-modal hidden" role="dialog" aria-modal="true" aria-labelledby="goGhostScopeTitle">
+    <div class="ghost-scope-card">
+      <button class="ghost-scope-close" type="button" aria-label="Close site details">X</button>
+      <p id="goGhostScopePriority" class="eyebrow"></p>
+      <h2 id="goGhostScopeTitle"></h2>
+      <p id="goGhostScopeDescription" class="go-ghost-copy"></p>
+      <div id="goGhostScopeKeywords" class="ghost-scope-keywords"></div>
+      <div id="goGhostScopeDetails" class="ghost-scope-details"></div>
+      <div class="go-ghost-actions ghost-scope-actions">
+        <button id="goGhostScopeSearchButton" class="secondary-button" type="button">Search</button>
+        <button id="goGhostScopeOptOutButton" class="primary-button" type="button">Opt out</button>
+        <button id="goGhostScopeAutoFillButton" class="primary-button" type="button">Run auto fill</button>
+        <button id="goGhostScopeCopyButton" class="secondary-button" type="button">Copy details</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js?v=go-ghost-prefill-v3"></script>
 </body>
 </html>
