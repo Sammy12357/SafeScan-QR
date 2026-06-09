@@ -886,6 +886,7 @@ const GO_GHOST_PROFILE_KEY = "safeScanGoGhostProfile";
 const GO_GHOST_PROGRESS_KEY = "safeScanGoGhostProgress";
 const GO_GHOST_CONSENT_KEY = "safeScanGoGhostConsent";
 let activeGhostScopeBrokerId = "";
+const goGhostAutomationControllers = new Map();
 
 const goGhostBrokers = [
   {
@@ -1153,6 +1154,7 @@ function formatGhostAutomationStatus(status) {
     captcha_required: "CAPTCHA checkpoint",
     filled: "Form filled",
     opened: "Opt-out tab opened",
+    cancelled: "Cancelled",
     submitted: "Submitted",
     unavailable: "Automation unavailable",
     failed: "Automation failed",
@@ -1303,6 +1305,13 @@ async function openNextGhostBroker() {
 }
 
 async function runGhostBrokerAutomation(broker, triggerButton) {
+  const activeController = goGhostAutomationControllers.get(broker.id);
+  if (activeController) {
+    activeController.abort();
+    showCopyToast(`Cancelling ${broker.name}`);
+    return;
+  }
+
   const profile = getGhostProfile();
   if (!profile.name?.trim()) {
     scrollToGhostProfile();
@@ -1317,18 +1326,20 @@ async function runGhostBrokerAutomation(broker, triggerButton) {
   }
 
   const originalText = triggerButton?.textContent || "";
+  const controller = new AbortController();
+  goGhostAutomationControllers.set(broker.id, controller);
   if (triggerButton) {
-    triggerButton.disabled = true;
-    triggerButton.textContent = "Running...";
+    triggerButton.textContent = "Cancel run";
+    triggerButton.setAttribute("aria-pressed", "true");
   }
   const searchUrl = goGhostBrokerSearchUrl(broker, profile);
   const optOutUrl = goGhostBrokerOptOutUrl(broker, profile);
   const opened = openGhostUrl(optOutUrl);
   const copied = await copyTextToClipboard(goGhostCopyPacket(broker, profile, searchUrl)).catch(() => false);
   updateGhostAutomationState(broker.id, {
-    status: opened ? "opened" : "running",
+    status: "running",
     detail: opened
-      ? `Opened ${broker.name} opt-out with your saved details${copied ? " and copied the packet" : ""}.`
+      ? `Opened ${broker.name} opt-out and ${copied ? "copied" : "prepared"} your details. Browser privacy blocks SafeScan from typing into the third-party tab directly.`
       : "Popup blocked. Copy the details and open the opt-out page manually.",
     targetUrl: optOutUrl,
     updatedAt: new Date().toISOString()
@@ -1339,6 +1350,7 @@ async function runGhostBrokerAutomation(broker, triggerButton) {
     const response = await fetch(`/api/go-ghost/removals/${encodeURIComponent(broker.id)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
       body: JSON.stringify({
         name: profile.name,
         address: profile.address,
@@ -1367,6 +1379,16 @@ async function runGhostBrokerAutomation(broker, triggerButton) {
     if (automation.status === "submitted") setGhostProgress(broker.id, "submitted", true);
     showCopyToast(formatGhostAutomationStatus(automation.status));
   } catch (error) {
+    if (error?.name === "AbortError") {
+      updateGhostAutomationState(broker.id, {
+        status: "cancelled",
+        detail: "Backend automation was cancelled. Any opt-out tab that already opened stays open for manual review.",
+        targetUrl: optOutUrl,
+        updatedAt: new Date().toISOString()
+      });
+      showCopyToast(`${broker.name} run cancelled`);
+      return;
+    }
     if (opened) {
       updateGhostAutomationState(broker.id, {
         status: "opened",
@@ -1384,9 +1406,12 @@ async function runGhostBrokerAutomation(broker, triggerButton) {
     });
     showCopyToast(error.message || "Automation failed");
   } finally {
+    if (goGhostAutomationControllers.get(broker.id) === controller) {
+      goGhostAutomationControllers.delete(broker.id);
+    }
     if (triggerButton) {
-      triggerButton.disabled = false;
       triggerButton.textContent = originalText;
+      triggerButton.removeAttribute("aria-pressed");
     }
   }
 }
@@ -1430,7 +1455,7 @@ function renderGoGhostBrokers() {
         <div class="broker-actions">
           <a class="secondary-button" href="${searchUrl}" target="_blank" rel="noopener noreferrer">Search</a>
           <a class="primary-button" href="${optOutUrl}" target="_blank" rel="noopener noreferrer" data-ghost-optout="${broker.id}">Opt out</a>
-          ${broker.automationEnabled ? `<button class="primary-button" type="button" data-ghost-auto="${broker.id}">Run auto fill</button>` : ""}
+          ${broker.automationEnabled ? `<button class="primary-button" type="button" data-ghost-auto="${broker.id}">${goGhostAutomationControllers.has(broker.id) ? "Cancel run" : "Run auto fill"}</button>` : ""}
           <button class="secondary-button" type="button" data-ghost-copy="${broker.id}">Copy details</button>
         </div>
         <div class="broker-requirements">${(broker.requiredInfo || []).map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
@@ -1485,7 +1510,12 @@ function openGoGhostScopeModal(siteId) {
       <div class="ghost-scope-detail ghost-scope-detail-wide"><span>Needed</span><strong>${escapeHtml((broker.requiredInfo || []).join(", "))}</strong></div>
     `;
   }
-  if (goGhostScopeAutoFillButton) goGhostScopeAutoFillButton.hidden = !broker.automationEnabled;
+  if (goGhostScopeAutoFillButton) {
+    goGhostScopeAutoFillButton.hidden = !broker.automationEnabled;
+    goGhostScopeAutoFillButton.textContent = goGhostAutomationControllers.has(broker.id) ? "Cancel run" : "Run auto fill";
+    if (goGhostAutomationControllers.has(broker.id)) goGhostScopeAutoFillButton.setAttribute("aria-pressed", "true");
+    else goGhostScopeAutoFillButton.removeAttribute("aria-pressed");
+  }
   goGhostScopeModal.classList.remove("hidden");
   goGhostScopeModal.querySelector(".ghost-scope-close")?.focus();
 }
