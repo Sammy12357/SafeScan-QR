@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QR Generator | SafeScan QR</title>
+  <meta name="description" content="Generate a SafeScan-verified QR code. SafeScan screens the URL through its risk pipeline and only renders a QR for safe destinations.">
+  <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css?v=split-pages-v1">
+</head>
+<body class="test-site-page">
+  <div class="page-shell">
+    {% include "_topnav.html" %}
+    <main>
+      <section class="generate-qr-panel" id="generate-qr-section">
+        <div class="panel-header"><div><p class="eyebrow">SafeScan Generator</p><h2>Generate a SafeScan-verified QR</h2></div></div>
+        <p class="generate-qr-copy">Paste any URL below. SafeScan runs the same risk pipeline as a scan, refuses to render a QR for anything suspicious or dangerous, and stamps the verified PNG with the SafeScan badge so recipients know it has been screened.</p>
+        <div class="generate-qr-form-row">
+          <input id="generateQrUrlInput" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://example.com">
+          <button id="generateQrButton" type="button" class="primary-button">Generate QR</button>
+        </div>
+        <p id="generateQrError" class="generated-qr-error hidden" role="alert"></p>
+        <div id="generatedQrWrap" class="generated-qr-wrap hidden" aria-live="polite">
+          <img id="generatedQrImage" class="generated-qr-image" alt="Generated QR code">
+          <a id="generatedQrDownload" class="secondary-button" download="safescan-qr.png" href="#">Download PNG</a>
+        </div>
+      </section>
+    </main>
+    {% include "footer.html" %}
+  </div>
+  <script src="/static/app.js?v=split-pages-v1"></script>
+</body>
+</html>

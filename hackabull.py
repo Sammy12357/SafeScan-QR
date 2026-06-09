@@ -6763,6 +6763,50 @@ async def malicious_database_page(request: Request):
         "limit": 20,
     })
 
+@qr_app.get("/generate-qr", response_class=HTMLResponse)
+async def generate_qr_page(request: Request):
+    """Standalone SafeScan QR generator tab."""
+    user = get_session_user(request)
+    return templates.TemplateResponse("generate_qr.html", {
+        "request": request,
+        "logged_in": bool(user),
+        "email": user["email"] if user else "",
+        "test_site_path": False,
+        "active_nav": "generate",
+        "google_client_id": CLIENT_ID,
+        **index_user_context(user),
+    })
+
+@qr_app.get("/plans", response_class=HTMLResponse)
+async def plans_page(request: Request):
+    """Standalone plans/pricing tab."""
+    user = get_session_user(request)
+    return templates.TemplateResponse("plans.html", {
+        "request": request,
+        "logged_in": bool(user),
+        "email": user["email"] if user else "",
+        "test_site_path": False,
+        "active_nav": "plans",
+        "google_client_id": CLIENT_ID,
+        **index_user_context(user),
+    })
+
+@qr_app.get("/token", response_class=HTMLResponse)
+async def token_page(request: Request):
+    """Standalone SQR token & airdrop tab."""
+    user = get_session_user(request)
+    email = user["email"] if user else ""
+    return templates.TemplateResponse("token.html", {
+        "request": request,
+        "logged_in": bool(user),
+        "email": email,
+        "scan_count": get_scan_count(email) if email else 0,
+        "test_site_path": False,
+        "active_nav": "token",
+        "google_client_id": CLIENT_ID,
+        **index_user_context(user),
+    })
+
 @qr_app.get("/auth/confirm-age", response_class=HTMLResponse)
 async def confirm_age_page(request: Request, email: str = Query(...), locale: str = Query("en-US"), threshold: int = Query(13)):
     threshold = 16 if is_eu_locale(locale) else threshold

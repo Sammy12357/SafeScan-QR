@@ -1,0 +1,36 @@
+{# Shared top navigation. Expects (all optional): logged_in, test_site_path,
+   active_nav, profile_display_name, profile_subtitle, email, is_admin,
+   user_role. Used by the home page and the standalone feature tabs. #}
+<div class="top-auth">
+  <a class="top-brand" href="/" aria-label="SafeScan QR home">
+    <img class="top-brand-mark" src="/static/safescan-logo.svg" alt="">
+    <span class="top-brand-name"><strong>SafeScan</strong> QR</span>
+  </a>
+  <div class="top-auth-spacer"></div>
+  <a href="/generate-qr" class="top-action-button {{ 'is-active' if active_nav == 'generate' else '' }}">Generate QR</a>
+  <a href="/token" class="top-action-button {{ 'is-active' if active_nav == 'token' else '' }}">Token</a>
+  <a href="/plans" class="top-action-button {{ 'is-active' if active_nav == 'plans' else '' }}">Plans</a>
+  <a href="/malicious-database" class="top-action-button {{ 'is-active' if active_nav == 'threat' else '' }}">Threat database</a>
+  <a href="{{ '/#scanner' if test_site_path else '/go-ghost' }}" class="top-action-button {{ 'is-active' if active_nav == 'ghost' else '' }}">{{ "Scanner" if test_site_path else "Go Ghost" }}</a>
+  <button id="topCopyReferralButton" class="top-action-button" type="button">Referral link</button>
+  <button id="topConnectWalletButton" class="top-action-button" type="button">Connect wallet</button>
+  {% if logged_in %}
+    <a href="/history" class="top-action-button {{ 'is-active' if active_nav == 'history' else '' }}">Scan history</a>
+    <a href="/leaderboard" class="top-action-button {{ 'is-active' if active_nav == 'leaderboard' else '' }}">Leaderboard</a>
+  {% endif %}
+  {% if not logged_in %}
+    <a href="/login" class="top-action-button top-cta">Sign in / Sign up</a>
+  {% else %}
+    <div id="airdropProfile" class="top-profile">
+      <div><p class="profile-name">{{ profile_display_name }}</p><p class="profile-email" data-email="{{ email }}">{{ profile_subtitle }}</p></div>
+      <a href="/profile" class="profile-button">Profile</a>
+      {% if is_admin %}
+        <span class="admin-role-badge">{{ user_role | upper }}</span>
+        <a href="/admin" class="admin-dashboard-button">Admin dashboard</a>
+      {% endif %}
+      <form class="sign-out-form" action="/auth/logout" method="post">
+        <button class="sign-out-button" type="submit">Sign out</button>
+      </form>
+    </div>
+  {% endif %}
+</div>

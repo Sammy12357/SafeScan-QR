@@ -5,40 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Go Ghost | SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=clean-nav-go-ghost-autofill-v4">
+  <link rel="stylesheet" href="/static/styles.css?v=split-pages-v1">
 </head>
 <body>
   <div class="page-shell go-ghost-shell">
-    <div class="top-auth">
-      <a class="top-brand" href="/" aria-label="SafeScan QR home">
-        <img class="top-brand-mark" src="/static/safescan-logo.svg" alt="">
-        <span class="top-brand-name"><strong>SafeScan</strong> QR</span>
-      </a>
-      <div class="top-auth-spacer"></div>
-      <button id="topCopyReferralButton" class="top-action-button" type="button">Referral link</button>
-      <button id="topConnectWalletButton" class="top-action-button" type="button">Connect wallet</button>
-      <a href="/" class="top-action-button">Scanner</a>
-      <a href="/malicious-database" class="top-action-button">Threat database</a>
-      {% if logged_in %}
-        <a href="/history" class="top-action-button">Scan history</a>
-        <a href="/leaderboard" class="top-action-button">Leaderboard</a>
-      {% endif %}
-      {% if not logged_in %}
-        <a href="/login" class="top-action-button top-cta">Sign in / Sign up</a>
-      {% else %}
-        <div id="airdropProfile" class="top-profile">
-          <div><p class="profile-name">{{ profile_display_name }}</p><p class="profile-email" data-email="{{ email }}">{{ profile_subtitle }}</p></div>
-          <a href="/profile" class="profile-button">Profile</a>
-          {% if is_admin %}
-            <span class="admin-role-badge">{{ user_role | upper }}</span>
-            <a href="/admin" class="admin-dashboard-button">Admin dashboard</a>
-          {% endif %}
-          <form class="sign-out-form" action="/auth/logout" method="post">
-            <button class="sign-out-button" type="submit">Sign out</button>
-          </form>
-        </div>
-      {% endif %}
-    </div>
+    {% set active_nav = 'ghost' %}
+    {% include "_topnav.html" %}
 
     <header class="go-ghost-hero">
       <div>

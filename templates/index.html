@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=clean-nav-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=split-pages-v1">
 </head>
 <body class="{{ 'test-site-page' if test_site else '' }}">
   {% if not logged_in and google_client_id and not local_auth_enabled %}
@@ -23,36 +23,7 @@
        data-context="signin"></div>
   {% endif %}
   <div class="page-shell">
-    <div class="top-auth">
-      <a class="top-brand" href="/" aria-label="SafeScan QR home">
-        <img class="top-brand-mark" src="/static/safescan-logo.svg" alt="">
-        <span class="top-brand-name"><strong>SafeScan</strong> QR</span>
-      </a>
-      <div class="top-auth-spacer"></div>
-      <button id="topCopyReferralButton" class="top-action-button" type="button">Referral link</button>
-      <button id="topConnectWalletButton" class="top-action-button" type="button">Connect wallet</button>
-      <a href="{{ '/#scanner' if test_site_path else '/go-ghost' }}" class="top-action-button">{{ "Scanner" if test_site_path else "Go Ghost" }}</a>
-      <a href="/malicious-database" class="top-action-button">Threat database</a>
-      {% if logged_in %}
-        <a href="/history" class="top-action-button">Scan history</a>
-        <a href="/leaderboard" class="top-action-button">Leaderboard</a>
-      {% endif %}
-      {% if not logged_in %}
-        <a href="/login" class="top-action-button top-cta">Sign in / Sign up</a>
-      {% else %}
-        <div id="airdropProfile" class="top-profile">
-          <div><p class="profile-name">{{ profile_display_name }}</p><p class="profile-email" data-email="{{ email }}">{{ profile_subtitle }}</p></div>
-          <a href="/profile" class="profile-button">Profile</a>
-          {% if is_admin %}
-            <span class="admin-role-badge">{{ user_role | upper }}</span>
-            <a href="/admin" class="admin-dashboard-button">Admin dashboard</a>
-          {% endif %}
-          <form class="sign-out-form" action="/auth/logout" method="post">
-            <button class="sign-out-button" type="submit">Sign out</button>
-          </form>
-        </div>
-      {% endif %}
-    </div>
+    {% include "_topnav.html" %}
 
     <header class="hero">
       <div class="hero-copy">
@@ -126,68 +97,6 @@
       </section>
       {% endif %}
 
-      <section class="airdrop-panel" id="airdrop">
-        <div class="panel-header">
-          <div><p class="eyebrow">Community airdrop</p><h2>Register for Airdrop</h2></div>
-          <div id="airdropStatus" class="airdrop-status">Registered</div>
-        </div>
-
-        <div class="token-strip">
-          <div><p class="token-label">Token name</p><div class="token-pill">SafeScan</div></div>
-          <div><p class="token-label">Ticker</p><div class="token-ticker">SQR</div></div>
-          <div>
-            <p class="token-label">Address</p>
-            <div class="token-address-row">
-              <p id="tokenAddress" class="token-address">Bpdt7Hey78HeEEr9Q6x19gYAns5n6w44LdjJhxN3pump</p>
-              <button id="copyTokenAddressButton" class="token-copy-button" type="button">Copy</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="airdrop-progress">
-          <div>
-            <p class="token-label">Current tier</p>
-            <h3 id="currentTierName">{{ "Tier 1: Scanner" if (scan_count | default(0)) >= 5 else "Registered" }}</h3>
-            <p id="currentTierSummary" class="airdrop-copy">{{ "Base allocation unlocked after account creation and 5 QR scans." if (scan_count | default(0)) >= 5 else "Scan 5 QR codes to unlock Tier 1." }}</p>
-          </div>
-          <div class="progress-stats">
-            <div><span id="scanProgressValue" data-backend-count="{{ scan_count | default(0) }}">{{ scan_count | default(0) }} / 5</span><p>QR scans</p></div>
-            <div><span id="referralProgressValue">0</span><p>Referrals</p></div>
-          </div>
-        </div>
-
-        <div class="wallet-panel">
-          <div><p class="token-label">Airdrop wallet</p><p id="walletStatus" class="wallet-status">Checking connection...</p></div>
-          <div class="wallet-actions">
-            <button id="connectWalletButton" class="primary-button" type="button">Connect wallet</button>
-            <button id="disconnectWalletButton" class="secondary-button hidden" type="button">Disconnect wallet</button>
-          </div>
-        </div>
-
-        <div class="airdrop-grid">
-          <article id="tierOneCard" class="airdrop-card tier-card {{ 'unlocked current' if (scan_count | default(0)) >= 5 else '' }}">
-            <div class="tier-rank">Tier 1</div>
-            <h3>Scanner</h3>
-            <p>Create an account and scan 5 QR codes.</p>
-            <div class="tier-reward">Base allocation</div>
-          </article>
-
-          <article id="tierTwoCard" class="airdrop-card tier-card">
-            <div class="tier-rank">Tier 2</div>
-            <h3>Referrer</h3>
-            <p>Invite 1 person with your referral link.</p>
-            <div class="tier-reward">2x allocation</div>
-          </article>
-
-          <article id="tierThreeCard" class="airdrop-card tier-card">
-            <div class="tier-rank">Tier 3</div>
-            <h3>Guardian</h3>
-            <p>Invite multiple people and scan 50 QR codes.</p>
-            <div class="tier-reward">5x allocation</div>
-          </article>
-        </div>
-      </section>
-
       <section class="scanner-panel" id="scanner">
         <div class="panel-header"><div><p class="eyebrow">SafeScan Tool</p><h2>Analyze Payload</h2></div></div>
         <div class="scanner-grid">
@@ -241,20 +150,6 @@
             </div>
             <p class="visual-copy">The SafeScan Tool shows the real QR journey: scan, decode the payload, classify the action, explain risk, then safely continue.</p>
           </div>
-        </div>
-      </section>
-
-      <section class="generate-qr-panel" id="generate-qr-section">
-        <div class="panel-header"><div><p class="eyebrow">SafeScan Generator</p><h2>Generate a SafeScan-verified QR</h2></div></div>
-        <p class="generate-qr-copy">Paste any URL below. SafeScan runs the same risk pipeline as a scan, refuses to render a QR for anything suspicious or dangerous, and stamps the verified PNG with the SafeScan badge so recipients know it has been screened.</p>
-        <div class="generate-qr-form-row">
-          <input id="generateQrUrlInput" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://example.com">
-          <button id="generateQrButton" type="button" class="primary-button">Generate QR</button>
-        </div>
-        <p id="generateQrError" class="generated-qr-error hidden" role="alert"></p>
-        <div id="generatedQrWrap" class="generated-qr-wrap hidden" aria-live="polite">
-          <img id="generatedQrImage" class="generated-qr-image" alt="Generated QR code">
-          <a id="generatedQrDownload" class="secondary-button" download="safescan-qr.png" href="#">Download PNG</a>
         </div>
       </section>
 
@@ -440,18 +335,6 @@
       </section>
       {% endif %}
       {% if test_site %}
-      <section class="test-section test-pricing" id="pricing-test">
-        <div class="test-section-header reveal-on-scroll">
-          <p class="eyebrow">Plans</p>
-          <h2>Start with free scans, grow into Beta and Alpha protection.</h2>
-        </div>
-        <div class="test-pricing-grid">
-          <article class="test-price-card reveal-on-scroll"><p class="tier-rank">Demo</p><h3>Free</h3><p class="test-price">$0</p><p>Scan QR payloads, review risk reasons, and join the SafeScan airdrop.</p><a class="secondary-button" href="#scanner">Try scanner</a></article>
-          <article class="test-price-card reveal-on-scroll"><p class="tier-rank">Beta</p><h3>Free + Airdrop</h3><p class="test-price">$0</p><p>Wallet protection beta with the SafeScan airdrop being deployed for early scanner users.</p><a class="secondary-button" href="#airdrop">Join beta</a></article>
-          <article class="test-price-card reveal-on-scroll"><p class="tier-rank">Alpha</p><h3>Premium</h3><p class="test-price">$1/mo</p><p>Alpha access to risk scoring endpoints for merchants, dApps, QR campaigns, and trust teams.</p><a class="secondary-button" href="/pay/alpha">Pay Now</a></article>
-        </div>
-      </section>
-
       <section class="test-section test-faq reveal-on-scroll">
         <div class="test-section-header">
           <p class="eyebrow">FAQ</p>

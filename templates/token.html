@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SQR Token &amp; Airdrop | SafeScan QR</title>
+  <meta name="description" content="The SafeScan (SQR) token and community airdrop — connect your wallet, track tier progress, and unlock rewards by scanning QR codes.">
+  <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css?v=split-pages-v1">
+</head>
+<body class="test-site-page">
+  <div class="page-shell">
+    {% include "_topnav.html" %}
+    <main>
+      <section class="airdrop-panel" id="airdrop">
+        <div class="panel-header">
+          <div><p class="eyebrow">Solana &middot; Community airdrop</p><h2>SQR Token &amp; Airdrop</h2></div>
+          <div id="airdropStatus" class="airdrop-status">Registered</div>
+        </div>
+
+        <div class="token-strip">
+          <div><p class="token-label">Token name</p><div class="token-pill">SafeScan</div></div>
+          <div><p class="token-label">Ticker</p><div class="token-ticker">SQR</div></div>
+          <div>
+            <p class="token-label">Address</p>
+            <div class="token-address-row">
+              <p id="tokenAddress" class="token-address">Bpdt7Hey78HeEEr9Q6x19gYAns5n6w44LdjJhxN3pump</p>
+              <button id="copyTokenAddressButton" class="token-copy-button" type="button">Copy</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="airdrop-progress">
+          <div>
+            <p class="token-label">Current tier</p>
+            <h3 id="currentTierName">{{ "Tier 1: Scanner" if (scan_count | default(0)) >= 5 else "Registered" }}</h3>
+            <p id="currentTierSummary" class="airdrop-copy">{{ "Base allocation unlocked after account creation and 5 QR scans." if (scan_count | default(0)) >= 5 else "Scan 5 QR codes to unlock Tier 1." }}</p>
+          </div>
+          <div class="progress-stats">
+            <div><span id="scanProgressValue" data-backend-count="{{ scan_count | default(0) }}">{{ scan_count | default(0) }} / 5</span><p>QR scans</p></div>
+            <div><span id="referralProgressValue">0</span><p>Referrals</p></div>
+          </div>
+        </div>
+
+        <div class="wallet-panel">
+          <div><p class="token-label">Airdrop wallet</p><p id="walletStatus" class="wallet-status">Checking connection...</p></div>
+          <div class="wallet-actions">
+            <button id="connectWalletButton" class="primary-button" type="button">Connect wallet</button>
+            <button id="disconnectWalletButton" class="secondary-button hidden" type="button">Disconnect wallet</button>
+          </div>
+        </div>
+
+        <div class="airdrop-grid">
+          <article id="tierOneCard" class="airdrop-card tier-card {{ 'unlocked current' if (scan_count | default(0)) >= 5 else '' }}">
+            <div class="tier-rank">Tier 1</div>
+            <h3>Scanner</h3>
+            <p>Create an account and scan 5 QR codes.</p>
+            <div class="tier-reward">Base allocation</div>
+          </article>
+
+          <article id="tierTwoCard" class="airdrop-card tier-card">
+            <div class="tier-rank">Tier 2</div>
+            <h3>Referrer</h3>
+            <p>Invite 1 person with your referral link.</p>
+            <div class="tier-reward">2x allocation</div>
+          </article>
+
+          <article id="tierThreeCard" class="airdrop-card tier-card">
+            <div class="tier-rank">Tier 3</div>
+            <h3>Guardian</h3>
+            <p>Invite multiple people and scan 50 QR codes.</p>
+            <div class="tier-reward">5x allocation</div>
+          </article>
+        </div>
+      </section>
+    </main>
+    {% include "footer.html" %}
+  </div>
+  <script src="/static/app.js?v=split-pages-v1"></script>
+</body>
+</html>
