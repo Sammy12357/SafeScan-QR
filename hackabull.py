@@ -309,7 +309,8 @@ def init_db():
     cursor.execute('''CREATE TABLE IF NOT EXISTS scan_history
                         (id TEXT PRIMARY KEY, email TEXT NOT NULL, url TEXT NOT NULL,
                          risk_score INTEGER, verdict TEXT, signals TEXT,
-                         reported INTEGER DEFAULT 0, created_at TEXT NOT NULL)''')
+                         reported INTEGER DEFAULT 0, created_at TEXT NOT NULL,
+                         classification TEXT NOT NULL DEFAULT 'UNKNOWN')''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS upload_artifacts
                         (id TEXT PRIMARY KEY, user_id TEXT, email TEXT,
                          object_key TEXT NOT NULL, backend TEXT NOT NULL,
@@ -494,6 +495,19 @@ def init_db():
     scan_history_columns = {row[1] for row in cursor.fetchall()}
     if "user_id" not in scan_history_columns:
         cursor.execute("ALTER TABLE scan_history ADD COLUMN user_id TEXT")
+    if "classification" not in scan_history_columns:
+        cursor.execute("ALTER TABLE scan_history ADD COLUMN classification TEXT NOT NULL DEFAULT 'UNKNOWN'")
+    cursor.execute("""
+        UPDATE scan_history
+        SET classification = CASE
+            WHEN upper(COALESCE(verdict, '')) IN ('MALICIOUS', 'HIGH', 'DANGER') OR COALESCE(risk_score, 0) >= 80 THEN 'MALICIOUS'
+            WHEN upper(COALESCE(verdict, '')) IN ('CAUTION', 'SUSPICIOUS', 'MEDIUM') OR COALESCE(risk_score, 0) >= 40 THEN 'CAUTION'
+            WHEN upper(COALESCE(verdict, '')) = 'SAFE' OR COALESCE(risk_score, 0) < 40 THEN 'SAFE'
+            ELSE 'UNKNOWN'
+        END
+        WHERE classification IS NULL OR classification = '' OR classification = 'UNKNOWN'
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_scan_history_classification ON scan_history(classification)")
     cursor.execute("PRAGMA table_info(scan_events)")
     scan_event_columns = {row[1] for row in cursor.fetchall()}
     if "user_id" not in scan_event_columns:
@@ -1296,22 +1310,102 @@ def lookup_user_id_by_email(email):
         ).fetchone()
     return row["google_id"] if row else None
 
+SCAN_CLASSIFICATIONS = (
+    ("MALICIOUS", "Dangerous"),
+    ("CAUTION", "Needs Review"),
+    ("SAFE", "Safe"),
+    ("UNKNOWN", "Unknown"),
+)
+
+SCAN_CLASSIFICATION_LABELS = dict(SCAN_CLASSIFICATIONS)
+
+def scan_classification(verdict=None, risk_score=0, overall_risk=None):
+    normalized_verdict = str(verdict or "").strip().upper()
+    normalized_risk = str(overall_risk or "").strip().lower()
+    try:
+        score = int(risk_score or 0)
+    except (TypeError, ValueError):
+        score = 0
+    if normalized_verdict in ("MALICIOUS", "HIGH", "DANGER") or normalized_risk == "high" or score >= 80:
+        return "MALICIOUS"
+    if normalized_verdict in ("CAUTION", "SUSPICIOUS", "MEDIUM") or normalized_risk == "suspicious" or score >= 40:
+        return "CAUTION"
+    if normalized_verdict == "SAFE" or normalized_risk == "safe" or score < 40:
+        return "SAFE"
+    return "UNKNOWN"
+
+def scan_classification_from_analysis(analysis):
+    score = analysis.get("score") or analysis.get("confidenceScore") or 0
+    verdict = analysis.get("status")
+    return scan_classification(verdict, score, analysis.get("overallRisk"))
+
+def scan_classification_from_row(row):
+    stored = (row["classification"] if "classification" in row.keys() else "") if hasattr(row, "keys") else row.get("classification", "")
+    stored = str(stored or "").strip().upper()
+    if stored in SCAN_CLASSIFICATION_LABELS:
+        return stored
+    verdict = row["verdict"] if hasattr(row, "keys") else row.get("verdict")
+    risk_score = row["risk_score"] if hasattr(row, "keys") else row.get("risk_score")
+    return scan_classification(verdict, risk_score)
+
+def serialize_scan_history_row(row):
+    try:
+        signals = json.loads(row["signals"] or "[]")
+    except (TypeError, json.JSONDecodeError):
+        signals = []
+    classification = scan_classification_from_row(row)
+    return {
+        "scanId": row["id"],
+        "id": row["id"],
+        "url": row["url"],
+        "verdict": row["verdict"] or classification.lower(),
+        "classification": classification,
+        "classificationLabel": SCAN_CLASSIFICATION_LABELS.get(classification, "Unknown"),
+        "threat_type": classification,
+        "riskScore": int(row["risk_score"] or 0),
+        "risk_score": int(row["risk_score"] or 0),
+        "signals": signals if isinstance(signals, list) else [],
+        "reported": bool(row["reported"]),
+        "scannedAt": row["created_at"],
+        "analyzedAt": row["created_at"],
+        "created_at": row["created_at"],
+    }
+
+def group_scan_history(items):
+    by_classification = {key: [] for key, _ in SCAN_CLASSIFICATIONS}
+    for item in items:
+        by_classification.setdefault(item["classification"], []).append(item)
+    return [
+        {
+            "classification": key,
+            "label": label,
+            "count": len(by_classification.get(key, [])),
+            "scans": by_classification.get(key, []),
+        }
+        for key, label in SCAN_CLASSIFICATIONS
+        if by_classification.get(key)
+    ]
+
 def save_scan_history(email, url, analysis, reported=False, user_id=None):
     normalized_email = (email or "").strip().lower()
     resolved_user_id = user_id or lookup_user_id_by_email(normalized_email)
+    risk_score = int(analysis.get("score") or analysis.get("confidenceScore") or 0)
+    verdict = analysis.get("status") or status_from_risk(analysis.get("overallRisk"))
+    classification = scan_classification_from_analysis(analysis)
     with get_conn() as conn:
         conn.execute(
-            "INSERT INTO scan_history (id, email, url, risk_score, verdict, signals, reported, created_at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO scan_history (id, email, url, risk_score, verdict, signals, reported, created_at, user_id, classification) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 make_id("scan"),
                 normalized_email,
                 url[:2048],
-                int(analysis.get("score") or analysis.get("confidenceScore") or 0),
-                analysis.get("status") or status_from_risk(analysis.get("overallRisk")),
+                risk_score,
+                verdict,
                 json.dumps(analysis.get("reasons") or analysis.get("signals") or []),
                 int(reported),
                 now_iso(),
                 resolved_user_id,
+                classification,
             )
         )
 
@@ -1324,20 +1418,24 @@ def save_user_scan(user_id, url, analysis, email=None, reported=False):
             resolved_email = (row["email"] if row else "").strip().lower()
     if not resolved_email:
         raise SafeScanError("A user email is required to save scan history.", 400)
+    risk_score = int(analysis.get("score") or analysis.get("confidenceScore") or 0)
+    verdict = analysis.get("status") or status_from_risk(analysis.get("overallRisk"))
+    classification = scan_classification_from_analysis(analysis)
     with get_conn() as conn:
         scan_id = make_id("scan")
         conn.execute(
-            "INSERT INTO scan_history (id, email, url, risk_score, verdict, signals, reported, created_at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO scan_history (id, email, url, risk_score, verdict, signals, reported, created_at, user_id, classification) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 scan_id,
                 resolved_email,
                 url[:2048],
-                int(analysis.get("score") or analysis.get("confidenceScore") or 0),
-                analysis.get("status") or status_from_risk(analysis.get("overallRisk")),
+                risk_score,
+                verdict,
                 json.dumps(analysis.get("reasons") or analysis.get("signals") or []),
                 int(reported),
                 now_iso(),
                 user_id,
+                classification,
             ),
         )
     return scan_id
@@ -4893,23 +4991,9 @@ async def api_scan_history(request: Request):
         rows = user_scoped_select(conn, "scan_history")
     rows = sorted(rows, key=lambda row: row["created_at"] or "", reverse=True)[:limit]
 
-    history = []
-    for row in rows:
-        try:
-            signals = json.loads(row["signals"] or "[]")
-        except (TypeError, json.JSONDecodeError):
-            signals = []
-        history.append({
-            "scanId": row["id"],
-            "id": row["id"],
-            "url": row["url"],
-            "verdict": row["verdict"] or "safe",
-            "riskScore": int(row["risk_score"] or 0),
-            "signals": signals if isinstance(signals, list) else [],
-            "reported": bool(row["reported"]),
-            "analyzedAt": row["created_at"],
-            "scannedAt": row["created_at"],
-        })
+    history = [serialize_scan_history_row(row) for row in rows]
+    if request.query_params.get("grouped", "").lower() in ("1", "true", "yes"):
+        return {"items": history, "groups": group_scan_history(history)}
     return history
 
 @qr_app.get("/api/history")
@@ -4920,25 +5004,9 @@ async def api_history(request: Request):
     with get_conn() as conn:
         rows = user_scoped_select(conn, "scan_history")
     rows = sorted(rows, key=lambda row: row["created_at"] or "", reverse=True)[:100]
-    result = []
-    for row in rows:
-        try:
-            signals = json.loads(row["signals"] or "[]")
-        except (TypeError, json.JSONDecodeError):
-            signals = []
-        result.append({
-            "scanId": row["id"],
-            "id": row["id"],
-            "url": row["url"],
-            "verdict": row["verdict"] or "safe",
-            "threat_type": row["verdict"] or "safe",
-            "riskScore": int(row["risk_score"] or 0),
-            "risk_score": int(row["risk_score"] or 0),
-            "signals": signals if isinstance(signals, list) else [],
-            "reported": bool(row["reported"]),
-            "scannedAt": row["created_at"],
-            "analyzedAt": row["created_at"],
-        })
+    result = [serialize_scan_history_row(row) for row in rows]
+    if request.query_params.get("grouped", "").lower() in ("1", "true", "yes"):
+        return {"items": result, "groups": group_scan_history(result)}
     return result
 
 @qr_app.get("/api/app-runtime")
@@ -6402,12 +6470,14 @@ async def history_page(request: Request):
     user = get_session_user(request)
     email = user["email"] if user else ""
     scans = []
+    scan_groups = []
     if user:
         with get_conn() as conn:
             rows = user_scoped_select(conn, "scan_history")
             rows = sorted(rows, key=lambda row: row["created_at"] or "", reverse=True)[:100]
-            scans = [dict(r) for r in rows]
-    return templates.TemplateResponse("history.html", {"request": request, "email": email, "scans": scans})
+            scans = [serialize_scan_history_row(row) for row in rows]
+            scan_groups = group_scan_history(scans)
+    return templates.TemplateResponse("history.html", {"request": request, "email": email, "scans": scans, "scan_groups": scan_groups})
 
 @qr_app.get("/api/leaderboard")
 async def api_leaderboard(request: Request, limit: int = Query(50)):

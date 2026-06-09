@@ -18,6 +18,10 @@
     .history-eyebrow { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.16em; color: var(--accent); margin: 0 0 6px; }
     .history-shell h1 { margin: 0 0 6px; font-size: 2rem; font-weight: 700; }
     .history-sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 32px; }
+    .history-groups { display: flex; flex-direction: column; gap: 26px; }
+    .history-group-header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 12px; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+    .history-group-title { margin: 0; font-size: 1rem; font-weight: 700; }
+    .history-group-count { color: var(--muted); font-size: 0.78rem; white-space: nowrap; }
     .history-list { display: flex; flex-direction: column; gap: 12px; }
     .history-card {
       background: rgba(13,24,43,0.9); border: 1px solid var(--line); border-radius: 12px;
@@ -31,10 +35,14 @@
       display: inline-flex; align-items: center; justify-content: center;
       padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 700; white-space: nowrap;
     }
-    .badge-safe    { background: rgba(103,242,200,0.12); color: var(--accent); border: 1px solid rgba(103,242,200,0.25); }
-    .badge-caution { background: rgba(245,158,11,0.12);  color: var(--warn);   border: 1px solid rgba(245,158,11,0.25); }
-    .badge-danger  { background: rgba(255,110,127,0.12); color: var(--danger); border: 1px solid rgba(255,110,127,0.25); }
+    .badge-safe { background: rgba(103,242,200,0.12); color: var(--accent); border: 1px solid rgba(103,242,200,0.25); }
+    .badge-caution { background: rgba(245,158,11,0.12); color: var(--warn); border: 1px solid rgba(245,158,11,0.25); }
+    .badge-danger { background: rgba(255,110,127,0.12); color: var(--danger); border: 1px solid rgba(255,110,127,0.25); }
     .history-empty { color: var(--muted); text-align: center; padding: 60px 0; font-size: 0.95rem; }
+    @media (max-width: 640px) {
+      .history-card { grid-template-columns: 1fr; }
+      .history-badge { grid-column: 1; grid-row: auto; justify-self: start; }
+    }
   </style>
 </head>
 <body>
@@ -49,15 +57,25 @@
     {% elif not scans %}
       <p class="history-empty">No scans yet. Scan a QR code to see history here.</p>
     {% else %}
-      <div class="history-list">
-        {% for scan in scans %}
-        {% set verdict = (scan.verdict or 'SAFE') | upper %}
-        {% set badge = 'badge-safe' if verdict == 'SAFE' else ('badge-caution' if verdict == 'CAUTION' else 'badge-danger') %}
-        <div class="history-card">
-          <a class="history-url" href="{{ scan.url }}" target="_blank" rel="noopener noreferrer">{{ scan.url }}</a>
-          <div class="history-meta">Risk score: {{ scan.risk_score or 0 }}/100 &nbsp;·&nbsp; {{ scan.created_at[:16].replace('T', ' ') if scan.created_at else 'Unknown' }}</div>
-          <span class="history-badge {{ badge }}">{{ verdict }}</span>
-        </div>
+      <div class="history-groups">
+        {% for group in scan_groups %}
+        <section class="history-group">
+          <div class="history-group-header">
+            <h2 class="history-group-title">{{ group.label }}</h2>
+            <span class="history-group-count">{{ group.count }} scan{{ '' if group.count == 1 else 's' }}</span>
+          </div>
+          <div class="history-list">
+            {% for scan in group.scans %}
+            {% set classification = (scan.classification or 'UNKNOWN') | upper %}
+            {% set badge = 'badge-safe' if classification == 'SAFE' else ('badge-caution' if classification == 'CAUTION' else 'badge-danger') %}
+            <div class="history-card">
+              <a class="history-url" href="{{ scan.url }}" target="_blank" rel="noopener noreferrer">{{ scan.url }}</a>
+              <div class="history-meta">Risk score: {{ scan.risk_score or 0 }}/100 &middot; {{ scan.created_at[:16].replace('T', ' ') if scan.created_at else 'Unknown' }}</div>
+              <span class="history-badge {{ badge }}">{{ scan.classificationLabel or classification }}</span>
+            </div>
+            {% endfor %}
+          </div>
+        </section>
         {% endfor %}
       </div>
     {% endif %}

@@ -49,3 +49,18 @@ def test_readiness_and_metrics_endpoints(tmp_path, monkeypatch):
     assert ready.json()["status"] == "ready"
     assert metrics.status_code == 200
     assert b"safescan_requests_total" in metrics.content or b"prometheus-client is not installed" in metrics.content
+
+
+def test_scan_history_persists_classification(tmp_path, monkeypatch):
+    module, _, db_path = load_app(tmp_path, monkeypatch)
+
+    module.save_scan_history(
+        "user@example.com",
+        "https://example.test",
+        {"status": "MALICIOUS", "score": 92, "reasons": []},
+    )
+
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute("SELECT verdict, risk_score, classification FROM scan_history").fetchone()
+
+    assert row == ("MALICIOUS", 92, "MALICIOUS")
