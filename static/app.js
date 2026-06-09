@@ -1204,8 +1204,10 @@ function goGhostBrokerOptOutUrl(broker, profile) {
 
 function goGhostCopyPacket(broker, profile, searchUrl) {
   const optOutUrl = goGhostBrokerOptOutUrl(broker, profile);
+  const requesterType = broker.id === "fastpeoplesearch" ? ["Requester type: I am the subject of this request"] : [];
   return [
     `${broker.name} opt-out packet`,
+    ...requesterType,
     `Name: ${profile.name || ""}`,
     `Street address: ${profile.address || ""}`,
     `City/state: ${profile.location || ""}`,

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 
 FASTPEOPLESEARCH_OPTOUT_URL = "https://www.fastpeoplesearch.com/optout"
+FASTPEOPLESEARCH_SELF_REQUEST_TEXT = "I am the subject of this request"
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,16 @@ async def _select_requester_type(page) -> bool:
                 text: option.textContent || ""
             }))"""
         )
+        for option in options:
+            text = (option.get("text") or "").strip().lower()
+            value = (option.get("value") or "").strip()
+            if value and (
+                "i am the subject" in text
+                or "subject of this request" in text
+                or text in {"self", "myself", "me"}
+            ):
+                await select.select_option(value=value)
+                return True
         for option in options:
             text = (option.get("text") or "").strip().lower()
             value = (option.get("value") or "").strip()
