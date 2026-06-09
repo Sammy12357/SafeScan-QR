@@ -40,7 +40,11 @@
         client_id: clientId,
         login_uri: loginUri,
         state: state,
-        ux_mode: "redirect"
+        ux_mode: "redirect",
+        // Automatically sign returning visitors back in without making them
+        // re-pick their account, so coming back to the site is one less click.
+        auto_select: true,
+        itp_support: true
       });
       window.google.accounts.id.renderButton(googleMount, {
         type: "standard",

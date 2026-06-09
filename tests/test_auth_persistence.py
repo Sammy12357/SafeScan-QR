@@ -520,6 +520,97 @@ def test_global_leaderboard_includes_all_registered_users(auth_app):
     assert by_user_id[zero_user["google_id"]]["scan_count"] == 0
 
 
+def test_malicious_qr_database_is_public_and_filters_scans(auth_app):
+    _, client, db_path = auth_app
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            """
+            INSERT INTO scan_history (id, email, url, risk_score, verdict, signals, reported, created_at, user_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                ("safe", "safe@example.com", "https://safe.example", 10, "SAFE", "{}", 0, "2026-06-01T00:00:00Z", "safe-user"),
+                ("mal-old", "a@example.com", "https://evil.example/login", 84, "HIGH", "{}", 0, "2026-06-02T00:00:00Z", "user-a"),
+                ("mal-new", "b@example.com", "https://evil.example/login", 91, "MALICIOUS", "{}", 0, "2026-06-03T00:00:00Z", "user-b"),
+                ("verdict-only", "c@example.com", "https://phish.example/wallet", 20, "MALICIOUS", "{}", 0, "2026-06-04T00:00:00Z", "user-c"),
+            ],
+        )
+
+    page = client.get("/malicious-database")
+    response = client.get("/api/malicious-qr")
+
+    assert page.status_code == 200
+    assert "Malicious QR Database" in page.text
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 2
+    assert [entry["url"] for entry in data["entries"]] == [
+        "https://phish.example/wallet",
+        "https://evil.example/login",
+    ]
+    evil = data["entries"][1]
+    assert evil["riskScore"] == 91
+    assert evil["timesSeen"] == 2
+    assert evil["lastScannedAt"] == "2026-06-03T00:00:00Z"
+
+
+def test_malicious_qr_database_search_pagination_and_compat_endpoint(auth_app):
+    _, client, db_path = auth_app
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            """
+            INSERT INTO scan_history (id, email, url, risk_score, verdict, signals, reported, created_at, user_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                ("one", "a@example.com", "https://first-bad.example", 99, "MALICIOUS", "{}", 0, "2026-06-01T00:00:00Z", "user-a"),
+                ("two", "b@example.com", "https://second-bad.example", 88, "HIGH", "{}", 0, "2026-06-02T00:00:00Z", "user-b"),
+                ("three", "c@example.com", "https://needle-bad.example", 82, "HIGH", "{}", 0, "2026-06-03T00:00:00Z", "user-c"),
+            ],
+        )
+
+    first_page = client.get("/api/malicious-qr?limit=2&page=1").json()
+    second_page = client.get("/api/malicious-qr?limit=2&page=2").json()
+    searched = client.get("/api/qr-codes?malicious=true&q=needle").json()
+    unsupported = client.get("/api/qr-codes")
+
+    assert first_page["total"] == 3
+    assert first_page["totalPages"] == 2
+    assert [entry["url"] for entry in first_page["entries"]] == [
+        "https://needle-bad.example",
+        "https://second-bad.example",
+    ]
+    assert [entry["url"] for entry in second_page["entries"]] == ["https://first-bad.example"]
+    assert searched["total"] == 1
+    assert searched["entries"][0]["url"] == "https://needle-bad.example"
+    assert unsupported.status_code == 400
+
+
+def test_malicious_qr_image_only_renders_known_malicious_payloads(auth_app):
+    _, client, db_path = auth_app
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            """
+            INSERT INTO scan_history (id, email, url, risk_score, verdict, signals, reported, created_at, user_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                ("safe", "safe@example.com", "https://safe.example", 10, "SAFE", "{}", 0, "2026-06-01T00:00:00Z", "safe-user"),
+                ("bad", "bad@example.com", "https://bad.example", 95, "MALICIOUS", "{}", 0, "2026-06-02T00:00:00Z", "bad-user"),
+            ],
+        )
+
+    bad_image = client.get("/api/malicious-qr/image", params={"u": "https://bad.example"})
+    safe_image = client.get("/api/malicious-qr/image", params={"u": "https://safe.example"})
+    unknown_image = client.get("/api/malicious-qr/image", params={"u": "https://unknown.example"})
+
+    assert bad_image.status_code == 200
+    assert bad_image.headers["content-type"] == "image/png"
+    assert bad_image.content.startswith(b"\x89PNG")
+    assert safe_image.status_code == 404
+    assert unknown_image.status_code == 404
+
+
 def test_time_only_formatter_removes_iso_date(auth_app):
     module, _, _ = auth_app
 

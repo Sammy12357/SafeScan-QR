@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Malicious QR Database | SafeScan QR</title>
+  <meta name="description" content="A public database of QR codes scanned and flagged as malicious by SafeScan. Browse known-dangerous codes so you can avoid them.">
+  <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css?v=malicious-db-v1">
+  <style>
+    :root {
+      --bg: #09111f; --text: #edf4ff; --muted: #98a9c2;
+      --accent: #67f2c8; --line: rgba(255,255,255,0.09);
+      --danger: #ff6e7f; --danger-strong: #dc2626; --warn: #f59e0b;
+    }
+    body { background: linear-gradient(145deg,#060b12 0%,#0a1420 46%,#111827 100%); color: var(--text); font-family: "Space Grotesk","Aptos","Segoe UI",sans-serif; margin: 0; }
+    .mq-shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 80px; }
+    .mq-back { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 28px; font-size: 0.85rem; color: var(--muted); text-decoration: none; }
+    .mq-back:hover { color: var(--text); }
+    .mq-eyebrow { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.16em; color: var(--danger); margin: 0 0 6px; }
+    .mq-shell h1 { margin: 0 0 6px; font-size: 2rem; font-weight: 700; }
+    .mq-sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 20px; max-width: 70ch; }
+    .mq-warning {
+      display: flex; gap: 10px; align-items: flex-start;
+      background: rgba(220,38,38,0.10); border: 1px solid rgba(220,38,38,0.35);
+      border-radius: 12px; padding: 12px 16px; margin: 0 0 24px; font-size: 0.85rem; color: #ffd9dd;
+    }
+    .mq-warning strong { color: #fff; }
+    .mq-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 0 0 22px; }
+    .mq-search {
+      flex: 1 1 280px; min-width: 200px; padding: 11px 14px; border-radius: 10px;
+      border: 1px solid var(--line); background: rgba(13,24,43,0.9); color: var(--text);
+      font: inherit; font-size: 0.9rem;
+    }
+    .mq-search:focus { outline: none; border-color: var(--accent); }
+    .mq-count { color: var(--muted); font-size: 0.82rem; white-space: nowrap; }
+    .mq-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+    .mq-card {
+      background: rgba(13,24,43,0.9); border: 1px solid var(--line); border-radius: 14px;
+      padding: 16px; display: grid; grid-template-columns: 104px 1fr; gap: 14px; align-items: start;
+    }
+    .mq-qr {
+      width: 104px; height: 104px; border-radius: 10px; background: #fff;
+      object-fit: contain; border: 1px solid rgba(220,38,38,0.4); flex-shrink: 0;
+    }
+    .mq-body { min-width: 0; }
+    .mq-cat {
+      display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 20px;
+      font-size: 0.7rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 8px;
+    }
+    .cat-critical { background: rgba(220,38,38,0.16); color: #ff8a93; border: 1px solid rgba(220,38,38,0.45); }
+    .cat-malicious { background: rgba(255,110,127,0.12); color: var(--danger); border: 1px solid rgba(255,110,127,0.3); }
+    .cat-suspicious { background: rgba(245,158,11,0.12); color: var(--warn); border: 1px solid rgba(245,158,11,0.3); }
+    .mq-url {
+      color: #ffdfe2; word-break: break-all; font-size: 0.85rem; font-family: "SFMono-Regular",Consolas,monospace;
+      line-height: 1.4; margin: 0 0 10px; user-select: all;
+    }
+    .mq-meta { color: var(--muted); font-size: 0.76rem; line-height: 1.6; }
+    .mq-meta b { color: var(--text); font-weight: 600; }
+    .mq-state { text-align: center; padding: 64px 0; color: var(--muted); font-size: 0.95rem; }
+    .mq-state.error { color: var(--danger); }
+    .mq-pager { display: flex; justify-content: center; align-items: center; gap: 14px; margin-top: 28px; }
+    .mq-pager button {
+      min-width: 96px; min-height: 40px; padding: 0 16px; border-radius: 9px; border: 1px solid var(--line);
+      background: rgba(255,255,255,0.04); color: var(--text); font: inherit; font-weight: 700; cursor: pointer;
+    }
+    .mq-pager button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .mq-pager button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .mq-pageinfo { color: var(--muted); font-size: 0.82rem; min-width: 120px; text-align: center; }
+    .site-footer { margin-left: 0; width: 100%; }
+    @media (max-width: 540px) {
+      .mq-grid { grid-template-columns: 1fr; }
+      .mq-shell h1 { font-size: 1.6rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="mq-shell">
+    <a class="mq-back" href="/">&#8592; Back to Scanner</a>
+    <p class="mq-eyebrow">SafeScan QR &middot; Threat Intelligence</p>
+    <h1>Malicious QR Database</h1>
+    <p class="mq-sub">Every QR code SafeScan has scanned and flagged as malicious, collected so you can recognise and avoid them. Updated as new dangerous codes are detected.</p>
+    <div class="mq-warning">
+      <span aria-hidden="true">&#9888;</span>
+      <span><strong>Do not scan these codes.</strong> They link to phishing, malware, or wallet-draining destinations. The graphics and links below are shown for awareness only and are intentionally not clickable.</span>
+    </div>
+
+    <div class="mq-controls">
+      <input id="mqSearch" class="mq-search" type="search" placeholder="Search by URL…" autocomplete="off" spellcheck="false" value="">
+      <span id="mqCount" class="mq-count"></span>
+    </div>
+
+    <div id="mqGrid" class="mq-grid" aria-live="polite" data-limit="{{ limit }}"></div>
+    <div id="mqState" class="mq-state" style="display:none"></div>
+
+    <div class="mq-pager">
+      <button id="mqPrev" type="button" disabled>&#8592; Prev</button>
+      <span id="mqPageInfo" class="mq-pageinfo">—</span>
+      <button id="mqNext" type="button" disabled>Next &#8594;</button>
+    </div>
+  </div>
+
+  {% include "footer.html" %}
+  <script src="/static/app.js?v=shared-footer-v1"></script>
+  <script src="/static/malicious-database.js?v=malicious-db-v1" defer></script>
+</body>
+</html>

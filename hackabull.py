@@ -1679,6 +1679,124 @@ def get_global_leaderboard(limit=50):
         leaders.append(item)
     return leaders
 
+# Any scanned payload scoring at/above this is treated as malicious (the same
+# "high" risk threshold used across the app — see risk_band/status_from_risk).
+MALICIOUS_RISK_THRESHOLD = 80
+
+def _like_escape(term):
+    # Escape LIKE wildcards so a user's search term is matched literally.
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+def _threat_category(score):
+    if score >= 90:
+        return "Critical"
+    if score >= MALICIOUS_RISK_THRESHOLD:
+        return "Malicious"
+    return "Suspicious"
+
+def get_malicious_qr_codes(page=1, limit=20, query=""):
+    """Public, global list of scanned QR payloads flagged malicious.
+
+    Aggregates scan_history by URL so each dangerous code appears once, with
+    its highest risk score, most recent sighting, and how many times it has
+    been seen. Deliberately exposes no scanner identity (no email / user id) —
+    this is a public "codes to avoid" board, not user history.
+    """
+    page = max(1, int(page or 1))
+    limit = max(1, min(int(limit or 20), 100))
+    offset = (page - 1) * limit
+    search = (query or "").strip()[:200]
+
+    where = (
+        "WHERE (COALESCE(risk_score, 0) >= ? OR upper(COALESCE(verdict, '')) = 'MALICIOUS') "
+        "AND url IS NOT NULL AND url != ''"
+    )
+    params = [MALICIOUS_RISK_THRESHOLD]
+    if search:
+        where += " AND lower(url) LIKE ? ESCAPE '\\'"
+        params.append("%" + _like_escape(search.lower()) + "%")
+
+    with get_conn() as conn:
+        conn.row_factory = sqlite3.Row
+        total = conn.execute(
+            f"SELECT COUNT(*) FROM (SELECT url FROM scan_history {where} GROUP BY url)",
+            params,
+        ).fetchone()[0]
+        rows = conn.execute(
+            f"""
+            SELECT url,
+                   MAX(COALESCE(risk_score, 0)) AS risk_score,
+                   MAX(created_at) AS last_seen,
+                   COUNT(*) AS times_seen
+            FROM scan_history
+            {where}
+            GROUP BY url
+            ORDER BY last_seen DESC
+            LIMIT ? OFFSET ?
+            """,
+            params + [limit, offset],
+        ).fetchall()
+
+    entries = []
+    for row in rows:
+        score = int(row["risk_score"] or 0)
+        url = row["url"] or ""
+        entries.append({
+            "id": hashlib.sha256(url.encode("utf-8")).hexdigest()[:16],
+            "url": url,
+            "riskScore": score,
+            "category": _threat_category(score),
+            "lastScannedAt": row["last_seen"],
+            "timesSeen": int(row["times_seen"] or 0),
+        })
+    total = int(total or 0)
+    return {
+        "entries": entries,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "totalPages": max(1, (total + limit - 1) // limit),
+    }
+
+def render_threat_qr_png(url):
+    """Regenerate the QR graphic for a known-malicious URL, stamped with a red
+    warning badge so it reads as dangerous and is shown for awareness only."""
+    import qrcode
+    from qrcode.constants import ERROR_CORRECT_H
+    from PIL import Image, ImageDraw
+
+    qr = qrcode.QRCode(version=None, error_correction=ERROR_CORRECT_H, box_size=8, border=4)
+    qr.add_data(url)
+    qr.make(fit=True)
+    # Dark-red modules signal "danger" at a glance versus the safe black codes.
+    img = qr.make_image(fill_color="#7f1d1d", back_color="white").convert("RGB")
+    img_w, img_h = img.size
+    cx, cy = img_w // 2, img_h // 2
+    draw = ImageDraw.Draw(img)
+
+    badge = max(48, img_w // 4)
+    half = badge // 2
+    pad = max(6, badge // 12)
+    corner = max(6, badge // 6)
+    draw.rounded_rectangle(
+        [cx - half - pad, cy - half - pad, cx + half + pad, cy + half + pad],
+        radius=corner + pad, fill="white")
+    draw.rounded_rectangle(
+        [cx - half, cy - half, cx + half, cy + half],
+        radius=corner, outline="#dc2626", width=max(3, badge // 16))
+    # Exclamation mark: a tapered bar plus a dot.
+    bar_w = max(4, badge // 9)
+    draw.rounded_rectangle(
+        [cx - bar_w // 2, cy - half + badge // 5, cx + bar_w // 2, cy + half // 4],
+        radius=bar_w // 2, fill="#dc2626")
+    dot_r = max(3, bar_w // 2)
+    dot_cy = cy + half - badge // 5
+    draw.ellipse([cx - dot_r, dot_cy - dot_r, cx + dot_r, dot_cy + dot_r], fill="#dc2626")
+
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG", optimize=True)
+    return buffer.getvalue()
+
 def referral_code_for_user(email):
     normalized_email = (email or "").strip().lower()
     if not normalized_email:
@@ -6524,6 +6642,74 @@ async def leaderboard_page(request: Request):
         "current_user_id": user.get("google_id") if user else "",
         "leaders": get_global_leaderboard(50),
         "started_at": APP_STARTED_AT.isoformat() + "Z",
+    })
+
+@qr_app.get("/api/malicious-qr")
+async def api_malicious_qr(request: Request, page: int = Query(1), limit: int = Query(20), q: str = Query("")):
+    """Public JSON feed of QR payloads flagged malicious, paginated and
+    optionally filtered by URL substring. No authentication required."""
+    rate_limit = enforce_rate_limit(request, "malicious_qr_list", 120, 60)
+    if rate_limit:
+        return rate_limit
+    return get_malicious_qr_codes(page=page, limit=limit, query=q)
+
+@qr_app.get("/api/qr-codes")
+async def api_qr_codes(
+    request: Request,
+    malicious: bool = Query(False),
+    page: int = Query(1),
+    limit: int = Query(20),
+    q: str = Query(""),
+):
+    """Compatibility QR-code listing endpoint.
+
+    The public threat database uses /api/malicious-qr directly, while this
+    endpoint keeps the requested /api/qr-codes?malicious=true shape available
+    for clients that expect a generic QR-code collection route.
+    """
+    if not malicious:
+        raise HTTPException(status_code=400, detail="Only malicious=true is supported for public QR listings.")
+    rate_limit = enforce_rate_limit(request, "malicious_qr_list", 120, 60)
+    if rate_limit:
+        return rate_limit
+    return get_malicious_qr_codes(page=page, limit=limit, query=q)
+
+@qr_app.get("/api/malicious-qr/image")
+async def api_malicious_qr_image(request: Request, u: str = Query(...)):
+    """Regenerated QR graphic for a known-malicious URL. Only renders codes
+    that actually exist in the database as malicious, so this can't be used as
+    a generic QR generator for arbitrary (or safe) URLs."""
+    rate_limit = enforce_rate_limit(request, "malicious_qr_image", 120, 60)
+    if rate_limit:
+        return rate_limit
+    target = (u or "").strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="Missing URL.")
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM scan_history WHERE url = ? AND "
+            "(COALESCE(risk_score, 0) >= ? OR upper(COALESCE(verdict, '')) = 'MALICIOUS') LIMIT 1",
+            (target, MALICIOUS_RISK_THRESHOLD),
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Not a known malicious QR.")
+    png = render_threat_qr_png(target)
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+@qr_app.get("/malicious-database", response_class=HTMLResponse)
+async def malicious_database_page(request: Request):
+    """Public "codes to avoid" board listing every scanned malicious QR.
+
+    The list itself is fetched client-side from /api/malicious-qr so search and
+    pagination work without page reloads; the template only needs the page size.
+    """
+    return templates.TemplateResponse("malicious_database.html", {
+        "request": request,
+        "limit": 20,
     })
 
 @qr_app.get("/auth/confirm-age", response_class=HTMLResponse)
