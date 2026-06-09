@@ -28,13 +28,15 @@
 
   <nav class="sidenav-links" aria-label="Features">
     <a href="/" class="sidenav-link {{ 'is-active' if active_nav == 'home' else '' }}">Home</a>
-    <a href="/generate-qr" class="sidenav-link {{ 'is-active' if active_nav == 'generate' else '' }}">Generate QR</a>
+    <a href="{{ '/#scanner' if test_site_path else '/#scanner' }}" class="sidenav-link {{ 'is-active' if active_nav == 'scanner' else '' }}">Scanner</a>
+    <a href="/go-ghost" class="sidenav-link {{ 'is-active' if active_nav == 'ghost' else '' }}">Go Ghost</a>
     <a href="/token" class="sidenav-link {{ 'is-active' if active_nav == 'token' else '' }}">Airdrop</a>
     <a href="/plans" class="sidenav-link {{ 'is-active' if active_nav == 'plans' else '' }}">Plans</a>
-    <a href="/malicious-database" class="sidenav-link {{ 'is-active' if active_nav == 'threat' else '' }}">Threat database</a>
-    <a href="{{ '/#scanner' if test_site_path else '/go-ghost' }}" class="sidenav-link {{ 'is-active' if active_nav == 'ghost' else '' }}">{{ "Scanner" if test_site_path else "Go Ghost" }}</a>
     {% if logged_in %}
     <a href="/history" class="sidenav-link {{ 'is-active' if active_nav == 'history' else '' }}">Scan history</a>
+    {% endif %}
+    <a href="/malicious-database" class="sidenav-link {{ 'is-active' if active_nav == 'threat' else '' }}">Threat database</a>
+    {% if logged_in %}
     <a href="/leaderboard" class="sidenav-link {{ 'is-active' if active_nav == 'leaderboard' else '' }}">Leaderboard</a>
     {% endif %}
   </nav>
@@ -47,7 +49,6 @@
         <div class="sidenav-profile-id">
           <p class="profile-name">{{ profile_display_name }}</p>
           <p class="profile-email" data-email="{{ email }}">{{ profile_subtitle }}</p>
-          {% if is_admin %}<span class="admin-role-badge">{{ user_role | upper }}</span>{% endif %}
         </div>
         <div class="sidenav-profile-actions">
           <a href="/profile" class="profile-button">Profile</a>

@@ -75,9 +75,9 @@ body.sidenav-open .sidenav { transform: translateX(0); }
 .sidenav-foot { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line); }
 .sidenav-signin { display: block; text-align: center; padding: 11px 12px; border-radius: 9px; border: 1px solid rgba(103, 242, 200, 0.4); background: rgba(103, 242, 200, 0.1); color: var(--accent); font-weight: 800; text-decoration: none; }
 .sidenav-profile { display: flex; flex-direction: column; gap: 12px; }
-.sidenav-profile-id { display: flex; flex-direction: column; gap: 3px; }
-.sidenav-profile-id .profile-name { margin: 0; font-weight: 700; font-size: 0.95rem; }
-.sidenav-profile-id .profile-email { margin: 0; color: var(--muted); font-size: 0.8rem; word-break: break-word; }
+.sidenav-profile-id { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; text-align: left; }
+.sidenav-profile-id .profile-name { width: 100%; margin: 0; font-weight: 700; font-size: 0.95rem; text-align: left; }
+.sidenav-profile-id .profile-email { width: 100%; margin: 0; color: var(--muted); font-size: 0.8rem; text-align: left; word-break: break-word; }
 .sidenav-profile-id .admin-role-badge { align-self: flex-start; margin-top: 4px; }
 .sidenav-profile-actions { display: flex; flex-direction: column; gap: 8px; }
 .sidenav-profile-actions .sign-out-form { width: 100%; }
