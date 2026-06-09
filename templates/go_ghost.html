@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Go Ghost | SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=go-ghost-prefill-v3">
+  <link rel="stylesheet" href="/static/styles.css?v=go-ghost-prefill-v4">
 </head>
 <body>
   <div class="page-shell go-ghost-shell">
@@ -64,16 +64,6 @@
         </div>
       </section>
 
-      <section class="go-ghost-card go-ghost-broker-section">
-        <div class="panel-header">
-          <div>
-            <p class="eyebrow">Step 2</p>
-            <h2>Start with the highest-impact sites</h2>
-          </div>
-        </div>
-        <div id="goGhostBrokerList" class="broker-list"></div>
-      </section>
-
       <section class="go-ghost-card automation-scope-card">
         <div class="panel-header">
           <div>
@@ -120,6 +110,7 @@
           <div class="ghost-automation-row ghost-automation-head"><span>Site</span><span>Search</span><span>Submit</span><span>Manual</span></div>
           <div id="goGhostAutomationRows" class="ghost-automation-rows"></div>
         </div>
+        <div id="goGhostBrokerList" class="broker-list hidden" aria-hidden="true"></div>
       </section>
     </main>
 
@@ -160,6 +151,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=go-ghost-prefill-v3"></script>
+  <script src="/static/app.js?v=go-ghost-prefill-v4"></script>
 </body>
 </html>

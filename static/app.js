@@ -1119,14 +1119,14 @@ function setGhostProgress(siteId, field, checked) {
   const progress = getGhostProgress();
   progress[siteId] = { ...(progress[siteId] || {}), [field]: checked, updatedAt: new Date().toISOString() };
   writeJsonStorage(GO_GHOST_PROGRESS_KEY, progress);
-  renderGoGhostBrokers();
+  renderGoGhostProgress();
 }
 
 function updateGhostAutomationState(siteId, automation) {
   const progress = getGhostProgress();
   progress[siteId] = { ...(progress[siteId] || {}), automation, updatedAt: new Date().toISOString() };
   writeJsonStorage(GO_GHOST_PROGRESS_KEY, progress);
-  renderGoGhostBrokers();
+  renderGoGhostProgress();
 }
 
 function formatGhostAutomationStatus(status) {
@@ -1220,8 +1220,8 @@ function scrollToGhostProfile() {
 }
 
 function scrollToGhostBroker(broker) {
-  const card = broker ? goGhostBrokerList?.querySelector(`[data-ghost-broker="${broker.id}"]`) : goGhostBrokerList;
-  card?.scrollIntoView({ behavior: "smooth", block: "center" });
+  const row = broker ? goGhostAutomationRows?.querySelector(`[data-ghost-scope="${broker.id}"]`) : goGhostAutomationRows;
+  row?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 function getGhostFormProfile() {
@@ -1484,7 +1484,7 @@ function startGoGhost() {
   if (goGhostWorkspace) goGhostWorkspace.hidden = false;
   hydrateGoGhostProfile();
   renderGoGhostAutomationScope();
-  renderGoGhostBrokers();
+  renderGoGhostProgress();
 }
 
 if (goGhostWorkspace) {
@@ -1503,7 +1503,7 @@ if (goGhostWorkspace) {
     event.preventDefault();
     writeJsonStorage(GO_GHOST_PROFILE_KEY, getGhostFormProfile());
     renderGoGhostAutomationScope();
-    renderGoGhostBrokers();
+    renderGoGhostProgress();
     showCopyToast("Automation scope updated");
   });
 
@@ -1511,7 +1511,7 @@ if (goGhostWorkspace) {
     input?.addEventListener("input", () => {
       writeJsonStorage(GO_GHOST_PROFILE_KEY, getGhostFormProfile());
       renderGoGhostAutomationScope();
-      renderGoGhostBrokers();
+      renderGoGhostProgress();
     });
   });
 
@@ -1520,7 +1520,7 @@ if (goGhostWorkspace) {
     window.localStorage.removeItem(GO_GHOST_PROGRESS_KEY);
     hydrateGoGhostProfile();
     renderGoGhostAutomationScope();
-    renderGoGhostBrokers();
+    renderGoGhostProgress();
     showCopyToast("Go Ghost data cleared");
   });
 
