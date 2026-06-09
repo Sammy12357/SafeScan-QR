@@ -1841,6 +1841,64 @@ def qr_image_from_payload(payload):
     qr.make(fit=True)
     return qr.make_image(fill_color="black", back_color="white").convert("RGB")
 
+# Cached geometry for the SafeScan logo mark, parsed once from the brand SVG
+# so the generated-QR badge stays in sync with static/safescan-logo.svg
+# without re-reading the file on every request.
+_SAFESCAN_LOGO_GEOMETRY = None
+
+def _safescan_logo_geometry():
+    """Parse static/safescan-logo.svg into (bg_fill, bg_radius, tiles).
+
+    `tiles` is a list of (x, y, w, h, rx, fill) in the SVG's 512x512 space.
+    Returns None if the asset can't be read or parsed, so callers can fall
+    back to a plain badge instead of failing the whole request.
+    """
+    global _SAFESCAN_LOGO_GEOMETRY
+    if _SAFESCAN_LOGO_GEOMETRY is not None:
+        return _SAFESCAN_LOGO_GEOMETRY or None
+    try:
+        svg_path = os.path.join(os.path.dirname(__file__), "static", "safescan-logo.svg")
+        root = ElementTree.parse(svg_path).getroot()
+        bg_fill, bg_radius, tiles = "#000307", 82.0, []
+        for el in root.iter():
+            if not el.tag.endswith("rect"):
+                continue
+            x = float(el.get("x", 0)); y = float(el.get("y", 0))
+            w = float(el.get("width", 0)); h = float(el.get("height", 0))
+            rx = float(el.get("rx", 0)); fill = el.get("fill", "#72ffd4")
+            # The full-canvas rect is the rounded background, not a tile.
+            if w >= 512 and h >= 512:
+                bg_fill, bg_radius = fill, rx
+            else:
+                tiles.append((x, y, w, h, rx, fill))
+        # Cache the result (empty tuple as a "parsed but unusable" sentinel).
+        _SAFESCAN_LOGO_GEOMETRY = (bg_fill, bg_radius, tiles) if tiles else ()
+    except Exception:
+        _SAFESCAN_LOGO_GEOMETRY = ()
+    return _SAFESCAN_LOGO_GEOMETRY or None
+
+def render_safescan_logo(size):
+    """Render the SafeScan logo mark as an RGBA image `size`x`size` px.
+
+    Returns None if the brand geometry isn't available.
+    """
+    from PIL import Image, ImageDraw
+    geometry = _safescan_logo_geometry()
+    if not geometry:
+        return None
+    bg_fill, bg_radius, tiles = geometry
+    scale = size / 512.0
+    logo = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(logo)
+    draw.rounded_rectangle([0, 0, size - 1, size - 1], radius=max(1, int(bg_radius * scale)), fill=bg_fill)
+    for x, y, w, h, rx, fill in tiles:
+        draw.rounded_rectangle(
+            [x * scale, y * scale, (x + w) * scale - 1, (y + h) * scale - 1],
+            radius=max(1, int(rx * scale)),
+            fill=fill,
+        )
+    return logo
+
 def classify_qr_with_ml(payload, image=None, input_source="generated_qr"):
     """Hybrid ML classification with calibration, cache, and feature bonus.
 
@@ -4672,24 +4730,41 @@ async def api_qr_generate(request: Request, payload: dict = Body(...)):
     qr.make(fit=True)
     img = qr.make_image(fill_color="#03080f", back_color="white").convert("RGB")
 
-    # Centre-overlay SafeScan badge. High error correction (~30% of modules)
-    # tolerates this without breaking scanning.
+    # Centre-overlay the SafeScan logo so recipients can see at a glance that
+    # the QR was generated and screened by SafeScan. High error correction
+    # (~30% of modules) tolerates a centred overlay without breaking scanning.
+    # If the brand asset can't be rendered we fall back to a verified-checkmark
+    # badge so generation never fails over a missing/unparseable logo.
     img_w, img_h = img.size
-    badge_size = max(48, img_w // 5)
-    bx = (img_w - badge_size) // 2
-    by = (img_h - badge_size) // 2
-    draw = ImageDraw.Draw(img)
-    pad = 8
-    draw.rectangle([bx - pad, by - pad, bx + badge_size + pad, by + badge_size + pad], fill="white")
-    draw.rectangle([bx, by, bx + badge_size, by + badge_size], outline="#67f2c8", width=4)
-    # Checkmark stroke.
     cx, cy = img_w // 2, img_h // 2
-    s = badge_size // 3
-    draw.line(
-        [(cx - s // 2, cy + 2), (cx - s // 8, cy + s // 3), (cx + s // 2, cy - s // 3)],
-        fill="#03080f",
-        width=max(4, badge_size // 14),
-    )
+    draw = ImageDraw.Draw(img)
+    logo_size = max(64, img_w // 4)
+    logo = render_safescan_logo(logo_size)
+    if logo is not None:
+        # White quiet-zone behind the logo so it reads cleanly against the QR.
+        pad = max(6, logo_size // 12)
+        radius = max(6, logo_size // 8)
+        draw.rounded_rectangle(
+            [cx - logo_size // 2 - pad, cy - logo_size // 2 - pad,
+             cx + logo_size // 2 + pad, cy + logo_size // 2 + pad],
+            radius=radius + pad,
+            fill="white",
+        )
+        img.paste(logo, (cx - logo_size // 2, cy - logo_size // 2), logo)
+    else:
+        badge_size = max(48, img_w // 5)
+        bx = (img_w - badge_size) // 2
+        by = (img_h - badge_size) // 2
+        pad = 8
+        draw.rectangle([bx - pad, by - pad, bx + badge_size + pad, by + badge_size + pad], fill="white")
+        draw.rectangle([bx, by, bx + badge_size, by + badge_size], outline="#67f2c8", width=4)
+        # Checkmark stroke.
+        s = badge_size // 3
+        draw.line(
+            [(cx - s // 2, cy + 2), (cx - s // 8, cy + s // 3), (cx + s // 2, cy - s // 3)],
+            fill="#03080f",
+            width=max(4, badge_size // 14),
+        )
 
     buffer = io.BytesIO()
     img.save(buffer, format="PNG", optimize=True)
