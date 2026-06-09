@@ -5,11 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=scroll-fix-and-generate-qr-v3">
+  <link rel="stylesheet" href="/static/styles.css?v=clean-nav-v1">
 </head>
 <body class="{{ 'test-site-page' if test_site else '' }}">
   <div class="page-shell">
     <div class="top-auth">
+      <a class="top-brand" href="/" aria-label="SafeScan QR home">
+        <img class="top-brand-mark" src="/static/safescan-logo.svg" alt="">
+        <span class="top-brand-name"><strong>SafeScan</strong> QR</span>
+      </a>
+      <div class="top-auth-spacer"></div>
       <button id="topCopyReferralButton" class="top-action-button" type="button">Referral link</button>
       <button id="topConnectWalletButton" class="top-action-button" type="button">Connect wallet</button>
       <a href="{{ '/#scanner' if test_site_path else '/go-ghost' }}" class="top-action-button">{{ "Scanner" if test_site_path else "Go Ghost" }}</a>
@@ -18,9 +23,8 @@
         <a href="/history" class="top-action-button">Scan history</a>
         <a href="/leaderboard" class="top-action-button">Leaderboard</a>
       {% endif %}
-      <div class="top-auth-spacer"></div>
       {% if not logged_in %}
-        <a href="/login" class="top-action-button">Sign in / Sign up</a>
+        <a href="/login" class="top-action-button top-cta">Sign in / Sign up</a>
       {% else %}
         <div id="airdropProfile" class="top-profile">
           <div><p class="profile-name">{{ profile_display_name }}</p><p class="profile-email" data-email="{{ email }}">{{ profile_subtitle }}</p></div>
