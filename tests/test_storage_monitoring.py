@@ -1,4 +1,5 @@
 import importlib
+import json
 import os
 import sqlite3
 import sys
@@ -57,10 +58,26 @@ def test_scan_history_persists_classification(tmp_path, monkeypatch):
     module.save_scan_history(
         "user@example.com",
         "https://example.test",
-        {"status": "MALICIOUS", "score": 92, "reasons": []},
+        {
+            "status": "MALICIOUS",
+            "score": 92,
+            "reasons": [{
+                "label": "Very long malicious reputation finding",
+                "severity": "high",
+                "detail": "x" * 500,
+                "metadata": {"large": "y" * 1000},
+            }],
+        },
     )
 
     with sqlite3.connect(db_path) as conn:
-        row = conn.execute("SELECT verdict, risk_score, classification FROM scan_history").fetchone()
+        row = conn.execute("SELECT verdict, risk_score, classification, signals FROM scan_history").fetchone()
 
-    assert row == ("MALICIOUS", 92, "MALICIOUS")
+    signals = json.loads(row[3])
+    assert row[:3] == ("MALICIOUS", 92, "MALICIOUS")
+    assert len(row[3]) < 260
+    assert signals == [{
+        "label": "Very long malicious reputation finding",
+        "severity": "high",
+        "detail": ("x" * 119) + "...",
+    }]

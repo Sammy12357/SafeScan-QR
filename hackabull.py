@@ -1318,6 +1318,8 @@ SCAN_CLASSIFICATIONS = (
 )
 
 SCAN_CLASSIFICATION_LABELS = dict(SCAN_CLASSIFICATIONS)
+SCAN_HISTORY_MAX_SIGNALS = 4
+SCAN_HISTORY_MAX_SIGNAL_TEXT = 120
 
 def scan_classification(verdict=None, risk_score=0, overall_risk=None):
     normalized_verdict = str(verdict or "").strip().upper()
@@ -1347,6 +1349,33 @@ def scan_classification_from_row(row):
     verdict = row["verdict"] if hasattr(row, "keys") else row.get("verdict")
     risk_score = row["risk_score"] if hasattr(row, "keys") else row.get("risk_score")
     return scan_classification(verdict, risk_score)
+
+def compact_text(value, limit=SCAN_HISTORY_MAX_SIGNAL_TEXT):
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 1)].rstrip() + "..."
+
+def compact_scan_signals(analysis):
+    raw_signals = analysis.get("reasons") or analysis.get("signals") or []
+    if not isinstance(raw_signals, list):
+        return []
+
+    def signal_rank(item):
+        severity = str(item.get("severity") or "").lower() if isinstance(item, dict) else ""
+        return {"high": 0, "critical": 0, "medium": 1, "low": 2}.get(severity, 3)
+
+    compacted = []
+    for item in sorted([entry for entry in raw_signals if isinstance(entry, dict)], key=signal_rank)[:SCAN_HISTORY_MAX_SIGNALS]:
+        label = item.get("label") or item.get("check") or item.get("checkName") or item.get("name") or "Signal"
+        severity = str(item.get("severity") or "low").lower()
+        detail = item.get("detail") or item.get("description") or item.get("reason") or item.get("summary") or ""
+        compacted.append({
+            "label": compact_text(label, 48),
+            "severity": severity if severity in ("critical", "high", "medium", "low") else "low",
+            "detail": compact_text(detail),
+        })
+    return compacted
 
 def serialize_scan_history_row(row):
     try:
@@ -1392,6 +1421,7 @@ def save_scan_history(email, url, analysis, reported=False, user_id=None):
     risk_score = int(analysis.get("score") or analysis.get("confidenceScore") or 0)
     verdict = analysis.get("status") or status_from_risk(analysis.get("overallRisk"))
     classification = scan_classification_from_analysis(analysis)
+    compact_signals = compact_scan_signals(analysis)
     with get_conn() as conn:
         conn.execute(
             "INSERT INTO scan_history (id, email, url, risk_score, verdict, signals, reported, created_at, user_id, classification) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1401,7 +1431,7 @@ def save_scan_history(email, url, analysis, reported=False, user_id=None):
                 url[:2048],
                 risk_score,
                 verdict,
-                json.dumps(analysis.get("reasons") or analysis.get("signals") or []),
+                json.dumps(compact_signals, separators=(",", ":")),
                 int(reported),
                 now_iso(),
                 resolved_user_id,
@@ -1421,6 +1451,7 @@ def save_user_scan(user_id, url, analysis, email=None, reported=False):
     risk_score = int(analysis.get("score") or analysis.get("confidenceScore") or 0)
     verdict = analysis.get("status") or status_from_risk(analysis.get("overallRisk"))
     classification = scan_classification_from_analysis(analysis)
+    compact_signals = compact_scan_signals(analysis)
     with get_conn() as conn:
         scan_id = make_id("scan")
         conn.execute(
@@ -1431,7 +1462,7 @@ def save_user_scan(user_id, url, analysis, email=None, reported=False):
                 url[:2048],
                 risk_score,
                 verdict,
-                json.dumps(analysis.get("reasons") or analysis.get("signals") or []),
+                json.dumps(compact_signals, separators=(",", ":")),
                 int(reported),
                 now_iso(),
                 user_id,
