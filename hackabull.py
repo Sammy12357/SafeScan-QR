@@ -3840,7 +3840,7 @@ CSP_POLICY = "; ".join([
     "script-src 'self' https://accounts.google.com https://apis.google.com https://cdn.jsdelivr.net",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
-    "img-src 'self' data: https://lh3.googleusercontent.com https://ssl.gstatic.com https://www.gstatic.com",
+    "img-src 'self' data: blob: https://lh3.googleusercontent.com https://ssl.gstatic.com https://www.gstatic.com",
     "connect-src 'self' https://safescan-qr.onrender.com https://accounts.google.com https://safebrowsing.googleapis.com https://www.virustotal.com https://api.virustotal.com https://api.mainnet-beta.solana.com https://api.anthropic.com https://api.openai.com https://cdn.jsdelivr.net",
     "frame-src https://accounts.google.com https://www.youtube.com https://www.youtube-nocookie.com",
     "object-src 'none'",
@@ -3851,7 +3851,7 @@ CSP_POLICY = "; ".join([
 ])
 
 PERMISSIONS_POLICY = ", ".join([
-    "camera=()",
+    "camera=(self)",
     "microphone=()",
     "geolocation=()",
     "payment=()",

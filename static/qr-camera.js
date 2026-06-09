@@ -1,10 +1,11 @@
 // SafeScan live QR scanner.
 //
-// Architecture follows the standard real-time-scanner recipe:
-//   1. getUserMedia → live <video> stream (rear camera preferred).
-//   2. Per-frame decode in a requestAnimationFrame loop.
-//   3. Cooldown so the same payload doesn't fire repeatedly.
-//   4. Decoder is BarcodeDetector when available (native, ~free CPU on
+// Architecture:
+//   1. getUserMedia → live <video> stream (rear camera preferred) so the
+//      user can aim, but we never decode on our own.
+//   2. The user presses "Take picture" and we decode that single frame —
+//      nothing is read until they deliberately capture.
+//   3. Decoder is BarcodeDetector when available (native, ~free CPU on
 //      Chrome Android / Edge), else jsQR loaded lazily from the
 //      CSP-allowed jsdelivr CDN as a fallback for iOS Safari / Firefox.
 //
@@ -20,7 +21,6 @@
 
 (function () {
   const JS_QR_CDN = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js";
-  const COOLDOWN_MS = 3000;
   const FALLBACK_MAX_DIM = 720; // downsample for jsQR to keep mobile CPU happy.
   const ENHANCED_SCAN_EVERY_N_FRAMES = 3;
   const STYLIZED_THRESHOLDS = [55, 70, 85, 95, 115, 135, 155, 185];
@@ -110,11 +110,20 @@
           const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
           return {
             kind: "BarcodeDetector",
-            decode: async (video, canvas, ctx) => {
+            decode: async (video, canvas, ctx, forceEnhanced) => {
               const codes = await detector.detect(video);
               if (codes && codes[0]) return codes[0].rawValue;
-              // Only try the jsQR enhancement pass if it's already loaded —
-              // don't block the BarcodeDetector path on a CDN fetch.
+              // On an explicit capture, spend the extra effort: load jsQR (if
+              // it isn't already) and run the stylized-threshold enhancement
+              // pass so a single press has the best possible chance of reading
+              // a tricky code.
+              if (forceEnhanced) {
+                try {
+                  return await decodeWithJsQRFallback(video, canvas, ctx, true);
+                } catch (_e) {
+                  return null;
+                }
+              }
               if (typeof window.jsQR !== "function") return null;
               fallbackFrameCount += 1;
               return decodeWithJsQRFallback(video, canvas, ctx, fallbackFrameCount % ENHANCED_SCAN_EVERY_N_FRAMES === 0);
@@ -142,11 +151,12 @@
     }
     return {
       kind: "jsQR",
-      decode: (video, canvas, ctx) => {
+      decode: (video, canvas, ctx, forceEnhanced) => {
         const imageData = drawVideoFrame(video, canvas, ctx);
         if (!imageData) return null;
         fallbackFrameCount += 1;
-        return decodeWithJsQRPasses(jsQR, imageData, canvas.width, canvas.height, fallbackFrameCount % ENHANCED_SCAN_EVERY_N_FRAMES === 0);
+        const includeEnhanced = forceEnhanced || fallbackFrameCount % ENHANCED_SCAN_EVERY_N_FRAMES === 0;
+        return decodeWithJsQRPasses(jsQR, imageData, canvas.width, canvas.height, includeEnhanced);
       }
     };
   }
@@ -167,7 +177,10 @@
           '<video class="qr-camera-video" autoplay playsinline muted></video>' +
           '<div class="qr-camera-frame" aria-hidden="true"></div>' +
         '</div>' +
-        '<p class="qr-camera-status" aria-live="polite">Point the camera at a QR code…</p>' +
+        '<p class="qr-camera-status" aria-live="polite">Starting camera…</p>' +
+        '<div class="qr-camera-actions">' +
+          '<button class="qr-camera-capture" type="button" disabled>Take picture</button>' +
+        '</div>' +
       '</div>';
     return modal;
   }
@@ -181,19 +194,18 @@
     const video = modal.querySelector("video");
     const status = modal.querySelector(".qr-camera-status");
     const closeBtn = modal.querySelector(".qr-camera-close");
+    const captureBtn = modal.querySelector(".qr-camera-capture");
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
 
     let stream = null;
-    let raf = null;
     let active = true;
-    let lastValue = null;
-    let lastValueAt = 0;
+    let decoder = null;
+    let scanning = false;
 
     function cleanup() {
       if (!active) return;
       active = false;
-      if (raf) cancelAnimationFrame(raf);
       if (stream) {
         stream.getTracks().forEach((track) => {
           try { track.stop(); } catch (_e) {}
@@ -259,7 +271,6 @@
         // loop will pick up frames once HAVE_ENOUGH_DATA is reached.
       }
 
-      let decoder;
       try {
         decoder = await buildDecoder();
       } catch (err) {
@@ -267,36 +278,49 @@
         return;
       }
 
+      // The preview is live so the user can aim, but we never decode on our
+      // own — a QR is only read when the user presses "Take picture".
       status.textContent = decoder.kind === "BarcodeDetector"
-        ? "Point the camera at a QR code…"
-        : "Point the camera at a QR code… (using fallback decoder)";
+        ? "Line up the QR code, then take a picture."
+        : "Line up the QR code, then take a picture. (using fallback decoder)";
+      captureBtn.disabled = false;
+    })();
 
-      async function tick() {
-        if (!active) return;
-        if (video.readyState >= 2 /* HAVE_CURRENT_DATA */) {
-          try {
-            const value = await decoder.decode(video, canvas, ctx);
-            if (value) {
-              const now = Date.now();
-              const isDuplicate = lastValue === value && now - lastValueAt < COOLDOWN_MS;
-              if (!isDuplicate) {
-                lastValue = value;
-                lastValueAt = now;
-                status.textContent = "QR detected — analysing…";
-                cleanup();
-                if (typeof opts.onResult === "function") opts.onResult(value);
-                return;
-              }
-            }
-          } catch (_e) {
-            // Per-frame decode errors are non-fatal; just continue scanning.
-          }
-        }
-        raf = requestAnimationFrame(tick);
+    // Capture handler: grab the current frame and decode it once. Nothing
+    // happens until the user clicks, so this is a deliberate "take a photo of
+    // the QR code" action rather than continuous auto-scanning.
+    async function capture() {
+      if (!active || scanning || !decoder) return;
+      if (video.readyState < 2 /* HAVE_CURRENT_DATA */) {
+        status.textContent = "Camera is still warming up — try again in a second.";
+        return;
+      }
+      scanning = true;
+      captureBtn.disabled = true;
+      status.textContent = "Reading the QR code…";
+
+      let value = null;
+      try {
+        value = await decoder.decode(video, canvas, ctx, true);
+      } catch (_e) {
+        value = null;
       }
 
-      raf = requestAnimationFrame(tick);
-    })();
+      if (!active) return;
+
+      if (value) {
+        status.textContent = "QR detected — analysing…";
+        cleanup();
+        if (typeof opts.onResult === "function") opts.onResult(value);
+        return;
+      }
+
+      status.textContent = "No QR code found in that picture. Line it up and take another.";
+      captureBtn.disabled = false;
+      scanning = false;
+    }
+
+    captureBtn.addEventListener("click", capture);
   }
 
   window.SafeScanQrCamera = { open: openScanner };
