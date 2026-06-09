@@ -872,6 +872,7 @@ const goGhostScopeDetails = document.getElementById("goGhostScopeDetails");
 const goGhostScopeSearchButton = document.getElementById("goGhostScopeSearchButton");
 const goGhostScopeOptOutButton = document.getElementById("goGhostScopeOptOutButton");
 const goGhostScopeAutoFillButton = document.getElementById("goGhostScopeAutoFillButton");
+const goGhostScopeNoMatchButton = document.getElementById("goGhostScopeNoMatchButton");
 const goGhostScopeCopyButton = document.getElementById("goGhostScopeCopyButton");
 const startGhostQueueButton = document.getElementById("startGhostQueueButton");
 const openNextGhostBrokerButton = document.getElementById("openNextGhostBrokerButton");
@@ -1142,6 +1143,19 @@ function setGhostProgress(siteId, field, checked) {
   renderGoGhostProgress();
 }
 
+function finishGhostBroker(siteId, detail = "No matching profile found.") {
+  const progress = getGhostProgress();
+  progress[siteId] = {
+    ...(progress[siteId] || {}),
+    submitted: true,
+    removed: true,
+    finishReason: detail,
+    updatedAt: new Date().toISOString()
+  };
+  writeJsonStorage(GO_GHOST_PROGRESS_KEY, progress);
+  renderGoGhostProgress();
+}
+
 function updateGhostAutomationState(siteId, automation) {
   const progress = getGhostProgress();
   progress[siteId] = { ...(progress[siteId] || {}), automation, updatedAt: new Date().toISOString() };
@@ -1304,6 +1318,15 @@ async function openNextGhostBroker() {
   scrollToGhostBroker(broker);
   const copied = await copyTextToClipboard(goGhostCopyPacket(broker, profile, searchUrl)).catch(() => false);
   showCopyToast(copied ? `${broker.name} packet copied` : `Opened ${broker.name}`);
+}
+
+async function finishGhostBrokerAndOpenNext(broker) {
+  if (!broker) return;
+  finishGhostBroker(broker.id, "No matching profile found in search results.");
+  closeGoGhostScopeModal();
+  renderGoGhostAutomationScope();
+  showCopyToast(`${broker.name} marked finished`);
+  await openNextGhostBroker();
 }
 
 async function runGhostBrokerAutomation(broker, triggerButton) {
@@ -1479,7 +1502,8 @@ function openGoGhostScopeModal(siteId) {
   if (!broker || !goGhostScopeModal) return;
   const profile = getGhostProfile();
   const scope = goGhostAutomationScope(broker);
-  const automation = getGhostProgress()[broker.id]?.automation;
+  const state = getGhostProgress()[broker.id] || {};
+  const automation = state.automation;
   activeGhostScopeBrokerId = broker.id;
   if (goGhostScopeTitle) goGhostScopeTitle.textContent = broker.name;
   if (goGhostScopePriority) goGhostScopePriority.textContent = broker.priority;
@@ -1491,6 +1515,7 @@ function openGoGhostScopeModal(siteId) {
       <div class="ghost-scope-detail"><span>Submit</span><strong>${escapeHtml(scope.submit)}</strong></div>
       <div class="ghost-scope-detail"><span>Manual checkpoint</span><strong>${escapeHtml(scope.manual)}</strong></div>
       <div class="ghost-scope-detail ghost-scope-detail-wide"><span>Needed</span><strong>${escapeHtml((broker.requiredInfo || []).join(", "))}</strong></div>
+      ${state.finishReason ? `<div class="ghost-scope-detail ghost-scope-detail-wide"><span>Finished as</span><strong>${escapeHtml(state.finishReason)}</strong></div>` : ""}
       ${automation ? `<div class="ghost-scope-detail ghost-scope-detail-wide"><span>Automation status</span><strong>${escapeHtml(formatGhostAutomationStatus(automation.status))}</strong></div>` : ""}
       ${automation?.detail ? `<div class="ghost-scope-detail ghost-scope-detail-wide"><span>Automation detail</span><strong>${escapeHtml(automation.detail)}</strong></div>` : ""}
     `;
@@ -1524,6 +1549,10 @@ async function runGhostScopeAction(action) {
   if (action === "copy") {
     const copied = await copyTextToClipboard(goGhostCopyPacket(broker, profile, searchUrl)).catch(() => false);
     showCopyToast(copied ? `${broker.name} details copied` : "Copy failed");
+    return;
+  }
+  if (action === "nomatch") {
+    await finishGhostBrokerAndOpenNext(broker);
     return;
   }
   if (action === "auto") {
@@ -1600,6 +1629,7 @@ if (goGhostWorkspace) {
   goGhostScopeSearchButton?.addEventListener("click", () => runGhostScopeAction("search"));
   goGhostScopeOptOutButton?.addEventListener("click", () => runGhostScopeAction("optout"));
   goGhostScopeAutoFillButton?.addEventListener("click", () => runGhostScopeAction("auto"));
+  goGhostScopeNoMatchButton?.addEventListener("click", () => runGhostScopeAction("nomatch"));
   goGhostScopeCopyButton?.addEventListener("click", () => runGhostScopeAction("copy"));
 
   goGhostBrokerList?.addEventListener("change", (event) => {
