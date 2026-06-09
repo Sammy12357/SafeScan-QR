@@ -58,6 +58,16 @@ def test_database_path_prefers_sqlite_path_over_data_dir(tmp_path, monkeypatch):
     assert module.database_path() == str(explicit_path)
 
 
+def test_database_url_normalizes_render_absolute_path(tmp_path, monkeypatch):
+    legacy_path = tmp_path / "app" / "data" / "qr_cache.db"
+    default_path = tmp_path / "var" / "data" / "qr_cache.db"
+    module = load_db_module(monkeypatch, legacy_path, default_path)
+    monkeypatch.setattr(module.os, "name", "posix")
+    monkeypatch.setenv("DATABASE_URL", "sqlite:////var/data/qr_cache.db")
+
+    assert module.database_path() == "/var/data/qr_cache.db"
+
+
 def test_database_path_rejects_relative_fallback_in_production(tmp_path, monkeypatch):
     legacy_path = tmp_path / "missing-app" / "data" / "qr_cache.db"
     default_path = tmp_path / "missing-var" / "data" / "qr_cache.db"

@@ -102,7 +102,11 @@ def database_path() -> str:
     database_url = os.getenv("DATABASE_URL", "").strip()
     if database_url.startswith("sqlite:///"):
         parsed = urlparse(database_url)
-        path = unquote(f"//{parsed.netloc}{parsed.path}") if parsed.netloc else (unquote(parsed.path.lstrip("/")) if os.name == "nt" else unquote(parsed.path))
+        path = unquote(f"//{parsed.netloc}{parsed.path}") if parsed.netloc else unquote(parsed.path)
+        if os.name == "nt":
+            path = path.lstrip("/")
+        elif path.startswith("//"):
+            path = "/" + path.lstrip("/")
         return _require_persistent_database(_prefer_existing_database(path))
     sqlite_path = os.getenv("SQLITE_DB_PATH")
     if sqlite_path:
