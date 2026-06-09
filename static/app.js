@@ -870,6 +870,7 @@ const ghostLocationInput = document.getElementById("ghostLocationInput");
 const ghostAddressInput = document.getElementById("ghostAddressInput");
 const ghostPhoneInput = document.getElementById("ghostPhoneInput");
 const ghostEmailInput = document.getElementById("ghostEmailInput");
+const goGhostDeviceNotice = document.getElementById("goGhostDeviceNotice");
 const GO_GHOST_PROFILE_KEY = "safeScanGoGhostProfile";
 const GO_GHOST_PROGRESS_KEY = "safeScanGoGhostProgress";
 const GO_GHOST_CONSENT_KEY = "safeScanGoGhostConsent";
@@ -1196,6 +1197,28 @@ function scrollToGhostBroker(broker) {
   card?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
+function getGhostFormProfile() {
+  return {
+    name: ghostNameInput?.value?.trim() || "",
+    location: ghostLocationInput?.value?.trim() || "",
+    address: ghostAddressInput?.value?.trim() || "",
+    phone: ghostPhoneInput?.value?.trim() || "",
+    email: ghostEmailInput?.value?.trim() || ""
+  };
+}
+
+function applyGoGhostDeviceFormatting() {
+  if (!goGhostWorkspace) return;
+  const mobile = isMobileDevice() || window.matchMedia("(max-width: 900px)").matches;
+  document.body.classList.toggle("go-ghost-mobile", mobile);
+  document.body.classList.toggle("go-ghost-desktop", !mobile);
+  if (goGhostDeviceNotice) {
+    goGhostDeviceNotice.textContent = mobile
+      ? "Mobile layout detected. Go Ghost will stack actions, enlarge tap targets, and keep local automation fields easy to edit."
+      : "Desktop layout active. Automation scope is kept beside the broker workflow.";
+  }
+}
+
 function startGhostAssistedQueue() {
   const profile = getGhostProfile();
   if (!hasGhostSearchProfile(profile)) {
@@ -1351,6 +1374,9 @@ function startGoGhost() {
 }
 
 if (goGhostWorkspace) {
+  applyGoGhostDeviceFormatting();
+  window.addEventListener("resize", applyGoGhostDeviceFormatting);
+
   const hasConsent = Boolean(readJsonStorage(GO_GHOST_CONSENT_KEY, null));
   if (hasConsent) startGoGhost();
   else goGhostConsentModal?.classList.remove("hidden");
@@ -1361,15 +1387,16 @@ if (goGhostWorkspace) {
 
   goGhostProfileForm?.addEventListener("submit", (event) => {
     event.preventDefault();
-    writeJsonStorage(GO_GHOST_PROFILE_KEY, {
-      name: ghostNameInput?.value?.trim() || "",
-      location: ghostLocationInput?.value?.trim() || "",
-      address: ghostAddressInput?.value?.trim() || "",
-      phone: ghostPhoneInput?.value?.trim() || "",
-      email: ghostEmailInput?.value?.trim() || ""
-    });
+    writeJsonStorage(GO_GHOST_PROFILE_KEY, getGhostFormProfile());
     renderGoGhostBrokers();
-    showCopyToast("Search updated");
+    showCopyToast("Automation scope updated");
+  });
+
+  [ghostNameInput, ghostLocationInput, ghostAddressInput, ghostPhoneInput, ghostEmailInput].forEach((input) => {
+    input?.addEventListener("input", () => {
+      writeJsonStorage(GO_GHOST_PROFILE_KEY, getGhostFormProfile());
+      renderGoGhostBrokers();
+    });
   });
 
   clearGhostDataButton?.addEventListener("click", () => {

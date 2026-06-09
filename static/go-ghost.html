@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Go Ghost | SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/go-ghost.css?v=2">
+  <link rel="stylesheet" href="/static/go-ghost.css?v=4">
 </head>
 <body>
   <div class="shell">
@@ -36,21 +36,23 @@
         </div>
       </section>
 
-      <section class="card">
-        <div class="header"><div><p class="eyebrow">Step 2</p><h2>Build your search kit</h2></div><span class="badge">Local only</span></div>
-        <p class="copy">Use only the minimum identifiers needed to find your record. This data stays in your browser and is used to generate search links.</p>
+      <section class="card broker-section">
+        <div class="header"><div><p class="eyebrow">Step 2</p><h2>Data broker removals</h2></div></div>
+        <div id="goGhostBrokerList" class="brokers"></div>
+      </section>
+
+      <section class="card automation-scope-card">
+        <div class="header"><div><p class="eyebrow">Local automation</p><h2>Automation scope and search kit</h2></div><span class="badge">Local only</span></div>
+        <p class="copy">Use only the minimum identifiers needed to find your record. This data stays in your browser and is used to generate search and opt-out links.</p>
+        <p id="goGhostDeviceNotice" class="device-notice" role="status" aria-live="polite">Desktop layout active.</p>
+        <div class="scope-list" aria-label="Automation scope"><span>Profile search</span><span>Opt-out prefill</span><span>Email confirmation</span></div>
         <form id="goGhostProfileForm">
           <label>Full name<input id="ghostNameInput" type="text" autocomplete="name" placeholder="Jane A. Doe"></label>
           <label>City and state<input id="ghostLocationInput" type="text" placeholder="Tampa, FL"></label>
           <label>Phone or email<input id="ghostIdentifierInput" type="text" autocomplete="off" placeholder="Optional, use one identifier"></label>
-          <div class="actions"><button class="primary" type="submit">Generate search links</button><button id="clearGhostDataButton" type="button">Clear local data</button></div>
+          <div class="actions"><button class="primary" type="submit">Update automation scope</button><button id="clearGhostDataButton" type="button">Clear local data</button></div>
           <p id="ghostLinkStatus" class="link-status" role="status" aria-live="polite">Search links are ready.</p>
         </form>
-      </section>
-
-      <section class="card">
-        <div class="header"><div><p class="eyebrow">Step 3</p><h2>Data broker removals</h2></div></div>
-        <div id="goGhostBrokerList" class="brokers"></div>
       </section>
     </main>
   </div>
@@ -65,6 +67,6 @@
     </div>
   </div>
 
-  <script src="/static/go-ghost.js?v=3"></script>
+  <script src="/static/go-ghost.js?v=5"></script>
 </body>
 </html>

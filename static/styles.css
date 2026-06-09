@@ -488,6 +488,7 @@ body.qr-camera-open { overflow: hidden; }
 .go-ghost-form label { display: grid; gap: 8px; color: var(--text); font-weight: 800; }
 .go-ghost-form input { width: 100%; padding: 14px 16px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05); color: var(--text); font: inherit; }
 .go-ghost-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 16px; }
+.go-ghost-device-notice { margin: 14px 0 0; padding: 10px 12px; border: 1px solid rgba(132, 217, 255, 0.2); border-radius: 8px; background: rgba(132, 217, 255, 0.06); color: #cdefff; line-height: 1.45; font-weight: 800; }
 .privacy-local-badge, .broker-priority { display: inline-grid; place-items: center; width: max-content; max-width: 100%; min-height: 30px; padding: 0 10px; border: 1px solid rgba(103, 242, 200, 0.24); border-radius: 999px; background: rgba(103, 242, 200, 0.08); color: var(--accent); font-size: 0.75rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.08em; line-height: 1.05; white-space: normal; overflow-wrap: anywhere; }
 .broker-list { display: grid; gap: 10px; margin-top: 14px; }
 .broker-card { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: center; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-strong); }
@@ -519,6 +520,13 @@ body.qr-camera-open { overflow: hidden; }
 .ghost-consent-card h2 { margin: 10px 0 12px; font-family: var(--display-font); font-size: clamp(1.8rem, 5vw, 3.2rem); line-height: 1.04; }
 .ghost-safety-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
 .ghost-safety-list span { min-height: 54px; padding: 12px; border: 1px solid rgba(103, 242, 200, 0.18); border-radius: 8px; background: rgba(103, 242, 200, 0.07); color: var(--text); font-weight: 900; text-align: center; }
+.go-ghost-mobile .go-ghost-layout { grid-template-columns: 1fr; }
+.go-ghost-mobile .go-ghost-broker-section { order: 2; }
+.go-ghost-mobile .automation-scope-card { order: 3; }
+.go-ghost-mobile .go-ghost-form input { min-height: 50px; font-size: 16px; }
+.go-ghost-mobile .broker-actions .primary-button, .go-ghost-mobile .broker-actions .secondary-button, .go-ghost-mobile .go-ghost-actions button, .go-ghost-mobile .go-ghost-actions a, .go-ghost-mobile .ghost-automation-actions button { flex: 1 1 100%; min-height: 48px; text-align: center; }
+.go-ghost-mobile .broker-card { grid-template-columns: 1fr; align-items: stretch; }
+.go-ghost-mobile .broker-actions, .go-ghost-mobile .ghost-automation-actions { justify-content: stretch; }
 
 @media (max-width: 900px) {
   .hero, .top-profile, .story-grid, .token-strip, .airdrop-progress, .wallet-panel, .referral-panel, .airdrop-grid, .scanner-grid, .results-grid, .panel-header, .results-header, .decision-bar, .engine-header, .test-proof-grid, .test-pricing-grid, .test-social, .go-ghost-hero, .go-ghost-layout, .broker-card, .maintenance-grid, .ghost-safety-list { grid-template-columns: 1fr; flex-direction: column; align-items: stretch; }
@@ -527,6 +535,9 @@ body.qr-camera-open { overflow: hidden; }
   .go-ghost-status { min-width: 0; }
   .broker-actions { justify-content: stretch; }
   .broker-actions a, .broker-actions button, .go-ghost-actions button, .go-ghost-actions a { flex: 1 1 100%; text-align: center; }
+  .go-ghost-form input { min-height: 50px; font-size: 16px; }
+  .go-ghost-device-notice { font-size: 0.94rem; }
+  .ghost-automation-actions button { flex: 1 1 100%; min-height: 48px; }
   .test-section { padding: 22px; }
   .test-stat-row { grid-template-columns: 1fr; }
   .spline-showcase { min-height: 460px; }

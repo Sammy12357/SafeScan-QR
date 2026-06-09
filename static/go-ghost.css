@@ -26,6 +26,9 @@ form { display: grid; gap: 12px; margin-top: 18px; }
 label { display: grid; gap: 8px; font-weight: 800; }
 input[type="text"] { width: 100%; padding: 12px 14px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255,255,255,0.05); color: var(--text); font: inherit; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.device-notice { margin: 14px 0 0; padding: 10px 12px; border: 1px solid rgba(132,217,255,0.2); border-radius: 8px; background: rgba(132,217,255,0.06); color: #cdefff; line-height: 1.45; font-weight: 800; }
+.scope-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.scope-list span { display: inline-grid; place-items: center; min-height: 34px; padding: 0 12px; border: 1px solid rgba(132,217,255,0.24); border-radius: 999px; background: rgba(132,217,255,0.08); color: #cdefff; font-weight: 900; }
 .link-status { min-height: 22px; margin: 0; font-size: 0.9rem; }
 .link-status.ready { color: var(--accent); }
 .brokers { display: grid; gap: 8px; margin-top: 14px; }
@@ -45,6 +48,13 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .safety { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
 .safety span { min-height: 54px; padding: 12px; border: 1px solid rgba(103,242,200,0.18); border-radius: 8px; background: rgba(103,242,200,0.07); font-weight: 900; text-align: center; }
 .hidden { display: none !important; }
+.go-ghost-mobile .layout { grid-template-columns: 1fr; }
+.go-ghost-mobile .broker-section { order: 2; }
+.go-ghost-mobile .automation-scope-card { order: 3; }
+.go-ghost-mobile input[type="text"] { min-height: 50px; font-size: 16px; }
+.go-ghost-mobile .broker { grid-template-columns: 1fr; align-items: stretch; }
+.go-ghost-mobile .broker-actions, .go-ghost-mobile .actions { justify-content: stretch; }
+.go-ghost-mobile .broker-actions a, .go-ghost-mobile .broker-actions button, .go-ghost-mobile .actions button, .go-ghost-mobile .actions a { flex: 1 1 100%; min-height: 48px; text-align: center; }
 @media (max-width: 900px) {
   .hero, .layout, .broker, .maintenance, .safety { grid-template-columns: 1fr; }
   .hero, .card { padding: 20px; }
@@ -53,4 +63,6 @@ input[type="checkbox"] { accent-color: var(--accent); }
   .status { min-width: 0; }
   .broker-actions, .actions { justify-content: stretch; }
   .broker-actions a, .actions button, .actions a { flex: 1 1 100%; text-align: center; }
+  input[type="text"] { min-height: 50px; font-size: 16px; }
+  .device-notice { font-size: 0.94rem; }
 }

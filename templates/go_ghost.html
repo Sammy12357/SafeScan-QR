@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Go Ghost | SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=go-ghost-prefill-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=go-ghost-prefill-v2">
 </head>
 <body>
   <div class="page-shell go-ghost-shell">
@@ -64,14 +64,26 @@
         </div>
       </section>
 
-      <section class="go-ghost-card result-card-wide">
+      <section class="go-ghost-card go-ghost-broker-section">
         <div class="panel-header">
           <div>
-            <p class="eyebrow">Automation scope</p>
-            <h2>Automate the routine work, pause for human checks</h2>
+            <p class="eyebrow">Step 2</p>
+            <h2>Start with the highest-impact sites</h2>
           </div>
         </div>
-        <p class="go-ghost-copy">Go Ghost can prepare searches and submissions for supported opt-outs. Email confirmation, CAPTCHA, and exact profile matching still need user-approved checkpoints.</p>
+        <div id="goGhostBrokerList" class="broker-list"></div>
+      </section>
+
+      <section class="go-ghost-card automation-scope-card">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Local automation</p>
+            <h2>Automation scope and search kit</h2>
+          </div>
+          <span class="privacy-local-badge">Local only</span>
+        </div>
+        <p class="go-ghost-copy">Go Ghost can prepare searches and submissions for supported opt-outs using the minimum local details you choose. Email confirmation, CAPTCHA, and exact profile matching still need user-approved checkpoints.</p>
+        <p id="goGhostDeviceNotice" class="go-ghost-device-notice" role="status" aria-live="polite">Desktop layout active.</p>
         <div class="ghost-automation-stack">
           <span>Headless submit jobs</span>
           <span>Email confirmation listener</span>
@@ -92,26 +104,6 @@
           <div class="ghost-automation-row"><span>Nuwber</span><span>Profile</span><span>URL</span><span>Email</span></div>
           <div class="ghost-automation-row"><span>Radaris</span><span>Profile</span><span>URL</span><span>Email</span></div>
         </div>
-      </section>
-
-      <section class="go-ghost-card">
-        <div class="panel-header">
-          <div>
-            <p class="eyebrow">Step 2</p>
-            <h2>Start with the highest-impact sites</h2>
-          </div>
-        </div>
-        <div id="goGhostBrokerList" class="broker-list"></div>
-      </section>
-
-      <section class="go-ghost-card">
-        <div class="panel-header">
-          <div>
-            <p class="eyebrow">Step 3</p>
-            <h2>First input info</h2>
-          </div>
-          <span class="privacy-local-badge">Local only</span>
-        </div>
 
         <form id="goGhostProfileForm" class="go-ghost-form">
           <label>Full name
@@ -130,7 +122,7 @@
             <input id="ghostEmailInput" type="email" autocomplete="email">
           </label>
           <div class="go-ghost-actions">
-            <button class="primary-button" type="submit">Update search</button>
+            <button class="primary-button" type="submit">Update automation scope</button>
             <button class="secondary-button" id="clearGhostDataButton" type="button">Clear local data</button>
           </div>
         </form>
@@ -157,6 +149,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=go-ghost-prefill-v1"></script>
+  <script src="/static/app.js?v=go-ghost-prefill-v2"></script>
 </body>
 </html>

@@ -40,6 +40,12 @@ const store = {
 
 const byId = (id) => document.getElementById(id);
 
+function isMobileDevice() {
+  const ua = navigator.userAgent || "";
+  const touchCapableMac = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || touchCapableMac;
+}
+
 function nameSlug(value) {
   return String(value || "")
     .trim()
@@ -75,6 +81,20 @@ function getProfile() {
 
 function getProgress() {
   return read(keys.progress, {});
+}
+
+function applyDeviceFormatting() {
+  const workspace = byId("goGhostWorkspace");
+  if (!workspace) return;
+  const mobile = isMobileDevice() || window.matchMedia("(max-width: 900px)").matches;
+  document.body.classList.toggle("go-ghost-mobile", mobile);
+  document.body.classList.toggle("go-ghost-desktop", !mobile);
+  const notice = byId("goGhostDeviceNotice");
+  if (notice) {
+    notice.textContent = mobile
+      ? "Mobile layout detected. Go Ghost will stack actions, enlarge tap targets, and keep local automation fields easy to edit."
+      : "Desktop layout active. Automation scope is kept beside the broker workflow.";
+  }
 }
 
 function updateProgress() {
@@ -129,7 +149,7 @@ byId("goGhostProfileForm").addEventListener("submit", (event) => {
   });
   renderBrokers();
   const profile = getProfile();
-  updateLinkStatus(profile.name ? "Search links updated with your details." : "Add a name to personalize the search links.", Boolean(profile.name));
+  updateLinkStatus(profile.name ? "Automation scope updated with your details." : "Add a name to personalize the search links.", Boolean(profile.name));
 });
 
 ["ghostNameInput", "ghostLocationInput", "ghostIdentifierInput"].forEach((id) => {
@@ -141,7 +161,7 @@ byId("goGhostProfileForm").addEventListener("submit", (event) => {
     });
     renderBrokers();
     const profile = getProfile();
-    updateLinkStatus(profile.name ? "Search links updated." : "Add a name to personalize the search links.", Boolean(profile.name));
+    updateLinkStatus(profile.name ? "Automation scope updated." : "Add a name to personalize the search links.", Boolean(profile.name));
   });
 });
 
@@ -171,3 +191,6 @@ byId("goGhostBrokerList").addEventListener("change", (event) => {
 if (read(keys.consent, null)) {
   startGoGhost();
 }
+
+applyDeviceFormatting();
+window.addEventListener("resize", applyDeviceFormatting);

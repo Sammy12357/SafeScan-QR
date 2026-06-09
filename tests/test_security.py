@@ -173,6 +173,18 @@ def test_admin_can_view_waitlist_signups(security_app):
     assert "Waitlist" in response.text
 
 
+def test_go_ghost_page_prompts_before_workflow(security_app):
+    _, client, _ = security_app
+
+    response = client.get("/go-ghost")
+
+    assert response.status_code == 200
+    assert "Do you want your personal data taken off the internet?" in response.text
+    assert "id=\"goGhostWorkspace\" hidden" in response.text
+    assert "Never provide SSN" in response.text
+    assert "broker-card" not in response.text
+
+
 def test_waitlist_export_requires_owner(security_app):
     _, admin_client, db_path = security_app
     register(admin_client, "admin@example.com")
