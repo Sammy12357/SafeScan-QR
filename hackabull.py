@@ -1573,6 +1573,10 @@ def index_user_context(user):
         "username": user.get("username") if user else "",
         "profile_display_name": "Safe scanner",
         "profile_subtitle": username or display_name or email,
+        # Used by index.html to enable Google One Tap auto sign-in for
+        # returning visitors who land logged-out (e.g. cookies were cleared).
+        "auth_google_url": f"{APP_URL}/auth/google",
+        "local_auth_enabled": LOCAL_AUTH_ENABLED,
     }
 
 def local_user_id(email):

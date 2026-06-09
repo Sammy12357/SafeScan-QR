@@ -8,6 +8,20 @@
   <link rel="stylesheet" href="/static/styles.css?v=clean-nav-v1">
 </head>
 <body class="{{ 'test-site-page' if test_site else '' }}">
+  {% if not logged_in and google_client_id and not local_auth_enabled %}
+  <!-- Google One Tap: silently re-signs in returning visitors who land here
+       logged-out (auto_select), so reopening the site doesn't require clicking
+       the sign-in button. Uses the GSI HTML API (no inline JS) to stay within
+       the site CSP. -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <div id="g_id_onload"
+       data-client_id="{{ google_client_id }}"
+       data-login_uri="{{ auth_google_url }}"
+       data-auto_prompt="true"
+       data-auto_select="true"
+       data-cancel_on_tap_outside="false"
+       data-context="signin"></div>
+  {% endif %}
   <div class="page-shell">
     <div class="top-auth">
       <a class="top-brand" href="/" aria-label="SafeScan QR home">
