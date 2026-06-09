@@ -602,8 +602,16 @@ def audit_log(action, request=None, actor_user_id=None, target_type=None, target
         pass
 
 _COOKIE_SECURE = not LOCAL_AUTH_ENABLED
-_COOKIE_SAMESITE = "strict" if _COOKIE_SECURE else "lax"
+_COOKIE_SAMESITE = "lax"
 
+# Session and remember-me cookies use SameSite=Lax (not Strict) so that
+# returning users stay signed in: Lax cookies are sent on top-level
+# navigations — typing the URL, bookmarks, links from search results or
+# email, and the redirect back from Google sign-in — which is exactly when a
+# returning visitor should still be recognised. Strict would withhold the
+# cookie on those cross-site arrivals and force a fresh login every time. Lax
+# still blocks cross-site POSTs, so CSRF protection on state-changing
+# endpoints is preserved.
 def set_session_cookie(response, session_id):
     response.set_cookie(
         SESSION_COOKIE_NAME,
@@ -611,7 +619,7 @@ def set_session_cookie(response, session_id):
         max_age=SESSION_TTL_SECONDS,
         httponly=True,
         secure=True,
-        samesite="strict",
+        samesite="lax",
         path="/",
     )
 
@@ -621,7 +629,7 @@ def clear_session_cookie(response):
         path="/",
         httponly=True,
         secure=True,
-        samesite="strict",
+        samesite="lax",
     )
 
 def wants_remember_me(value):
@@ -639,7 +647,7 @@ def set_remember_me_cookie(response, token):
         max_age=REMEMBER_ME_TTL_SECONDS,
         httponly=True,
         secure=True,
-        samesite="strict",
+        samesite="lax",
         path="/",
     )
 
@@ -649,7 +657,7 @@ def clear_remember_me_cookie(response):
         path="/",
         httponly=True,
         secure=True,
-        samesite="strict",
+        samesite="lax",
     )
 
 def create_remember_me_token(user_id, request):

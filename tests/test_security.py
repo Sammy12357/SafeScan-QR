@@ -105,7 +105,7 @@ def test_session_cookie_uses_host_prefix(security_app):
     assert "__Host-safescan_session=" in set_cookie
     assert "Secure" in set_cookie
     assert "HttpOnly" in set_cookie
-    assert "SameSite=strict" in set_cookie
+    assert "SameSite=lax" in set_cookie
 
 
 def test_scan_history_rls_isolates_regular_users(security_app):
