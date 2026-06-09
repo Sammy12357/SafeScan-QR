@@ -44,6 +44,34 @@ def test_database_path_keeps_explicit_default_when_it_has_more_data(tmp_path, mo
     assert module.database_path() == str(default_path)
 
 
+def test_database_path_prefers_sqlite_path_over_data_dir(tmp_path, monkeypatch):
+    legacy_path = tmp_path / "app" / "data" / "qr_cache.db"
+    default_path = tmp_path / "var" / "data" / "qr_cache.db"
+    explicit_path = tmp_path / "persistent" / "custom.db"
+    data_dir = tmp_path / "ephemeral"
+    create_db(explicit_path, users=3, scans=4)
+    create_db(data_dir / "qr_cache.db", users=1, scans=1)
+    module = load_db_module(monkeypatch, legacy_path, default_path)
+    monkeypatch.setenv("SQLITE_DB_PATH", str(explicit_path))
+    monkeypatch.setenv("DATA_DIR", str(data_dir))
+
+    assert module.database_path() == str(explicit_path)
+
+
+def test_database_path_rejects_relative_fallback_in_production(tmp_path, monkeypatch):
+    legacy_path = tmp_path / "missing-app" / "data" / "qr_cache.db"
+    default_path = tmp_path / "missing-var" / "data" / "qr_cache.db"
+    module = load_db_module(monkeypatch, legacy_path, default_path)
+    monkeypatch.setenv("RENDER", "true")
+
+    try:
+        module.database_path()
+    except RuntimeError as exc:
+        assert "Production SQLite storage is not configured" in str(exc)
+    else:
+        raise AssertionError("Expected production relative SQLite fallback to be rejected.")
+
+
 def test_database_storage_status_marks_default_path_persistent(tmp_path, monkeypatch):
     legacy_path = tmp_path / "app" / "data" / "qr_cache.db"
     default_path = tmp_path / "var" / "data" / "qr_cache.db"

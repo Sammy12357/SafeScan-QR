@@ -44,7 +44,7 @@ This checklist documents compliance-oriented controls implemented for audit, inv
 ### Production Follow-Ups
 - [ ] Attorney review before public launch or token distribution.
 - [ ] Connect transactional email for privacy request confirmations and completion notices.
-- [ ] Add scheduled deletion job for 90-day scan log retention.
+- [x] Keep signed-in user scan history and leaderboard counters as long-term records unless the user requests deletion or an owner removes the account.
 - [ ] Encrypt or hash stored wallet addresses before production scale.
 - [ ] Replace email query parameters with signed session state.
 - [ ] Remove the remaining airdrop shared-secret fallback after automation has an owner session or signed job token.

@@ -41,6 +41,7 @@ ADMIN_ONLY = {
 
 LEGACY_SQLITE_PATH = "/app/data/qr_cache.db"
 DEFAULT_SQLITE_PATH = "/var/data/qr_cache.db"
+LOCAL_FALLBACK_SQLITE_PATH = "qr_cache.db"
 
 
 def _sqlite_data_weight(path: str) -> int:
@@ -74,26 +75,49 @@ def _prefer_existing_database(candidate: str) -> str:
     return candidate
 
 
+def _is_production_runtime() -> bool:
+    app_url = os.getenv("APP_URL", "").strip().lower()
+    environment = os.getenv("ENVIRONMENT", "").strip().lower()
+    return (
+        bool(os.getenv("RENDER"))
+        or environment in ("prod", "production")
+        or app_url.startswith("https://safescan-qr.onrender.com")
+    )
+
+
+def _require_persistent_database(path: str) -> str:
+    if (
+        _is_production_runtime()
+        and os.getenv("SAFESCAN_ALLOW_EPHEMERAL_DB", "").strip().lower() not in ("1", "true", "yes", "on")
+        and not os.path.isabs(path)
+    ):
+        raise RuntimeError(
+            "Production SQLite storage is not configured. Set DATABASE_URL or SQLITE_DB_PATH "
+            "to a persistent disk path such as sqlite:////var/data/qr_cache.db."
+        )
+    return path
+
+
 def database_path() -> str:
     database_url = os.getenv("DATABASE_URL", "").strip()
     if database_url.startswith("sqlite:///"):
         parsed = urlparse(database_url)
         path = unquote(f"//{parsed.netloc}{parsed.path}") if parsed.netloc else (unquote(parsed.path.lstrip("/")) if os.name == "nt" else unquote(parsed.path))
-        return _prefer_existing_database(path)
+        return _require_persistent_database(_prefer_existing_database(path))
+    sqlite_path = os.getenv("SQLITE_DB_PATH")
+    if sqlite_path:
+        return _require_persistent_database(_prefer_existing_database(sqlite_path))
     data_dir = os.getenv("DATA_DIR")
     if data_dir:
         os.makedirs(data_dir, exist_ok=True)
-        return _prefer_existing_database(os.path.join(data_dir, "qr_cache.db"))
-    sqlite_path = os.getenv("SQLITE_DB_PATH")
-    if sqlite_path:
-        return _prefer_existing_database(sqlite_path)
+        return _require_persistent_database(_prefer_existing_database(os.path.join(data_dir, "qr_cache.db")))
     if _sqlite_data_weight(LEGACY_SQLITE_PATH) > _sqlite_data_weight(DEFAULT_SQLITE_PATH):
-        return LEGACY_SQLITE_PATH
+        return _require_persistent_database(LEGACY_SQLITE_PATH)
     if os.path.isdir(os.path.dirname(DEFAULT_SQLITE_PATH)) and os.access(os.path.dirname(DEFAULT_SQLITE_PATH), os.W_OK):
-        return DEFAULT_SQLITE_PATH
+        return _require_persistent_database(DEFAULT_SQLITE_PATH)
     if os.path.exists(LEGACY_SQLITE_PATH) or (os.path.isdir(os.path.dirname(LEGACY_SQLITE_PATH)) and os.access(os.path.dirname(LEGACY_SQLITE_PATH), os.W_OK)):
-        return LEGACY_SQLITE_PATH
-    return "qr_cache.db"
+        return _require_persistent_database(LEGACY_SQLITE_PATH)
+    return _require_persistent_database(LOCAL_FALLBACK_SQLITE_PATH)
 
 
 def database_storage_status() -> dict:

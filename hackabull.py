@@ -4249,7 +4249,7 @@ PRIVACY_POLICY_HTML = f"""
 </ul>
 <h2>3. How Long We Keep It</h2>
 <ul>
-  <li>Scan logs: targeted for deletion after 90 days.</li>
+  <li>Signed-in user scan history and leaderboard counters: retained as long-term account records unless deletion is requested or the account is removed.</li>
   <li>Account data: until deletion is requested or after 2 years of inactivity.</li>
   <li>Wallet address: until the user disconnects it or deletes the account.</li>
   <li>Consent records: retained for 5 years to document legal compliance.</li>
@@ -5493,7 +5493,7 @@ async def risk_engine_page(request: Request):
     </ol>
 
     <h2>Stored data</h2>
-    <p>For signed-in users, SafeScan can save scan history and counters so profile progress, scan history, fraud prevention, and leaderboard features work across sessions. Stored scan rows may include user id, email, URL or payload, risk score, verdict, signal JSON, report status, and created time. Uploaded QR image files may be stored temporarily according to the configured upload retention policy.</p>
+    <p>For signed-in users, SafeScan can save scan history and counters so profile progress, scan history, fraud prevention, and leaderboard features work across sessions permanently unless deletion is requested or the account is removed. Stored scan rows may include user id, email, URL or payload, risk score, verdict, signal JSON, report status, and created time. Uploaded QR image files may be stored temporarily according to the configured upload retention policy.</p>
 
     <h2>Privacy and limits</h2>
     <p>SafeScan avoids sending direct personal identifiers to external AI analysis providers. URL payloads and risk signals may be processed by configured reputation or AI services. The engine is designed to explain risk clearly, but users should still verify important links, wallet prompts, and payment requests independently.</p>
@@ -5849,7 +5849,7 @@ async def data_processing_log(request: Request, secret: str = Query("")):
     admin_user = require_role_user(request, "admin")
     categories = [
         ("OAuth profile", "Authentication", "Contractual necessity", "Google, Render", "Until deletion or 2 years inactivity"),
-        ("QR payload URLs", "Risk analysis", "Legitimate interest", "Google Safe Browsing, VirusTotal, AI provider", "90 days"),
+        ("QR payload URLs", "Risk analysis, scan history, and leaderboard records", "Legitimate interest", "Google Safe Browsing, VirusTotal, AI provider", "Long-term account record until deletion is requested or account is removed"),
         ("Wallet address", "Airdrop eligibility", "Contractual necessity", "Solana RPC providers", "Until disconnect or deletion"),
         ("Consent records", "Compliance evidence", "Legal obligation", "Internal only", "5 years"),
         ("IP hash and user agent", "Fraud prevention", "Legitimate interest", "Render", "90 days unless tied to compliance record"),
