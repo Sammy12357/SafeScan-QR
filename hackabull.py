@@ -1616,7 +1616,7 @@ def record_unique_scan(email, url, wallet, user_id=None):
         cursor.execute("""
             INSERT OR IGNORE INTO scan_events (email, payload_hash, url_found, first_scanned_at, user_id)
             VALUES (?, ?, ?, ?, ?)
-        """, (normalized_email, payload_hash, normalized_payload, datetime.now().isoformat(), resolved_user_id))
+        """, (normalized_email, payload_hash, normalized_payload, now_iso(), resolved_user_id))
 
         if cursor.rowcount == 0:
             cursor.execute("SELECT first_scanned_at FROM scan_events WHERE email = ? AND payload_hash = ?", (normalized_email, payload_hash))
@@ -3953,6 +3953,18 @@ async def wallet_nonce_cleanup_loop():
 
 @qr_app.on_event("startup")
 async def start_wallet_nonce_cleanup():
+    # Loudly flag non-persistent storage at boot. The leaderboard, sessions and
+    # scan history all live in SQLite; if the DB isn't on a persistent disk it
+    # is rebuilt on every deploy/restart and the board appears to "randomly
+    # wipe". This makes a misconfigured deploy obvious in the logs.
+    storage_status = database_storage_status()
+    if not storage_status.get("persistent"):
+        print({
+            "warning": "non_persistent_database",
+            "message": storage_status.get("warning"),
+            "path": storage_status.get("path"),
+            "hint": "Mount a Render disk at /var/data (or set DATA_DIR to a durable path) so the leaderboard and scan history survive deploys.",
+        })
     cleanup_persistent_sessions()
     expire_alpha_subscriptions()
     asyncio.create_task(wallet_nonce_cleanup_loop())

@@ -57,7 +57,7 @@
           <th>User</th>
           <th>Unique scans</th>
           <th>Total saved</th>
-          <th>Last scan</th>
+          <th>Last scan (your time)</th>
         </tr>
       </thead>
       <tbody id="lbBody">
@@ -69,7 +69,7 @@
           <td class="lb-username {{ 'lb-username-you' if row.user_id == current_user_id else '' }}">{{ row.public_name }}</td>
           <td class="lb-num">{{ row.scan_count }}</td>
           <td class="lb-num">{{ row.total_saved_scans }}</td>
-          <td class="lb-date">{{ (row.last_scanned_at | time_only) or "—" }}</td>
+          <td class="lb-date" data-utc="{{ row.last_scanned_at or '' }}">{{ (row.last_scanned_at | time_only) or "—" }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -97,11 +97,29 @@
       d.textContent = s == null ? "" : String(s);
       return d.innerHTML;
     }
-    function timeOnly(iso) {
+    function formatLocal(iso) {
       if (!iso) return "\u2014";
-      var d = new Date(iso);
+      // Timestamps are stored in UTC. Treat any value without an explicit
+      // timezone designator as UTC so every visitor sees the same instant
+      // rendered in their own local time zone.
+      var s = String(iso);
+      if (!/[zZ]$|[+-]\d{2}:?\d{2}$/.test(s)) s += "Z";
+      var d = new Date(s);
       if (isNaN(d.getTime())) return "\u2014";
-      return d.toLocaleString();
+      try {
+        return d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+      } catch (e) {
+        return d.toLocaleString();
+      }
+    }
+    function localizeStaticDates() {
+      // Convert the server-rendered rows to local time immediately so there is
+      // no flash of server-time before the first API refresh arrives.
+      var cells = document.querySelectorAll("#lbBody [data-utc]");
+      for (var i = 0; i < cells.length; i++) {
+        var v = cells[i].getAttribute("data-utc");
+        cells[i].textContent = v ? formatLocal(v) : "\u2014";
+      }
     }
     function render(entries) {
       var table = document.getElementById("lbTable");
@@ -125,7 +143,7 @@
           "<td class=\"lb-username" + youName + "\">" + esc(row.name) + "</td>" +
           "<td class=\"lb-num\">" + (row.scans || 0) + "</td>" +
           "<td class=\"lb-num\">" + (row.totalSaved || 0) + "</td>" +
-          "<td class=\"lb-date\">" + esc(timeOnly(row.lastScannedAt)) + "</td>" +
+          "<td class=\"lb-date\">" + esc(formatLocal(row.lastScannedAt)) + "</td>" +
           "</tr>";
       }).join("");
     }
@@ -135,6 +153,7 @@
         .then(function (data) { if (data && data.entries) render(data.entries); })
         .catch(function () { /* keep the last good board on transient errors */ });
     }
+    localizeStaticDates();
     refresh();
     var timer = setInterval(refresh, 20000);
     document.addEventListener("visibilitychange", function () {
