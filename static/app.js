@@ -898,7 +898,7 @@ const goGhostBrokers = [
     requiredInfo: ["Full name", "Street address", "City/state", "Email confirmation"],
     automationEnabled: true,
     automationNote: "Backend assisted: fill the opt-out form and pause for CAPTCHA or email confirmation.",
-    searchUrl: ({ name, location }) => `https://www.fastpeoplesearch.com/name/${encodeURIComponent(name || "")}${location ? `_${encodeURIComponent(location)}` : ""}`
+    searchUrl: ({ name, location }) => `https://www.fastpeoplesearch.com/name/${ghostPathSlug(name)}${location ? `_${ghostPathSlug(location)}` : ""}`
   },
   {
     id: "whitepages",
@@ -909,7 +909,7 @@ const goGhostBrokers = [
     prefillMap: { name: "name", address: "address", location: "location", email: "email", phone: "phone", identifier: "phone" },
     requiredInfo: ["Full name", "City/state", "Matching profile", "Email confirmation"],
     automationNote: "Assisted: search with your name and location, copy the matching listing details, then complete the suppression form.",
-    searchUrl: ({ name, location }) => `https://www.whitepages.com/name/${encodeURIComponent(name || "")}${location ? `/${encodeURIComponent(location)}` : ""}`
+    searchUrl: ({ name, location }) => `https://www.whitepages.com/name/${ghostPathSlug(name)}${location ? `/${ghostPathSlug(location)}` : ""}`
   },
   {
     id: "spokeo",
@@ -920,7 +920,7 @@ const goGhostBrokers = [
     prefillMap: { name: "name", address: "address", location: "location", email: "email", phone: "phone", identifier: "phone" },
     requiredInfo: ["Profile URL", "Email confirmation"],
     automationNote: "Assisted: find the matching profile, copy its URL, paste it into Spokeo opt-out, then verify the email.",
-    searchUrl: ({ name, location }) => `https://www.spokeo.com/${encodeURIComponent(name || "")}${location ? `/${encodeURIComponent(location)}` : ""}`
+    searchUrl: ({ name, location }) => `https://www.spokeo.com/${ghostPathSlug(name)}${location ? `/${ghostPathSlug(location)}` : ""}`
   },
   {
     id: "beenverified",
@@ -953,7 +953,7 @@ const goGhostBrokers = [
     prefillMap: { name: "name", address: "address", location: "location", email: "email", phone: "phone", identifier: "phone" },
     requiredInfo: ["Full name", "Street address or phone", "Email confirmation"],
     automationNote: "Assisted: copy the address/phone details, open opt-out, then submit only the fields Thatsthem requests.",
-    searchUrl: ({ name }) => `https://thatsthem.com/name/${encodeURIComponent(name || "")}`
+    searchUrl: ({ name, location }) => `https://thatsthem.com/name/${ghostPathSlug(name)}${location ? `/${ghostPathSlug(location)}` : ""}`
   },
   {
     id: "nuwber",
@@ -975,7 +975,7 @@ const goGhostBrokers = [
     prefillMap: { name: "name", address: "address", location: "location", email: "email", phone: "phone", identifier: "phone" },
     requiredInfo: ["Profile URL", "Matching record", "Email confirmation"],
     automationNote: "Assisted: Radaris may show duplicate records, so confirm the exact profile before submitting removal.",
-    searchUrl: ({ name, location }) => `https://radaris.com/p/${encodeURIComponent(name || "")}/${encodeURIComponent(location || "")}`
+    searchUrl: ({ name, location }) => ghostBrokerGoogleSearch({ name, location }, "Radaris", "radaris.com")
   },
   {
     id: "peoplefinders",
@@ -1101,14 +1101,33 @@ function writeJsonStorage(key, value) {
   window.localStorage.setItem(key, JSON.stringify(value));
 }
 
+function cleanGhostText(value) {
+  return String(value || "").trim().replace(/\s+/g, " ");
+}
+
+function ghostPathSlug(value) {
+  return cleanGhostText(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 function getGhostProfile() {
   const profile = readJsonStorage(GO_GHOST_PROFILE_KEY, { name: "", location: "", address: "", phone: "", email: "", identifier: "" });
-  return {
+  const currentProfile = {
     ...profile,
-    phone: profile.phone || "",
-    email: profile.email || "",
+    name: ghostNameInput ? cleanGhostText(ghostNameInput.value) : cleanGhostText(profile.name),
+    location: ghostLocationInput ? cleanGhostText(ghostLocationInput.value) : cleanGhostText(profile.location),
+    address: ghostAddressInput ? cleanGhostText(ghostAddressInput.value) : cleanGhostText(profile.address),
+    phone: ghostPhoneInput ? cleanGhostText(ghostPhoneInput.value) : cleanGhostText(profile.phone),
+    email: ghostEmailInput ? cleanGhostText(ghostEmailInput.value) : cleanGhostText(profile.email),
     identifier: profile.identifier || ""
   };
+  currentProfile.phone = currentProfile.phone || currentProfile.identifier || "";
+  currentProfile.email = currentProfile.email || "";
+  return currentProfile;
 }
 
 function getGhostProgress() {
