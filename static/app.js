@@ -643,7 +643,6 @@ if (new URLSearchParams(window.location.search).get("walletConnect") === "phanto
 }
 
 if (riskModal) {
-  document.body.style.overflow = "hidden";
   const scoreGauge = riskModal.querySelector(".score-gauge");
   const finalScore = Number(scoreGauge?.dataset.score || 0);
   if (scoreGauge) {
@@ -688,16 +687,6 @@ if (riskModal) {
   const resetScroll = () => {
     if (riskModalCard) riskModalCard.scrollTop = 0;
     riskModal.scrollTop = 0;
-    if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
-    if (document.documentElement) document.documentElement.scrollTop = 0;
-    if (document.body) document.body.scrollTop = 0;
-    if (typeof window.scrollTo === "function") {
-      try {
-        window.scrollTo({ top: 0, left: 0, behavior: "instant" });
-      } catch (_err) {
-        window.scrollTo(0, 0);
-      }
-    }
   };
   resetScroll();
   window.requestAnimationFrame(() => {
@@ -729,7 +718,6 @@ if (riskModal) {
 }
 
 function closeRiskModal() {
-  document.body.style.overflow = "";
   riskModal?.classList.add("hidden");
   document.getElementById("resultsSection")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
