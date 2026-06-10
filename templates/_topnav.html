@@ -13,6 +13,21 @@
     <img class="top-brand-mark" src="/static/safescan-logo.svg" alt="">
     <span class="top-brand-name"><strong>SafeScan</strong> QR</span>
   </a>
+  <div class="top-nav-actions" aria-label="Account and appearance">
+    <a class="top-profile-avatar" href="{{ '/profile' if logged_in else '/login' }}" aria-label="{{ 'Open profile' if logged_in else 'Sign in' }}">
+      {% if logged_in and profile_picture %}
+        <img src="{{ profile_picture }}" alt="{{ profile_display_name or 'Profile' }}">
+      {% else %}
+        <span>{{ (profile_display_name or 'S')[:1] }}</span>
+      {% endif %}
+    </a>
+    <button class="theme-toggle" type="button" aria-label="Switch to light mode" aria-pressed="false" data-theme-toggle>
+      <span class="theme-toggle-track" aria-hidden="true">
+        <span class="theme-toggle-thumb"></span>
+      </span>
+      <span class="theme-toggle-text" data-theme-toggle-text>Dark</span>
+    </button>
+  </div>
 </div>
 
 <div class="sidenav-backdrop" data-sidenav-close></div>
@@ -61,4 +76,4 @@
     {% endif %}
   </div>
 </aside>
-<script src="/static/sidenav.js?v=sidenav-v1" defer></script>
+<script src="/static/sidenav.js?v=sidenav-v2" defer></script>

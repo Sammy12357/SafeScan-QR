@@ -38,4 +38,35 @@
   var saved = null;
   try { saved = sessionStorage.getItem("safescan_sidenav_open"); } catch (e) {}
   if (saved === "1") setOpen(true);
+
+  var themeToggle = document.querySelector("[data-theme-toggle]");
+  var themeToggleText = document.querySelector("[data-theme-toggle-text]");
+  var themeKey = "safescan_theme";
+
+  function preferredTheme() {
+    try {
+      var savedTheme = localStorage.getItem(themeKey);
+      if (savedTheme === "light" || savedTheme === "dark") return savedTheme;
+    } catch (e) {}
+    return "dark";
+  }
+
+  function setTheme(theme) {
+    var nextTheme = theme === "light" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", nextTheme);
+    if (themeToggle) {
+      var isLight = nextTheme === "light";
+      themeToggle.setAttribute("aria-pressed", isLight ? "true" : "false");
+      themeToggle.setAttribute("aria-label", isLight ? "Switch to dark mode" : "Switch to light mode");
+    }
+    if (themeToggleText) themeToggleText.textContent = nextTheme === "light" ? "Light" : "Dark";
+    try { localStorage.setItem(themeKey, nextTheme); } catch (e) {}
+  }
+
+  setTheme(preferredTheme());
+  if (themeToggle) {
+    themeToggle.addEventListener("click", function () {
+      setTheme(document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light");
+    });
+  }
 })();
