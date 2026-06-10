@@ -4967,13 +4967,13 @@ async def api_scan_file(request: Request, file: UploadFile = File(...)):
 async def api_qr_generate(request: Request, payload: dict = Body(...)):
     """Generate a SafeScan-verified QR PNG for a URL.
 
-    Runs the URL through the same risk pipeline as `/api/scan` and only
-    renders the QR if the verdict is "safe". URLs flagged as suspicious or
-    high-risk are refused — the whole point of the endpoint is that any QR
-    coming out of it has been screened.
+    Runs the URL through the same risk pipeline as `/api/scan` (rule signals
+    plus the ML model) and refuses to render the QR when the maliciousness
+    score is 70 or higher — so any QR coming out of this endpoint has been
+    screened and isn't a likely-malicious link.
 
-    Returns a PNG image with a small SafeScan badge overlaid in the centre
-    (high error correction tolerates the badge without breaking scanning).
+    Returns a PNG image with the SafeScan logo overlaid in the centre (high
+    error correction tolerates the badge without breaking scanning).
     """
     user = get_session_user(request)
     user_key = user.get("google_id") if user else None
@@ -4989,16 +4989,17 @@ async def api_qr_generate(request: Request, payload: dict = Body(...)):
 
     analysis = await analyze_full_pipeline(target_url)
     overall_risk = (analysis.get("overallRisk") or "").lower()
-    verdict_text = analysis.get("verdict") or overall_risk or "unknown"
+    # Maliciousness score (0-100) from the full risk pipeline: rule signals
+    # (domain age, redirect chain, reputation, VirusTotal, Safe Browsing,
+    # crypto patterns) blended with the ML model score.
+    risk_score = int(analysis.get("confidenceScore") or analysis.get("score") or 0)
 
-    if overall_risk == "high":
+    # A score of 70 or higher means the link is likely malicious, so SafeScan
+    # refuses to mint a QR code for it.
+    if risk_score >= 70:
         raise SafeScanError(
-            f"Refused to generate QR. SafeScan flagged this URL as dangerous ({verdict_text}).",
-            400,
-        )
-    if overall_risk == "suspicious":
-        raise SafeScanError(
-            "Refused to generate QR. SafeScan flagged this URL as suspicious — review the scan report before publishing.",
+            f"This link is likely malicious (risk score {risk_score}/100). "
+            "SafeScan won't generate a QR code for it.",
             400,
         )
 
