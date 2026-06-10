@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Profile | SafeScan QR</title>
-  <link rel="stylesheet" href="/static/styles.css?v=profile-tab-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=profile-menu-actions-v1">
   <style>
     body { margin: 0; background: linear-gradient(145deg,#060b12 0%,#0a1420 46%,#111827 100%); color: var(--text); font-family: var(--body-font); }
     .profile-shell { width: min(980px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 80px; }
@@ -24,6 +24,11 @@
     .profile-link-list { display: grid; gap: 10px; margin-top: 16px; }
     .profile-link-list a { display: grid; place-items: center; min-height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--line); color: var(--text); text-decoration: none; background: rgba(255, 255, 255, 0.04); font-weight: 800; }
     .profile-link-list a:hover { border-color: rgba(103, 242, 200, 0.42); background: rgba(103, 242, 200, 0.08); }
+    .profile-menu-actions { display: grid; gap: 10px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+    .profile-menu-actions .profile-button,
+    .profile-menu-actions .admin-dashboard-button,
+    .profile-menu-actions .sign-out-button { width: 100%; min-height: 44px; justify-content: center; border-radius: 8px; }
+    .profile-menu-actions .sign-out-form { width: 100%; }
     .error-text { color: var(--danger); font-weight: 800; }
     .success-text { color: var(--safe); font-weight: 800; }
     @media (max-width: 760px) {
@@ -68,7 +73,13 @@
           <a href="/history">Scan history</a>
           <a href="/leaderboard">Leaderboard</a>
           <a href="/account/settings">Privacy settings</a>
-          {% if is_admin %}<a href="/admin">Admin dashboard</a>{% endif %}
+        </div>
+        <div class="profile-menu-actions" aria-label="Menu actions">
+          <a href="/profile" class="profile-button" aria-current="page">Profile</a>
+          {% if is_admin %}<a href="/admin" class="admin-dashboard-button">Admin dashboard</a>{% endif %}
+          <form class="sign-out-form" action="/auth/logout" method="post">
+            <button class="sign-out-button" type="submit">Sign out</button>
+          </form>
         </div>
       </aside>
     </div>
