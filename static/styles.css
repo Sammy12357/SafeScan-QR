@@ -303,8 +303,8 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
 
 .risk-modal { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; width: 100vw; height: 100vh; height: 100dvh; padding: 18px; overflow: auto; background: rgba(3, 8, 15, 0.82); backdrop-filter: blur(18px); }
 .risk-modal-card { position: relative; width: min(760px, 100%); max-height: min(92vh, 860px); overflow: auto; padding: 22px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; background: rgba(8, 16, 29, 0.98); box-shadow: 0 28px 90px rgba(0, 0, 0, 0.52); animation: modalSlideUp 0.32s ease-out; }
-.risk-modal-close { position: sticky; top: 0; float: right; z-index: 2; display: grid; place-items: center; width: 44px; height: 44px; margin: -8px -8px 8px 12px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255, 255, 255, 0.06); color: var(--text); font-family: var(--display-font); font-size: 1rem; font-weight: 900; cursor: pointer; }
-.risk-modal-close:hover, .risk-modal-close:focus-visible { border-color: rgba(103, 242, 200, 0.5); background: rgba(103, 242, 200, 0.14); outline: none; }
+.risk-modal-close { position: sticky; top: 0; float: right; z-index: 2; display: grid; place-items: center; width: 34px; height: 34px; margin: -8px -8px 8px 12px; border: 1px solid rgba(255, 110, 127, 0.54); border-radius: 8px; background: rgba(255, 110, 127, 0.12); color: var(--danger); font-family: var(--display-font); font-size: 1rem; font-weight: 900; line-height: 1; cursor: pointer; }
+.risk-modal-close:hover, .risk-modal-close:focus-visible { border-color: var(--danger); background: rgba(255, 110, 127, 0.22); outline: none; }
 .risk-modal-safe { border-color: rgba(80, 227, 164, 0.38); }
 .risk-modal-caution { border-color: rgba(255, 187, 85, 0.38); }
 .risk-modal-dangerous { border-color: rgba(255, 110, 127, 0.42); }

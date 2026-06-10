@@ -97,8 +97,11 @@ def test_camera_scanner_uses_back_button_not_x_close():
     assert 'aria-label="Back to scanner"' in QR_CAMERA
     assert ">Back</button>" in QR_CAMERA
     assert 'aria-label="Close scanner">Ã—</button>' not in QR_CAMERA
-    assert "riskModalCloseButton" not in INDEX
-    assert 'aria-label="Close scan result">X</button>' not in INDEX
+
+
+def test_risk_modal_has_close_button():
+    assert 'id="riskModalCloseButton"' in INDEX
+    assert 'aria-label="Close scan result">X</button>' in INDEX
 
 
 def test_stylized_qr_preprocessing_uses_low_threshold_zxing_path():
