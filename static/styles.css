@@ -155,7 +155,7 @@ body.sidenav-open .sidenav { transform: translateX(0); }
 .spline-showcase { min-height: 530px; padding: 0; overflow: hidden; transform-style: preserve-3d; background: #070b12; }
 .spline-showcase::before { content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 1; background: url("./safescan-3d-fallback.png?v=opening-model-v1") center / cover no-repeat; transition: opacity 0.42s ease; }
 .spline-showcase::after { content: none; }
-.three-scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block !important; opacity: 1 !important; visibility: visible !important; cursor: grab; touch-action: none; z-index: 1 !important; }
+.three-scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block !important; opacity: 1 !important; visibility: visible !important; pointer-events: none; z-index: 1 !important; }
 .three-scene:active { cursor: grabbing; }
 .spline-showcase:not(.spline-loaded) .three-scene { opacity: 1 !important; visibility: visible !important; }
 .spline-showcase.webgl-ready .three-scene { opacity: 1 !important; visibility: visible !important; }
@@ -306,6 +306,7 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
 .score-value { margin: 0; font-size: 3rem; line-height: 1; font-weight: 700; letter-spacing: -0.05em; }
 
 .risk-modal { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; width: 100vw; height: 100vh; height: 100dvh; padding: 18px; overflow: auto; background: rgba(3, 8, 15, 0.82); backdrop-filter: blur(18px); }
+.risk-modal.hidden { display: none; pointer-events: none; }
 .risk-modal-card { position: relative; width: min(760px, 100%); max-height: min(92vh, 860px); overflow: auto; padding: 22px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; background: rgba(8, 16, 29, 0.98); box-shadow: 0 28px 90px rgba(0, 0, 0, 0.52); animation: modalSlideUp 0.32s ease-out; }
 .risk-modal-close { position: sticky; top: 0; float: right; z-index: 2; display: grid; place-items: center; width: 34px; height: 34px; margin: -8px -8px 8px 12px; border: 1px solid rgba(255, 110, 127, 0.54); border-radius: 8px; background: rgba(255, 110, 127, 0.12); color: var(--danger); font-family: var(--display-font); font-size: 1rem; font-weight: 900; line-height: 1; cursor: pointer; }
 .risk-modal-close:hover, .risk-modal-close:focus-visible { border-color: var(--danger); background: rgba(255, 110, 127, 0.22); outline: none; }

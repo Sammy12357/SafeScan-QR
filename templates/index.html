@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=sidenav-avatar-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=wheel-scroll-fix-v2">
 </head>
 <body class="{{ 'test-site-page' if test_site else '' }}">
   {% if not logged_in and google_client_id and not local_auth_enabled %}
@@ -342,6 +342,6 @@
   </div>
   <script type="module" src="/static/safescan-3d.js?v=brave-webgl-v1"></script>
   <script src="/static/qr-camera.js?v=manual-capture-v1" defer></script>
-  <script src="/static/app.js?v=no-results-panel-v2"></script>
+  <script src="/static/app.js?v=no-results-panel-wheel-scroll-v1"></script>
 </body>
 </html>
