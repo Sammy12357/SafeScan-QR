@@ -99,7 +99,7 @@ TWO_LABEL_PUBLIC_SUFFIXES = frozenset({
     "co.kr",
     "com.au", "net.au", "org.au", "edu.au", "gov.au",
     "com.br", "com.mx", "com.ar", "com.tr",
-    "co.in", "co.za", "co.nz",
+    "co.in", "co.za", "co.nz", "com.py",
 })
 
 IPV4_RE = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$")

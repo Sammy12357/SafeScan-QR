@@ -6,6 +6,7 @@ import io
 import sqlite3
 import hashlib
 import hmac
+import math
 import re
 import asyncio
 import base64
@@ -197,8 +198,50 @@ REQUEST_LATENCY = build_metric(
 )
 ACTIVE_SCANS = build_metric(Gauge, "safescan_active_scans", "In-flight scan requests")
 QR_UPLOADS = build_metric(Counter, "safescan_qr_uploads_total", "Stored QR upload artifacts", ["backend"])
-HIGH_RISK_TLDS = {".xyz", ".top", ".click", ".gq", ".tk", ".ml", ".cf"}
+# Single-label TLDs that show up disproportionately in spam/phishing/scam
+# campaigns because they're cheap (often <$2/yr) and effectively unmoderated.
+HIGH_RISK_TLDS = {
+    ".xyz", ".top", ".click", ".gq", ".tk", ".ml", ".cf",
+    ".sbs", ".icu", ".cc", ".cyou", ".cfd", ".rest", ".buzz",
+    ".mom", ".lol", ".work", ".fit", ".bid", ".loan", ".win",
+    ".live", ".support", ".monster", ".cam",
+}
+
+# Two-label suffixes (ccTLD second-level domains) that are similarly cheap
+# / loosely moderated and frequently abused for disposable phishing pages
+# despite belonging to a "real" country code.
+HIGH_RISK_TWO_LABEL_TLDS = {".com.py", ".com.cm", ".com.de"}
+
 URL_SHORTENERS = {"bit.ly", "t.co", "tinyurl.com", "goo.gl", "ow.ly", "is.gd", "buff.ly", "cutt.ly", "rebrand.ly", "shorturl.at"}
+
+# Well-known brands frequently impersonated by typosquatted domains, mapped
+# to their real registrable domain. A scanned domain whose registrable label
+# is a near-miss (small edit distance) of one of these keys - but isn't the
+# real domain - is almost always a phishing/credential-harvesting page.
+PROTECTED_BRANDS = {
+    "roblox": "roblox.com",
+    "steamcommunity": "steamcommunity.com",
+    "steampowered": "steampowered.com",
+    "paypal": "paypal.com",
+    "microsoft": "microsoft.com",
+    "google": "google.com",
+    "apple": "apple.com",
+    "amazon": "amazon.com",
+    "facebook": "facebook.com",
+    "instagram": "instagram.com",
+    "netflix": "netflix.com",
+    "binance": "binance.com",
+    "coinbase": "coinbase.com",
+    "metamask": "metamask.io",
+    "discord": "discord.com",
+    "wellsfargo": "wellsfargo.com",
+    "bankofamerica": "bankofamerica.com",
+    "chase": "chase.com",
+    "ebay": "ebay.com",
+    "linkedin": "linkedin.com",
+    "twitter": "twitter.com",
+    "x": "x.com",
+}
 BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 MALICIOUS_CONTRACT_BLOCKLIST = {
     "11111111111111111111111111111111",
@@ -3080,6 +3123,81 @@ def get_domain_age_days(domain):
 async def get_domain_age_days_async(domain):
     return await asyncio.to_thread(get_domain_age_days, domain)
 
+def _levenshtein(a, b):
+    """Classic edit distance, used for typosquat detection on short labels."""
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i] + [0] * len(b)
+        for j, cb in enumerate(b, 1):
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb))
+        prev = cur
+    return prev[-1]
+
+def check_typosquat_signal(hostname):
+    """Flag domains whose registrable label is a near-miss of a protected
+    brand name (e.g. "robiox.com.py" vs. "roblox", "stleamcommuunity.com" vs.
+    "steamcommunity") but isn't that brand's real domain - the classic
+    credential-phishing setup."""
+    domain = allowlist_registrable_domain(hostname)
+    if not domain:
+        return None
+    label = domain.split(".")[0]
+    if len(label) < 4:
+        return None
+    for brand, official in PROTECTED_BRANDS.items():
+        if domain == official:
+            continue
+        distance = _levenshtein(label, brand)
+        if distance == 0:
+            continue
+        max_len = max(len(label), len(brand))
+        if distance <= 2 and (distance / max_len) <= 0.3:
+            return signal(
+                "Brand Impersonation",
+                f"Looks like '{brand}' ({official})",
+                "high",
+                f"The domain '{domain}' closely resembles '{official}' (edit distance {distance}) but is not the official domain - a common setup for credential-phishing pages.",
+                False,
+            )
+    return None
+
+def _shannon_entropy(label):
+    if not label:
+        return 0.0
+    counts = {}
+    for ch in label:
+        counts[ch] = counts.get(ch, 0) + 1
+    length = len(label)
+    return -sum((count / length) * math.log2(count / length) for count in counts.values())
+
+def check_dga_signal(hostname):
+    """Flag long, high-entropy domain labels consistent with malware-generated
+    (DGA) or randomly-generated phishing domains, e.g.
+    "iuqerfsodp9ifjaposdfjhgosurijfaewrwergwea.com" (the WannaCry kill-switch
+    domain)."""
+    domain = allowlist_registrable_domain(hostname)
+    if not domain:
+        return None
+    label = domain.split(".")[0]
+    if len(label) < 24:
+        return None
+    entropy = _shannon_entropy(label)
+    if entropy >= 3.3:
+        return signal(
+            "Algorithmically Generated Domain",
+            f"{label} (entropy {entropy:.2f})",
+            "medium",
+            f"The domain label '{label}' is unusually long ({len(label)} characters) with high character randomness, consistent with malware-generated (DGA) or throwaway phishing domains.",
+            False,
+        )
+    return None
+
 def check_domain_intelligence(target_url):
     normalized = normalize_url(target_url)
     parsed = urlparse(normalized)
@@ -3092,25 +3210,30 @@ def check_domain_intelligence(target_url):
     except ValueError:
         pass
 
-    tld = "." + hostname.rsplit(".", 1)[-1] if "." in hostname else ""
     tld_signal = None
-    if tld in HIGH_RISK_TLDS:
-        tld_signal = signal("TLD Risk", f"High-risk TLD {tld}", "low", f"The domain uses {tld}, which appears often in disposable phishing campaigns.", False)
+    two_label_tld = "." + ".".join(hostname.rsplit(".", 2)[-2:]) if hostname.count(".") >= 2 else ""
+    single_label_tld = "." + hostname.rsplit(".", 1)[-1] if "." in hostname else ""
+    if two_label_tld in HIGH_RISK_TWO_LABEL_TLDS:
+        tld_signal = signal("TLD Risk", f"High-risk TLD {two_label_tld}", "low", f"The domain uses {two_label_tld}, which appears often in disposable phishing campaigns.", False)
+    elif single_label_tld in HIGH_RISK_TLDS:
+        tld_signal = signal("TLD Risk", f"High-risk TLD {single_label_tld}", "low", f"The domain uses {single_label_tld}, which appears often in disposable phishing campaigns.", False)
+
+    extra_signals = [s for s in (tld_signal, check_typosquat_signal(hostname), check_dga_signal(hostname)) if s]
 
     if not DOMAIN_AGE_CHECK_ENABLED:
-        return [tld_signal] if tld_signal else []
+        return extra_signals
 
     domain_age = lookup_domain_age_result(normalized)
     if domain_age["riskLevel"] == "unknown":
         detail = domain_age.get("riskDetail") or "Domain registration lookup could not be completed."
         base = signal("Domain Age", "Lookup unavailable", "low", detail, True)
         base["domainAge"] = domain_age
-        return [base, tld_signal] if tld_signal else [base]
+        return [base] + extra_signals
 
     age_days = domain_age["ageInDays"]
     signal_level = domain_age.get("signalLevel") or domain_age["riskLevel"]
     if signal_level == "established":
-        return [tld_signal] if tld_signal else []
+        return extra_signals
     severity = domain_age.get("severity") or ("high" if signal_level in ("very_new", "new") else ("medium" if signal_level == "young" else "low"))
     passed = severity == "low"
     registrar = domain_age.get("registrar") or "Unknown"
@@ -3123,7 +3246,7 @@ def check_domain_intelligence(target_url):
         passed
     )
     base["domainAge"] = domain_age
-    return [base, tld_signal] if tld_signal else [base]
+    return [base] + extra_signals
 
 def check_crypto_pattern_signals(target_url):
     parsed = urlparse(target_url)

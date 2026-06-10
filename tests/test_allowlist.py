@@ -35,6 +35,11 @@ class TestRegistrableDomain:
         assert registrable_domain("www.bbc.co.uk") == "bbc.co.uk"
         assert registrable_domain("foo.bar.com.au") == "bar.com.au"
 
+    def test_com_py_public_suffix(self):
+        # .com.py (Paraguay) is a public suffix - the registrable domain
+        # must keep the actual label, not collapse to "com.py".
+        assert registrable_domain("www.robiox.com.py") == "robiox.com.py"
+
     def test_handles_empty_and_garbage(self):
         assert registrable_domain("") == ""
         assert registrable_domain(".") == ""
