@@ -164,7 +164,7 @@
       >
         <div class="risk-modal-card {{ 'risk-modal-safe' if status == 'SAFE' else ('risk-modal-caution' if status == 'CAUTION' else 'risk-modal-dangerous') }}">
           {% if overall_risk == 'high' %}
-          <div class="risk-warning-banner">Caution: This QR code shows strong indicators of a phishing or wallet drain attack.</div>
+          <div class="risk-warning-banner">Caution: This QR code shows strong indicators of {{ (threat_class or "a QR security threat") | lower }}.</div>
           {% endif %}
           <div class="risk-verdict-top">
             <div class="score-gauge" data-score="{{ score }}" style="--score: 0;" aria-label="Risk score {{ score }} out of 100">
