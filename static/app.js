@@ -918,7 +918,8 @@ const goGhostBrokers = [
     removalUrl: "https://www.whitepages.com/suppression-requests",
     prefillMap: { name: "name", address: "address", location: "location", email: "email", phone: "phone", identifier: "phone" },
     requiredInfo: ["Full name", "City/state", "Matching profile", "Email confirmation"],
-    automationNote: "Assisted: search with your name and location, copy the matching listing details, then complete the suppression form.",
+    automationEnabled: true,
+    automationNote: "Backend assisted: opens the suppression form and fills your details. Whitepages needs you to pick your matching listing and confirm by email.",
     searchUrl: ({ name, location }) => `https://www.whitepages.com/name/${ghostPathSlug(name)}${location ? `/${ghostPathSlug(location)}` : ""}`
   },
   {
@@ -929,7 +930,8 @@ const goGhostBrokers = [
     removalUrl: "https://www.spokeo.com/optout",
     prefillMap: { name: "name", address: "address", location: "location", email: "email", phone: "phone", identifier: "phone" },
     requiredInfo: ["Profile URL", "Email confirmation"],
-    automationNote: "Assisted: find the matching profile, copy its URL, paste it into Spokeo opt-out, then verify the email.",
+    automationEnabled: true,
+    automationNote: "Backend assisted: opens Spokeo opt-out and fills your email. Spokeo removes by listing URL, so use Search to find your profile, paste its URL, then verify by email.",
     searchUrl: ({ name, location }) => `https://www.spokeo.com/${ghostPathSlug(name)}${location ? `/${ghostPathSlug(location)}` : ""}`
   },
   {
@@ -937,10 +939,11 @@ const goGhostBrokers = [
     name: "BeenVerified",
     priority: "High traffic",
     priorityDescription: "One of the most visible people-search sites, so it is a good place to remove first.",
-    removalUrl: "https://www.beenverified.com/app/optout/search",
+    removalUrl: "https://www.beenverified.com/app/optout/search/",
     prefillMap: { name: "fn", address: "address", location: "citystatezip", email: "email", phone: "phone", identifier: "phone" },
     requiredInfo: ["Full name", "State/city", "Matching record", "Email confirmation"],
-    automationNote: "Assisted: use the opt-out search, choose the matching record, and complete email verification.",
+    automationEnabled: true,
+    automationNote: "Backend assisted: opens the opt-out search and fills your name. BeenVerified needs you to choose your matching record and confirm by email.",
     searchUrl: ({ name }) => `https://www.beenverified.com/app/optout/search?fn=${encodeURIComponent(name || "")}`
   },
   {
@@ -951,7 +954,8 @@ const goGhostBrokers = [
     removalUrl: "https://www.truepeoplesearch.com/removal",
     prefillMap: { name: "name", address: "address", location: "citystatezip", email: "email", phone: "phone", identifier: "phone" },
     requiredInfo: ["Full name", "City/state", "Matching profile", "Email confirmation"],
-    automationNote: "Assisted: search, open the matching record, then use the removal flow and verify by email.",
+    automationEnabled: true,
+    automationNote: "Backend assisted: opens the removal flow and fills your details. TruePeopleSearch needs you to confirm the matching record and clear a CAPTCHA.",
     searchUrl: ({ name, location }) => `https://www.truepeoplesearch.com/results?name=${encodeURIComponent(name || "")}&citystatezip=${encodeURIComponent(location || "")}`
   },
   {
@@ -962,7 +966,8 @@ const goGhostBrokers = [
     removalUrl: "https://thatsthem.com/optout",
     prefillMap: { name: "name", address: "address", location: "location", email: "email", phone: "phone", identifier: "phone" },
     requiredInfo: ["Full name", "Street address or phone", "Email confirmation"],
-    automationNote: "Assisted: copy the address/phone details, open opt-out, then submit only the fields Thatsthem requests.",
+    automationEnabled: true,
+    automationNote: "Backend assisted: fills the opt-out form with your name, email, and address, then pauses for any CAPTCHA or email confirmation.",
     searchUrl: ({ name, location }) => `https://thatsthem.com/name/${ghostPathSlug(name)}${location ? `/${ghostPathSlug(location)}` : ""}`
   },
   {
@@ -973,7 +978,8 @@ const goGhostBrokers = [
     removalUrl: "https://nuwber.com/removal/link",
     prefillMap: { name: "name", address: "address", location: "location", email: "email", phone: "phone", identifier: "phone" },
     requiredInfo: ["Profile URL", "Email confirmation"],
-    automationNote: "Assisted: find the matching Nuwber profile, paste its URL into the removal form, then verify by email.",
+    automationEnabled: true,
+    automationNote: "Backend assisted: opens the removal form and fills your email. Nuwber removes by profile URL, so use Search to find your listing, paste its URL, then verify by email.",
     searchUrl: ({ name, location }) => `https://nuwber.com/search?name=${encodeURIComponent(name || "")}&location=${encodeURIComponent(location || "")}`
   },
   {
@@ -981,10 +987,11 @@ const goGhostBrokers = [
     name: "Radaris",
     priority: "Duplicate check",
     priorityDescription: "This site can show multiple records for one person, so check for duplicates before marking it removed.",
-    removalUrl: "https://radaris.com/page/how-to-remove",
+    removalUrl: "https://radaris.com/control/privacy",
     prefillMap: { name: "name", address: "address", location: "location", email: "email", phone: "phone", identifier: "phone" },
     requiredInfo: ["Profile URL", "Matching record", "Email confirmation"],
-    automationNote: "Assisted: Radaris may show duplicate records, so confirm the exact profile before submitting removal.",
+    automationEnabled: true,
+    automationNote: "Backend assisted: opens the Radaris privacy control and fills your email. Radaris removes by listing, so use Search to find your record, confirm the exact profile, then verify by email.",
     searchUrl: ({ name, location }) => ghostBrokerGoogleSearch({ name, location }, "Radaris", "radaris.com")
   },
   {
@@ -1174,6 +1181,8 @@ function updateGhostAutomationState(siteId, automation) {
 function formatGhostAutomationStatus(status) {
   const labels = {
     captcha_required: "CAPTCHA checkpoint",
+    email_required: "Confirm by email",
+    needs_profile_url: "Pick your listing",
     filled: "Form filled",
     opened: "Opt-out tab opened",
     cancelled: "Cancelled",
@@ -1293,20 +1302,79 @@ function applyGoGhostDeviceFormatting() {
   }
 }
 
-function startGhostAssistedQueue() {
+let ghostQueueRunning = false;
+let ghostQueueStopRequested = false;
+
+const GHOST_MANUAL_STATUSES = ["captcha_required", "email_required", "needs_profile_url"];
+
+// Runs backend Playwright autofill across every automation-enabled broker that
+// is not already submitted/removed, one after another. Brokers that need a
+// human step (CAPTCHA, email confirmation, or picking your own listing) are
+// recorded as checkpoints so you can finish them, while the queue keeps moving
+// through the rest so all 8 trackers are attempted in a single pass.
+async function startGhostAssistedQueue() {
   const profile = getGhostProfile();
   if (!hasGhostSearchProfile(profile)) {
     scrollToGhostProfile();
     showCopyToast("Add a name first");
     return;
   }
-  const broker = nextPendingGhostBroker();
-  if (!broker) {
-    showCopyToast("All brokers tracked");
+  if (!profile.email?.trim()) {
+    scrollToGhostProfile();
+    ghostEmailInput?.focus({ preventScroll: true });
+    showCopyToast("Add an email first");
     return;
   }
-  scrollToGhostBroker(broker);
-  showCopyToast(`Next: ${broker.name}`);
+  if (ghostQueueRunning) {
+    ghostQueueStopRequested = true;
+    showCopyToast("Stopping after current broker");
+    return;
+  }
+
+  const progress = getGhostProgress();
+  const queue = goGhostBrokers.filter(
+    (broker) => broker.automationEnabled && !progress[broker.id]?.submitted && !progress[broker.id]?.removed
+  );
+  if (!queue.length) {
+    showCopyToast("All automated brokers tracked");
+    return;
+  }
+
+  ghostQueueRunning = true;
+  ghostQueueStopRequested = false;
+  if (startGhostQueueButton) {
+    startGhostQueueButton.textContent = "Stop queue";
+    startGhostQueueButton.setAttribute("aria-pressed", "true");
+  }
+
+  let manualCheckpoints = 0;
+  let completed = 0;
+  try {
+    for (const broker of queue) {
+      if (ghostQueueStopRequested) break;
+      scrollToGhostBroker(broker);
+      showCopyToast(`Running ${broker.name}…`);
+      const result = await runGhostBrokerAutomation(broker, null);
+      if (!result) continue;
+      if (GHOST_MANUAL_STATUSES.includes(result.status)) manualCheckpoints += 1;
+      else if (result.status === "submitted") completed += 1;
+    }
+  } finally {
+    ghostQueueRunning = false;
+    ghostQueueStopRequested = false;
+    if (startGhostQueueButton) {
+      startGhostQueueButton.textContent = "Start assisted queue";
+      startGhostQueueButton.removeAttribute("aria-pressed");
+    }
+    renderGoGhostAutomationScope();
+    renderGoGhostProgress();
+  }
+
+  if (manualCheckpoints) {
+    showCopyToast(`Queue done — ${manualCheckpoints} need a manual step`);
+  } else {
+    showCopyToast(`Queue complete — ${completed} submitted`);
+  }
 }
 
 async function openNextGhostBroker() {
@@ -1342,20 +1410,20 @@ async function runGhostBrokerAutomation(broker, triggerButton) {
   if (activeController) {
     activeController.abort();
     showCopyToast(`Cancelling ${broker.name}`);
-    return;
+    return null;
   }
 
   const profile = getGhostProfile();
   if (!profile.name?.trim()) {
     scrollToGhostProfile();
     showCopyToast("Add a name first");
-    return;
+    return null;
   }
   if (!profile.email?.trim()) {
     scrollToGhostProfile();
     ghostEmailInput?.focus({ preventScroll: true });
     showCopyToast("Add an email first");
-    return;
+    return null;
   }
 
   const originalText = triggerButton?.textContent || "";
@@ -1399,25 +1467,33 @@ async function runGhostBrokerAutomation(broker, triggerButton) {
       updatedAt: new Date().toISOString()
     };
     updateGhostAutomationState(broker.id, automation);
-    if (automation.status === "submitted") setGhostProgress(broker.id, "submitted", true);
+    // "submitted" is fully done; "email_required" means the request was sent
+    // and only an email-link click remains, so it also counts as submitted.
+    if (automation.status === "submitted" || automation.status === "email_required") {
+      setGhostProgress(broker.id, "submitted", true);
+    }
     showCopyToast(automation.detail || formatGhostAutomationStatus(automation.status));
+    return automation;
   } catch (error) {
     if (error?.name === "AbortError") {
-      updateGhostAutomationState(broker.id, {
+      const cancelled = {
         status: "cancelled",
         detail: "Backend automation was cancelled before completion.",
         targetUrl: optOutUrl,
         updatedAt: new Date().toISOString()
-      });
+      };
+      updateGhostAutomationState(broker.id, cancelled);
       showCopyToast(`${broker.name} run cancelled`);
-      return;
+      return cancelled;
     }
-    updateGhostAutomationState(broker.id, {
+    const failed = {
       status: "failed",
       detail: error.message || "Automation failed.",
       updatedAt: new Date().toISOString()
-    });
+    };
+    updateGhostAutomationState(broker.id, failed);
     showCopyToast(error.message || "Automation failed");
+    return failed;
   } finally {
     if (goGhostAutomationControllers.get(broker.id) === controller) {
       goGhostAutomationControllers.delete(broker.id);

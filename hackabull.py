@@ -6072,8 +6072,12 @@ async def go_ghost_page(request: Request):
 async def api_go_ghost_removal(request: Request, broker: str, payload: dict = Body(...)):
     user = require_user(request)
     normalized_broker = (broker or "").strip().lower()
-    if normalized_broker != "fastpeoplesearch":
-        raise SafeScanError("Backend automation is available for FastPeopleSearch first.", 400)
+
+    from removals.engine import RemovalProfile, run_broker_removal, supported_broker
+
+    broker_config = supported_broker(normalized_broker)
+    if broker_config is None:
+        raise SafeScanError("Backend automation is not available for this broker yet.", 400)
     validate_strict_payload(payload, {"name", "address", "cityState", "phone", "email"})
 
     profile_payload = {
@@ -6103,32 +6107,30 @@ async def api_go_ghost_removal(request: Request, broker: str, payload: dict = Bo
                 normalized_broker,
                 "running",
                 "Automation started.",
-                "https://www.fastpeoplesearch.com/optout",
+                broker_config.optout_url,
                 created_at,
                 created_at,
             ),
         )
 
     try:
-        from removals.engine import RemovalProfile, run_fastpeoplesearch_removal
-
-        result = await run_fastpeoplesearch_removal(RemovalProfile(**profile_payload))
+        result = await run_broker_removal(normalized_broker, RemovalProfile(**profile_payload))
     except RuntimeError as exc:
         result = {
             "status": "unavailable",
             "detail": str(exc),
-            "targetUrl": "https://www.fastpeoplesearch.com/optout",
+            "targetUrl": broker_config.optout_url,
         }
     except Exception as exc:
         result = {
             "status": "failed",
-            "detail": f"FastPeopleSearch automation failed before submission: {type(exc).__name__}: {str(exc)[:320]}",
-            "targetUrl": "https://www.fastpeoplesearch.com/optout",
+            "detail": f"{broker_config.name} automation failed before submission: {type(exc).__name__}: {str(exc)[:320]}",
+            "targetUrl": broker_config.optout_url,
         }
 
     status = str(result.get("status") or "failed")[:40]
     detail = str(result.get("detail") or "")[:500]
-    target_url = str(result.get("targetUrl") or "https://www.fastpeoplesearch.com/optout")[:500]
+    target_url = str(result.get("targetUrl") or broker_config.optout_url)[:500]
     with get_conn() as conn:
         conn.execute(
             """UPDATE go_ghost_removal_jobs

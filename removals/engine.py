@@ -4,10 +4,6 @@ from dataclasses import dataclass
 import re
 
 
-FASTPEOPLESEARCH_OPTOUT_URL = "https://www.fastpeoplesearch.com/optout"
-FASTPEOPLESEARCH_SELF_REQUEST_TEXT = "I am the subject of this request"
-
-
 @dataclass(frozen=True)
 class RemovalProfile:
     name: str
@@ -15,6 +11,114 @@ class RemovalProfile:
     city_state: str = ""
     phone: str = ""
     email: str = ""
+
+
+@dataclass(frozen=True)
+class BrokerConfig:
+    """Per-broker automation recipe.
+
+    The generic runner leans on placeholder/name/id heuristics that work
+    across most opt-out forms. These flags adjust the runner for each
+    broker's quirks:
+
+    - requester_type: the form has a "who are you" dropdown that must be set
+      to the data subject before the request is valid.
+    - authorization: the form has an "I am authorized / I confirm" checkbox.
+    - record_based: the opt-out cannot be completed from name fields alone;
+      the broker first needs the URL of the specific listing (the user must
+      find and confirm their own record). The runner fills what it can but
+      returns a `needs_profile_url` checkpoint instead of a false success.
+    - email_verification: the broker emails a confirmation link after submit,
+      so a `submitted` result still leaves a manual email step for the user.
+    """
+
+    id: str
+    name: str
+    optout_url: str
+    requester_type: bool = False
+    authorization: bool = False
+    record_based: bool = False
+    email_verification: bool = True
+
+
+BROKER_CONFIGS: dict[str, BrokerConfig] = {
+    "fastpeoplesearch": BrokerConfig(
+        id="fastpeoplesearch",
+        name="FastPeopleSearch",
+        optout_url="https://www.fastpeoplesearch.com/optout",
+        requester_type=True,
+        authorization=True,
+        record_based=False,
+        email_verification=True,
+    ),
+    "thatsthem": BrokerConfig(
+        id="thatsthem",
+        name="Thatsthem",
+        optout_url="https://thatsthem.com/optout",
+        requester_type=False,
+        authorization=True,
+        record_based=False,
+        email_verification=True,
+    ),
+    "truepeoplesearch": BrokerConfig(
+        id="truepeoplesearch",
+        name="TruePeopleSearch",
+        optout_url="https://www.truepeoplesearch.com/removal",
+        requester_type=False,
+        authorization=True,
+        record_based=True,
+        email_verification=True,
+    ),
+    "spokeo": BrokerConfig(
+        id="spokeo",
+        name="Spokeo",
+        optout_url="https://www.spokeo.com/optout",
+        requester_type=False,
+        authorization=False,
+        record_based=True,
+        email_verification=True,
+    ),
+    "nuwber": BrokerConfig(
+        id="nuwber",
+        name="Nuwber",
+        optout_url="https://nuwber.com/removal/link",
+        requester_type=False,
+        authorization=False,
+        record_based=True,
+        email_verification=True,
+    ),
+    "beenverified": BrokerConfig(
+        id="beenverified",
+        name="BeenVerified",
+        optout_url="https://www.beenverified.com/app/optout/search/",
+        requester_type=False,
+        authorization=False,
+        record_based=True,
+        email_verification=True,
+    ),
+    "whitepages": BrokerConfig(
+        id="whitepages",
+        name="Whitepages",
+        optout_url="https://www.whitepages.com/suppression-requests",
+        requester_type=False,
+        authorization=False,
+        record_based=True,
+        email_verification=True,
+    ),
+    "radaris": BrokerConfig(
+        id="radaris",
+        name="Radaris",
+        optout_url="https://radaris.com/control/privacy",
+        requester_type=False,
+        authorization=False,
+        record_based=True,
+        email_verification=True,
+    ),
+}
+
+
+def supported_broker(broker_id: str) -> BrokerConfig | None:
+    return BROKER_CONFIGS.get((broker_id or "").strip().lower())
 
 
 def split_name(full_name: str) -> dict[str, str]:
@@ -98,6 +202,8 @@ async def _check_authorization(page) -> bool:
     selectors = [
         "input[type='checkbox'][name*='author' i]",
         "input[type='checkbox'][id*='author' i]",
+        "input[type='checkbox'][name*='confirm' i]",
+        "input[type='checkbox'][name*='agree' i]",
         "input[type='checkbox']",
     ]
     for selector in selectors:
@@ -114,13 +220,37 @@ async def _check_authorization(page) -> bool:
 async def _captcha_present(page) -> bool:
     checks = [
         "iframe[src*='recaptcha']",
+        "iframe[src*='hcaptcha']",
         "iframe[title*='reCAPTCHA' i]",
+        "iframe[title*='hCaptcha' i]",
+        "iframe[src*='challenges.cloudflare.com']",
         ".g-recaptcha",
+        ".h-captcha",
+        ".cf-turnstile",
         "text=/I'm not a robot/i",
     ]
     for selector in checks:
         try:
             if await page.locator(selector).first.count():
+                return True
+        except Exception:
+            continue
+    return False
+
+
+async def _email_verification_notice(page) -> bool:
+    patterns = [
+        r"check\s+your\s+email",
+        r"verification\s+email",
+        r"confirm(ation)?\s+email",
+        r"verify\s+your\s+email",
+        r"we('|’)?ve?\s+sent",
+        r"link\s+to\s+confirm",
+    ]
+    for pattern in patterns:
+        try:
+            locator = page.get_by_text(re.compile(pattern, re.IGNORECASE)).first
+            if await locator.count() and await locator.is_visible():
                 return True
         except Exception:
             continue
@@ -134,7 +264,10 @@ async def _click_submit(page) -> bool:
         "button:has-text('Submit')",
         "input[value*='Submit' i]",
         "button:has-text('Send')",
+        "button:has-text('Begin')",
         "button:has-text('Continue')",
+        "button:has-text('Opt out')",
+        "button:has-text('Remove')",
     ]
     for selector in selectors:
         locator = page.locator(selector).first
@@ -147,16 +280,85 @@ async def _click_submit(page) -> bool:
     return False
 
 
-async def run_fastpeoplesearch_removal(
+_FIRST_NAME_SELECTORS = [
+    "input[placeholder='John']",
+    "input[placeholder*='First' i]",
+    "input[name*='first' i]",
+    "input[id*='first' i]",
+    "input[aria-label*='first' i]",
+]
+_MIDDLE_NAME_SELECTORS = [
+    "input[placeholder='Middle']",
+    "input[placeholder*='Middle' i]",
+    "input[name*='middle' i]",
+    "input[id*='middle' i]",
+    "input[aria-label*='middle' i]",
+]
+_LAST_NAME_SELECTORS = [
+    "input[placeholder='Doe']",
+    "input[placeholder*='Last' i]",
+    "input[name*='last' i]",
+    "input[id*='last' i]",
+    "input[aria-label*='last' i]",
+]
+_FULL_NAME_SELECTORS = [
+    "input[name='name']",
+    "input[placeholder*='Full name' i]",
+    "input[aria-label*='Full name' i]",
+    "input[name*='fullname' i]",
+]
+_EMAIL_SELECTORS = [
+    "input[type='email']",
+    "input[placeholder*='@']",
+    "input[placeholder*='Email' i]",
+    "input[name*='email' i]",
+    "input[id*='email' i]",
+    "input[aria-label*='email' i]",
+]
+_PHONE_SELECTORS = [
+    "input[type='tel']",
+    "input[placeholder*='Phone' i]",
+    "input[name*='phone' i]",
+    "input[id*='phone' i]",
+    "input[aria-label*='phone' i]",
+]
+_ADDRESS_SELECTORS = [
+    "input[placeholder*='Street' i]",
+    "input[placeholder*='Address' i]",
+    "input[name*='address' i]",
+    "input[name*='street' i]",
+    "input[id*='address' i]",
+    "input[aria-label*='address' i]",
+]
+_CITY_STATE_SELECTORS = [
+    "input[placeholder*='City' i]",
+    "input[placeholder*='State' i]",
+    "input[name*='citystate' i]",
+    "input[name*='city' i]",
+    "input[id*='city' i]",
+    "input[aria-label*='city' i]",
+]
+
+
+async def run_broker_removal(
+    broker_id: str,
     profile: RemovalProfile,
     *,
     headless: bool = True,
     timeout_ms: int = 45_000,
 ) -> dict[str, str]:
+    config = supported_broker(broker_id)
+    if config is None:
+        return {
+            "status": "unavailable",
+            "detail": f"Backend automation is not configured for '{broker_id}'.",
+            "targetUrl": "",
+        }
+
     if not profile.name.strip():
-        return {"status": "failed", "detail": "Name is required.", "targetUrl": FASTPEOPLESEARCH_OPTOUT_URL}
+        return {"status": "failed", "detail": "Name is required.", "targetUrl": config.optout_url}
     if not profile.email.strip():
-        return {"status": "failed", "detail": "Email is required.", "targetUrl": FASTPEOPLESEARCH_OPTOUT_URL}
+        return {"status": "failed", "detail": "Email is required.", "targetUrl": config.optout_url}
 
     try:
         from playwright.async_api import TimeoutError as PlaywrightTimeoutError
@@ -180,58 +382,73 @@ async def run_fastpeoplesearch_removal(
         )
         page.set_default_timeout(timeout_ms)
         try:
-            await page.goto(FASTPEOPLESEARCH_OPTOUT_URL, wait_until="domcontentloaded")
-            selected_requester = await _select_requester_type(page)
-            filled_first = await _fill_first_match(page, [
-                "input[placeholder='John']",
-                "input[placeholder*='First' i]",
-                "input[name*='first' i]",
-                "input[id*='first' i]",
-                "input[aria-label*='first' i]",
-            ], name["first"])
-            filled_middle = await _fill_first_match(page, [
-                "input[placeholder='Middle']",
-                "input[placeholder*='Middle' i]",
-                "input[name*='middle' i]",
-                "input[id*='middle' i]",
-                "input[aria-label*='middle' i]",
-            ], name["middle"])
-            filled_last = await _fill_first_match(page, [
-                "input[placeholder='Doe']",
-                "input[placeholder*='Last' i]",
-                "input[name*='last' i]",
-                "input[id*='last' i]",
-                "input[aria-label*='last' i]",
-            ], name["last"])
-            filled_email = await _fill_first_match(page, [
-                "input[type='email']",
-                "input[placeholder*='@']",
-                "input[placeholder*='Email' i]",
-                "input[name*='email' i]",
-                "input[id*='email' i]",
-                "input[aria-label*='email' i]",
-            ], profile.email.strip())
-            checked_authorization = await _check_authorization(page)
+            await page.goto(config.optout_url, wait_until="domcontentloaded")
 
-            filled_summary = [
+            selected_requester = True
+            if config.requester_type:
+                selected_requester = await _select_requester_type(page)
+
+            filled_first = await _fill_first_match(page, _FIRST_NAME_SELECTORS, name["first"])
+            await _fill_first_match(page, _MIDDLE_NAME_SELECTORS, name["middle"])
+            filled_last = await _fill_first_match(page, _LAST_NAME_SELECTORS, name["last"])
+            # Some brokers use a single "Full name" field instead of split parts.
+            filled_fullname = False
+            if not (filled_first and filled_last):
+                filled_fullname = await _fill_first_match(page, _FULL_NAME_SELECTORS, profile.name.strip())
+            filled_email = await _fill_first_match(page, _EMAIL_SELECTORS, profile.email.strip())
+            filled_phone = await _fill_first_match(page, _PHONE_SELECTORS, profile.phone.strip())
+            filled_address = await _fill_first_match(page, _ADDRESS_SELECTORS, profile.address.strip())
+            filled_city_state = await _fill_first_match(page, _CITY_STATE_SELECTORS, profile.city_state.strip())
+
+            checked_authorization = True
+            if config.authorization:
+                checked_authorization = await _check_authorization(page)
+
+            has_name = filled_first or filled_fullname
+            filled_summary = ", ".join([
                 f"requester={'yes' if selected_requester else 'no'}",
-                f"first={'yes' if filled_first else 'no'}",
-                f"middle={'yes' if filled_middle or not name['middle'] else 'no'}",
-                f"last={'yes' if filled_last else 'no'}",
+                f"name={'yes' if has_name else 'no'}",
                 f"email={'yes' if filled_email else 'no'}",
-                f"authorization={'yes' if checked_authorization else 'no'}",
-            ]
-            if not (selected_requester and filled_first and filled_last and filled_email):
+                f"phone={'yes' if filled_phone else 'na'}",
+                f"address={'yes' if filled_address else 'na'}",
+                f"citystate={'yes' if filled_city_state else 'na'}",
+                f"authorization={'yes' if checked_authorization else 'na'}",
+            ])
+
+            # Record-based brokers (Spokeo, Nuwber, BeenVerified, Whitepages,
+            # Radaris, TruePeopleSearch) remove a *specific listing*. Even when
+            # the opt-out page has a name field, it is only a search box - the
+            # actual removal still needs the user to pick which result is them
+            # and confirm. Because the backend browser is headless and
+            # server-side, the user can't see that search, so we never claim a
+            # false submission: we report a profile-URL checkpoint and let them
+            # finish in their own browser via Search -> Opt out.
+            if config.record_based:
+                return {
+                    "status": "needs_profile_url",
+                    "detail": (
+                        f"{config.name} removes by specific listing. Use Search to find your "
+                        f"record in your browser, open it, then Opt out and confirm by email. "
+                        f"({filled_summary})"
+                    ),
+                    "targetUrl": page.url,
+                }
+
+            if not (has_name and filled_email):
                 return {
                     "status": "failed",
-                    "detail": "FastPeopleSearch backend autofill could not complete required fields: " + ", ".join(filled_summary),
+                    "detail": f"{config.name} autofill could not complete required fields: {filled_summary}",
                     "targetUrl": page.url,
                 }
 
             if await _captcha_present(page):
                 return {
                     "status": "captcha_required",
-                    "detail": "FastPeopleSearch backend autofilled required fields, but reCAPTCHA requires a human checkpoint before submission: " + ", ".join(filled_summary),
+                    "detail": (
+                        f"{config.name} autofilled the required fields, but it shows a CAPTCHA "
+                        f"the backend browser can't clear. Click Opt out to open the prefilled "
+                        f"form in your own browser, solve the CAPTCHA, and submit. ({filled_summary})"
+                    ),
                     "targetUrl": page.url,
                 }
 
@@ -239,7 +456,7 @@ async def run_fastpeoplesearch_removal(
             if not submitted:
                 return {
                     "status": "filled",
-                    "detail": "FastPeopleSearch backend autofilled required fields, but no submit button was available: " + ", ".join(filled_summary),
+                    "detail": f"{config.name} autofilled the required fields, but no submit button was available: {filled_summary}",
                     "targetUrl": page.url,
                 }
 
@@ -247,21 +464,32 @@ async def run_fastpeoplesearch_removal(
                 await page.wait_for_load_state("networkidle", timeout=8_000)
             except PlaywrightTimeoutError:
                 pass
+
+            if config.email_verification or await _email_verification_notice(page):
+                return {
+                    "status": "email_required",
+                    "detail": (
+                        f"{config.name} opt-out was submitted. Open the confirmation email "
+                        f"{config.name} sends and click the verification link to finish. ({filled_summary})"
+                    ),
+                    "targetUrl": page.url,
+                }
+
             return {
                 "status": "submitted",
-                "detail": "FastPeopleSearch opt-out was submitted by backend automation. Check the confirmation email next: " + ", ".join(filled_summary),
+                "detail": f"{config.name} opt-out was submitted by backend automation. ({filled_summary})",
                 "targetUrl": page.url,
             }
         except PlaywrightTimeoutError as exc:
             return {
                 "status": "failed",
-                "detail": f"FastPeopleSearch backend autofill timed out at {page.url}: {str(exc)[:320]}",
+                "detail": f"{config.name} autofill timed out at {page.url}: {str(exc)[:320]}",
                 "targetUrl": page.url,
             }
         except Exception as exc:
             return {
                 "status": "failed",
-                "detail": f"FastPeopleSearch backend autofill stopped at {page.url}: {type(exc).__name__}: {str(exc)[:320]}",
+                "detail": f"{config.name} autofill stopped at {page.url}: {type(exc).__name__}: {str(exc)[:320]}",
                 "targetUrl": page.url,
             }
         finally:
