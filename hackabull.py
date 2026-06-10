@@ -2340,6 +2340,7 @@ def classify_qr_with_ml(payload, image=None, input_source="generated_qr"):
             "enabled": True,
             "trustSignal": decision.trust_signal,
             "model": model_name,
+            "modelLabel": "URL pattern model" if source_input == "decoded_url" else "QR image model",
             "source": result.get("source"),
             "inputSource": source_input,
             "score": round(adjusted_prob * 100.0, 1),

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=signup-gradient-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=ml-pill-v1">
 </head>
 <body class="{{ 'test-site-page' if test_site else '' }}">
   {% if not logged_in and google_client_id and not local_auth_enabled %}
@@ -213,7 +213,7 @@
                   <h3>{{ ml_risk.label }} · {{ ml_risk.score | round(1) }}/100 risk</h3>
                   <p>The local QR model estimated {{ (ml_risk.benignProbability * 100) | round(1) }}% safe and {{ (ml_risk.maliciousProbability * 100) | round(1) }}% malicious probability.</p>
                 </div>
-                {% if ml_risk.model %}<span class="ml-model-pill">{{ ml_risk.model }}</span>{% endif %}
+                {% if ml_risk.modelLabel %}<span class="ml-model-pill">{{ ml_risk.modelLabel }}</span>{% endif %}
               </div>
               <div class="ml-probability-bars" aria-label="ML model probability split">
                 <span class="ml-safe-bar" style="width: {{ (ml_risk.benignProbability * 100) | round(2) }}%;"></span>

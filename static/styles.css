@@ -357,7 +357,7 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: 16px; borde
 .ml-panel-top { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; }
 .ml-panel-top h3 { margin: 4px 0 6px; font-size: 1.24rem; overflow-wrap: anywhere; }
 .ml-panel-top p { margin: 0; color: var(--muted); line-height: 1.45; }
-.ml-model-pill { flex: 0 0 auto; max-width: 180px; padding: 7px 9px; border: 1px solid rgba(124, 222, 255, 0.24); border-radius: 999px; color: #7cdeff; background: rgba(124, 222, 255, 0.08); font-size: 0.7rem; font-weight: 900; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ml-model-pill { flex: 0 0 auto; max-width: 180px; padding: 7px 12px; border: 1px solid rgba(124, 222, 255, 0.24); border-radius: 999px; color: #7cdeff; background: rgba(124, 222, 255, 0.08); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ml-probability-bars { display: flex; gap: 2px; height: 11px; overflow: hidden; border-radius: 999px; background: rgba(255, 255, 255, 0.08); }
 .ml-probability-bars span { display: block; min-width: 2px; }
 .ml-safe-bar { background: var(--safe); }
