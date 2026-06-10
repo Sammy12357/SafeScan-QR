@@ -719,7 +719,7 @@ if (riskModal) {
 
 function closeRiskModal() {
   riskModal?.classList.add("hidden");
-  document.getElementById("resultsSection")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  document.getElementById("scanner")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 blockReportButton?.addEventListener("click", async () => {

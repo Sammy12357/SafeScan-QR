@@ -323,26 +323,6 @@
         </div>
       </div>
 
-      <section id="resultsSection" class="results-panel">
-        <div class="results-header"><div><h2>Verdict: {{ status }}</h2></div><div class="verdict-badge {{ 'verdict-safe' if status == 'SAFE' else ('verdict-caution' if status == 'CAUTION' else 'verdict-dangerous') }}">{{ status }}</div></div>
-        <div class="results-grid">
-          {% if action_description %}
-          <article class="result-card"><h3>What it executes</h3><p>{{ action_description }}</p></article>
-          {% endif %}
-          <article class="result-card"><h3>Decoded payload</h3><p class="mono">{{ url_found }}</p></article>
-          <article class="result-card result-card-wide engine-card">
-            <div class="engine-grid">
-              <div><p class="engine-label">Risk score</p><p class="score-value">{{ score }}</p></div>
-              <div><p class="engine-label">Threat class</p><p>{{ threat_class }}</p></div>
-              <div><p class="engine-label">Reputation</p><p>{{ reputation.status if reputation else source }}</p></div>
-              {% if domain_age %}<div><p class="engine-label">Domain age</p><p>{{ domain_age.ageLabel }} Â· {{ domain_age.riskLabel }}</p></div>{% endif %}
-              {% if virus_total %}<div><p class="engine-label">VirusTotal</p><p>{{ virus_total.summary.clean }} clean Â· {{ virus_total.summary.unrated }} unrated Â· {{ virus_total.summary.malicious }} malicious</p></div>{% endif %}
-              {% if ml_risk and ml_risk.enabled %}<div><p class="engine-label">ML model</p><p>{{ ml_risk.label }} Â· {{ ml_risk.score | round(1) }}/100</p></div>{% endif %}
-            </div>
-            <p class="engine-copy"><a href="/risk-engine">Risk Engine details</a></p>
-          </article>
-        </div>
-      </section>
       {% endif %}
       {% if test_site %}
       <section class="test-section test-faq reveal-on-scroll">
@@ -362,6 +342,6 @@
   </div>
   <script type="module" src="/static/safescan-3d.js?v=brave-webgl-v1"></script>
   <script src="/static/qr-camera.js?v=manual-capture-v1" defer></script>
-  <script src="/static/app.js?v=wheel-scroll-fix-v1"></script>
+  <script src="/static/app.js?v=no-results-panel-v2"></script>
 </body>
 </html>
