@@ -21,11 +21,11 @@
 }
 
 :root[data-theme="light"] {
-  --bg: #f6f8fb;
-  --panel: rgba(255, 255, 255, 0.92);
-  --panel-strong: rgba(255, 255, 255, 0.98);
+  --bg: #e9eef3;
+  --panel: rgba(226, 234, 242, 0.94);
+  --panel-strong: rgba(247, 249, 252, 0.98);
   --text: #101827;
-  --muted: #516070;
+  --muted: #4f5f70;
   --line: rgba(16, 24, 39, 0.12);
   --shadow: 0 24px 70px rgba(15, 23, 42, 0.14);
 }
@@ -42,7 +42,7 @@ body {
   overscroll-behavior-y: contain;
   text-rendering: optimizeLegibility;
 }
-:root[data-theme="light"] body { background: linear-gradient(145deg, #f9fbff 0%, #edf4f7 48%, #f7f8fb 100%); }
+:root[data-theme="light"] body { background: linear-gradient(145deg, #eef3f7 0%, #e3ebf1 48%, #f2f5f8 100%); }
 
 .page-shell { width: min(1180px, calc(100% - 32px)); min-height: 100vh; margin: 0 auto; padding: 28px 0 44px; }
 /* Clean top navigation bar: brand on the left, minimal text links on the
@@ -624,6 +624,120 @@ body.qr-camera-open { overflow: hidden; }
 .go-ghost-mobile .broker-card { grid-template-columns: 1fr; align-items: stretch; }
 .go-ghost-mobile .broker-actions, .go-ghost-mobile .ghost-automation-actions { justify-content: stretch; }
 
+:root[data-theme="light"] .sidenav,
+:root[data-theme="light"] .hero,
+:root[data-theme="light"] .airdrop-panel,
+:root[data-theme="light"] .scanner-panel,
+:root[data-theme="light"] .results-panel,
+:root[data-theme="light"] .go-ghost-hero,
+:root[data-theme="light"] .go-ghost-card,
+:root[data-theme="light"] .legal-document,
+:root[data-theme="light"] .test-section {
+  background: var(--panel);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .test-site-page .hero {
+  background: linear-gradient(135deg, rgba(230, 237, 244, 0.98), rgba(216, 226, 236, 0.98));
+}
+
+:root[data-theme="light"] .hero::before,
+:root[data-theme="light"] .test-site-page .hero::before {
+  background: linear-gradient(110deg, rgba(31, 214, 163, 0.16), transparent 36%), linear-gradient(260deg, rgba(90, 140, 255, 0.11), transparent 42%);
+}
+
+:root[data-theme="light"] .hero-card,
+:root[data-theme="light"] .story-card,
+:root[data-theme="light"] .airdrop-card,
+:root[data-theme="light"] .scanner-card,
+:root[data-theme="light"] .result-card,
+:root[data-theme="light"] .toggle-card,
+:root[data-theme="light"] .test-proof-card,
+:root[data-theme="light"] .test-price-card,
+:root[data-theme="light"] .test-social,
+:root[data-theme="light"] .broker-card,
+:root[data-theme="light"] .contact-card,
+:root[data-theme="light"] .risk-model-grid section,
+:root[data-theme="light"] .rights-grid article,
+:root[data-theme="light"] .payment-panel > div,
+:root[data-theme="light"] .scanner-subcard {
+  background: var(--panel-strong);
+  border-color: rgba(16, 24, 39, 0.13);
+}
+
+:root[data-theme="light"] .hero-metrics div,
+:root[data-theme="light"] .test-stat-row div,
+:root[data-theme="light"] .test-faq-list details,
+:root[data-theme="light"] .airdrop-progress,
+:root[data-theme="light"] .wallet-panel,
+:root[data-theme="light"] .referral-panel,
+:root[data-theme="light"] .maintenance-grid a,
+:root[data-theme="light"] .broker-checks label,
+:root[data-theme="light"] .ghost-automation-row,
+:root[data-theme="light"] .ghost-scope-keyword,
+:root[data-theme="light"] .ghost-scope-detail {
+  background: rgba(255, 255, 255, 0.62);
+  border-color: rgba(16, 24, 39, 0.12);
+}
+
+:root[data-theme="light"] .test-proof-card:hover,
+:root[data-theme="light"] .test-price-card:hover,
+:root[data-theme="light"] .maintenance-grid a:hover,
+:root[data-theme="light"] .test-faq-list details:hover {
+  background: #ffffff;
+  border-color: rgba(31, 214, 163, 0.34);
+}
+
+:root[data-theme="light"] .spline-showcase {
+  background: #dce5ee;
+}
+
+:root[data-theme="light"] .model-caption,
+:root[data-theme="light"] .footer-newsletter,
+:root[data-theme="light"] .ghost-consent-card,
+:root[data-theme="light"] .ghost-scope-card {
+  background: rgba(247, 249, 252, 0.96);
+  border-color: rgba(16, 24, 39, 0.14);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .footer-newsletter h2,
+:root[data-theme="light"] .footer-brand-name {
+  color: var(--text);
+}
+
+:root[data-theme="light"] .footer-newsletter p,
+:root[data-theme="light"] .footer-brand-desc,
+:root[data-theme="light"] .footer-links a,
+:root[data-theme="light"] .footer-bottom {
+  color: var(--muted);
+}
+
+:root[data-theme="light"] .footer-col-header {
+  color: #667789;
+}
+
+:root[data-theme="light"] .site-footer {
+  border-top-color: rgba(16, 24, 39, 0.1);
+}
+
+:root[data-theme="light"] .footer-newsletter-form input,
+:root[data-theme="light"] input[type="text"],
+:root[data-theme="light"] .legal-form input,
+:root[data-theme="light"] .legal-form select,
+:root[data-theme="light"] .legal-form textarea,
+:root[data-theme="light"] .go-ghost-form input,
+:root[data-theme="light"] .scanner-subcard-url input[type="url"] {
+  background: rgba(255, 255, 255, 0.76);
+  border-color: rgba(16, 24, 39, 0.16);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .footer-newsletter-form button {
+  background: #101827;
+  color: #f8fafc;
+}
+
 @media (max-width: 900px) {
   .hero, .top-profile, .story-grid, .token-strip, .airdrop-progress, .wallet-panel, .referral-panel, .airdrop-grid, .scanner-grid, .results-grid, .panel-header, .results-header, .decision-bar, .engine-header, .test-proof-grid, .test-pricing-grid, .test-social, .go-ghost-hero, .go-ghost-layout, .broker-card, .maintenance-grid, .ghost-safety-list { grid-template-columns: 1fr; flex-direction: column; align-items: stretch; }
   .hero { min-height: auto; padding: 24px; }
@@ -812,4 +926,138 @@ body.qr-camera-open { overflow: hidden; }
 }
 @media (max-width: 640px) {
   .generate-qr-form-row .primary-button { flex: 1 1 100%; }
+}
+
+/* light-theme-v2 surface cleanup */
+:root[data-theme="light"] .hero,
+:root[data-theme="light"] .test-site-page .hero,
+:root[data-theme="light"] .test-section,
+:root[data-theme="light"] .airdrop-panel,
+:root[data-theme="light"] .scanner-panel,
+:root[data-theme="light"] .results-panel,
+:root[data-theme="light"] .generate-qr-panel,
+:root[data-theme="light"] .go-ghost-hero,
+:root[data-theme="light"] .go-ghost-card,
+:root[data-theme="light"] .legal-document,
+:root[data-theme="light"] .profile-card,
+:root[data-theme="light"] .account-card,
+:root[data-theme="light"] .sidenav {
+  background: rgba(226, 234, 242, 0.94);
+  border-color: rgba(16, 24, 39, 0.13);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .hero-card,
+:root[data-theme="light"] .story-card,
+:root[data-theme="light"] .airdrop-card,
+:root[data-theme="light"] .scanner-card,
+:root[data-theme="light"] .result-card,
+:root[data-theme="light"] .toggle-card,
+:root[data-theme="light"] .test-proof-card,
+:root[data-theme="light"] .test-price-card,
+:root[data-theme="light"] .test-social,
+:root[data-theme="light"] .broker-card,
+:root[data-theme="light"] .contact-card,
+:root[data-theme="light"] .risk-model-grid section,
+:root[data-theme="light"] .rights-grid article,
+:root[data-theme="light"] .payment-panel > div,
+:root[data-theme="light"] .scanner-subcard,
+:root[data-theme="light"] .footer-newsletter,
+:root[data-theme="light"] .model-caption,
+:root[data-theme="light"] .wallet-modal-card,
+:root[data-theme="light"] .qr-camera-card,
+:root[data-theme="light"] .ghost-consent-card,
+:root[data-theme="light"] .ghost-scope-card {
+  background: rgba(247, 249, 252, 0.97);
+  border-color: rgba(16, 24, 39, 0.14);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .hero-metrics div,
+:root[data-theme="light"] .test-stat-row div,
+:root[data-theme="light"] .test-faq-list details,
+:root[data-theme="light"] .airdrop-progress,
+:root[data-theme="light"] .wallet-panel,
+:root[data-theme="light"] .referral-panel,
+:root[data-theme="light"] .progress-stats div,
+:root[data-theme="light"] .token-address-row,
+:root[data-theme="light"] .maintenance-grid a,
+:root[data-theme="light"] .broker-checks label,
+:root[data-theme="light"] .ghost-automation-row,
+:root[data-theme="light"] .ghost-scope-keyword,
+:root[data-theme="light"] .ghost-scope-detail,
+:root[data-theme="light"] .contact-hero,
+:root[data-theme="light"] .ml-panel,
+:root[data-theme="light"] .vt-panel {
+  background: rgba(255, 255, 255, 0.66);
+  border-color: rgba(16, 24, 39, 0.12);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .test-proof-card:hover,
+:root[data-theme="light"] .test-price-card:hover,
+:root[data-theme="light"] .maintenance-grid a:hover,
+:root[data-theme="light"] .contact-card:hover,
+:root[data-theme="light"] .test-faq-list details:hover {
+  background: #ffffff;
+  border-color: rgba(31, 214, 163, 0.34);
+}
+
+:root[data-theme="light"] .spline-showcase {
+  background: #dce5ee;
+}
+
+:root[data-theme="light"] .screen-grid,
+:root[data-theme="light"] .scanner-video-frame,
+:root[data-theme="light"] .qr-frame,
+:root[data-theme="light"] .qr-camera-stage {
+  background: #f4f7fa;
+}
+
+:root[data-theme="light"] .footer-newsletter h2,
+:root[data-theme="light"] .footer-brand-name,
+:root[data-theme="light"] .test-section h2,
+:root[data-theme="light"] .test-faq-list summary,
+:root[data-theme="light"] .test-proof-card h3,
+:root[data-theme="light"] .test-price-card h3 {
+  color: var(--text);
+}
+
+:root[data-theme="light"] .footer-newsletter p,
+:root[data-theme="light"] .footer-brand-desc,
+:root[data-theme="light"] .footer-links a,
+:root[data-theme="light"] .footer-bottom,
+:root[data-theme="light"] .test-proof-card p,
+:root[data-theme="light"] .test-price-card p,
+:root[data-theme="light"] .test-stat-row span,
+:root[data-theme="light"] .scanner-subcard-label {
+  color: var(--muted);
+}
+
+:root[data-theme="light"] .go-ghost-device-notice {
+  background: rgba(255, 255, 255, 0.62);
+  border-color: rgba(16, 24, 39, 0.12);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .admin-dashboard-button {
+  color: #31215f;
+}
+
+:root[data-theme="light"] .footer-newsletter-form input,
+:root[data-theme="light"] input[type="text"],
+:root[data-theme="light"] .legal-form input,
+:root[data-theme="light"] .legal-form select,
+:root[data-theme="light"] .legal-form textarea,
+:root[data-theme="light"] .go-ghost-form input,
+:root[data-theme="light"] .scanner-subcard-url input[type="url"],
+:root[data-theme="light"] .generate-qr-form-row input[type="url"] {
+  background: rgba(255, 255, 255, 0.82);
+  border-color: rgba(16, 24, 39, 0.16);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .footer-newsletter-form button {
+  background: #101827;
+  color: #f8fafc;
 }
