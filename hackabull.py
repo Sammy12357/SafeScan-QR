@@ -1775,11 +1775,14 @@ def get_malicious_qr_codes(page=1, limit=20, query=""):
     offset = (page - 1) * limit
     search = (query or "").strip()[:200]
 
-    where = (
+    where_base = (
         "WHERE (COALESCE(risk_score, 0) >= ? OR upper(COALESCE(verdict, '')) = 'MALICIOUS') "
         "AND url IS NOT NULL AND url != ''"
     )
-    params = [MALICIOUS_RISK_THRESHOLD]
+    base_params = [MALICIOUS_RISK_THRESHOLD]
+
+    where = where_base
+    params = list(base_params)
     if search:
         where += " AND lower(url) LIKE ? ESCAPE '\\'"
         params.append("%" + _like_escape(search.lower()) + "%")
@@ -1805,6 +1808,29 @@ def get_malicious_qr_codes(page=1, limit=20, query=""):
             params + [limit, offset],
         ).fetchall()
 
+        # Global stats are independent of the current search filter so the
+        # summary always reflects the full threat database.
+        stats_row = conn.execute(
+            f"""
+            SELECT COUNT(*) AS total_urls,
+                   COALESCE(SUM(times_seen), 0) AS total_sightings,
+                   COALESCE(SUM(CASE WHEN risk_score >= 90 THEN 1 ELSE 0 END), 0) AS critical_count,
+                   COALESCE(SUM(CASE WHEN risk_score >= ? AND risk_score < 90 THEN 1 ELSE 0 END), 0) AS malicious_count,
+                   COALESCE(SUM(CASE WHEN risk_score < ? THEN 1 ELSE 0 END), 0) AS suspicious_count,
+                   MAX(last_seen) AS last_updated
+            FROM (
+                SELECT url,
+                       MAX(COALESCE(risk_score, 0)) AS risk_score,
+                       MAX(created_at) AS last_seen,
+                       COUNT(*) AS times_seen
+                FROM scan_history
+                {where_base}
+                GROUP BY url
+            )
+            """,
+            base_params + base_params,
+        ).fetchone()
+
     entries = []
     for row in rows:
         score = int(row["risk_score"] or 0)
@@ -1824,6 +1850,14 @@ def get_malicious_qr_codes(page=1, limit=20, query=""):
         "page": page,
         "limit": limit,
         "totalPages": max(1, (total + limit - 1) // limit),
+        "stats": {
+            "totalUrls": int(stats_row["total_urls"] or 0),
+            "totalSightings": int(stats_row["total_sightings"] or 0),
+            "criticalCount": int(stats_row["critical_count"] or 0),
+            "maliciousCount": int(stats_row["malicious_count"] or 0),
+            "suspiciousCount": int(stats_row["suspicious_count"] or 0),
+            "lastUpdated": stats_row["last_updated"],
+        },
     }
 
 def render_threat_qr_png(url):
@@ -2029,49 +2063,62 @@ def signal(check, result, severity, description, passed=True):
         "passed": passed
     }
 
-VIRUSTOTAL_ENGINE_ENTRIES = (
-    "AbusixClean", "AcronisClean", "ADMINUSLabsClean", "AILabs (MONITORAPP)Clean",
-    "AlienVaultClean", "Antiy-AVLClean", "BitDefenderClean", "BlockListClean",
-    "BluelivClean", "CertegoClean", "ChainPatrolClean", "CINS ArmyClean", "CRDFClean",
-    "Criminal IPClean", "CTX AIClean", "CybleClean", "CyRadarClean", "desenmascara.meClean",
-    "DNS8Clean", "Dr.WebClean", "EmergingThreatsClean", "EmsisoftClean", "ESETClean",
-    "ESTsecurityClean", "Forcepoint ThreatSeekerClean", "FortinetClean", "G-DataClean",
-    "Google SafebrowsingClean", "GreenSnowClean", "Heimdal SecurityClean", "IPsumClean",
-    "Juniper NetworksClean", "KasperskyClean", "LevelBlueClean", "LionicClean",
-    "MalwaredClean", "MalwarePatrolClean", "OpenPhishClean", "Phishing DatabaseClean",
-    "PhishtankClean", "PREBYTESClean", "Quick HealClean", "QutteraClean", "RisingClean",
-    "SangforClean", "ScantitanClean", "SCUMWARE.orgClean", "SeclookupClean",
-    "securolyticsClean", "SophosClean", "StopForumSpamClean", "Sucuri SiteCheckClean",
-    "ThreatHiveClean", "URLhausClean", "Viettel Threat IntelligenceClean", "ViriBackClean",
-    "VX VaultClean", "WebrootClean", "Yandex SafebrowsingClean", "ZeroCERTClean",
-    "0xSI_f33dUnrated", "alphaMountain.aiUnrated", "AlphaSOCUnrated",
-    "ArcSight Threat IntelligenceUnrated", "AutoShunUnrated", "Bfore.Ai PreCrimeUnrated",
-    "BkavUnrated", "Chong Lua DaoUnrated", "Cluster25Unrated", "CSIS Security GroupUnrated",
-    "CyanUnrated", "ErmesUnrated", "GCP Abuse IntelligenceUnrated", "GreyNoiseUnrated",
-    "GridinsoftUnrated", "GuardpotUnrated", "Hunt.io IntelligenceUnrated", "K7AntiVirusUnrated",
-    "LumuUnrated", "MalwareURLUnrated", "MimecastUnrated", "NetcraftUnrated", "PhishFortUnrated",
-    "PhishLabsUnrated", "PrecisionSecUnrated", "SafeToOpenUnrated", "Sansec eComscanUnrated",
-    "Snort IP sample listUnrated", "SOCRadarUnrated", "URLQueryUnrated", "VIPREUnrated",
-    "Xcitium Verdict CloudUnrated", "ZeroFoxUnrated", "Artists Against 419Unrated",
-    "benkow.ccUnrated", "CMC Threat IntelligenceUnrated",
-)
-
-def parse_virustotal_engine_entry(raw):
-    for suffix, verdict in (("Malicious", "malicious"), ("Unrated", "unrated"), ("Clean", "clean")):
-        if raw.endswith(suffix):
-            return {"name": raw[:-len(suffix)], "verdict": verdict}
-    return {"name": raw, "verdict": "unrated"}
-
-VIRUSTOTAL_SEEDED_ENGINES = [parse_virustotal_engine_entry(entry) for entry in VIRUSTOTAL_ENGINE_ENTRIES]
-
 def build_virustotal_summary(engines):
     clean = sum(1 for engine in engines if engine["verdict"] == "clean")
     unrated = sum(1 for engine in engines if engine["verdict"] == "unrated")
     malicious = sum(1 for engine in engines if engine["verdict"] == "malicious")
     return {"clean": clean, "unrated": unrated, "malicious": malicious, "total": len(engines)}
 
-def virustotal_seed_result(target_url):
-    engines = sorted(VIRUSTOTAL_SEEDED_ENGINES, key=lambda engine: engine["name"].lower())
+def empty_virustotal_result(target_url, mode, status_message):
+    return {
+        "url": target_url,
+        "scannedAt": now_iso(),
+        "engines": [],
+        "groups": {"clean": [], "unrated": [], "malicious": []},
+        "summary": {"clean": 0, "unrated": 0, "malicious": 0, "total": 0},
+        "provider": "VirusTotal",
+        "mode": mode,
+        "reportUrl": virustotal_gui_url(target_url),
+        "statusMessage": status_message,
+    }
+
+def virustotal_lookup_result(target_url):
+    """Look up `target_url` against the live VirusTotal v3 API and return a
+    vt_result dict (engines/groups/summary) used both for the scan signal and
+    the vendor-breakdown panel. Falls back to an empty/neutral result (which
+    does not affect the risk score) when VT isn't configured, has no cached
+    verdict yet, or the lookup fails.
+    """
+    if not VIRUSTOTAL_API_KEY:
+        return empty_virustotal_result(target_url, "unavailable", "Set VIRUSTOTAL_API_KEY to enable VirusTotal reputation lookups.")
+
+    headers = {"x-apikey": VIRUSTOTAL_API_KEY}
+    url_id = virustotal_url_id(target_url)
+    try:
+        response = requests.get(f"https://www.virustotal.com/api/v3/urls/{url_id}", headers=headers, timeout=8)
+        if response.status_code == 404:
+            try:
+                requests.post("https://www.virustotal.com/api/v3/urls", headers=headers, data={"url": target_url}, timeout=8).raise_for_status()
+            except requests.RequestException:
+                pass
+            return empty_virustotal_result(target_url, "pending", "VirusTotal had no cached verdict, so the URL was submitted for analysis.")
+        response.raise_for_status()
+        data = response.json()
+    except requests.RequestException as exc:
+        return empty_virustotal_result(target_url, "error", f"VirusTotal lookup failed: {type(exc).__name__}")
+
+    last_results = data.get("data", {}).get("attributes", {}).get("last_analysis_results", {}) or {}
+    engines = []
+    for name, info in last_results.items():
+        category = (info or {}).get("category", "undetected")
+        if category in ("malicious", "suspicious"):
+            verdict = "malicious"
+        elif category == "harmless":
+            verdict = "clean"
+        else:
+            verdict = "unrated"
+        engines.append({"name": name, "verdict": verdict})
+    engines = sorted(engines, key=lambda engine: engine["name"].lower())
     groups = {
         "clean": [engine for engine in engines if engine["verdict"] == "clean"],
         "unrated": [engine for engine in engines if engine["verdict"] == "unrated"],
@@ -2084,11 +2131,15 @@ def virustotal_seed_result(target_url):
         "groups": groups,
         "summary": build_virustotal_summary(engines),
         "provider": "VirusTotal",
-        "mode": "seeded",
+        "mode": "live",
         "reportUrl": virustotal_gui_url(target_url),
     }
 
 def virustotal_breakdown_signal(vt_result):
+    mode = vt_result.get("mode")
+    if mode != "live":
+        result_label = {"unavailable": "Not configured", "pending": "Scan submitted", "error": "Lookup failed"}.get(mode, "Unavailable")
+        return signal("VirusTotal Reputation", result_label, "low", vt_result.get("statusMessage", ""), True)
     summary = vt_result["summary"]
     flagged = summary["malicious"]
     severity = "high" if flagged else "info"
@@ -3091,6 +3142,27 @@ def check_crypto_pattern_signals(target_url):
     if "approve" in lower and ("uint256" in lower or "ffffffffffffffff" in lower or "max" in lower):
         found.append(signal("Ethereum Approval Pattern", "approve max uint256", "high", "The payload appears to request a maximum token approval.", False))
 
+    # EIP-2612 / Permit2 off-chain "permit" signatures are the dominant
+    # technique used by modern drainer kits (Inferno, Pink, Angel Drainer):
+    # the victim signs a gasless message granting the attacker a token
+    # allowance, with no on-chain "approve" call to flag.
+    permit_patterns = ("permit2", "eth_signtypedata", "safetransferfrom", "increaseallowance")
+    for pattern in permit_patterns:
+        if pattern in lower:
+            found.append(signal("Token Permit Pattern", pattern, "high", f"Found {pattern}, an off-chain token permit/transfer signature commonly used by wallet-drainer kits.", False))
+    if re.search(r"\bpermit\b", lower):
+        found.append(signal("Token Permit Pattern", "permit", "high", "Found a 'permit' signature request, a gasless token-approval pattern commonly used by wallet-drainer kits.", False))
+
+    # NFT-collection drains: granting an operator blanket control of every
+    # token via setApprovalForAll.
+    if "setapprovalforall" in lower:
+        found.append(signal("NFT Approval Pattern", "setApprovalForAll", "high", "The payload appears to request blanket operator approval over an NFT collection.", False))
+
+    # WalletConnect pairing URIs embedded in QR codes can silently propose a
+    # malicious session to whatever wallet scans them.
+    if "wc:" in lower:
+        found.append(signal("WalletConnect Pairing URI", "wc: URI detected", "medium", "The payload is a WalletConnect pairing URI. Verify the requesting site before approving the session.", False))
+
     base58_pattern = r"(?<![A-Za-z0-9])[1-9A-HJ-NP-Za-km-z]{32,44}(?![A-Za-z0-9])"
     base58_hits = re.findall(base58_pattern, parsed.query + " " + parsed.fragment)
     if base58_hits:
@@ -3206,15 +3278,23 @@ async def analyze_full_pipeline(target_url, qr_image=None):
             }
         # GSB returned a non-trivial signal - fall through to full pipeline.
 
-    vt_result = virustotal_seed_result(normalized)
-    domain_task = asyncio.to_thread(check_domain_intelligence, normalized)
-    redirect_task = asyncio.to_thread(trace_redirect_chain, normalized)
-    reputation_task = asyncio.to_thread(check_reputation_signals, normalized)
-    crypto_task = asyncio.to_thread(check_crypto_pattern_signals, normalized)
+    # Resolve the redirect chain first so reputation/domain/crypto checks run
+    # against the actual destination, not the (possibly shortened) QR
+    # payload URL. A bit.ly link that redirects to a wallet-drain page is
+    # otherwise checked against bit.ly's clean reputation and brand-new
+    # crypto-drain query params on the final hop are never inspected.
+    redirect_result = await asyncio.to_thread(trace_redirect_chain, normalized)
+    chain = redirect_result.get("redirectChain") or []
+    final_url = chain[-1]["url"] if chain else normalized
+
+    vt_task = asyncio.to_thread(virustotal_lookup_result, final_url)
+    domain_task = asyncio.to_thread(check_domain_intelligence, final_url)
+    reputation_task = asyncio.to_thread(check_reputation_signals, final_url)
+    crypto_task = asyncio.to_thread(check_crypto_pattern_signals, final_url)
     input_source = "uploaded_qr" if qr_image is not None else "generated_qr"
     ml_task = asyncio.to_thread(classify_qr_with_ml, normalized, qr_image, input_source)
-    domain_result, redirect_result, reputation_signals, crypto_signals, ml_result = await asyncio.gather(
-        domain_task, redirect_task, reputation_task, crypto_task, ml_task
+    domain_result, reputation_signals, crypto_signals, ml_result, vt_result = await asyncio.gather(
+        domain_task, reputation_task, crypto_task, ml_task, vt_task
     )
 
     signals = []
@@ -4467,7 +4547,11 @@ CSP_POLICY = "; ".join([
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: blob: https://lh3.googleusercontent.com https://ssl.gstatic.com https://www.gstatic.com",
-    "connect-src 'self' https://safescan-qr.onrender.com https://accounts.google.com https://safebrowsing.googleapis.com https://www.virustotal.com https://api.virustotal.com https://api.mainnet-beta.solana.com https://api.anthropic.com https://api.openai.com https://cdn.jsdelivr.net",
+    # VirusTotal, Google Safe Browsing, Solana RPC, and the AI verdict
+    # providers (Anthropic/OpenAI) are all called server-side via `requests`
+    # - the browser never connects to them directly, so they're deliberately
+    # left out of connect-src to keep the XSS exfiltration surface minimal.
+    "connect-src 'self' https://safescan-qr.onrender.com https://accounts.google.com https://cdn.jsdelivr.net",
     "frame-src https://accounts.google.com https://www.youtube.com https://www.youtube-nocookie.com",
     "object-src 'none'",
     "frame-ancestors 'none'",
@@ -7081,6 +7165,20 @@ async def plans_page(request: Request):
         "email": user["email"] if user else "",
         "test_site_path": False,
         "active_nav": "plans",
+        "google_client_id": CLIENT_ID,
+        **index_user_context(user),
+    })
+
+@qr_app.get("/learn", response_class=HTMLResponse)
+async def learn_page(request: Request):
+    """Educational hub: quishing explainer, pre-scan checklist, and wallet-drain pattern guide."""
+    user = get_session_user(request)
+    return templates.TemplateResponse("learn.html", {
+        "request": request,
+        "logged_in": bool(user),
+        "email": user["email"] if user else "",
+        "test_site_path": False,
+        "active_nav": "learn",
         "google_client_id": CLIENT_ID,
         **index_user_context(user),
     })

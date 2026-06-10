@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Learn: QR Code Safety &amp; Quishing Guide | SafeScan QR</title>
+  <meta name="description" content="Learn how QR code phishing (quishing) works, how to check a QR code is safe before scanning, and how to spot tampered codes on menus, posters, and payment terminals.">
+  <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css?v=signup-gradient-v1">
+</head>
+<body class="test-site-page">
+  <div class="page-shell">
+    {% include "_topnav.html" %}
+    <main>
+      <section class="test-section" id="learn-hero">
+        <div class="test-section-header">
+          <p class="eyebrow">Learn</p>
+          <h2>QR code safety center</h2>
+          <p>QR codes hide their destination until something on your device opens it. This guide covers how QR phishing ("quishing") works, how to check a code before you scan it, and how SafeScan's scanner applies these checks automatically.</p>
+        </div>
+      </section>
+
+      <section class="test-section" id="what-is-quishing">
+        <div class="test-section-header">
+          <p class="eyebrow">The basics</p>
+          <h2>What is quishing?</h2>
+        </div>
+        <div class="test-proof-grid">
+          <article class="test-proof-card"><span>01</span><h3>Hidden destination</h3><p>A QR code can encode any URL, wallet action, or app deep link. Unlike a typed link, you can't see where it points until your phone decodes it - attackers exploit that blind spot.</p></article>
+          <article class="test-proof-card"><span>02</span><h3>Familiar wrapper, new payload</h3><p>Quishing reuses the same playbook as email phishing - urgency, a trusted-looking brand, a request to "verify" or "claim" something - but delivers it through a printed or pasted code instead of a link in an inbox.</p></article>
+          <article class="test-proof-card"><span>03</span><h3>Bypasses email filters</h3><p>Because the malicious link is embedded as an image, traditional spam and link-scanning filters often never see the actual destination, which is part of why quishing has grown as a tactic.</p></article>
+        </div>
+      </section>
+
+      <section class="test-section" id="check-before-scanning">
+        <div class="test-section-header">
+          <p class="eyebrow">Before you scan</p>
+          <h2>How to check if a QR code is safe</h2>
+          <p>You don't need special tools for the first checks - just a careful look and your phone's built-in preview.</p>
+        </div>
+        <div class="test-faq-list">
+          <details open><summary>1. Inspect the code itself</summary><p>Look for a sticker placed on top of a poster, menu, parking meter, or flyer. A second QR code stuck over the original - even slightly misaligned, a different paper stock, or a different print quality - is one of the most common quishing setups.</p></details>
+          <details><summary>2. Use your camera's link preview, don't tap blindly</summary><p>Most phone cameras show a preview of the URL before opening it. Read the full domain, not just the first part. Watch for misspellings of real brands (e.g. "paypa1.com"), unfamiliar domains, or shortened links (bit.ly, tinyurl) that hide the real destination.</p></details>
+          <details><summary>3. Never enter a wallet seed phrase or "sign" a blind transaction</summary><p>No legitimate airdrop, refund, or "claim" requires your seed phrase. If a QR code opens a wallet prompt asking you to "approve," "permit," or "sign," stop and verify the site independently before continuing - these are the same mechanisms used by wallet-drainer kits.</p></details>
+          <details><summary>4. Run it through a scanner before opening it</summary><p>Paste the URL (or upload/scan the code) into <a href="/#scanner">SafeScan's scanner</a> first. SafeScan resolves the full redirect chain, checks domain age and reputation against VirusTotal and Google Safe Browsing, and screens for known wallet-drain signature patterns - all before you ever open the link.</p></details>
+        </div>
+      </section>
+
+      <section class="test-section" id="restaurant-menus">
+        <div class="test-section-header">
+          <p class="eyebrow">Spotting tampered codes</p>
+          <h2>Restaurant menus, parking, and other public QR codes</h2>
+        </div>
+        <div class="test-proof-grid">
+          <article class="test-proof-card"><span>01</span><h3>Check for overlays</h3><p>Run a finger over the code. A sticker placed over the original will have a visible edge or a different texture from the table or sign underneath.</p></article>
+          <article class="test-proof-card"><span>02</span><h3>Compare to other tables/signs</h3><p>If every other table has a printed-in code but yours has a loose sticker, that's a red flag. Ask staff if you're unsure.</p></article>
+          <article class="test-proof-card"><span>03</span><h3>Watch for payment prompts</h3><p>A menu QR code should open a menu, not a payment page or an app-install prompt. If scanning a "menu" code asks for card details immediately, don't proceed.</p></article>
+        </div>
+      </section>
+
+      <section class="test-section" id="wallet-drain-patterns">
+        <div class="test-section-header">
+          <p class="eyebrow">Crypto &amp; wallet safety</p>
+          <h2>Common wallet-drain techniques hidden in QR codes</h2>
+          <p>Modern wallet-drainer kits rarely use an obvious "send funds" request. Instead they ask your wallet to sign something that looks routine. SafeScan's scanner screens QR payloads for these patterns automatically:</p>
+        </div>
+        <div class="test-faq-list">
+          <details><summary>Token "permit" / Permit2 signatures</summary><p>An off-chain signature that grants an allowance without an on-chain "approve" transaction - widely used by drainer kits because it looks like a free, gasless action.</p></details>
+          <details><summary>setApprovalForAll (NFTs)</summary><p>Grants an attacker-controlled address blanket control over an entire NFT collection in your wallet, not just one item.</p></details>
+          <details><summary>Maximum token approvals</summary><p>A request to approve an unlimited (max uint256) spending allowance for a token, often disguised as a "claim" or "stake" action.</p></details>
+          <details><summary>WalletConnect pairing URIs</summary><p>A QR code that's actually a WalletConnect (wc:) pairing link can silently propose a session with a malicious dApp the moment it's scanned.</p></details>
+        </div>
+      </section>
+
+      <section class="test-section" id="learn-cta">
+        <div class="test-section-header">
+          <p class="eyebrow">Try it now</p>
+          <h2>Check a QR code or link with SafeScan</h2>
+          <p>Paste a link, upload a QR image, or scan with your camera to get a full risk breakdown before you open anything.</p>
+        </div>
+        <p><a class="primary-button" href="/#scanner">Open the scanner</a> <a class="secondary-button" href="/malicious-database">Browse known-malicious codes</a></p>
+      </section>
+    </main>
+    {% include "footer.html" %}
+  </div>
+  <script src="/static/app.js?v=split-pages-v1"></script>
+</body>
+</html>

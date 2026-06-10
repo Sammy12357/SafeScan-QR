@@ -244,7 +244,7 @@
             </div>
             {% endif %}
 
-            {% if virus_total %}
+            {% if virus_total and virus_total.summary.total %}
             <div class="vt-panel">
               <div class="vt-panel-top">
                 <div>
@@ -285,6 +285,12 @@
                 </div>
                 {% endfor %}
               </div>
+            </div>
+            {% elif virus_total %}
+            <div class="vt-panel vt-panel-status">
+              <p class="engine-label">VirusTotal vendor scan</p>
+              <p>{{ virus_total.statusMessage or "VirusTotal results are unavailable for this scan." }}</p>
+              <a class="vt-powered" href="{{ virus_total.reportUrl or 'https://www.virustotal.com/gui/home/url' }}" target="_blank" rel="noopener noreferrer">View on VirusTotal</a>
             </div>
             {% endif %}
 

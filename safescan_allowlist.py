@@ -71,6 +71,24 @@ REDIRECT_PARAM_NAMES = frozenset({
     "returnurl", "return_url", "u", "q",
 })
 
+# Multi-tenant hosting / PaaS domains where the registrable domain (eTLD+1)
+# is itself shared infrastructure - anyone can stand up
+# `phisher.github.io`, `scam-site.vercel.app`, etc. Treating these as
+# "Tranco top N = popular = safe" would let third-party phishing pages
+# hosted on legit platforms bypass the full pipeline. Only the bare apex
+# domain (no subdomain) counts as the allowlisted entry; any subdomain
+# must go through the full analysis.
+MULTI_TENANT_SUFFIXES = frozenset({
+    "github.io", "githubusercontent.com", "gitlab.io",
+    "vercel.app", "netlify.app", "web.app", "firebaseapp.com",
+    "herokuapp.com", "pages.dev", "appspot.com", "azurewebsites.net",
+    "wixsite.com", "weebly.com", "blogspot.com", "wordpress.com",
+    "workers.dev", "googleusercontent.com", "amazonaws.com",
+    "s3.amazonaws.com", "glitch.me", "repl.co", "surge.sh",
+    "000webhostapp.com", "myshopify.com", "square.site",
+    "render.com", "onrender.com", "fly.dev", "ngrok.io", "ngrok-free.app",
+})
+
 # Common ccTLD suffixes where the registrable domain is 3 labels deep
 # (foo.co.uk, foo.com.au, etc.) rather than 2. Not exhaustive but covers
 # the cases that matter for an allowlist match against Tranco's 2-label
@@ -140,11 +158,21 @@ def load_allowlist() -> frozenset[str]:
 
 
 def is_known_popular(host: str) -> bool:
-    """True iff the host's registrable domain is in the Tranco set."""
+    """True iff the host's registrable domain is in the Tranco set.
+
+    For multi-tenant hosting domains (see MULTI_TENANT_SUFFIXES), only the
+    bare apex domain qualifies - any subdomain is independently controlled
+    by a third party and must go through the full pipeline.
+    """
     domain = registrable_domain(host)
-    if not domain:
+    if not domain or domain not in load_allowlist():
         return False
-    return domain in load_allowlist()
+    if domain in MULTI_TENANT_SUFFIXES:
+        normalized_host = _strip_port((host or "").lower().strip("."))
+        if normalized_host.startswith("www."):
+            normalized_host = normalized_host[4:]
+        return normalized_host == domain
+    return True
 
 
 def safety_screen(url: str) -> tuple[bool, str]:

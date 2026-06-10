@@ -9,6 +9,13 @@
   var prevBtn = document.getElementById("mqPrev");
   var nextBtn = document.getElementById("mqNext");
   var searchEl = document.getElementById("mqSearch");
+  var statsEl = document.getElementById("mqStats");
+  var statTotal = document.getElementById("mqStatTotal");
+  var statCritical = document.getElementById("mqStatCritical");
+  var statMalicious = document.getElementById("mqStatMalicious");
+  var statSuspicious = document.getElementById("mqStatSuspicious");
+  var statSightings = document.getElementById("mqStatSightings");
+  var statUpdated = document.getElementById("mqStatUpdated");
   if (!grid) return;
 
   var LIMIT = parseInt(grid.getAttribute("data-limit"), 10) || 20;
@@ -57,11 +64,22 @@
     stateEl.className = "mq-state" + (isError ? " error" : "");
     stateEl.textContent = message;
   }
+  function renderStats(stats) {
+    if (!stats || !statsEl) return;
+    statTotal.textContent = (stats.totalUrls || 0).toLocaleString();
+    statCritical.textContent = (stats.criticalCount || 0).toLocaleString();
+    statMalicious.textContent = (stats.maliciousCount || 0).toLocaleString();
+    statSuspicious.textContent = (stats.suspiciousCount || 0).toLocaleString();
+    statSightings.textContent = (stats.totalSightings || 0).toLocaleString();
+    statUpdated.textContent = stats.lastUpdated ? formatLocal(stats.lastUpdated) : "—";
+    statsEl.style.display = "";
+  }
   function render(data) {
     var entries = (data && data.entries) || [];
     state.total = data.total || 0;
     state.page = data.page || 1;
     state.totalPages = data.totalPages || 1;
+    renderStats(data && data.stats);
 
     countEl.textContent = state.total + (state.total === 1 ? " code" : " codes") +
       (state.query ? " matching “" + state.query + "”" : "");

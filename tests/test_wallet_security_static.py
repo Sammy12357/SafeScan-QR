@@ -64,6 +64,21 @@ def test_frontend_offers_phantom_mobile_browser_handoff():
     assert "/login?next=" in CLIENT
 
 
+def test_crypto_pattern_signals_cover_modern_drainer_techniques():
+    # check_crypto_pattern_signals is a sync function, so locate it directly
+    # rather than via function_body() (which expects "async def").
+    start = SERVER.index("def check_crypto_pattern_signals")
+    end = SERVER.find("\ndef ", start + 1)
+    body = SERVER[start:end if end != -1 else len(SERVER)]
+    # EIP-2612 / Permit2 gasless approval phishing (Inferno/Pink/Angel drainers)
+    assert "permit" in body.lower()
+    assert "permit2" in body.lower()
+    # NFT collection drains via blanket operator approval
+    assert "setapprovalforall" in body.lower()
+    # WalletConnect pairing URI session-hijack
+    assert "wc:" in body
+
+
 def test_google_sign_in_uses_visible_redirect_button_for_wallet_browsers():
     assert "auth-google-native" in LOGIN
     assert "googleFallbackButton" in LOGIN

@@ -26,6 +26,16 @@
       border-radius: 12px; padding: 12px 16px; margin: 0 0 24px; font-size: 0.85rem; color: #ffd9dd;
     }
     .mq-warning strong { color: #fff; }
+    .mq-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 0 0 22px; }
+    .mq-stat-card {
+      background: rgba(13,24,43,0.9); border: 1px solid var(--line); border-radius: 12px;
+      padding: 14px 16px;
+    }
+    .mq-stat-value { font-size: 1.5rem; font-weight: 800; line-height: 1.2; }
+    .mq-stat-label { color: var(--muted); font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 4px; }
+    .mq-stat-card.is-critical .mq-stat-value { color: #ff8a93; }
+    .mq-stat-card.is-malicious .mq-stat-value { color: var(--danger); }
+    .mq-stat-card.is-suspicious .mq-stat-value { color: var(--warn); }
     .mq-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 0 0 22px; }
     .mq-search {
       flex: 1 1 280px; min-width: 200px; padding: 11px 14px; border-radius: 10px;
@@ -85,6 +95,15 @@
       <span><strong>Do not scan these codes.</strong> They link to phishing, malware, or wallet-draining destinations. The graphics and links below are shown for awareness only and are intentionally not clickable.</span>
     </div>
 
+    <div id="mqStats" class="mq-stats" aria-live="polite" style="display:none">
+      <div class="mq-stat-card"><div id="mqStatTotal" class="mq-stat-value">—</div><div class="mq-stat-label">Tracked threats</div></div>
+      <div class="mq-stat-card is-critical"><div id="mqStatCritical" class="mq-stat-value">—</div><div class="mq-stat-label">Critical</div></div>
+      <div class="mq-stat-card is-malicious"><div id="mqStatMalicious" class="mq-stat-value">—</div><div class="mq-stat-label">Malicious</div></div>
+      <div class="mq-stat-card is-suspicious"><div id="mqStatSuspicious" class="mq-stat-value">—</div><div class="mq-stat-label">Suspicious</div></div>
+      <div class="mq-stat-card"><div id="mqStatSightings" class="mq-stat-value">—</div><div class="mq-stat-label">Total sightings</div></div>
+      <div class="mq-stat-card"><div id="mqStatUpdated" class="mq-stat-value">—</div><div class="mq-stat-label">Last updated</div></div>
+    </div>
+
     <div class="mq-controls">
       <input id="mqSearch" class="mq-search" type="search" placeholder="Search by URL…" autocomplete="off" spellcheck="false" value="">
       <span id="mqCount" class="mq-count"></span>
@@ -102,6 +121,6 @@
 
   {% include "footer.html" %}
   <script src="/static/app.js?v=shared-footer-v1"></script>
-  <script src="/static/malicious-database.js?v=malicious-db-v1" defer></script>
+  <script src="/static/malicious-database.js?v=malicious-db-v2" defer></script>
 </body>
 </html>

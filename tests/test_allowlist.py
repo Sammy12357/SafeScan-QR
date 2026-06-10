@@ -66,6 +66,17 @@ class TestIsKnownPopular:
     def test_unknown(self):
         assert is_known_popular("claim-airdrop-drain-wallet.xyz") is False
 
+    def test_multi_tenant_subdomain_not_popular(self):
+        # github.io is in the Tranco list, but it's a multi-tenant hosting
+        # domain - any subdomain is third-party-controlled and must NOT
+        # short-circuit just because github.io itself is popular.
+        assert is_known_popular("phisher.github.io") is False
+        assert is_known_popular("scam-site.vercel.app") is False
+        assert is_known_popular("evil.netlify.app") is False
+
+    def test_multi_tenant_apex_still_popular(self):
+        assert is_known_popular("github.io") is True
+
 
 class TestSafetyScreen:
     def test_clean_https_passes(self):
@@ -158,3 +169,10 @@ class TestShouldShortCircuit:
         # Cyrillic 'а' (U+0430) in place of Latin 'a'.
         ok, reason = should_short_circuit("https://gooаle.com/")
         assert ok is False
+
+    def test_multi_tenant_subdomain_falls_through(self):
+        # github.io is Tranco top 10K, but a phishing page hosted at
+        # phisher.github.io must still go through the full pipeline.
+        ok, reason = should_short_circuit("https://phisher.github.io/wallet-claim")
+        assert ok is False
+        assert "Tranco" in reason
