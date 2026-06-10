@@ -41,8 +41,9 @@ body {
 .top-auth-spacer { flex: 1; min-width: 0; }
 .top-brand { display: inline-flex; align-items: center; gap: 11px; text-decoration: none; flex-shrink: 0; margin-right: 6px; }
 .top-brand-mark { width: 30px; height: 30px; border-radius: 7px; display: block; flex-shrink: 0; }
-.top-brand-name { font-family: var(--display-font); font-size: 1.05rem; font-weight: 400; letter-spacing: 0.08em; color: var(--muted); white-space: nowrap; }
+.top-brand-name { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; font-family: var(--display-font); font-size: 1.05rem; font-weight: 400; letter-spacing: 0.08em; color: var(--muted); white-space: nowrap; line-height: 1.05; }
 .top-brand-name strong { font-weight: 800; color: var(--text); transition: color 0.18s ease; }
+.top-brand-subtitle { font-family: var(--body-font); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; color: var(--muted); }
 .top-brand:hover .top-brand-name strong { color: var(--accent); }
 .top-action-button { display: inline-flex; align-items: center; min-height: 40px; padding: 6px 1px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--muted); font: inherit; font-size: 0.85rem; font-weight: 600; letter-spacing: 0.03em; line-height: 1; text-align: center; text-decoration: none; cursor: pointer; transition: color 0.18s ease, border-color 0.18s ease; }
 .top-action-button:hover:not(:disabled) { color: var(--text); border-bottom-color: rgba(103, 242, 200, 0.65); }
@@ -52,7 +53,10 @@ body {
 .top-cta:hover:not(:disabled) { color: var(--accent); border-bottom-color: var(--accent); }
 
 /* --- Collapsible left side navigation drawer --- */
-.sidenav-header { display: flex; align-items: center; gap: 16px; min-height: 56px; margin-bottom: 22px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.sidenav-header { position: relative; display: flex; align-items: center; gap: 16px; min-height: 56px; margin-bottom: 22px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.sidenav-header .top-brand-centered { position: absolute; left: 50%; top: 50%; margin-right: 0; transform: translate(-50%, calc(-50% - 7px)); }
+.sidenav-header .top-brand-centered .top-brand-mark { display: none; }
+.sidenav-header .top-brand-centered .top-brand-name { align-items: center; text-align: center; }
 .sidenav-toggle { display: inline-flex; align-items: center; gap: 11px; min-height: 42px; padding: 8px 15px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255, 255, 255, 0.045); color: var(--text); font: inherit; font-weight: 700; font-size: 0.82rem; letter-spacing: 0.06em; cursor: pointer; transition: border-color 0.18s ease, background 0.18s ease; }
 .sidenav-toggle:hover { border-color: rgba(103, 242, 200, 0.5); background: rgba(103, 242, 200, 0.09); }
 .sidenav-toggle-bars { position: relative; display: block; width: 18px; height: 2px; }
