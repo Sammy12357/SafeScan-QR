@@ -252,7 +252,10 @@
                   <h3>{{ "No threats detected" if virus_total.summary.malicious == 0 else virus_total.summary.malicious ~ " threats detected" }}</h3>
                   <p>{{ virus_total.summary.clean }} clean engines and {{ virus_total.summary.unrated }} unrated engines support this SafeScan score.</p>
                 </div>
-                <a class="vt-powered" href="https://www.virustotal.com" target="_blank" rel="noopener noreferrer">Powered by VirusTotal</a>
+                <div class="vt-report-links">
+                  <span>Full Report</span>
+                  <a class="vt-powered" href="{{ virus_total.reportUrl or 'https://www.virustotal.com/gui/home/url' }}" target="_blank" rel="noopener noreferrer">View on VirusTotal</a>
+                </div>
               </div>
               <div class="vt-score-bar" aria-label="VirusTotal engine breakdown">
                 {% if virus_total.summary.clean %}<span class="vt-score-clean" style="width: {{ (virus_total.summary.clean / virus_total.summary.total * 100) | round(2) }}%;"></span>{% endif %}

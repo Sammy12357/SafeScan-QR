@@ -2058,6 +2058,7 @@ def virustotal_seed_result(target_url):
         "summary": build_virustotal_summary(engines),
         "provider": "VirusTotal",
         "mode": "seeded",
+        "reportUrl": virustotal_gui_url(target_url),
     }
 
 def virustotal_breakdown_signal(vt_result):
@@ -2449,6 +2450,11 @@ def google_reputation_signal(target_url):
 def virustotal_url_id(target_url):
     encoded = base64.urlsafe_b64encode(target_url.encode("utf-8")).decode("utf-8")
     return encoded.rstrip("=")
+
+def virustotal_gui_url(target_url):
+    if not target_url:
+        return "https://www.virustotal.com/gui/home/url"
+    return f"https://www.virustotal.com/gui/url/{virustotal_url_id(target_url)}"
 
 def virustotal_reputation_signal(target_url):
     if not VIRUSTOTAL_API_KEY:
