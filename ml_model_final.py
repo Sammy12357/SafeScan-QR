@@ -24,6 +24,12 @@ from PIL import Image
 
 _SCHEME_RE = re.compile(r"^[a-z][a-z0-9+\-.]*://", re.IGNORECASE)
 
+# F1-optimal threshold from the training notebook's threshold sweep on val.
+# Read from env so it stays in lock-step with safescan_model_calibration's
+# MALICIOUS_THRESHOLD without forcing an import cycle (calibration imports
+# heavy ML stack indirectly through hackabull).
+_MAL_THRESHOLD = float(os.getenv("SAFESCAN_ML_MAL_THRESHOLD", "0.32"))
+
 
 def _normalize_url(url: str) -> str:
     """Match the training-time normalization: strip scheme, lowercase, no trailing slash.
@@ -48,6 +54,7 @@ URL_CLASSIFIER_PATH = os.getenv(
 POSITIVE_CLASS = os.getenv("SAFESCAN_ML2_POSITIVE_CLASS", "malicious").lower()
 
 _cnn = None
+_cnn_rescale_cached: bool | None = None
 _url_classifier = None
 _url_classifier_missing = False
 _lock = threading.Lock()
@@ -90,6 +97,12 @@ def _load_cnn():
                 base["model_name"] = self.model_name
                 return base
 
+        # safe_mode=False is required because the SafeScanQR ensemble file
+        # contains a Lambda layer that Keras refuses to deserialize under
+        # safe_mode=True. The model file is shipped from our own training
+        # pipeline (see notebook SafeScanQR_Improved.ipynb) so the pickle
+        # risk is acceptable. NEVER point MODEL_PATH at an attacker-
+        # supplied .keras file.
         _cnn = keras.models.load_model(
             MODEL_PATH,
             compile=False,
@@ -111,9 +124,33 @@ def _cnn_input_size():
     return 192, 192
 
 
-def _cnn_needs_rescale():
-    """Some ensembles expect [0,1] inputs; the original final_model.keras has its own Rescaling layer."""
-    return os.getenv("SAFESCAN_ML2_RESCALE", "auto").lower() in ("1", "true", "yes", "on")
+def _cnn_needs_rescale() -> bool:
+    """Decide whether to divide inputs by 255 before predict().
+
+    Logic:
+      - Explicit env override (`SAFESCAN_ML2_RESCALE`) always wins.
+      - Otherwise, inspect the loaded model graph: if it already contains
+        a `Rescaling` layer (the original final_model.keras does), feed
+        raw 0..255 floats; if not (the ensemble build strips it), feed
+        0..1 floats. Detection is cached on the first call.
+    """
+    global _cnn_rescale_cached
+    override = os.getenv("SAFESCAN_ML2_RESCALE", "auto").lower()
+    if override in ("1", "true", "yes", "on"):
+        return True
+    if override in ("0", "false", "no", "off"):
+        return False
+    if _cnn_rescale_cached is not None:
+        return _cnn_rescale_cached
+    try:
+        model = _load_cnn()
+        has_rescaling = any(
+            layer.__class__.__name__ == "Rescaling" for layer in getattr(model, "layers", [])
+        )
+        _cnn_rescale_cached = not has_rescaling
+    except Exception:
+        _cnn_rescale_cached = False
+    return _cnn_rescale_cached
 
 
 def _load_url_classifier():
@@ -167,9 +204,20 @@ def predict_url(url: str):
 
 
 def _result_from_probs(mal_p: float, source: str):
+    """Build the inner ML result. Uses the F1-optimal threshold (0.32 by
+    default) for the binary label rather than the default 0.5 split - the
+    notebook tuned this on val and the calibration band below depends on
+    the same threshold."""
     safe_p = 1.0 - mal_p
-    label = "malicious" if mal_p > safe_p else "safe"
-    confidence = round(max(safe_p, mal_p) * 100)
+    label = "malicious" if mal_p >= _MAL_THRESHOLD else "safe"
+    # Distance from the threshold, scaled to 0..100, gives a stabler
+    # confidence than max(safe_p, mal_p) at non-0.5 thresholds.
+    if label == "malicious":
+        scale = max(1e-6, 1.0 - _MAL_THRESHOLD)
+        confidence = round(min(1.0, (mal_p - _MAL_THRESHOLD) / scale) * 100)
+    else:
+        scale = max(1e-6, _MAL_THRESHOLD)
+        confidence = round(min(1.0, (_MAL_THRESHOLD - mal_p) / scale) * 100)
     return {
         "safe_prob": round(safe_p * 100, 1),
         "malicious_prob": round(mal_p * 100, 1),
@@ -179,33 +227,97 @@ def _result_from_probs(mal_p: float, source: str):
     }
 
 
-def predict_image(pil_image):
-    """CNN fallback. Auto-detects input size from the loaded model."""
+def _crop_to_qr(pil_image, polygon=None):
+    """If a QR bounding polygon was passed in, crop+pad to that region so
+    the CNN doesn't classify on background. Falls back to the full image
+    when no polygon is provided or the crop would be degenerate."""
+    if polygon is None:
+        return pil_image
+    try:
+        xs = [int(p[0]) for p in polygon]
+        ys = [int(p[1]) for p in polygon]
+    except Exception:
+        return pil_image
+    if not xs or not ys:
+        return pil_image
+    w, h = pil_image.size
+    margin = int(0.08 * max(max(xs) - min(xs), max(ys) - min(ys)))
+    left = max(0, min(xs) - margin)
+    upper = max(0, min(ys) - margin)
+    right = min(w, max(xs) + margin)
+    lower = min(h, max(ys) + margin)
+    if right - left < 16 or lower - upper < 16:
+        return pil_image
+    return pil_image.crop((left, upper, right, lower))
+
+
+def predict_image(pil_image, polygon=None, tta: bool = False):
+    """CNN fallback. Auto-detects input size from the loaded model.
+
+    Args:
+        pil_image: full-frame PIL image.
+        polygon: optional list of (x, y) tuples for the QR bounding box.
+            When provided, the CNN sees a tight crop of the QR rather
+            than the whole photo - meaningful improvement when the QR is
+            small in frame.
+        tta: if True, average predictions across the 4 rotations of the
+            input. Cheap test-time augmentation that removes orientation
+            as a source of variance for the CNN fallback path.
+    """
     model = _load_cnn()
     h, w = _cnn_input_size()
-    img = pil_image.convert("RGB").resize((w, h), Image.LANCZOS)
-    arr = np.asarray(img, dtype=np.float32)
-    if _cnn_needs_rescale():
-        arr = arr / 255.0
-    arr = arr[None, ...]
-    raw = float(model.predict(arr, verbose=0).reshape(-1)[0])
+    base = _crop_to_qr(pil_image, polygon=polygon).convert("RGB").resize((w, h), Image.LANCZOS)
+
+    def _prep(img):
+        arr = np.asarray(img, dtype=np.float32)
+        if _cnn_needs_rescale():
+            arr = arr / 255.0
+        return arr
+
+    if tta:
+        batch = np.stack([_prep(base.rotate(angle, expand=False)) for angle in (0, 90, 180, 270)], axis=0)
+        raw = float(model.predict(batch, verbose=0).reshape(-1).mean())
+    else:
+        arr = _prep(base)[None, ...]
+        raw = float(model.predict(arr, verbose=0).reshape(-1)[0])
     mal_p = raw if POSITIVE_CLASS != "safe" else 1.0 - raw
     return _result_from_probs(mal_p, "cnn_fallback")
 
 
-def predict_hybrid(url: str | None = None, pil_image=None):
+def predict_hybrid(url: str | None = None, pil_image=None, polygon=None, tta: bool = False):
     """Mirror notebook's hybrid_predict: URL classifier first, CNN fallback.
 
-    `url`   - decoded URL string (preferred path)
+    `url`     - decoded URL string (preferred path)
     `pil_image` - PIL image used only if the URL classifier is unavailable
+    `polygon` - optional QR bounding polygon for CNN tight-crop
+    `tta`     - rotation averaging on the CNN path
     """
     if url:
         url_result = predict_url(url)
         if url_result is not None:
             return url_result
     if pil_image is not None:
-        return predict_image(pil_image)
+        return predict_image(pil_image, polygon=polygon, tta=tta)
     return None
+
+
+def blend_url_and_cnn(url_result: dict, cnn_result: dict, url_weight: float = 0.6) -> dict:
+    """Weighted blend of URL classifier + CNN malicious probabilities.
+
+    Used by the caller when the URL score lands in the uncertain band and
+    a QR image is available - the CNN occasionally breaks ties the URL
+    text alone can't.
+    """
+    if not url_result or not cnn_result:
+        return url_result or cnn_result
+    w = max(0.0, min(1.0, float(url_weight)))
+    url_mal = float(url_result.get("malicious_prob", 50.0)) / 100.0
+    cnn_mal = float(cnn_result.get("malicious_prob", 50.0)) / 100.0
+    blended = w * url_mal + (1.0 - w) * cnn_mal
+    res = _result_from_probs(blended, "url_cnn_blend")
+    res["url_component"] = round(url_mal, 4)
+    res["cnn_component"] = round(cnn_mal, 4)
+    return res
 
 
 # Backwards-compat: existing call sites use predict(pil_image)

@@ -2323,6 +2323,26 @@ def classify_qr_with_ml(payload, image=None, input_source="generated_qr"):
                 "SAFESCAN_URL_CLASSIFIER_PATH",
                 os.path.join(os.path.dirname(__file__), "models", "url_classifier.joblib"),
             ))
+            # If the URL classifier is in the uncertain band, ask the CNN
+            # too and blend the two probabilities. The CNN's visual
+            # fingerprint occasionally breaks ties the char-ngram model
+            # can't, and it costs us nothing on clearly-benign / clearly-
+            # malicious URLs because we skip the CNN entirely there.
+            url_mal_pct = float(result.get("malicious_prob", 0.0))
+            in_uncertain = (
+                sm_calibration.UNCERTAIN_LOWER * 100.0
+                <= url_mal_pct
+                < sm_calibration.UNCERTAIN_UPPER * 100.0
+            )
+            if in_uncertain:
+                try:
+                    generated_image = qr_image_from_payload(payload)
+                    cnn_result = _ml_mod.predict_image(generated_image)
+                    result = _ml_mod.blend_url_and_cnn(result, cnn_result)
+                    source_input = "decoded_url+cnn"
+                except Exception:
+                    # Blend is best-effort; keep the URL-only verdict.
+                    pass
         else:
             # CNN fallback - canonical rendering of the decoded URL so the
             # score depends on the URL, not on how the QR was photographed.
