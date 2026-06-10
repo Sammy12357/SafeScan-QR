@@ -45,6 +45,26 @@ const loadingSteps = [
   "Consulting AI analyst..."
 ];
 let copyToastTimer = 0;
+let riskModalScrollGuard = 0;
+
+function targetHasScrollableAncestor(target) {
+  for (let el = target instanceof Element ? target : null; el && el !== document.body; el = el.parentElement) {
+    const style = window.getComputedStyle(el);
+    const canScrollY = /(auto|scroll)/.test(style.overflowY) && el.scrollHeight > el.clientHeight + 1;
+    if (canScrollY) return true;
+  }
+  return false;
+}
+
+window.addEventListener("wheel", (event) => {
+  if (document.body.classList.contains("sidenav-open")) return;
+  if (riskModal && !riskModal.classList.contains("hidden")) return;
+  if (targetHasScrollableAncestor(event.target)) return;
+  const before = window.scrollY || document.documentElement.scrollTop || 0;
+  window.scrollBy({ top: event.deltaY, left: 0, behavior: "auto" });
+  const after = window.scrollY || document.documentElement.scrollTop || 0;
+  if (after !== before) event.preventDefault();
+}, { passive: false });
 
 function showCopyToast(message = "Copied") {
   let toast = document.getElementById("copyToast");
@@ -659,10 +679,7 @@ if (riskModal) {
   riskModal.addEventListener("click", (event) => {
     if (event.target === riskModal) {
       event.preventDefault();
-      riskModal.querySelector(".risk-modal-card")?.animate(
-        [{ transform: "scale(1)" }, { transform: "scale(0.992)" }, { transform: "scale(1)" }],
-        { duration: 180, easing: "ease-out" }
-      );
+      closeRiskModal();
     }
   });
 
@@ -695,10 +712,10 @@ if (riskModal) {
   });
 
   let scrollGuardTicks = 0;
-  const scrollGuard = window.setInterval(() => {
+  riskModalScrollGuard = window.setInterval(() => {
     resetScroll();
     scrollGuardTicks += 1;
-    if (scrollGuardTicks >= 10) window.clearInterval(scrollGuard);
+    if (scrollGuardTicks >= 10) window.clearInterval(riskModalScrollGuard);
   }, 50);
 
   // Focus the close (X) button - it is sticky at top of the card so
@@ -718,7 +735,10 @@ if (riskModal) {
 }
 
 function closeRiskModal() {
+  if (riskModalScrollGuard) window.clearInterval(riskModalScrollGuard);
   riskModal?.classList.add("hidden");
+  riskModal?.setAttribute("aria-hidden", "true");
+  riskModal?.remove();
   document.getElementById("scanner")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
