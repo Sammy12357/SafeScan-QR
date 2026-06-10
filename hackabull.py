@@ -1689,7 +1689,7 @@ def get_global_leaderboard(limit=50):
                 u.email,
                 u.username,
                 u.display_name,
-                MAX(COALESCE(s.scan_count, 0), COALESCE(se.unique_events, 0), COALESCE(h.unique_saved_scans, 0)) AS scan_count,
+                MAX(COALESCE(s.scan_count, 0), COALESCE(se.unique_events, 0), COALESCE(h.total_saved_scans, 0)) AS scan_count,
                 COALESCE(h.total_saved_scans, 0) AS total_saved_scans,
                 COALESCE(h.last_history_at, se.last_event_at) AS last_scanned_at
             FROM users u

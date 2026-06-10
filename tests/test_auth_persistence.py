@@ -520,6 +520,28 @@ def test_global_leaderboard_recovers_count_from_saved_history(auth_app):
     assert leaders[0]["total_saved_scans"] == 2
 
 
+def test_global_leaderboard_counts_every_saved_history_scan(auth_app):
+    module, client, db_path = auth_app
+    register(client, "repeat-scanner@example.com")
+    user = db_rows(db_path, "SELECT google_id FROM users WHERE email = ?", ("repeat-scanner@example.com",))[0]
+    module.set_user_username(user["google_id"], "RepeatScanner")
+
+    for url in [
+        "https://one.example",
+        "https://one.example",
+        "https://two.example",
+        "https://two.example",
+        "https://two.example",
+    ]:
+        module.save_user_scan(user["google_id"], url, {"score": 10, "status": "SAFE"}, email="repeat-scanner@example.com")
+
+    leaders = module.get_global_leaderboard()
+
+    assert leaders[0]["username"] == "RepeatScanner"
+    assert leaders[0]["scan_count"] == 5
+    assert leaders[0]["total_saved_scans"] == 5
+
+
 def test_global_leaderboard_includes_all_registered_users(auth_app):
     module, client, db_path = auth_app
     register(client, "scanner-no-name@example.com")
