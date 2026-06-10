@@ -48,7 +48,7 @@
 
   <nav class="sidenav-links" aria-label="Features">
     <a href="/" class="sidenav-link {{ 'is-active' if active_nav == 'home' else '' }}">Home</a>
-    <a href="/generate-qr" class="sidenav-link {{ 'is-active' if active_nav == 'generate' else '' }}">Generate QR</a>
+    <a href="/#scanner" class="sidenav-link {{ 'is-active' if active_nav == 'scanner' else '' }}">Scanner</a>
     <a href="/go-ghost" class="sidenav-link {{ 'is-active' if active_nav == 'ghost' else '' }}">Go Ghost</a>
     <a href="/token" class="sidenav-link {{ 'is-active' if active_nav == 'token' else '' }}">Airdrop</a>
     <a href="/plans" class="sidenav-link {{ 'is-active' if active_nav == 'plans' else '' }}">Plans</a>
@@ -57,6 +57,7 @@
     <a href="/history" class="sidenav-link {{ 'is-active' if active_nav == 'history' else '' }}">Scan history</a>
     {% endif %}
     <a href="/malicious-database" class="sidenav-link {{ 'is-active' if active_nav == 'threat' else '' }}">Threat database</a>
+    <a href="/generate-qr" class="sidenav-link {{ 'is-active' if active_nav == 'generate' else '' }}">Generate QR</a>
     {% if logged_in %}
     <a href="/leaderboard" class="sidenav-link {{ 'is-active' if active_nav == 'leaderboard' else '' }}">Leaderboard</a>
     {% endif %}
