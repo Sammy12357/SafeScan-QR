@@ -28,7 +28,7 @@
 
   <nav class="sidenav-links" aria-label="Features">
     <a href="/" class="sidenav-link {{ 'is-active' if active_nav == 'home' else '' }}">Home</a>
-    <a href="{{ '/#scanner' if test_site_path else '/#scanner' }}" class="sidenav-link {{ 'is-active' if active_nav == 'scanner' else '' }}">Scanner</a>
+    <a href="/generate-qr" class="sidenav-link {{ 'is-active' if active_nav == 'generate' else '' }}">Generate QR</a>
     <a href="/go-ghost" class="sidenav-link {{ 'is-active' if active_nav == 'ghost' else '' }}">Go Ghost</a>
     <a href="/token" class="sidenav-link {{ 'is-active' if active_nav == 'token' else '' }}">Airdrop</a>
     <a href="/plans" class="sidenav-link {{ 'is-active' if active_nav == 'plans' else '' }}">Plans</a>
