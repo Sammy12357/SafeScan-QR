@@ -68,10 +68,19 @@
       <a href="/login" class="sidenav-signin">Sign in / Sign up</a>
     {% else %}
       <div id="airdropProfile" class="sidenav-profile">
-        <div class="sidenav-profile-id">
-          <p class="profile-name">{{ profile_display_name }}</p>
-          <p class="profile-email" data-email="{{ email }}">{{ profile_subtitle }}</p>
-        </div>
+        <a class="sidenav-profile-id" href="/profile" aria-label="Open profile">
+          <span class="top-profile-avatar sidenav-profile-avatar" aria-hidden="true">
+            {% if profile_picture %}
+              <img src="{{ profile_picture }}" alt="">
+            {% else %}
+              <span>{{ (profile_display_name or 'S')[:1] }}</span>
+            {% endif %}
+          </span>
+          <span class="sidenav-profile-id-text">
+            <p class="profile-name">{{ profile_display_name }}</p>
+            <p class="profile-email" data-email="{{ email }}">{{ profile_subtitle }}</p>
+          </span>
+        </a>
         <div class="sidenav-profile-actions">
           <a href="/profile" class="profile-button">Profile</a>
           {% if is_admin %}<a href="/admin" class="admin-dashboard-button">Admin dashboard</a>{% endif %}

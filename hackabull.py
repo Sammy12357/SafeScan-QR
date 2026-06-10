@@ -1640,7 +1640,7 @@ def index_user_context(user):
         "is_admin": role in ("admin", "owner"),
         "is_owner": role == "owner",
         "username": user.get("username") if user else "",
-        "profile_display_name": "Safe scanner",
+        "profile_display_name": "Safe Scanner",
         "profile_subtitle": username or display_name or email,
         "profile_picture": user.get("picture") if user else "",
         # Used by index.html to enable Google One Tap auto sign-in for
@@ -5720,7 +5720,7 @@ async def api_user_profile(request: Request):
     wallet = get_verified_wallet(email)
     return {
         "id": user.get("google_id"),
-        "name": "Safe scanner",
+        "name": "Safe Scanner",
         "email": email,
         "role": user.get("role", "user"),
         "scanCount": scan_count,
@@ -5738,7 +5738,7 @@ async def api_me(request: Request):
             "id": user.get("google_id"),
             "email": user.get("email"),
             "username": user.get("username"),
-            "name": user.get("display_name") or "Safe scanner",
+            "name": user.get("display_name") or "Safe Scanner",
             "avatarUrl": user.get("picture"),
             "role": user.get("role", "user"),
             "status": user.get("status", "active"),
@@ -6980,7 +6980,7 @@ async def auth_verify(request: Request, payload: dict = Body(...)):
         "session": session_id,
         "user": {
             "id": google_id,
-            "name": user.get("display_name") or idinfo.get("name") or "Safe scanner",
+            "name": user.get("display_name") or idinfo.get("name") or "Safe Scanner",
             "email": user_email,
             "avatarUrl": idinfo.get("picture"),
             "role": user.get("role", "user"),
