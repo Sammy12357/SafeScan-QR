@@ -14,13 +14,18 @@
     <span class="top-brand-name"><strong>SafeScan</strong> QR</span>
   </a>
   <div class="top-nav-actions" aria-label="Account and appearance">
-    <a class="top-profile-avatar" href="{{ '/profile' if logged_in else '/login' }}" aria-label="{{ 'Open profile' if logged_in else 'Sign in' }}">
-      {% if logged_in and profile_picture %}
+    {% if logged_in %}
+    <a class="top-profile-avatar" href="/profile" aria-label="Open profile">
+      {% if profile_picture %}
         <img src="{{ profile_picture }}" alt="{{ profile_display_name or 'Profile' }}">
       {% else %}
         <span>{{ (profile_display_name or 'S')[:1] }}</span>
       {% endif %}
     </a>
+    {% else %}
+    <a class="top-auth-link top-auth-signin" href="/login">Sign in</a>
+    <a class="top-auth-link top-auth-signup" href="/login?tab=register">Sign up <span aria-hidden="true">&#8599;</span></a>
+    {% endif %}
     <button class="theme-toggle" type="button" aria-label="Switch to light mode" aria-pressed="false" data-theme-toggle>
       <span class="theme-toggle-track" aria-hidden="true">
         <span class="theme-toggle-thumb"></span>
