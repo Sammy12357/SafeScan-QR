@@ -4975,7 +4975,7 @@ async def api_qr_generate(request: Request, payload: dict = Body(...)):
 
     Runs the URL through the same risk pipeline as `/api/scan` (rule signals
     plus the ML model) and refuses to render the QR when the maliciousness
-    score is 70 or higher — so any QR coming out of this endpoint has been
+    score is 90 or higher — so any QR coming out of this endpoint has been
     screened and isn't a likely-malicious link.
 
     Returns a PNG image with the SafeScan logo overlaid in the centre (high
@@ -5000,9 +5000,9 @@ async def api_qr_generate(request: Request, payload: dict = Body(...)):
     # crypto patterns) blended with the ML model score.
     risk_score = int(analysis.get("confidenceScore") or analysis.get("score") or 0)
 
-    # A score of 70 or higher means the link is likely malicious, so SafeScan
-    # refuses to mint a QR code for it.
-    if risk_score >= 70:
+    # A score of 90 or higher means the link is almost certainly malicious, so
+    # SafeScan refuses to mint a QR code for it.
+    if risk_score >= 90:
         raise SafeScanError(
             f"This link is likely malicious (risk score {risk_score}/100). "
             "SafeScan won't generate a QR code for it.",
