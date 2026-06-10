@@ -17,7 +17,7 @@ import csv
 from decimal import Decimal, InvalidOperation
 from html import escape as escape_html
 from urllib.parse import quote, urlencode, urljoin, urlparse, parse_qsl
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from xml.etree import ElementTree
 
 from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body, HTTPException
@@ -135,6 +135,10 @@ VALID_ROLES = ("user", "admin", "owner")
 VALID_STATUSES = ("active", "suspended", "deleted")
 RATE_LIMITS = {}
 AIRDROP_BASE_ALLOCATION = int(os.getenv("SQR_BASE_ALLOCATION", "100"))
+WHOISXML_API_KEY = os.getenv("WHOISXML_API_KEY")
+SECURITYTRAILS_API_KEY = os.getenv("SECURITYTRAILS_API_KEY")
+DOMAIN_AGE_CACHE_TTL_DAYS = int(os.getenv("DOMAIN_AGE_CACHE_TTL_DAYS", "30"))
+DOMAIN_AGE_CHECK_ENABLED = os.getenv("DOMAIN_AGE_CHECK_ENABLED", "true").lower() in ("1", "true", "yes", "on")
 AIRDROP_TOKEN_ALLOCATIONS = {
     "Scanner": AIRDROP_BASE_ALLOCATION,
     "Referrer": AIRDROP_BASE_ALLOCATION * 2,
@@ -248,6 +252,16 @@ def init_db():
     conn = sqlite3.connect(database_path())
     cursor = conn.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS scan_results (url TEXT PRIMARY KEY, status TEXT, timestamp TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS domain_age_cache (
+                        domain TEXT PRIMARY KEY,
+                        creation_date TEXT,
+                        age_days INTEGER,
+                        source TEXT,
+                        fetched_at TEXT NOT NULL,
+                        expires_on TEXT,
+                        registrar TEXT,
+                        error TEXT
+                    )''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS users (
                         google_id TEXT PRIMARY KEY,
                         email TEXT,
@@ -387,6 +401,8 @@ def init_db():
                          broker TEXT NOT NULL, status TEXT NOT NULL, detail TEXT,
                          target_url TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)''')
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_sessions_google_id ON sessions(google_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_domain_age_cache_domain ON domain_age_cache(domain)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_domain_age_cache_fetched ON domain_age_cache(fetched_at)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_persistent_sessions_token_hash ON persistent_sessions(token_hash)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_persistent_sessions_user_id ON persistent_sessions(user_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action)")
@@ -453,6 +469,16 @@ def init_db():
     }
     for column, ddl in alpha_solana_migrations.items():
         if column not in alpha_solana_columns:
+            cursor.execute(ddl)
+    cursor.execute("PRAGMA table_info(domain_age_cache)")
+    domain_age_columns = {row[1] for row in cursor.fetchall()}
+    domain_age_migrations = {
+        "expires_on": "ALTER TABLE domain_age_cache ADD COLUMN expires_on TEXT",
+        "registrar": "ALTER TABLE domain_age_cache ADD COLUMN registrar TEXT",
+        "error": "ALTER TABLE domain_age_cache ADD COLUMN error TEXT",
+    }
+    for column, ddl in domain_age_migrations.items():
+        if column not in domain_age_columns:
             cursor.execute(ddl)
     if "google_sub" not in user_columns:
         cursor.execute("ALTER TABLE users ADD COLUMN google_sub TEXT")
@@ -2642,17 +2668,6 @@ def trace_redirect_chain(target_url):
         "redirectChain": chain
     }
 
-def parse_rdap_creation_date(events):
-    for event in events or []:
-        if event.get("eventAction") in ("registration", "domain registration", "creation"):
-            date_value = event.get("eventDate")
-            if date_value:
-                try:
-                    return datetime.fromisoformat(date_value.replace("Z", "+00:00")).replace(tzinfo=None)
-                except ValueError:
-                    return None
-    return None
-
 def parse_rdap_event_date(events, actions):
     actions = set(actions)
     for event in events or []:
@@ -2662,20 +2677,50 @@ def parse_rdap_event_date(events, actions):
 
 def extract_domain_for_age(target_url):
     parsed = urlparse(normalize_url(target_url))
-    return (parsed.hostname or "").lower().removeprefix("www.")
+    hostname = (parsed.hostname or "").strip(".").lower()
+    if not hostname:
+        return ""
+    try:
+        ipaddress.ip_address(hostname)
+        return ""
+    except ValueError:
+        pass
+    try:
+        import tldextract
+        extracted = tldextract.extract(hostname)
+        registrable = ".".join(part for part in (extracted.domain, extracted.suffix) if part)
+        return registrable or hostname.removeprefix("www.")
+    except Exception:
+        parts = hostname.removeprefix("www.").split(".")
+        return ".".join(parts[-2:]) if len(parts) >= 2 else hostname
 
 def domain_age_days(created_date):
-    created = datetime.fromisoformat(created_date.replace("Z", "+00:00")).replace(tzinfo=None)
+    created = parse_domain_datetime(created_date)
+    if not created:
+        raise ValueError("Invalid creation date")
     return max(0, (datetime.utcnow() - created).days)
 
 def domain_age_risk_level(age_days):
     if age_days is None:
         return "unknown"
-    if age_days > 365:
+    if age_days >= 365:
         return "established"
-    if age_days > 180:
+    if age_days >= 90:
         return "recent"
     return "new"
+
+def domain_age_signal_tier(age_days):
+    if age_days is None:
+        return "unknown", "low", "Age unknown", "Could not verify domain registration age."
+    if age_days < 7:
+        return "very_new", "high", "Very new domain", "Domain was registered less than 7 days ago, a critical phishing indicator."
+    if age_days < 30:
+        return "new", "high", "New domain", "Domain was registered less than 30 days ago, a strong phishing indicator."
+    if age_days < 90:
+        return "young", "medium", "Young domain", "Domain was registered less than 90 days ago and warrants extra caution."
+    if age_days < 365:
+        return "recent", "low", "Recent domain", "Domain was registered less than one year ago."
+    return "established", "low", "Established domain", "Domain has been registered for over one year."
 
 def format_domain_age(age_days):
     if age_days is None:
@@ -2688,6 +2733,48 @@ def format_domain_age(age_days):
     if months:
         return f"{months} month{'s' if months != 1 else ''}, {days} day{'s' if days != 1 else ''}"
     return f"{age_days} day{'s' if age_days != 1 else ''}"
+
+def parse_domain_datetime(value):
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        raw = str(value).strip()
+        if not raw:
+            return None
+        for candidate in (
+            raw,
+            raw.replace("Z", "+00:00"),
+            raw.split(".", 1)[0],
+            raw[:19],
+        ):
+            try:
+                parsed = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
+                break
+            except ValueError:
+                parsed = None
+        if parsed is None:
+            for fmt in ("%Y-%m-%d", "%Y%m%d%H%M%S", "%Y.%m.%d %H:%M:%S", "%d-%b-%Y"):
+                try:
+                    parsed = datetime.strptime(raw, fmt)
+                    break
+                except ValueError:
+                    parsed = None
+    if parsed is None:
+        return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
+
+def first_domain_datetime(value):
+    if isinstance(value, (list, tuple)):
+        values = value
+    else:
+        values = [value]
+    parsed_values = [parse_domain_datetime(item) for item in values]
+    parsed_values = [item for item in parsed_values if item is not None]
+    return min(parsed_values) if parsed_values else None
 
 def extract_rdap_registrar(rdap):
     registrar = rdap.get("registrar")
@@ -2707,53 +2794,240 @@ def unknown_domain_age_result(domain):
     return {
         "domain": domain,
         "registeredOn": None,
+        "creationDate": None,
         "expiresOn": None,
         "registrar": None,
         "ageInDays": None,
+        "ageDays": None,
         "ageLabel": "Age unknown",
         "riskLevel": "unknown",
         "riskLabel": "Age unknown",
         "riskDetail": "WHOIS/RDAP data unavailable.",
+        "source": "unavailable",
+        "error": "Domain age lookup unavailable.",
     }
 
 def lookup_domain_age_result(target_url):
     domain = extract_domain_for_age(target_url)
     if not domain:
         return unknown_domain_age_result("")
+    return get_domain_age_days(domain)
+
+def domain_age_cache_get(domain):
+    cutoff = (datetime.utcnow() - timedelta(days=DOMAIN_AGE_CACHE_TTL_DAYS)).isoformat()
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT domain, creation_date, age_days, source, fetched_at, expires_on, registrar, error
+               FROM domain_age_cache
+               WHERE domain = ? AND fetched_at > ?""",
+            (domain, cutoff),
+        ).fetchone()
+    if not row:
+        return None
+    return {
+        "domain": row["domain"],
+        "creation_date": row["creation_date"],
+        "age_days": row["age_days"],
+        "source": row["source"] or "cache",
+        "expires_on": row["expires_on"],
+        "registrar": row["registrar"],
+        "error": row["error"],
+    }
+
+def domain_age_cache_save(domain, result):
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT OR REPLACE INTO domain_age_cache
+               (domain, creation_date, age_days, source, fetched_at, expires_on, registrar, error)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                domain,
+                result.get("creation_date"),
+                result.get("age_days"),
+                result.get("source"),
+                datetime.utcnow().isoformat() + "Z",
+                result.get("expires_on"),
+                result.get("registrar"),
+                result.get("error"),
+            ),
+        )
+
+def fetch_domain_age_whois(domain):
+    import whois as pywhois
+    record = pywhois.whois(domain)
+    def record_value(key):
+        value = getattr(record, key, None)
+        if value is not None:
+            return value
+        return record.get(key) if hasattr(record, "get") else None
+    created = first_domain_datetime(record_value("creation_date"))
+    if not created:
+        return None
+    expires = first_domain_datetime(record_value("expiration_date"))
+    registrar = record_value("registrar")
+    return {
+        "creation_date": created.isoformat() + "Z",
+        "age_days": max(0, (datetime.utcnow() - created).days),
+        "source": "whois",
+        "expires_on": expires.isoformat() + "Z" if expires else None,
+        "registrar": registrar[0] if isinstance(registrar, list) and registrar else registrar,
+        "error": None,
+    }
+
+def fetch_domain_age_rdap(domain):
     try:
         response = requests.get(f"https://rdap.org/domain/{domain}", timeout=6)
         response.raise_for_status()
         rdap = response.json()
     except (requests.RequestException, ValueError):
-        return unknown_domain_age_result(domain)
+        return None
 
     events = rdap.get("events", [])
     registered_on = parse_rdap_event_date(events, ("registration", "domain registration", "creation"))
     expires_on = parse_rdap_event_date(events, ("expiration", "expiry"))
     registrar = extract_rdap_registrar(rdap)
-    try:
-        age_days = domain_age_days(registered_on) if registered_on else None
-    except ValueError:
-        age_days = None
-    risk_level = domain_age_risk_level(age_days)
-    risk_copy = {
-        "established": ("Established domain", "Registered over a year ago."),
-        "recent": ("Relatively new", "Registered within the last year."),
-        "new": ("Very new domain", "High phishing risk - under 6 months old."),
-        "unknown": ("Age unknown", "WHOIS/RDAP data unavailable."),
+    created = parse_domain_datetime(registered_on)
+    if not created:
+        return None
+    return {
+        "creation_date": created.isoformat() + "Z",
+        "age_days": max(0, (datetime.utcnow() - created).days),
+        "source": "rdap",
+        "expires_on": expires_on,
+        "registrar": registrar,
+        "error": None,
     }
-    risk_label, risk_detail = risk_copy[risk_level]
+
+def fetch_domain_age_whoisxml(domain):
+    if not WHOISXML_API_KEY:
+        return None
+    response = requests.get(
+        "https://www.whoisxmlapi.com/whoisserver/WhoisService",
+        params={"apiKey": WHOISXML_API_KEY, "domainName": domain, "outputFormat": "JSON"},
+        timeout=6,
+    )
+    response.raise_for_status()
+    data = response.json()
+    record = data.get("WhoisRecord", {}) if isinstance(data, dict) else {}
+    registry = record.get("registryData") or {}
+    created = parse_domain_datetime(registry.get("createdDate") or record.get("createdDate"))
+    if not created:
+        return None
+    expires = parse_domain_datetime(registry.get("expiresDate") or record.get("expiresDate"))
+    return {
+        "creation_date": created.isoformat() + "Z",
+        "age_days": max(0, (datetime.utcnow() - created).days),
+        "source": "whoisxml",
+        "expires_on": expires.isoformat() + "Z" if expires else None,
+        "registrar": (registry.get("registrarName") or record.get("registrarName")),
+        "error": None,
+    }
+
+def fetch_domain_age_securitytrails(domain):
+    if not SECURITYTRAILS_API_KEY:
+        return None
+    response = requests.get(
+        f"https://api.securitytrails.com/v1/domain/{domain}",
+        headers={"APIKEY": SECURITYTRAILS_API_KEY},
+        timeout=6,
+    )
+    response.raise_for_status()
+    data = response.json()
+    created = parse_domain_datetime(data.get("created_date") or data.get("createdDate"))
+    if not created:
+        return None
+    expires = parse_domain_datetime(data.get("expires_date") or data.get("expiresDate"))
+    return {
+        "creation_date": created.isoformat() + "Z",
+        "age_days": max(0, (datetime.utcnow() - created).days),
+        "source": "securitytrails",
+        "expires_on": expires.isoformat() + "Z" if expires else None,
+        "registrar": data.get("registrar"),
+        "error": None,
+    }
+
+def fetch_domain_age_wayback(domain):
+    response = requests.get(
+        "https://archive.org/wayback/available",
+        params={"url": domain},
+        timeout=6,
+    )
+    response.raise_for_status()
+    data = response.json()
+    timestamp = ((data.get("archived_snapshots", {}) or {}).get("closest") or {}).get("timestamp")
+    created = parse_domain_datetime(timestamp)
+    if not created:
+        return None
+    return {
+        "creation_date": created.isoformat() + "Z",
+        "age_days": max(0, (datetime.utcnow() - created).days),
+        "source": "wayback_lower_bound",
+        "expires_on": None,
+        "registrar": None,
+        "error": None,
+    }
+
+def fetch_domain_age(domain):
+    errors = []
+    strategies = (
+        ("whois", fetch_domain_age_whois),
+        ("rdap", fetch_domain_age_rdap),
+        ("whoisxml", fetch_domain_age_whoisxml),
+        ("securitytrails", fetch_domain_age_securitytrails),
+        ("wayback", fetch_domain_age_wayback),
+    )
+    for source, strategy in strategies:
+        try:
+            result = strategy(domain)
+            if result and result.get("age_days") is not None:
+                return result
+        except Exception as exc:
+            errors.append(f"{source}: {type(exc).__name__}")
+    return {
+        "creation_date": None,
+        "age_days": None,
+        "source": "unavailable",
+        "expires_on": None,
+        "registrar": None,
+        "error": "; ".join(errors) or "All domain age sources failed or timed out",
+    }
+
+def domain_age_lookup_to_ui(domain, result):
+    age_days = result.get("age_days")
+    risk_level, severity, risk_label, risk_detail = domain_age_signal_tier(age_days)
+    ui_risk_level = "new" if risk_level in ("very_new", "new", "young") else risk_level
+    if result.get("source") == "wayback_lower_bound" and age_days is not None:
+        risk_detail = f"Earliest archived snapshot is {format_domain_age(age_days)} old; true registration may be older."
+    elif result.get("error"):
+        risk_detail = f"Could not verify domain registration age ({result.get('error')})."
     return {
         "domain": domain,
-        "registeredOn": registered_on,
-        "expiresOn": expires_on,
-        "registrar": registrar,
+        "registeredOn": result.get("creation_date"),
+        "creationDate": result.get("creation_date"),
+        "expiresOn": result.get("expires_on"),
+        "registrar": result.get("registrar"),
         "ageInDays": age_days,
+        "ageDays": age_days,
         "ageLabel": format_domain_age(age_days),
-        "riskLevel": risk_level,
+        "riskLevel": ui_risk_level,
+        "signalLevel": risk_level,
         "riskLabel": risk_label,
         "riskDetail": risk_detail,
+        "severity": severity,
+        "source": result.get("source") or "unavailable",
+        "error": result.get("error"),
     }
+
+def get_domain_age_days(domain):
+    cached = domain_age_cache_get(domain)
+    if cached:
+        return domain_age_lookup_to_ui(domain, cached)
+    result = fetch_domain_age(domain)
+    domain_age_cache_save(domain, result)
+    return domain_age_lookup_to_ui(domain, result)
+
+async def get_domain_age_days_async(domain):
+    return await asyncio.to_thread(get_domain_age_days, domain)
 
 def check_domain_intelligence(target_url):
     normalized = normalize_url(target_url)
@@ -2761,30 +3035,42 @@ def check_domain_intelligence(target_url):
     hostname = (parsed.hostname or "").lower()
     if not hostname:
         return signal("Domain Intelligence", "No domain", "medium", "No valid domain could be extracted from the payload.", False)
+    try:
+        ipaddress.ip_address(hostname)
+        return []
+    except ValueError:
+        pass
 
     tld = "." + hostname.rsplit(".", 1)[-1] if "." in hostname else ""
     tld_signal = None
     if tld in HIGH_RISK_TLDS:
         tld_signal = signal("TLD Risk", f"High-risk TLD {tld}", "low", f"The domain uses {tld}, which appears often in disposable phishing campaigns.", False)
 
+    if not DOMAIN_AGE_CHECK_ENABLED:
+        return [tld_signal] if tld_signal else []
+
     domain_age = lookup_domain_age_result(normalized)
     if domain_age["riskLevel"] == "unknown":
-        base = signal("Domain Age", "Lookup unavailable", "low", "Domain registration lookup could not be completed.", True)
+        detail = domain_age.get("riskDetail") or "Domain registration lookup could not be completed."
+        base = signal("Domain Age", "Lookup unavailable", "low", detail, True)
         base["domainAge"] = domain_age
         return [base, tld_signal] if tld_signal else [base]
 
     age_days = domain_age["ageInDays"]
-    if domain_age["riskLevel"] == "new":
-        severity = "high"
-        passed = False
-    elif domain_age["riskLevel"] == "recent":
-        severity = "medium"
-        passed = False
-    else:
-        severity = "low"
-        passed = True
+    signal_level = domain_age.get("signalLevel") or domain_age["riskLevel"]
+    if signal_level == "established":
+        return [tld_signal] if tld_signal else []
+    severity = domain_age.get("severity") or ("high" if signal_level in ("very_new", "new") else ("medium" if signal_level == "young" else "low"))
+    passed = severity == "low"
     registrar = domain_age.get("registrar") or "Unknown"
-    base = signal("Domain Age", domain_age["ageLabel"], severity, f"Domain age from RDAP. Registrar: {registrar}.", passed)
+    source = domain_age.get("source") or "unknown"
+    base = signal(
+        "Domain Age",
+        domain_age["ageLabel"],
+        severity,
+        f"{domain_age.get('riskDetail')} Source: {source}. Registrar: {registrar}.",
+        passed
+    )
     base["domainAge"] = domain_age
     return [base, tld_signal] if tld_signal else [base]
 
