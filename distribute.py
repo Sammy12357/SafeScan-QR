@@ -1,3 +1,20 @@
+"""
+SafeScan token airdrop / distribution engine.
+
+Sweeps the database for users who have earned the SQR reward token (by scanning
+QR codes and referring others), then sends each of them an on-chain SPL token
+transfer on Solana. Designed to be run as a periodic admin job (or invoked from
+the admin API in ``hackabull.py``).
+
+Safety rails baked in:
+  * Multiple kill switches via env vars (AIRDROP_ENABLED, SOLANA_MAINNET_ENABLED).
+  * A dry-run mode (default ON) that logs intended transfers without sending.
+  * Per-run caps on recipient count and total tokens.
+  * Fraud-flag and double-pay checks in the recipient query.
+
+The Solana/SPL imports are optional: if they aren't installed the module still
+imports cleanly and the airdrop simply refuses to run (require_solana_runtime).
+"""
 import sqlite3
 import os
 import asyncio
@@ -5,6 +22,9 @@ import json
 from datetime import datetime
 from dotenv import load_dotenv
 
+# Solana SDK stack is optional. If any piece is missing we bind the names to
+# None so the module imports fine; require_solana_runtime() raises later if an
+# airdrop is actually attempted without the dependencies present.
 try:
     import base58
     from solana.rpc.async_api import AsyncClient
@@ -39,10 +59,12 @@ except ImportError:
 
 load_dotenv()
 
-# SQR Configuration
+# --- SQR token configuration -----------------------------------------------
+# Mint address of the SQR reward token on Solana mainnet.
 MINT_ADDRESS_VALUE = "Bpdt7Hey78HeEEr9Q6x19gYAns5n6w44LdjJhxN3pump"
 MINT_ADDRESS = Pubkey.from_string(MINT_ADDRESS_VALUE) if Pubkey is not None else MINT_ADDRESS_VALUE
 AIRDROP_BASE_ALLOCATION = int(os.getenv("SQR_BASE_ALLOCATION", "100"))
+# How many tokens each reward tier receives (multiples of the base allocation).
 AIRDROP_TOKEN_ALLOCATIONS = {
     "Scanner": AIRDROP_BASE_ALLOCATION,
     "Referrer": AIRDROP_BASE_ALLOCATION * 2,
@@ -58,6 +80,7 @@ AIRDROP_ADMIN_SECRET = os.getenv("AIRDROP_ADMIN_SECRET", "")
 
 
 def describe_exception(exc):
+    """Flatten an exception into a JSON-friendly {type, message} dict for logs."""
     message = str(exc) or repr(exc)
     return {
         "type": type(exc).__name__,
@@ -66,10 +89,16 @@ def describe_exception(exc):
 
 
 def is_mainnet_rpc(rpc_url=RPC_URL):
+    """True when the configured RPC endpoint points at Solana mainnet."""
     return "mainnet" in (rpc_url or "").lower()
 
 
 def validate_airdrop_runtime():
+    """Refuse to run unless every safety precondition is met.
+
+    Checks the master switch, the separate mainnet opt-in, a strong admin
+    secret, and that the per-run caps are sane. Raises RuntimeError otherwise.
+    """
     if not AIRDROP_ENABLED:
         raise RuntimeError("Airdrop sweep is disabled. Set AIRDROP_ENABLED=true to run it.")
     if is_mainnet_rpc() and not SOLANA_MAINNET_ENABLED:
@@ -83,6 +112,7 @@ def validate_airdrop_runtime():
 
 
 def require_solana_runtime():
+    """Raise if any optional Solana dependency failed to import at module load."""
     missing = [
         name
         for name, value in {
@@ -98,6 +128,11 @@ def require_solana_runtime():
 
 
 def associated_token_address(owner, token_program_id):
+    """Derive an owner's associated token account (ATA) for the SQR mint.
+
+    Falls back to the older 2-arg API for the classic token program when the
+    installed SPL library predates Token-2022 support.
+    """
     try:
         return get_associated_token_address(
             owner,
@@ -111,6 +146,10 @@ def associated_token_address(owner, token_program_id):
 
 
 def create_token_account_instruction(payer, owner, token_program_id):
+    """Build the instruction that creates a recipient's ATA (payer funds it).
+
+    Same old/new SPL API fallback as associated_token_address().
+    """
     try:
         return create_associated_token_account(
             payer,
@@ -125,6 +164,11 @@ def create_token_account_instruction(payer, owner, token_program_id):
 
 
 def load_server_wallet():
+    """Load the funding wallet keypair from SOLANA_PRIVATE_KEY.
+
+    Accepts either a base58-encoded key or a JSON byte array, and either a
+    32-byte seed or a full 64-byte keypair. Raises on anything malformed.
+    """
     require_solana_runtime()
     pk_str = os.getenv("SOLANA_PRIVATE_KEY")
     if not pk_str:
@@ -146,6 +190,8 @@ def load_server_wallet():
 
 
 async def get_mint_decimals(client):
+    """Fetch the SQR mint's decimal precision (needed to convert token amounts
+    to raw on-chain units)."""
     supply = await client.get_token_supply(MINT_ADDRESS)
     if not supply.value:
         raise RuntimeError(f"Could not read token supply for mint {MINT_ADDRESS}. RPC response: {supply!r}")
@@ -153,6 +199,8 @@ async def get_mint_decimals(client):
 
 
 async def get_token_program_id(client):
+    """Return which token program owns the SQR mint (classic SPL vs Token-2022),
+    rejecting any unexpected owner program."""
     mint_info = await client.get_account_info(MINT_ADDRESS)
     if not mint_info.value:
         raise RuntimeError(f"Token mint account was not found: {MINT_ADDRESS}")
@@ -169,6 +217,7 @@ async def get_token_program_id(client):
 
 
 async def get_token_balance(client, token_account):
+    """Raw token balance of an account, or 0 if the account has no balance."""
     balance = await client.get_token_account_balance(token_account)
     if not balance.value:
         return 0
@@ -176,6 +225,10 @@ async def get_token_balance(client, token_account):
 
 
 def airdrop_tier(scan_count, referrals):
+    """Classify a user into a reward tier from their activity.
+
+    Guardian (most generous) > Referrer > Scanner > Pending (not yet eligible).
+    """
     if scan_count >= 50 and referrals >= 2:
         return "Guardian"
     if scan_count >= 5 and referrals >= 1:
@@ -186,6 +239,16 @@ def airdrop_tier(scan_count, referrals):
 
 
 def fetch_qualified_recipients(cursor):
+    """Query the DB for users eligible to receive an airdrop this run.
+
+    Eligibility (enforced in SQL): active account, airdrop status of
+    eligible/cleared, not already paid (tokens_sent = 0), no unreviewed fraud
+    flags, and a non-empty wallet address (verified wallet preferred over the
+    legacy per-scan wallet).
+
+    Returns ``(recipients, skipped)`` where each recipient carries their tier
+    and computed token amount; users whose tier has no allocation are skipped.
+    """
     cursor.execute("""
         SELECT u.email,
                COALESCE(w.address, s.wallet_address) AS wallet_address,
@@ -227,6 +290,8 @@ def fetch_qualified_recipients(cursor):
 
 
 def ensure_distribution_columns(cursor):
+    """Add the airdrop bookkeeping columns to ``scans`` if they're missing
+    (idempotent lightweight migration run at the start of each sweep)."""
     cursor.execute("PRAGMA table_info(scans)")
     columns = {row[1] for row in cursor.fetchall()}
     if "airdrop_tokens_sent" not in columns:
@@ -235,6 +300,15 @@ def ensure_distribution_columns(cursor):
         cursor.execute("ALTER TABLE scans ADD COLUMN airdrop_sent_at TEXT")
 
 async def airdrop_sweep():
+    """Run one full airdrop pass and return a JSON-serialisable summary.
+
+    Steps: validate runtime + dependencies, load the server wallet and mint
+    metadata, gather eligible recipients, enforce the per-run caps and balance
+    check, then transfer to each recipient (creating their token account first
+    if needed) and mark them paid in the DB. Individual transfer failures are
+    captured per-recipient rather than aborting the whole sweep; the overall
+    status becomes ok / partial / failed accordingly.
+    """
     print("\n--- SafeScan Airdrop Sweep ---")
     validate_airdrop_runtime()
     require_solana_runtime()
@@ -388,4 +462,5 @@ async def airdrop_sweep():
         await client.close()
 
 if __name__ == "__main__":
+    # Allow running the sweep directly: `python distribute.py`
     asyncio.run(airdrop_sweep())

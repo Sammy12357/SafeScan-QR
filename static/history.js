@@ -1,3 +1,6 @@
+// Scan history page. Fetches the signed-in user's past scans from the API and
+// renders them as a dated list, with friendly messaging for the empty and
+// not-signed-in states.
 const historyList = document.getElementById("history-list");
 
 function setHistoryMessage(message) {

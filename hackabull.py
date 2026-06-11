@@ -1,3 +1,32 @@
+"""
+SafeScan QR — main FastAPI application.
+
+This single module is the whole backend. It exposes a website plus a JSON API
+for scanning QR codes / URLs, deciding whether they're safe, and rewarding users
+with an on-chain token. The big areas, in the order they appear below, are:
+
+  * App bootstrap: imports, optional Prometheus metrics, small helpers.
+  * Database: ``init_db`` defines the full SQLite schema; the ``db`` module
+    handles connections and per-user row-level security.
+  * Auth & sessions: Google / Auth0 sign-in, local password accounts, cookie
+    sessions, and "remember me" persistent tokens.
+  * Security middleware: rate limiting, SSRF guards, origin checks, and the
+    security-header / RLS-context middleware stack.
+  * Wallet & payments: Solana wallet verification, the SQR token rewards, and
+    Alpha subscriptions paid via Solana Pay or Stripe.
+  * Fraud detection: IP/device fingerprinting and velocity checks.
+  * The analysis pipeline (the heart of the product): given a URL or QR payload
+    it runs, often in parallel, a rule-based signal engine, an ML classifier,
+    VirusTotal + Google Safe Browsing reputation, redirect tracing, domain-age
+    /WHOIS lookups, typosquat/DGA heuristics, and an AI-generated verdict, then
+    blends them into a single risk score and status.
+  * Routes: the FastAPI endpoints — admin console, public ``/api/*`` JSON API,
+    and the server-rendered HTML pages.
+
+Most configuration comes from environment variables (see ``.env.example``).
+Helper functions are grouped into labelled sections (look for the ``====`` banner
+comments) so this large file stays navigable.
+"""
 from __future__ import annotations
 import requests
 import json
@@ -47,6 +76,11 @@ from storage import download_file as storage_download_file
 from storage import object_key as storage_object_key
 from storage import upload_bytes as storage_upload_bytes
 
+# =============================================================================
+# OPTIONAL PROMETHEUS METRICS
+# If prometheus_client isn't installed we fall back to no-op stand-ins so the
+# rest of the app can call .inc()/.observe() unconditionally.
+# =============================================================================
 try:
     from prometheus_client import Counter, Gauge, Histogram, CONTENT_TYPE_LATEST, generate_latest
 except ImportError:
@@ -252,6 +286,9 @@ templates = Jinja2Templates(directory="templates")
 _template_response = templates.TemplateResponse
 
 
+# =============================================================================
+# SMALL FORMATTING & TEMPLATE HELPERS
+# =============================================================================
 def format_time_only(value):
     if value in (None, ""):
         return ""
@@ -291,7 +328,19 @@ def image_libs():
         _IMAGE_LIBS = (Image, ImageEnhance, ImageFilter, ImageOps, decode)
     return _IMAGE_LIBS
 
+# =============================================================================
+# DATABASE SCHEMA & INITIALIZATION
+# Creates every SQLite table the app relies on. Idempotent: safe to call on
+# each boot; existing tables/columns are left untouched.
+# =============================================================================
 def init_db():
+    """Create all SQLite tables/indexes if they don't already exist.
+
+    Called once at startup. Uses ``CREATE TABLE IF NOT EXISTS`` throughout, so
+    it's safe to run on every boot and acts as the schema's single source of
+    truth (users, sessions, scans, scan_history, wallets, fraud tables,
+    subscriptions, audit logs, etc.).
+    """
     conn = sqlite3.connect(database_path())
     cursor = conn.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS scan_results (url TEXT PRIMARY KEY, status TEXT, timestamp TEXT)''')
@@ -628,6 +677,9 @@ init_db()
 def db_connect():
     return get_conn()
 
+# =============================================================================
+# ERRORS, AUDIT LOGGING & METADATA HELPERS
+# =============================================================================
 class SafeScanError(Exception):
     def __init__(self, message, status_code=400):
         super().__init__(message)
@@ -695,6 +747,9 @@ _COOKIE_SAMESITE = "lax"
 # cookie on those cross-site arrivals and force a fresh login every time. Lax
 # still blocks cross-site POSTs, so CSRF protection on state-changing
 # endpoints is preserved.
+# =============================================================================
+# SESSIONS, COOKIES & "REMEMBER ME" PERSISTENT TOKENS
+# =============================================================================
 def set_session_cookie(response, session_id):
     response.set_cookie(
         SESSION_COOKIE_NAME,
@@ -843,6 +898,9 @@ def cleanup_persistent_sessions():
     with get_conn() as conn:
         conn.execute("DELETE FROM persistent_sessions WHERE expires_at < ?", (cutoff,))
 
+# =============================================================================
+# AUTH0 / JWT TOKEN VERIFICATION
+# =============================================================================
 def _b64url_decode(value):
     padding = "=" * (-len(value) % 4)
     return base64.urlsafe_b64decode(value + padding)
@@ -909,6 +967,9 @@ def verify_auth0_id_token(token):
         raise ValueError("JWT missing email claim.")
     return payload
 
+# =============================================================================
+# CURRENT-USER RESOLUTION & ROLE CHECKS
+# =============================================================================
 def request_session_id(request):
     auth_header = request.headers.get("authorization", "")
     scheme, _, token = auth_header.partition(" ")
@@ -986,6 +1047,10 @@ def get_session_user(request):
         return cache_session_user(dict(row))
 
 def require_user(request):
+    """Return the authenticated user for this request or raise HTTP 401.
+
+    Use this in routes that must not be reached anonymously.
+    """
     user = get_session_user(request)
     if not user:
         audit_log("auth.failed", request=request)
@@ -1011,6 +1076,9 @@ def require_role_user(request, role):
         raise HTTPException(status_code=403, detail="You do not have permission to do this.")
     return user
 
+# =============================================================================
+# RATE LIMITING, PAYLOAD VALIDATION & SSRF GUARDS
+# =============================================================================
 def enforce_rate_limit(request, bucket, limit, window_seconds, user_key=None):
     identity = user_key or request_ip(request)
     key = f"{bucket}:{identity}"
@@ -1051,6 +1119,13 @@ def is_private_hostname(hostname):
     return any(ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast for ip in ip_values)
 
 def validate_public_url(target_url):
+    """Normalise and SSRF-check a user-supplied URL before we fetch it.
+
+    Enforces a length cap, an http/https-only scheme, and crucially rejects
+    private/localhost/internal hosts so the scanner can't be tricked into
+    making requests to internal services. Returns the normalised URL or raises
+    SafeScanError(400).
+    """
     if not isinstance(target_url, str) or len(target_url.strip()) > 2048:
         raise SafeScanError("URL is required and must be 2048 characters or fewer.", 400)
     normalized = normalize_url(target_url)
@@ -1062,6 +1137,9 @@ def validate_public_url(target_url):
     return normalized
 
 def follow_safe_redirects(target_url, max_redirects=10):
+    """Walk a redirect chain manually, re-validating each hop against the SSRF
+    guard so a redirect can't bounce us to an internal host. Returns the list of
+    responses making up the chain."""
     current = validate_public_url(target_url)
     chain = []
     session = requests.Session()
@@ -1081,6 +1159,9 @@ def flag_abuse(email, flag_type, detail):
     with get_conn() as conn:
         conn.execute("INSERT INTO abuse_flags VALUES (?, ?, ?, ?, ?)", (make_id("flag"), email, flag_type, detail, now_iso()))
 
+# =============================================================================
+# SOLANA WALLET VALIDATION & SIGNATURE VERIFICATION
+# =============================================================================
 def validate_wallet_address(address):
     clean = (address or "").strip()
     if not clean:
@@ -1240,6 +1321,9 @@ async def verify_wallet_on_chain(wallet_address, user_id):
     except Exception as exc:
         print({"warning": "wallet_onchain_verification_failed", "error": str(exc)})
 
+# =============================================================================
+# FRAUD & ABUSE DETECTION (IP / device fingerprint / velocity)
+# =============================================================================
 def severity_points(severity):
     return {"low": 5, "medium": 20, "high": 50, "critical": 100}.get(severity, 0)
 
@@ -1264,6 +1348,13 @@ def register_device_fingerprint(user_id, fingerprint):
         )
 
 def run_fraud_checks(event_type, user_id, request=None, metadata=None):
+    """Score an action for abuse and record any fraud signals it trips.
+
+    Looks at things like IP reuse across accounts, device-fingerprint sharing,
+    and scan velocity for the given ``event_type`` (e.g. signup, scan, referral),
+    persisting flags and returning the signals found so callers can gate rewards
+    or require review.
+    """
     metadata = metadata or {}
     signals = []
     ip_value = request_ip(request) if request else metadata.get("ip", "")
@@ -1396,6 +1487,9 @@ SCAN_CLASSIFICATION_LABELS = dict(SCAN_CLASSIFICATIONS)
 SCAN_HISTORY_MAX_SIGNALS = 4
 SCAN_HISTORY_MAX_SIGNAL_TEXT = 120
 
+# =============================================================================
+# SCAN HISTORY: CLASSIFICATION & PERSISTENCE
+# =============================================================================
 def scan_classification(verdict=None, risk_score=0, overall_risk=None):
     normalized_verdict = str(verdict or "").strip().upper()
     normalized_risk = str(overall_risk or "").strip().lower()
@@ -1491,6 +1585,12 @@ def group_scan_history(items):
     ]
 
 def save_scan_history(email, url, analysis, reported=False, user_id=None):
+    """Persist one completed scan to the per-user history table.
+
+    Stores a compacted form of the analysis (verdict, score, key signals) keyed
+    by both email and resolved user_id so the user's history is retrievable
+    regardless of how they signed in.
+    """
     normalized_email = (email or "").strip().lower()
     resolved_user_id = user_id or lookup_user_id_by_email(normalized_email)
     risk_score = int(analysis.get("score") or analysis.get("confidenceScore") or 0)
@@ -1649,6 +1749,9 @@ def index_user_context(user):
         "local_auth_enabled": LOCAL_AUTH_ENABLED,
     }
 
+# =============================================================================
+# USER ACCOUNTS, PASSWORDS & USERNAMES
+# =============================================================================
 def local_user_id(email):
     return "local_" + hashlib.sha256(email.strip().lower().encode()).hexdigest()[:16]
 
@@ -1734,6 +1837,9 @@ def safe_next_url(request: Request, raw="", fallback="/"):
         return raw
     return fallback
 
+# =============================================================================
+# LEADERBOARD
+# =============================================================================
 def public_leaderboard_name(row):
     username = (row.get("username") or "").strip()
     if username:
@@ -1798,6 +1904,9 @@ def _like_escape(term):
     # Escape LIKE wildcards so a user's search term is matched literally.
     return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
+# =============================================================================
+# MALICIOUS QR DATABASE (public catalogue of known-bad codes)
+# =============================================================================
 def _threat_category(score):
     if score >= 90:
         return "Critical"
@@ -1942,6 +2051,9 @@ def render_threat_qr_png(url):
     img.save(buffer, format="PNG", optimize=True)
     return buffer.getvalue()
 
+# =============================================================================
+# REFERRALS & UNIQUE-SCAN COUNTING
+# =============================================================================
 def referral_code_for_user(email):
     normalized_email = (email or "").strip().lower()
     if not normalized_email:
@@ -2019,6 +2131,9 @@ def get_scan_count(email):
         result = cursor.fetchone()
         return result[0] if result else 0
 
+# =============================================================================
+# RESULT CACHE & REQUEST HELPERS (IP, locale, ids)
+# =============================================================================
 def get_cached_result(target_url: str):
     with get_conn() as conn:
         cursor = conn.cursor()
@@ -2064,6 +2179,9 @@ def is_california_locale_or_region(request: Request, region: str = ""):
 def admin_authorized(secret):
     return bool(AIRDROP_ADMIN_SECRET and secret == AIRDROP_ADMIN_SECRET)
 
+# =============================================================================
+# LEGAL PAGES, LOCALE & GDPR DATA EXPORT/DELETE
+# =============================================================================
 def legal_context(request: Request, title, body_html):
     return {
         "request": request,
@@ -2092,6 +2210,11 @@ def delete_user_data(email):
         conn.execute("DELETE FROM users WHERE email = ?", (email,))
         conn.execute("DELETE FROM age_confirmations WHERE email = ?", (email,))
 
+# =============================================================================
+# RISK SIGNALS & SCORING
+# A "signal" is one check's result; signals are aggregated into a 0-100 score
+# which maps to an overall risk band and a safe/suspicious/malicious status.
+# =============================================================================
 def risk_reason(label, severity, detail):
     return {"label": label, "severity": severity, "detail": detail}
 
@@ -2221,6 +2344,9 @@ def severity_rank(item):
 def clamp_score(score):
     return max(0, min(100, int(round(float(score or 0)))))
 
+# =============================================================================
+# QR IMAGE GENERATION & ML CLASSIFICATION
+# =============================================================================
 def qr_image_from_payload(payload):
     import qrcode
     qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, border=2, box_size=4)
@@ -2488,6 +2614,9 @@ def verdict_with_ml(base_verdict, final_score, ml_results, signals):
         return "This QR code lands in SafeScan's review range. Confirm the destination before taking action."
     return "SafeScan did not find strong phishing or wallet-drain indicators in this QR payload. Still verify the destination before connecting a wallet or sending funds."
 
+# =============================================================================
+# THREAT TYPING & EXTERNAL REPUTATION (Google Safe Browsing / VirusTotal)
+# =============================================================================
 def threat_type_for_analysis(overall_risk, signals, ml_results=None):
     """Threat type label shown to the user.
 
@@ -2627,6 +2756,9 @@ def virustotal_reputation_signal(target_url):
         flagged == 0
     )
 
+# =============================================================================
+# REDIRECT TRACING (follow & inspect a URL's redirect chain)
+# =============================================================================
 def inspect_redirects(target_url):
     try:
         responses = follow_safe_redirects(target_url)
@@ -2783,6 +2915,11 @@ def trace_redirect_chain(target_url):
         "redirectChain": chain
     }
 
+# =============================================================================
+# DOMAIN AGE (WHOIS / RDAP / WHOISXML / SecurityTrails / Wayback)
+# Newly registered domains are a strong phishing signal; this looks up a
+# domain's creation date across several providers and caches the result.
+# =============================================================================
 def parse_rdap_event_date(events, actions):
     actions = set(actions)
     for event in events or []:
@@ -3144,6 +3281,9 @@ def get_domain_age_days(domain):
 async def get_domain_age_days_async(domain):
     return await asyncio.to_thread(get_domain_age_days, domain)
 
+# =============================================================================
+# TYPOSQUAT / DGA / DOMAIN INTELLIGENCE & CRYPTO-SCAM HEURISTICS
+# =============================================================================
 def _levenshtein(a, b):
     """Classic edit distance, used for typosquat detection on short labels."""
     if a == b:
@@ -3320,6 +3460,11 @@ def check_crypto_pattern_signals(target_url):
         found.append(signal("Crypto Pattern", "No wallet-drain pattern found", "low", "No known Solana/Ethereum wallet-drain signature patterns were detected.", True))
     return found
 
+# =============================================================================
+# AI VERDICT & FULL ANALYSIS PIPELINE
+# analyze_full_pipeline() orchestrates all of the above checks (mostly in
+# parallel) and blends them into one verdict — this is the product's core.
+# =============================================================================
 def generate_ai_verdict(signals):
     score = score_from_signals(signals)
     overall_risk = risk_from_score(score)
@@ -3384,6 +3529,24 @@ def generate_ai_verdict(signals):
     return fallback
 
 async def analyze_full_pipeline(target_url, qr_image=None):
+    """Run the complete risk analysis for a URL and return the verdict dict.
+
+    This is the product's core. Flow:
+      1. Validate/normalise the URL (also blocks SSRF to private hosts).
+      2. Fast path: if the domain is on the Tranco popular-site allowlist and
+         passes a structural safety screen, only run Google Safe Browsing and
+         return ``safe`` immediately (skips the expensive stages).
+      3. Otherwise trace the redirect chain so every downstream check runs
+         against the *final* destination, then run the rule signals, ML
+         classifier, VirusTotal/GSB reputation, domain-age and crypto/typosquat
+         heuristics (largely in parallel).
+      4. Blend the rule score with the ML score, derive the overall risk band,
+         status and threat type, and return a single result dict consumed by
+         both the HTML result page and the JSON API.
+
+    ``qr_image`` (optional) lets the ML image classifier weigh in when the URL
+    text alone is borderline.
+    """
     normalized = validate_public_url(target_url)
     if MOCK_MODE:
         return mock_analysis_response(normalized)
@@ -3493,6 +3656,9 @@ def decimal_text(value, places=9):
     quantized = value.quantize(Decimal(1).scaleb(-places))
     return format(quantized.normalize(), "f")
 
+# =============================================================================
+# SOLANA ALPHA-SUBSCRIPTION PRICING & ON-CHAIN PAYMENT VERIFICATION
+# =============================================================================
 def solana_amount_to_lamports(amount):
     return int((amount * Decimal("1000000000")).to_integral_value(rounding="ROUND_CEILING"))
 
@@ -3689,6 +3855,12 @@ def transaction_recipient_delta_lamports(transaction, recipient):
     return int(post[recipient_index]) - int(pre[recipient_index])
 
 def verify_alpha_solana_payment(reference):
+    """Confirm an Alpha subscription was actually paid on-chain.
+
+    Looks up the pending Solana Pay quote for ``reference``, queries the chain
+    for a matching transfer of the expected lamport amount to our wallet, and
+    activates the subscription when found. Prevents crediting unpaid quotes.
+    """
     with get_conn() as conn:
         quote_row = conn.execute(
             "SELECT * FROM alpha_solana_payment_references WHERE reference = ? AND status = 'pending'",
@@ -3773,6 +3945,9 @@ def record_alpha_solana_subscription(user, reference, signature):
         )
     return {"email": user["email"], "purchased_at": purchased_at, "expires_at": expires_at, "signature": signature}
 
+# =============================================================================
+# STRIPE SUBSCRIPTION PAYMENTS & WEBHOOKS
+# =============================================================================
 def alpha_stripe_checkout_url(request: Request):
     if not ALPHA_STRIPE_PAYMENT_LINK:
         return ""
@@ -3981,6 +4156,11 @@ def process_stripe_webhook_event(event):
         return upsert_alpha_subscription_from_stripe(obj, event_type)
     return {"ignored": True, "type": event_type}
 
+# =============================================================================
+# QR PAYLOAD DETECTION & ANALYSIS
+# Classifies a decoded payload (URL, wifi, vcard, crypto address, etc.) and
+# routes it to the right analyzer.
+# =============================================================================
 def extract_urls(text):
     return re.findall(r"https?://[^\s<>'\"]+", text, flags=re.IGNORECASE)
 
@@ -4236,6 +4416,12 @@ def analyze_url_payload(raw_payload):
     }
 
 def analyze_qr_payload(raw_payload):
+    """Analyse a decoded QR payload of any type (sync entry point).
+
+    Detects what kind of payload it is and dispatches to the URL analyzer or
+    the non-URL analyzer (wifi, vcard, crypto address, plain text, ...),
+    returning a template-ready analysis dict.
+    """
     payload_type, _, normalized = detect_payload(raw_payload)
     if payload_type == "URL":
         return analyze_url_payload(normalized)
@@ -4294,7 +4480,16 @@ async def analyze_embedded_url_payload(raw_payload, embedded_url, qr_image=None)
     analysis["embeddedPayload"] = normalized_payload
     return analysis
 
+# =============================================================================
+# QR IMAGE / SVG DECODING (read the payload out of an uploaded image)
+# =============================================================================
 def decode_qr_image(image):
+    """Extract the text payload from a PIL image of a QR code.
+
+    Corrects orientation, then tries progressively harder decode strategies
+    (contrast/threshold enhancement, ZXing fallback) since real-world photos are
+    often low-contrast, rotated, or noisy. Returns the decoded string or None.
+    """
     Image, ImageEnhance, ImageFilter, ImageOps, decode = image_libs()
     image = ImageOps.exif_transpose(image)
 
@@ -4580,6 +4775,12 @@ def decode_barcodes_with_zxing(image, qr_only=False):
         decoded.append(DecodedBarcode(text, str(getattr(result, "format", "Unknown"))))
     return decoded
 
+# =============================================================================
+# FASTAPI APP, MIDDLEWARE & ERROR HANDLERS
+# Below: the app object, health/metrics endpoints, the middleware stack
+# (origin checks, RLS context, remember-me, security headers, rate limits) and
+# centralised exception handlers. The route handlers follow.
+# =============================================================================
 qr_app = FastAPI()
 app = qr_app
 
@@ -4811,6 +5012,9 @@ async def unhandled_error_handler(request: Request, exc: Exception):
     print({"error": str(exc), "path": request.url.path})
     return JSONResponse({"error": "Something went wrong on our end."}, status_code=500)
 
+# =============================================================================
+# ADMIN CONSOLE — data-access helpers (the admin routes follow further below)
+# =============================================================================
 def admin_context(request, title, page, data=None, owner_only=False):
     admin_user = get_session_user(request)
     if not admin_user or not has_role(admin_user, "admin"):
@@ -5028,6 +5232,12 @@ def fetch_airdrop_data():
     }
 
 def airdrop_tier(scan_count, referrals):
+    """Map a user's scan/referral counts to a reward tier name.
+
+    NOTE: kept in sync with ``distribute.airdrop_tier`` (the airdrop job uses its
+    own copy to avoid importing the heavy Solana stack into the web app). If you
+    change the thresholds here, change them there too.
+    """
     if scan_count >= 50 and referrals >= 2:
         return "Guardian"
     if scan_count >= 5 and referrals >= 1:
@@ -5037,6 +5247,7 @@ def airdrop_tier(scan_count, referrals):
     return "Pending"
 
 def next_airdrop_milestone(scan_count, referrals):
+    """Human-readable hint telling the user what to do to reach the next tier."""
     if scan_count < 5:
         return f"Scan {5 - scan_count} more QR code{'s' if 5 - scan_count != 1 else ''} to unlock Scanner."
     if referrals < 1:
@@ -5193,6 +5404,9 @@ COOKIE_POLICY_HTML = """
 <p>You can manage cookies in <a href="https://support.google.com/chrome/answer/95647" target="_blank" rel="noopener noreferrer">Chrome</a>, <a href="https://support.mozilla.org/en-US/kb/clear-cookies-and-site-data-firefox" target="_blank" rel="noopener noreferrer">Firefox</a>, <a href="https://support.apple.com/guide/safari/manage-cookies-sfri11471/mac" target="_blank" rel="noopener noreferrer">Safari</a>, and <a href="https://support.microsoft.com/microsoft-edge" target="_blank" rel="noopener noreferrer">Edge</a>.</p>
 """
 
+# =============================================================================
+# ROUTES — ADMIN CONSOLE (/admin/*)  [staff only]
+# =============================================================================
 @qr_app.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(request: Request):
     return admin_context(request, "Dashboard", "dashboard", dashboard_data())
@@ -5437,6 +5651,9 @@ async def admin_revoke_api_key(request: Request, key_id: str):
 async def admin_settings(request: Request):
     return admin_context(request, "Settings", "settings", {"app_url": APP_URL, "admin_emails": sorted(ADMIN_EMAILS), "owner_emails": sorted(OWNER_EMAILS)}, owner_only=True)
 
+# =============================================================================
+# ROUTES — PUBLIC JSON API (/api/*)
+# =============================================================================
 @qr_app.post("/api/analyze")
 async def api_analyze(request: Request, payload: dict = Body(...)):
     user = get_session_user(request)
@@ -6051,6 +6268,9 @@ async def api_check_crypto_patterns(payload: dict = Body(...)):
     signals = await asyncio.to_thread(check_crypto_pattern_signals, normalized)
     return {"url": normalized, "signals": signals, "scannedAt": datetime.utcnow().isoformat() + "Z"}
 
+# =============================================================================
+# ROUTES — SERVER-RENDERED HTML PAGES (home, product, legal, account, etc.)
+# =============================================================================
 @qr_app.get("/", response_class=HTMLResponse)
 async def read_index(request: Request):
     user = get_session_user(request)
@@ -6774,6 +6994,9 @@ async def search_qr_api_get():
     return RedirectResponse("/", status_code=303)
 
 
+# =============================================================================
+# ROUTES — QR SCANNING & AUTHENTICATION (sign-in, logout, profile, scanning)
+# =============================================================================
 @qr_app.post("/search_qr_api", response_class=HTMLResponse)
 async def scan_qr(
     request: Request,

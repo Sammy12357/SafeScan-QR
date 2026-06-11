@@ -1,3 +1,7 @@
+// Admin activity feed enhancer.
+// On the admin "activity" page, resolves the short actor labels shown in the
+// audit feed into full email addresses (looked up via the admin API and cached
+// in sessionStorage to avoid repeat requests).
 const feed = document.querySelector(".activity-feed");
 if (feed) {
   const resolveActorEmail = async (actorLabel) => {

@@ -1,3 +1,11 @@
+// =============================================================================
+// safescan-3d.js — hero 3D model viewer.
+//
+// Lazily loads three.js and renders the animated SafeScan model in the homepage
+// showcase. Designed to degrade gracefully: if WebGL is unavailable, the tab is
+// hidden, or the device is low-powered, it calls activateFallback() to swap in a
+// static image (safescan-3d-fallback.png) and stops the render loop to save CPU.
+// =============================================================================
 const canvas = document.getElementById("safeScanModel");
 const showcase = document.querySelector(".spline-showcase");
 let THREE = null;

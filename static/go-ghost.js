@@ -1,3 +1,9 @@
+// "Go Ghost" data-broker opt-out helper.
+// Drives the privacy page that walks a user through removing themselves from
+// people-search brokers. Each broker entry is:
+//   [id, displayName, note, optOutUrl, (profile) => prefilled search URL]
+// The user's profile and per-broker progress are persisted in localStorage
+// (keys below) so the checklist survives reloads.
 const brokers = [
   ["fastpeoplesearch", "FastPeopleSearch", "High traffic", "https://www.fastpeoplesearch.com/removal", (p) => `https://www.fastpeoplesearch.com/name/${encodeURIComponent(p.name || "")}${p.location ? `_${encodeURIComponent(p.location)}` : ""}`],
   ["whitepages", "Whitepages", "High traffic", "https://www.whitepages.com/suppression-requests", (p) => `https://www.whitepages.com/name/${encodeURIComponent(p.name || "")}${p.location ? `/${encodeURIComponent(p.location)}` : ""}`],

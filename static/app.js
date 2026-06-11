@@ -1,3 +1,15 @@
+// =============================================================================
+// app.js — primary front-end controller for the SafeScan site.
+//
+// This is the largest client script and wires up most interactive behaviour:
+//   • Google Sign-In and the auth/session UI.
+//   • Submitting URLs / QR images to the scan API and rendering the risk modal.
+//   • The token "airdrop" / rewards profile stored in localStorage.
+//   • Wallet (Phantom) connection prompts and various page widgets.
+//
+// Loaded as an external script (the site CSP is script-src 'self', so no inline
+// scripts run). Constants below are public client identifiers / deep-link bases.
+// =============================================================================
 const GOOGLE_CLIENT_ID = "230684501873-4aauu1triudaaopdcus2k7achvesr3el.apps.googleusercontent.com";
 
 // Disable browser scroll restoration so a POST-back to / (e.g. after

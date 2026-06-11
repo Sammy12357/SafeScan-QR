@@ -1,3 +1,6 @@
+// Live "uptime" counters. Finds every [data-runtime-timer] element and ticks
+// it once a second, formatting elapsed seconds as a human-readable
+// d/h/m/s string.
 const runtimeNodes = Array.from(document.querySelectorAll("[data-runtime-timer]"));
 
 function formatRuntime(totalSeconds) {

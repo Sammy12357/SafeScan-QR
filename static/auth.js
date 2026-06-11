@@ -1,3 +1,7 @@
+// Login / register page tab switcher.
+// Toggles between the "login" and "register" panels and surfaces any initial
+// tab/error passed from the server via data- attributes on <body>. External
+// (not inline) because the site CSP forbids inline scripts.
 (function () {
   var body = document.body;
   var initTab = body.dataset.initTab || "login";
