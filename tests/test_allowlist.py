@@ -9,6 +9,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from safescan_allowlist import (  # noqa: E402
+    first_party_hosts,
+    is_first_party,
     is_known_popular,
     load_allowlist,
     registrable_domain,
@@ -128,6 +130,46 @@ class TestSafetyScreen:
     def test_empty_url_rejected(self):
         ok, _ = safety_screen("")
         assert ok is False
+
+
+class TestIsFirstParty:
+    def test_production_url_is_first_party(self):
+        assert is_first_party("https://safescan-qr.onrender.com/") is True
+        assert is_first_party("https://safescan-qr.onrender.com/generate-qr") is True
+        assert is_first_party("https://safescan-qr.onrender.com/?ref=abc123") is True
+
+    def test_http_variant_is_first_party(self):
+        # Render 301s http -> https, so the destination is still ours.
+        assert is_first_party("http://safescan-qr.onrender.com/") is True
+
+    def test_hostname_match_is_exact(self):
+        # Suffix / prefix tricks must never qualify.
+        assert is_first_party("https://safescan-qr.onrender.com.evil.test/") is False
+        assert is_first_party("https://evil-safescan-qr.onrender.com/") is False
+        assert is_first_party("https://other-app.onrender.com/") is False
+
+    def test_userinfo_deception_rejected(self):
+        # Lands on our host, but a legit first-party QR never has userinfo.
+        assert is_first_party("https://evil.test@safescan-qr.onrender.com/") is False
+
+    def test_non_http_scheme_rejected(self):
+        assert is_first_party("javascript:alert(1)") is False
+        assert is_first_party("ftp://safescan-qr.onrender.com/") is False
+
+    def test_garbage_rejected(self):
+        assert is_first_party("") is False
+        assert is_first_party(None) is False
+
+    def test_extra_hosts_from_env(self, monkeypatch):
+        monkeypatch.setenv("SAFESCAN_TRUSTED_HOSTS", "safescan.example, scanner.example")
+        first_party_hosts.cache_clear()
+        try:
+            assert is_first_party("https://safescan.example/generate-qr") is True
+            assert is_first_party("https://scanner.example/") is True
+            # Production host stays trusted alongside the extras.
+            assert is_first_party("https://safescan-qr.onrender.com/") is True
+        finally:
+            first_party_hosts.cache_clear()
 
 
 class TestShouldShortCircuit:

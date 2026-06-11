@@ -124,7 +124,7 @@ def build_metric(factory, *args, **kwargs):
 warnings.filterwarnings("ignore", category=ImportWarning)
 load_dotenv()
 
-from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain
+from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party
 import safescan_model_calibration as sm_calibration
 
 CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID") or os.getenv("googe_client_id")
@@ -3550,6 +3550,39 @@ async def analyze_full_pipeline(target_url, qr_image=None):
     normalized = validate_public_url(target_url)
     if MOCK_MODE:
         return mock_analysis_response(normalized)
+
+    if is_first_party(normalized):
+        # The URL points at this SafeScan deployment itself (generator page,
+        # shared scan results, referral links). The ML pipeline misfires on
+        # onrender.com because it's multi-tenant hosting, and asking outside
+        # reputation services about our own domain is circular - so first-party
+        # links get a deterministic SAFE verdict. Exact-hostname matching plus
+        # the absence of any open-redirect endpoint in the app (safe_next_url
+        # only allows same-site relative paths) makes this safe to trust.
+        first_party_host = urlparse(normalized).hostname or ""
+        first_party_signal = signal(
+            "Official SafeScan link",
+            f"{first_party_host} is this SafeScan deployment",
+            "low",
+            "This URL points at SafeScan's own domain. First-party pages are served by this deployment and can't be tampered with by third parties, so the ML and reputation pipeline was skipped in favor of a deterministic safe verdict.",
+            True,
+        )
+        first_party_score = clamp_score(2)
+        return {
+            "url": normalized,
+            "overallRisk": "safe",
+            "confidenceScore": first_party_score,
+            "ruleScore": first_party_score,
+            "mlRisk": {"enabled": False, "reason": "first-party short-circuit"},
+            "threatType": "Official SafeScan page",
+            "verdict": "safe",
+            "signals": [first_party_signal],
+            "virusTotal": None,
+            "domainAge": None,
+            "redirectChain": [],
+            "scannedAt": datetime.utcnow().isoformat() + "Z",
+            "fastPath": {"hit": True, "reason": "first_party"},
+        }
 
     fast_path_ok, fast_path_reason = should_short_circuit(normalized)
     if fast_path_ok:

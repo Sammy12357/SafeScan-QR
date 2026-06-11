@@ -44,12 +44,16 @@ from __future__ import annotations
 
 import csv
 import logging
+import os
 import re
 from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlparse
 
 LOG = logging.getLogger(__name__)
+
+# The app's own canonical URL. Mirrors the APP_URL default in hackabull.py.
+DEFAULT_APP_URL = "https://safescan-qr.onrender.com"
 
 # Path is resolved relative to this file so it works regardless of cwd.
 ALLOWLIST_FILE = Path(__file__).resolve().parent / "data" / "tranco_top_10k.csv"
@@ -231,6 +235,56 @@ def _query_keys(raw_query: str) -> list[str]:
         return []
     pairs = raw_query.split("&")
     return [p.split("=", 1)[0] for p in pairs if p]
+
+
+@lru_cache(maxsize=1)
+def first_party_hosts() -> frozenset[str]:
+    """Hostnames that belong to this SafeScan deployment itself.
+
+    Built from APP_URL plus the optional SAFESCAN_TRUSTED_HOSTS env var
+    (comma-separated hostnames, e.g. a custom domain in front of Render).
+    The production host is always included so QR codes pointing at the
+    live site stay first-party even when APP_URL targets a preview deploy.
+    """
+    hosts: set[str] = set()
+    for candidate_url in (os.getenv("APP_URL", "").strip(), DEFAULT_APP_URL):
+        host = (urlparse(candidate_url).hostname or "").lower().strip(".")
+        if host:
+            hosts.add(host)
+    for raw in os.getenv("SAFESCAN_TRUSTED_HOSTS", "").split(","):
+        extra = raw.strip().lower().strip(".")
+        if extra:
+            hosts.add(extra)
+    return frozenset(hosts)
+
+
+def is_first_party(url: str) -> bool:
+    """True iff the URL points at this SafeScan deployment itself.
+
+    SafeScan generates QR codes that link back to its own pages (the
+    generator, shared scan results, referral links). Running the ML
+    pipeline against those is circular and misfires because onrender.com
+    is multi-tenant hosting, so the analyzer treats its own domain as a
+    deterministic SAFE verdict instead.
+
+    Exact hostname match only - no subdomain or suffix matching - so
+    `safescan-qr.onrender.com.evil.test` and `evil-safescan-qr.onrender.com`
+    never qualify. Userinfo deception (`https://x@host/`) is rejected even
+    when the real destination is ours, because a legitimate first-party QR
+    code never carries credentials in the URL.
+    """
+    if not url or not isinstance(url, str):
+        return False
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme.lower() not in ("http", "https"):
+        return False
+    if "@" in (parsed.netloc or ""):
+        return False
+    host = _strip_port((parsed.hostname or "").lower()).strip(".")
+    return bool(host) and host in first_party_hosts()
 
 
 def should_short_circuit(url: str) -> tuple[bool, str]:
