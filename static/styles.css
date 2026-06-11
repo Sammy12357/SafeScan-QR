@@ -130,6 +130,12 @@ body.sidenav-open .sidenav { transform: translateX(0); }
 .sidenav-link { display: block; width: 100%; text-align: center; padding: 12px 14px; border: 0; border-radius: 10px; background: transparent; color: var(--muted); font: inherit; font-size: 0.95rem; font-weight: 600; letter-spacing: 0.02em; text-decoration: none; cursor: pointer; transition: background 0.16s ease, color 0.16s ease; }
 .sidenav-link:hover { background: rgba(255, 255, 255, 0.05); color: var(--text); }
 .sidenav-link.is-active { background: rgba(103, 242, 200, 0.1); color: var(--accent); }
+/* Theme switch row inside the drawer: a full-width row with the "Appearance"
+   label on the left and the existing track + Dark/Light text on the right. */
+.sidenav-theme { padding: 8px 0 2px; }
+.sidenav-theme .theme-toggle { width: 100%; justify-content: space-between; min-height: 44px; padding: 8px 14px; border-radius: 10px; }
+.sidenav-theme-label { color: var(--muted); font-weight: 600; letter-spacing: 0.02em; }
+.sidenav-theme .theme-toggle-track { margin-left: auto; }
 .sidenav-foot { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line); }
 .sidenav-signin { display: block; text-align: center; padding: 11px 12px; border-radius: 9px; border: 1px solid rgba(103, 242, 200, 0.4); background: rgba(103, 242, 200, 0.1); color: var(--accent); font-weight: 800; text-decoration: none; }
 .sidenav-profile { display: flex; flex-direction: column; gap: 12px; }
@@ -847,11 +853,17 @@ body.qr-camera-open { overflow: hidden; }
   .contact-grid { grid-template-columns: 1fr; }
 }
 
+@media (max-width: 640px) {
+  /* The top-bar theme toggle pushed past the right edge on phones; hide it
+     here - its mobile home is the Appearance row inside the drawer menu. */
+  .top-nav-actions .theme-toggle { display: none; }
+}
+
 @media (max-width: 520px) {
   .top-brand-name { font-size: 0.98rem; }
   .top-nav-actions { gap: 8px; }
   .top-auth-link { min-height: 38px; padding: 0 12px; font-size: 0.78rem; }
-  .theme-toggle-text { display: none; }
+  .top-nav-actions .theme-toggle-text { display: none; }
   .top-action-button { font-size: 0.82rem; }
   /* Orbitron is a wide face: the desktop clamp minimum (3.35rem) makes
      "SafeScan" wider than a small phone viewport, so step it down here. */

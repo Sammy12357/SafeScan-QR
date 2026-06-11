@@ -63,6 +63,19 @@
     {% endif %}
   </nav>
 
+  {# In-drawer theme switch. On phones the top-bar toggle is hidden (it
+     overflowed the screen), so this is the mobile home for dark/light mode.
+     sidenav.js binds every [data-theme-toggle] and keeps them in sync. #}
+  <div class="sidenav-theme">
+    <button class="theme-toggle" type="button" aria-label="Switch to light mode" aria-pressed="false" data-theme-toggle>
+      <span class="sidenav-theme-label">Appearance</span>
+      <span class="theme-toggle-track" aria-hidden="true">
+        <span class="theme-toggle-thumb"></span>
+      </span>
+      <span class="theme-toggle-text" data-theme-toggle-text>Dark</span>
+    </button>
+  </div>
+
   <div class="sidenav-foot">
     {% if not logged_in %}
       <a href="/login" class="sidenav-signin">Sign in / Sign up</a>
@@ -92,4 +105,4 @@
     {% endif %}
   </div>
 </aside>
-<script src="/static/sidenav.js?v=sidenav-v2" defer></script>
+<script src="/static/sidenav.js?v=sidenav-v3" defer></script>

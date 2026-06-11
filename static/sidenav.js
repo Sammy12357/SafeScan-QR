@@ -39,8 +39,10 @@
   try { saved = sessionStorage.getItem("safescan_sidenav_open"); } catch (e) {}
   if (saved === "1") setOpen(true);
 
-  var themeToggle = document.querySelector("[data-theme-toggle]");
-  var themeToggleText = document.querySelector("[data-theme-toggle-text]");
+  // Theme switching. There can be more than one toggle on the page (top bar
+  // on desktop, inside the drawer on mobile) - bind and sync all of them.
+  var themeToggles = document.querySelectorAll("[data-theme-toggle]");
+  var themeToggleTexts = document.querySelectorAll("[data-theme-toggle-text]");
   var themeKey = "safescan_theme";
 
   function preferredTheme() {
@@ -53,19 +55,21 @@
 
   function setTheme(theme) {
     var nextTheme = theme === "light" ? "light" : "dark";
+    var isLight = nextTheme === "light";
     document.documentElement.setAttribute("data-theme", nextTheme);
-    if (themeToggle) {
-      var isLight = nextTheme === "light";
-      themeToggle.setAttribute("aria-pressed", isLight ? "true" : "false");
-      themeToggle.setAttribute("aria-label", isLight ? "Switch to dark mode" : "Switch to light mode");
+    for (var t = 0; t < themeToggles.length; t++) {
+      themeToggles[t].setAttribute("aria-pressed", isLight ? "true" : "false");
+      themeToggles[t].setAttribute("aria-label", isLight ? "Switch to dark mode" : "Switch to light mode");
     }
-    if (themeToggleText) themeToggleText.textContent = nextTheme === "light" ? "Light" : "Dark";
+    for (var x = 0; x < themeToggleTexts.length; x++) {
+      themeToggleTexts[x].textContent = isLight ? "Light" : "Dark";
+    }
     try { localStorage.setItem(themeKey, nextTheme); } catch (e) {}
   }
 
   setTheme(preferredTheme());
-  if (themeToggle) {
-    themeToggle.addEventListener("click", function () {
+  for (var k = 0; k < themeToggles.length; k++) {
+    themeToggles[k].addEventListener("click", function () {
       setTheme(document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light");
     });
   }
