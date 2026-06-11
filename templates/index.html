@@ -7,7 +7,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=faq-chevron-v2">
+  <link rel="stylesheet" href="/static/styles.css?v=ui-polish-v1">
 </head>
 <body class="{{ 'test-site-page' if test_site else '' }}">
   {% if not logged_in and google_client_id and not local_auth_enabled %}
@@ -178,6 +178,9 @@
               <h2 id="riskVerdictTitle">{{ status }}</h2>
               <p class="result-support">{{ verdict_summary | default("SafeScan decoded the QR and checked the payload before any wallet, browser, or payment flow opened.") }}</p>
               <p class="threat-type-line"><strong>Threat type:</strong> {{ threat_class }}</p>
+              {% if fast_path and fast_path.hit %}
+              <p class="fast-path-chip" role="status"><span class="fast-path-dot" aria-hidden="true"></span>Trusted destination &mdash; verified instantly</p>
+              {% endif %}
             </div>
           </div>
 

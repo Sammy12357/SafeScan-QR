@@ -4482,7 +4482,10 @@ def pipeline_response_to_template_analysis(pipeline_response):
         "virusTotal": pipeline_response.get("virusTotal"),
         "domainAge": pipeline_response.get("domainAge"),
         "mlRisk": pipeline_response.get("mlRisk"),
-        "ruleScore": pipeline_response.get("ruleScore")
+        "ruleScore": pipeline_response.get("ruleScore"),
+        # Present when the allowlist/first-party fast path produced the verdict;
+        # the result modal uses it to show the "verified instantly" chip.
+        "fastPath": pipeline_response.get("fastPath")
     }
 
 async def analyze_embedded_url_payload(raw_payload, embedded_url, qr_image=None):
@@ -7139,6 +7142,7 @@ async def scan_qr(
         "virus_total": analysis.get("virusTotal"),
         "domain_age": analysis.get("domainAge"),
         "ml_risk": analysis.get("mlRisk"),
+        "fast_path": analysis.get("fastPath"),
         "email": user_email, "scan_count": get_scan_count(user_email) if user_email else 0, "google_client_id": CLIENT_ID,
         "test_site": test_site,
         "test_site_path": test_site_path,
