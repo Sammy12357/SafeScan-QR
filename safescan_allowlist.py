@@ -33,11 +33,14 @@ site flagged by Google still gets caught.
 How to update the list
 ----------------------
 1. Download a fresh Tranco list: https://tranco-list.eu/
-2. Extract the top 10K into `data/tranco_top_10k.csv`
+2. Save it as `data/tranco_top_1m.csv`
    (format: `<rank>,<domain>` per line, no header)
-3. Redeploy. The set is loaded into memory at startup.
+3. Redeploy. The set is loaded into an in-memory frozenset on first lookup,
+   so membership checks are O(1) and add no per-scan latency.
 
-Refresh weekly is reasonable - the top 10K barely changes day to day.
+Refresh weekly is reasonable - the top of the list barely changes day to day.
+The smaller `data/tranco_top_10k.csv` is kept as a fallback for memory-tight
+deployments, and `SAFESCAN_ALLOWLIST_FILE` can point at any custom CSV.
 """
 
 from __future__ import annotations
@@ -55,8 +58,28 @@ LOG = logging.getLogger(__name__)
 # The app's own canonical URL. Mirrors the APP_URL default in hackabull.py.
 DEFAULT_APP_URL = "https://safescan-qr.onrender.com"
 
-# Path is resolved relative to this file so it works regardless of cwd.
-ALLOWLIST_FILE = Path(__file__).resolve().parent / "data" / "tranco_top_10k.csv"
+_DATA_DIR = Path(__file__).resolve().parent / "data"
+
+
+def _resolve_allowlist_file() -> Path:
+    """Pick which allowlist CSV to load, in priority order:
+
+    1. ``SAFESCAN_ALLOWLIST_FILE`` env var (explicit operator override).
+    2. The full Tranco top-1M list (`data/tranco_top_1m.csv`) when shipped.
+    3. The compact top-10K list (`data/tranco_top_10k.csv`) as fallback.
+
+    Paths are resolved relative to this file so it works regardless of cwd.
+    """
+    override = os.getenv("SAFESCAN_ALLOWLIST_FILE", "").strip()
+    if override:
+        return Path(override)
+    full_list = _DATA_DIR / "tranco_top_1m.csv"
+    if full_list.exists():
+        return full_list
+    return _DATA_DIR / "tranco_top_10k.csv"
+
+
+ALLOWLIST_FILE = _resolve_allowlist_file()
 
 # Hosts that are popular AND inherently anonymous redirects - never short-
 # circuit these even if they're in the top 10K. They hide their final
@@ -143,7 +166,11 @@ def registrable_domain(host: str) -> str:
 
 @lru_cache(maxsize=1)
 def load_allowlist() -> frozenset[str]:
-    """Read tranco_top_10k.csv on first call, cache forever."""
+    """Read the allowlist CSV on first call into a frozenset, cache forever.
+
+    Even the 1M-row list loads in a second or two and lookups are O(1), so the
+    one-time cost never shows up in per-scan latency.
+    """
     if not ALLOWLIST_FILE.exists():
         LOG.warning("Tranco allowlist file missing at %s; short-circuit disabled.", ALLOWLIST_FILE)
         return frozenset()
@@ -157,7 +184,7 @@ def load_allowlist() -> frozenset[str]:
                 if domain:
                     domains.add(domain)
 
-    LOG.info("Tranco allowlist loaded: %d domains", len(domains))
+    LOG.info("Tranco allowlist loaded: %d domains from %s", len(domains), ALLOWLIST_FILE.name)
     return frozenset(domains)
 
 

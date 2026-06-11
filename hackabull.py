@@ -3596,7 +3596,7 @@ async def analyze_full_pipeline(target_url, qr_image=None):
             vt_result = await asyncio.to_thread(virustotal_lookup_result, normalized)
             allowlist_signal = signal(
                 "Allowlist match",
-                f"{allowlist_registrable_domain(normalized.split('//', 1)[-1].split('/', 1)[0])} on Tranco top 10K",
+                f"{allowlist_registrable_domain(normalized.split('//', 1)[-1].split('/', 1)[0])} on Tranco popularity allowlist",
                 "low",
                 "SafeScan recognized this destination as a widely-trafficked, popular domain that passed structural safety screening (HTTPS, no homograph chars, no shorteners, no redirect parameters). The full ML/domain pipeline was skipped because no expensive analysis is warranted; Google Safe Browsing and VirusTotal were still consulted for reputation context.",
                 True,
