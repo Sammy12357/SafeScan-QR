@@ -736,6 +736,56 @@ def audit_log(action, request=None, actor_user_id=None, target_type=None, target
     except sqlite3.Error:
         pass
 
+# =============================================================================
+# OUTBOUND EMAIL (SMTP)
+# Optional: configure SMTP_HOST / SMTP_USERNAME / SMTP_PASSWORD (and EMAIL_FROM)
+# to enable transactional email such as the newsletter welcome message. When
+# the variables are absent every send is a silent no-op, so the app runs fine
+# without any email provider. Uses the standard library only — works with any
+# SMTP service (Resend, SendGrid, Mailgun, Brevo, Gmail app password, ...).
+# =============================================================================
+SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USERNAME = os.getenv("SMTP_USERNAME", "").strip()
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "").strip()
+EMAIL_FROM = os.getenv("EMAIL_FROM", SMTP_USERNAME).strip()
+EMAIL_FROM_NAME = os.getenv("EMAIL_FROM_NAME", "SafeScan QR").strip()
+
+
+def email_sending_configured():
+    """True when enough SMTP settings are present to attempt a send."""
+    return bool(SMTP_HOST and SMTP_USERNAME and SMTP_PASSWORD and EMAIL_FROM)
+
+
+def send_email(to_address, subject, html_body, text_body=None):
+    """Send one email over SMTP (STARTTLS). Returns True on success.
+
+    Blocking — call via ``asyncio.to_thread`` from async routes. Failures are
+    logged and swallowed so an email outage can never break a user flow.
+    """
+    if not email_sending_configured() or not (to_address or "").strip():
+        return False
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    message = MIMEMultipart("alternative")
+    message["Subject"] = subject
+    message["From"] = f"{EMAIL_FROM_NAME} <{EMAIL_FROM}>" if EMAIL_FROM_NAME else EMAIL_FROM
+    message["To"] = to_address.strip()
+    message.attach(MIMEText(text_body or re.sub(r"<[^>]+>", " ", html_body), "plain"))
+    message.attach(MIMEText(html_body, "html"))
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
+            server.starttls()
+            server.login(SMTP_USERNAME, SMTP_PASSWORD)
+            server.sendmail(EMAIL_FROM, [to_address.strip()], message.as_string())
+        return True
+    except Exception as exc:
+        print({"warning": "email send failed", "to": to_address, "error": f"{type(exc).__name__}: {exc}"})
+        return False
+
+
 _COOKIE_SECURE = not LOCAL_AUTH_ENABLED
 _COOKIE_SAMESITE = "lax"
 
@@ -6433,10 +6483,22 @@ async def privacy_policy(request: Request):
 
 @qr_app.post("/waitlist", response_class=HTMLResponse)
 async def waitlist_signup(request: Request, email: str = Form(...)):
+    normalized_email = email.strip().lower()
     with get_conn() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO waitlist_signups VALUES (?, ?, ?)",
-            (email.strip().lower(), "footer", datetime.utcnow().isoformat() + "Z")
+            (normalized_email, "footer", datetime.utcnow().isoformat() + "Z")
+        )
+    # Best-effort welcome email; a no-op unless SMTP_* env vars are configured.
+    if email_sending_configured():
+        await asyncio.to_thread(
+            send_email,
+            normalized_email,
+            "You're on the SafeScan QR list",
+            "<h2>You're on the list</h2>"
+            "<p>Thanks for joining the SafeScan QR newsletter. We'll send one email per major release &mdash; no spam.</p>"
+            f"<p><a href='{APP_URL}'>Open SafeScan QR</a></p>"
+            f"<p style='color:#888;font-size:12px'>Didn't sign up? Ignore this email or reply to unsubscribe.</p>",
         )
     body = "<h2>You're on the list</h2><p>Thanks for joining the SafeScan QR waitlist. We'll send only major product updates.</p><p><a href='/'>Return to SafeScan QR</a></p>"
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Waitlist", body))
