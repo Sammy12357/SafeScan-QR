@@ -542,7 +542,7 @@ def test_global_leaderboard_counts_every_saved_history_scan(auth_app):
     assert leaders[0]["total_saved_scans"] == 5
 
 
-def test_global_leaderboard_includes_all_registered_users(auth_app):
+def test_global_leaderboard_excludes_registered_users_with_zero_scans(auth_app):
     module, client, db_path = auth_app
     register(client, "scanner-no-name@example.com")
     scanner = db_rows(db_path, "SELECT google_id FROM users WHERE email = ?", ("scanner-no-name@example.com",))[0]
@@ -556,10 +556,9 @@ def test_global_leaderboard_includes_all_registered_users(auth_app):
     by_user_id = {row["user_id"]: row for row in leaders}
 
     assert scanner["google_id"] in by_user_id
-    assert zero_user["google_id"] in by_user_id
+    assert zero_user["google_id"] not in by_user_id
     assert by_user_id[scanner["google_id"]]["scan_count"] == 1
     assert by_user_id[scanner["google_id"]]["public_name"] == "sc***@example.com"
-    assert by_user_id[zero_user["google_id"]]["scan_count"] == 0
 
 
 def test_malicious_qr_database_is_public_and_filters_scans(auth_app):

@@ -1883,6 +1883,7 @@ def get_global_leaderboard(limit=50):
             ) se ON se.email_key = lower(u.email)
             WHERE u.status != 'deleted'
             GROUP BY u.google_id, u.email, u.username, u.display_name, s.scan_count, h.total_saved_scans, h.unique_saved_scans, h.last_history_at, se.unique_events, se.last_event_at
+            HAVING MAX(COALESCE(s.scan_count, 0), COALESCE(se.unique_events, 0), COALESCE(h.total_saved_scans, 0)) > 0
             ORDER BY scan_count DESC, total_saved_scans DESC, last_scanned_at DESC
             LIMIT ?
             """,
@@ -3592,14 +3593,15 @@ async def analyze_full_pipeline(target_url, qr_image=None):
         # full pipeline for a real verdict.
         gsb_signal = await asyncio.to_thread(google_reputation_signal, normalized)
         if gsb_signal.get("passed", False) and gsb_signal.get("severity") == "low":
+            vt_result = await asyncio.to_thread(virustotal_lookup_result, normalized)
             allowlist_signal = signal(
                 "Allowlist match",
                 f"{allowlist_registrable_domain(normalized.split('//', 1)[-1].split('/', 1)[0])} on Tranco top 10K",
                 "low",
-                "SafeScan recognized this destination as a widely-trafficked, popular domain that passed structural safety screening (HTTPS, no homograph chars, no shorteners, no redirect parameters). The full ML and reputation pipeline was skipped because no expensive analysis is warranted; Google Safe Browsing was still consulted for compromised-site detection.",
+                "SafeScan recognized this destination as a widely-trafficked, popular domain that passed structural safety screening (HTTPS, no homograph chars, no shorteners, no redirect parameters). The full ML/domain pipeline was skipped because no expensive analysis is warranted; Google Safe Browsing and VirusTotal were still consulted for reputation context.",
                 True,
             )
-            fast_signals = sorted([allowlist_signal, gsb_signal], key=severity_rank)
+            fast_signals = sorted([allowlist_signal, gsb_signal, virustotal_breakdown_signal(vt_result)], key=severity_rank)
             fast_score = clamp_score(8)
             return {
                 "url": normalized,
@@ -3610,7 +3612,7 @@ async def analyze_full_pipeline(target_url, qr_image=None):
                 "threatType": "Benign popular destination",
                 "verdict": "safe",
                 "signals": fast_signals,
-                "virusTotal": None,
+                "virusTotal": vt_result,
                 "domainAge": None,
                 "redirectChain": [],
                 "scannedAt": datetime.utcnow().isoformat() + "Z",
