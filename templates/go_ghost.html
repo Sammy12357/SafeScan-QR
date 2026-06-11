@@ -7,7 +7,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Go Ghost | SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=theme-menu-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=ghost-assist-v1">
 </head>
 <body>
   <div class="page-shell go-ghost-shell">
@@ -85,7 +85,7 @@
           <button id="openNextGhostBrokerButton" class="secondary-button" type="button">Open next pending</button>
         </div>
         <div class="ghost-automation-table" aria-label="Go Ghost automation scope by broker">
-          <div class="ghost-automation-row ghost-automation-head"><span>Site</span><span>Search</span><span>Submit</span><span>Manual</span></div>
+          <div class="ghost-automation-row ghost-automation-head"><span>Site</span><span>Effort</span><span>You do</span><span>Status</span></div>
           <div id="goGhostAutomationRows" class="ghost-automation-rows"></div>
         </div>
         <div id="goGhostBrokerList" class="broker-list hidden" aria-hidden="true"></div>
@@ -124,12 +124,13 @@
         <button id="goGhostScopeSearchButton" class="secondary-button" type="button">Search</button>
         <button id="goGhostScopeOptOutButton" class="primary-button" type="button">Opt out</button>
         <button id="goGhostScopeAutoFillButton" class="primary-button" type="button">Run auto fill</button>
+        <button id="goGhostScopeFinishButton" class="primary-button" type="button" hidden>Finish in browser</button>
         <button id="goGhostScopeNoMatchButton" class="secondary-button" type="button">No match / mark finished</button>
         <button id="goGhostScopeCopyButton" class="secondary-button" type="button">Copy details</button>
       </div>
     </div>
   </div>
 
-  <script src="/static/app.js?v=ghost-multi-broker-v2"></script>
+  <script src="/static/app.js?v=ghost-assist-v1"></script>
 </body>
 </html>

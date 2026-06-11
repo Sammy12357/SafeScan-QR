@@ -892,6 +892,7 @@ const goGhostScopeDetails = document.getElementById("goGhostScopeDetails");
 const goGhostScopeSearchButton = document.getElementById("goGhostScopeSearchButton");
 const goGhostScopeOptOutButton = document.getElementById("goGhostScopeOptOutButton");
 const goGhostScopeAutoFillButton = document.getElementById("goGhostScopeAutoFillButton");
+const goGhostScopeFinishButton = document.getElementById("goGhostScopeFinishButton");
 const goGhostScopeNoMatchButton = document.getElementById("goGhostScopeNoMatchButton");
 const goGhostScopeCopyButton = document.getElementById("goGhostScopeCopyButton");
 const startGhostQueueButton = document.getElementById("startGhostQueueButton");
@@ -1204,6 +1205,57 @@ function formatGhostAutomationStatus(status) {
     running: "Running"
   };
   return labels[status] || "Updated";
+}
+
+// Brokers known to gate submission behind a CAPTCHA. Used only as a pre-run
+// hint for the effort badge; the live run status is the source of truth.
+const GHOST_CAPTCHA_BROKERS = new Set(["fastpeoplesearch", "truepeoplesearch", "thatsthem"]);
+
+// Pre-run estimate of how much the human still has to do for a broker, so the
+// UI can promise "we did the tedious part" honestly. The actual run status
+// (submitted / email_required / captcha_required / needs_profile_url) refines
+// this afterwards. lane "auto" = backend submits and only an email click is
+// left; lane "step" = one short human action (CAPTCHA tick or listing pick).
+function ghostEffortLane(broker) {
+  if (!broker.automationEnabled) {
+    return { key: "manual", label: "Manual", you: "You submit", lane: "step" };
+  }
+  const info = (broker.requiredInfo || []).join(" ").toLowerCase();
+  if (/profile url|matching profile|matching record/.test(info)) {
+    return { key: "listing", label: "Pick listing", you: "~30s", lane: "step" };
+  }
+  if (GHOST_CAPTCHA_BROKERS.has(broker.id)) {
+    return { key: "captcha", label: "CAPTCHA", you: "~10s", lane: "step" };
+  }
+  return { key: "auto", label: "Auto", you: "Check email", lane: "auto" };
+}
+
+// Maps a backend run status to a plain "what you do now" line. action:true
+// means the next step is the one-click "Finish in browser" handoff (we opened
+// a prefilled form; the only human bit is the CAPTCHA/listing + submit).
+function ghostStatusGuidance(status) {
+  switch (status) {
+    case "submitted":
+      return { tone: "done", text: "Submitted on your behalf — nothing left to do." };
+    case "email_required":
+      return { tone: "done", text: "Submitted. Open the broker's confirmation email and click the link to finish." };
+    case "captcha_required":
+      return { tone: "action", action: true, text: "We filled the whole form. Finish in your browser: solve the CAPTCHA and press submit." };
+    case "needs_profile_url":
+      return { tone: "action", action: true, text: "We filled what we can. Finish in your browser: open your listing, then submit." };
+    case "filled":
+      return { tone: "action", action: true, text: "Form filled, but no submit button was found. Finish it in your browser." };
+    case "running":
+      return { tone: "info", text: "Filling the form on a server-side browser…" };
+    case "unavailable":
+      return { tone: "info", text: "Backend automation isn't available here — use Opt out to do it manually." };
+    case "cancelled":
+      return { tone: "info", text: "Run cancelled." };
+    case "failed":
+      return { tone: "info", text: "Automation couldn't finish. Use Opt out to complete it manually." };
+    default:
+      return { tone: "info", text: "" };
+  }
 }
 
 function goGhostAutomationScope(broker) {
@@ -1526,14 +1578,17 @@ function renderGoGhostProgress() {
 
 function renderGoGhostAutomationScope() {
   if (!goGhostAutomationRows) return;
+  const progress = getGhostProgress();
   goGhostAutomationRows.innerHTML = goGhostBrokers.slice(0, 8).map((broker) => {
-    const scope = goGhostAutomationScope(broker);
+    const lane = ghostEffortLane(broker);
+    const automation = progress[broker.id]?.automation;
+    const statusLabel = automation ? formatGhostAutomationStatus(automation.status) : "Not run";
     return `
       <button class="ghost-automation-row ghost-automation-site-row" type="button" data-ghost-scope="${broker.id}" aria-label="Open ${escapeHtml(broker.name)} automation details">
         <span>${escapeHtml(broker.name)}</span>
-        <span>${escapeHtml(scope.search)}</span>
-        <span>${escapeHtml(scope.submit)}</span>
-        <span>${escapeHtml(scope.manual)}</span>
+        <span><span class="ghost-effort ghost-effort-${lane.lane}">${escapeHtml(lane.label)}</span></span>
+        <span>${escapeHtml(lane.you)}</span>
+        <span>${escapeHtml(statusLabel)}</span>
       </button>
     `;
   }).join("");
@@ -1605,15 +1660,16 @@ function openGoGhostScopeModal(siteId) {
   if (goGhostScopePriority) goGhostScopePriority.textContent = broker.priority;
   if (goGhostScopeDescription) goGhostScopeDescription.textContent = broker.automationNote || broker.priorityDescription || "";
   renderGhostScopeKeywords(profile);
+  const lane = ghostEffortLane(broker);
+  const guidance = automation ? ghostStatusGuidance(automation.status) : null;
   if (goGhostScopeDetails) {
     goGhostScopeDetails.innerHTML = `
-      <div class="ghost-scope-detail"><span>Search</span><strong>${escapeHtml(scope.search)}</strong></div>
-      <div class="ghost-scope-detail"><span>Submit</span><strong>${escapeHtml(scope.submit)}</strong></div>
-      <div class="ghost-scope-detail"><span>Manual checkpoint</span><strong>${escapeHtml(scope.manual)}</strong></div>
+      <div class="ghost-scope-detail"><span>Backend does</span><strong>Fills the whole form</strong></div>
+      <div class="ghost-scope-detail"><span>You do</span><strong>${escapeHtml(lane.label === "Auto" ? "Just check email" : lane.label)}</strong></div>
       <div class="ghost-scope-detail ghost-scope-detail-wide"><span>Needed</span><strong>${escapeHtml((broker.requiredInfo || []).join(", "))}</strong></div>
+      ${guidance && guidance.text ? `<div class="ghost-scope-detail ghost-scope-detail-wide ghost-scope-guidance ghost-scope-guidance-${guidance.tone}"><span>Next step</span><strong>${escapeHtml(guidance.text)}</strong></div>` : ""}
       ${state.finishReason ? `<div class="ghost-scope-detail ghost-scope-detail-wide"><span>Finished as</span><strong>${escapeHtml(state.finishReason)}</strong></div>` : ""}
       ${automation ? `<div class="ghost-scope-detail ghost-scope-detail-wide"><span>Automation status</span><strong>${escapeHtml(formatGhostAutomationStatus(automation.status))}</strong></div>` : ""}
-      ${automation?.detail ? `<div class="ghost-scope-detail ghost-scope-detail-wide"><span>Automation detail</span><strong>${escapeHtml(automation.detail)}</strong></div>` : ""}
     `;
   }
   if (goGhostScopeAutoFillButton) {
@@ -1621,6 +1677,11 @@ function openGoGhostScopeModal(siteId) {
     goGhostScopeAutoFillButton.textContent = goGhostAutomationControllers.has(broker.id) ? "Cancel run" : "Run auto fill";
     if (goGhostAutomationControllers.has(broker.id)) goGhostScopeAutoFillButton.setAttribute("aria-pressed", "true");
     else goGhostScopeAutoFillButton.removeAttribute("aria-pressed");
+  }
+  // The "Finish in browser" one-click handoff only appears once a run has left
+  // a human checkpoint (CAPTCHA / pick-listing / filled-but-not-submitted).
+  if (goGhostScopeFinishButton) {
+    goGhostScopeFinishButton.hidden = !(guidance && guidance.action);
   }
   goGhostScopeModal.classList.remove("hidden");
   goGhostScopeModal.querySelector(".ghost-scope-close")?.focus();
@@ -1640,6 +1701,15 @@ async function runGhostScopeAction(action) {
   if (action === "optout") {
     openGhostUrl(goGhostBrokerOptOutUrl(broker, profile));
     showCopyToast(`Opened ${broker.name} opt-out`);
+    return;
+  }
+  if (action === "finish") {
+    // One-click handoff after a CAPTCHA/listing checkpoint: open the prefilled
+    // opt-out form AND copy the details packet so anything the form didn't
+    // auto-fill is one paste away. The human only does the CAPTCHA + submit.
+    openGhostUrl(goGhostBrokerOptOutUrl(broker, profile));
+    const copied = await copyTextToClipboard(goGhostCopyPacket(broker, profile, searchUrl)).catch(() => false);
+    showCopyToast(copied ? `${broker.name}: opened + details copied` : `Opened ${broker.name}`);
     return;
   }
   if (action === "copy") {
@@ -1724,6 +1794,7 @@ if (goGhostWorkspace) {
 
   goGhostScopeSearchButton?.addEventListener("click", () => runGhostScopeAction("search"));
   goGhostScopeOptOutButton?.addEventListener("click", () => runGhostScopeAction("optout"));
+  goGhostScopeFinishButton?.addEventListener("click", () => runGhostScopeAction("finish"));
   goGhostScopeAutoFillButton?.addEventListener("click", () => runGhostScopeAction("auto"));
   goGhostScopeNoMatchButton?.addEventListener("click", () => runGhostScopeAction("nomatch"));
   goGhostScopeCopyButton?.addEventListener("click", () => runGhostScopeAction("copy"));

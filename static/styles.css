@@ -657,6 +657,17 @@ body.qr-camera-open { overflow: hidden; }
 .ghost-automation-row span { min-width: 0; overflow-wrap: anywhere; }
 .ghost-automation-row span:not(:first-child) { text-align: center; }
 .ghost-automation-head { color: var(--accent); background: rgba(103, 242, 200, 0.07); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72rem; }
+/* Per-broker effort badge: green when the backend submits and only an email
+   click remains; amber when one short human step (CAPTCHA / pick listing) is
+   needed. Reuses the existing safe/warning tokens to stay on-brand. */
+.ghost-effort { display: inline-grid; place-items: center; min-height: 22px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--line); font-size: 0.68rem; font-weight: 900; letter-spacing: 0.04em; white-space: nowrap; }
+.ghost-effort-auto { color: var(--safe); border-color: rgba(80, 227, 164, 0.32); background: rgba(80, 227, 164, 0.12); }
+.ghost-effort-step { color: var(--warning); border-color: rgba(255, 187, 85, 0.32); background: rgba(255, 187, 85, 0.12); }
+/* "Next step" banner inside the broker detail modal. */
+.ghost-scope-guidance strong { font-weight: 700; line-height: 1.45; }
+.ghost-scope-guidance-action { border-color: rgba(255, 187, 85, 0.34); background: rgba(255, 187, 85, 0.08); }
+.ghost-scope-guidance-done { border-color: rgba(80, 227, 164, 0.34); background: rgba(80, 227, 164, 0.08); }
+.ghost-scope-guidance-action span, .ghost-scope-guidance-done span { color: var(--accent); }
 .ghost-automation-site-row { cursor: pointer; transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease; }
 .ghost-automation-site-row:hover, .ghost-automation-site-row:focus-visible { border-color: rgba(103, 242, 200, 0.42); background: rgba(103, 242, 200, 0.08); outline: none; transform: translateY(-1px); }
 .go-ghost-keyword-form { margin-top: 16px; padding: 14px; border: 1px solid rgba(132, 217, 255, 0.18); border-radius: 8px; background: rgba(132, 217, 255, 0.045); }
