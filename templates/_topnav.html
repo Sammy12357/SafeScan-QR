@@ -26,12 +26,6 @@
     <a class="top-auth-link top-auth-signin" href="/login">Sign in</a>
     <a class="top-auth-link top-auth-signup" href="/login?tab=register">Sign up <span aria-hidden="true">&#8599;</span></a>
     {% endif %}
-    <button class="theme-toggle" type="button" aria-label="Switch to light mode" aria-pressed="false" data-theme-toggle>
-      <span class="theme-toggle-track" aria-hidden="true">
-        <span class="theme-toggle-thumb"></span>
-      </span>
-      <span class="theme-toggle-text" data-theme-toggle-text>Dark</span>
-    </button>
   </div>
 </div>
 
@@ -63,8 +57,7 @@
     {% endif %}
   </nav>
 
-  {# In-drawer theme switch. On phones the top-bar toggle is hidden (it
-     overflowed the screen), so this is the mobile home for dark/light mode.
+  {# In-drawer theme switch — the only dark/light control on the site.
      sidenav.js binds every [data-theme-toggle] and keeps them in sync. #}
   <div class="sidenav-theme">
     <button class="theme-toggle" type="button" aria-label="Switch to light mode" aria-pressed="false" data-theme-toggle>
