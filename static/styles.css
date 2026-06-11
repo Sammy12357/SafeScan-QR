@@ -550,8 +550,10 @@ body.qr-camera-open { overflow: hidden; }
 .test-price-card .primary-button, .test-price-card .secondary-button { margin-top: auto; text-align: center; }
 .test-faq-list { display: grid; gap: 10px; margin-top: 22px; }
 .test-faq-list details { border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.04); }
-.test-faq-list summary { padding: 16px; cursor: pointer; font-weight: 900; list-style: none; }
+.test-faq-list summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; cursor: pointer; font-weight: 900; list-style: none; }
 .test-faq-list summary::-webkit-details-marker { display: none; }
+.test-faq-list summary::after { content: ""; flex-shrink: 0; width: 9px; height: 9px; margin-right: 2px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: translateY(-2px) rotate(45deg); transition: transform 0.25s ease, border-color 0.25s ease; }
+.test-faq-list details[open] summary::after { transform: translateY(2px) rotate(-135deg); border-color: var(--accent); }
 .test-faq-list p { margin: 0; padding: 0 16px 16px; }
 .reveal-on-scroll { opacity: 0; transform: translateY(22px); transition: opacity 0.6s ease, transform 0.6s ease; transition-delay: var(--reveal-delay, 0ms); }
 .reveal-on-scroll.is-visible { opacity: 1; transform: translateY(0); }
