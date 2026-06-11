@@ -6,7 +6,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Leaderboard | SafeScan QR</title>
-  <link rel="stylesheet" href="/static/styles.css?v=ui-polish-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=mobile-polish-v1">
   <style>
     :root {
       --bg: #09111f;
@@ -43,6 +43,16 @@
     .lb-date { color: var(--muted); font-size: 0.82rem; }
     .lb-empty { color: var(--muted); text-align: center; padding: 60px 0; font-size: 0.95rem; }
     .medal { margin-right: 4px; }
+    /* Mobile: tighten cell padding, let names wrap, and drop the timestamp
+       column (least essential) so the table fits without horizontal scroll.
+       Applies to JS-rebuilt rows too since it targets nth-child. */
+    @media (max-width: 640px) {
+      .lb-shell { padding-top: 28px; }
+      .lb-table thead th, .lb-table td { padding: 10px 8px; font-size: 0.82rem; }
+      .lb-table th:nth-child(5), .lb-table td:nth-child(5) { display: none; }
+      .lb-username { overflow-wrap: anywhere; }
+      .lb-rank { width: 36px; }
+    }
   </style>
 </head>
 <body>

@@ -439,7 +439,7 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: var(--radiu
    "verified instantly" chip, and safe verdicts get a single soft ring that
    expands from the score gauge. All of it uses the existing color tokens and
    is disabled automatically by the prefers-reduced-motion block above. */
-.fast-path-chip { display: inline-flex; align-items: center; gap: 9px; width: fit-content; margin: 14px 0 0; padding: 8px 14px; border: 1px solid rgba(80, 227, 164, 0.3); border-radius: 999px; background: rgba(80, 227, 164, 0.09); color: var(--safe); font-size: 0.8rem; font-weight: 800; letter-spacing: 0.04em; animation: fastPathSettle 0.5s var(--ease) both; }
+.fast-path-chip { display: inline-flex; align-items: center; gap: 9px; width: fit-content; max-width: 100%; margin: 14px 0 0; padding: 8px 14px; border: 1px solid rgba(80, 227, 164, 0.3); border-radius: 999px; background: rgba(80, 227, 164, 0.09); color: var(--safe); font-size: 0.8rem; font-weight: 800; letter-spacing: 0.04em; line-height: 1.35; animation: fastPathSettle 0.5s var(--ease) both; }
 .fast-path-dot { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: var(--safe); box-shadow: 0 0 0 0 rgba(80, 227, 164, 0.45); animation: fastPathPulse 2.2s var(--ease) 0.4s 3; }
 @keyframes fastPathPulse { 0% { box-shadow: 0 0 0 0 rgba(80, 227, 164, 0.45); } 60% { box-shadow: 0 0 0 7px rgba(80, 227, 164, 0); } 100% { box-shadow: 0 0 0 0 rgba(80, 227, 164, 0); } }
 @keyframes fastPathSettle { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
@@ -797,6 +797,10 @@ body.qr-camera-open { overflow: hidden; }
 @media (max-width: 900px) {
   .hero, .top-profile, .story-grid, .token-strip, .airdrop-progress, .wallet-panel, .referral-panel, .airdrop-grid, .scanner-grid, .results-grid, .panel-header, .results-header, .decision-bar, .engine-header, .test-proof-grid, .test-pricing-grid, .test-social, .go-ghost-hero, .go-ghost-layout, .broker-card, .maintenance-grid, .ghost-safety-list { grid-template-columns: 1fr; flex-direction: column; align-items: stretch; }
   .hero { min-height: auto; padding: 24px; }
+  /* Step the big panels down from their desktop padding so the content
+     column keeps breathing room on small screens. */
+  .scanner-panel, .airdrop-panel, .results-panel, .generate-qr-panel { padding: 22px 18px; }
+  .engine-grid { grid-template-columns: 1fr; }
   .go-ghost-hero, .go-ghost-card { padding: 20px; }
   .go-ghost-status { min-width: 0; }
   .broker-actions { justify-content: stretch; }
@@ -849,6 +853,19 @@ body.qr-camera-open { overflow: hidden; }
   .top-auth-link { min-height: 38px; padding: 0 12px; font-size: 0.78rem; }
   .theme-toggle-text { display: none; }
   .top-action-button { font-size: 0.82rem; }
+  /* Orbitron is a wide face: the desktop clamp minimum (3.35rem) makes
+     "SafeScan" wider than a small phone viewport, so step it down here. */
+  .hero-copy h1 { font-size: 2.55rem; }
+  .hero { padding: 22px 18px; }
+  .hero-text { font-size: 1rem; }
+  .hero-metrics { gap: 8px; }
+  .hero-metrics div { padding: 12px 10px; }
+  .hero-metrics p { font-size: 0.78rem; }
+  .scanner-panel, .airdrop-panel, .results-panel, .generate-qr-panel { padding: 18px 14px; }
+  /* "DANGEROUS" at the fixed desktop size overflows a narrow modal. */
+  .risk-verdict-top h2 { font-size: 1.9rem; overflow-wrap: anywhere; }
+  .risk-modal-card { padding: 16px 14px; }
+  .modal-actions .primary-button, .modal-actions .danger-button { min-height: 48px; }
   .go-ghost-card { padding: 16px; }
   .ghost-automation-row { grid-template-columns: minmax(84px, 1.18fr) repeat(3, minmax(36px, 0.52fr)); font-size: 0.66rem; }
   .ghost-automation-row span:not(:first-child) { text-align: left; }
