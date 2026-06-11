@@ -446,8 +446,9 @@ async def run_broker_removal(
                     "status": "captcha_required",
                     "detail": (
                         f"{config.name} autofilled the required fields, but it shows a CAPTCHA "
-                        f"the backend browser can't clear. Click Opt out to open the prefilled "
-                        f"form in your own browser, solve the CAPTCHA, and submit. ({filled_summary})"
+                        f"the backend browser can't clear. Click Finish in browser to open the "
+                        f"broker page with your details copied, then solve the CAPTCHA and submit. "
+                        f"({filled_summary})"
                     ),
                     "targetUrl": page.url,
                 }

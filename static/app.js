@@ -1231,8 +1231,9 @@ function ghostEffortLane(broker) {
 }
 
 // Maps a backend run status to a plain "what you do now" line. action:true
-// means the next step is the one-click "Finish in browser" handoff (we opened
-// a prefilled form; the only human bit is the CAPTCHA/listing + submit).
+// means the next step is the one-click "Finish in browser" handoff. The
+// backend-filled browser cannot be transferred to the user's browser, so the
+// handoff opens the broker page and copies the details packet for quick paste.
 function ghostStatusGuidance(status) {
   switch (status) {
     case "submitted":
@@ -1240,11 +1241,11 @@ function ghostStatusGuidance(status) {
     case "email_required":
       return { tone: "done", text: "Submitted. Open the broker's confirmation email and click the link to finish." };
     case "captcha_required":
-      return { tone: "action", action: true, text: "We filled the whole form. Finish in your browser: solve the CAPTCHA and press submit." };
+      return { tone: "action", action: true, text: "Backend autofill reached a CAPTCHA. Finish in your browser with your details copied for quick paste, then solve the CAPTCHA and submit." };
     case "needs_profile_url":
-      return { tone: "action", action: true, text: "We filled what we can. Finish in your browser: open your listing, then submit." };
+      return { tone: "action", action: true, text: "This broker needs your exact listing. Finish in your browser with your details copied, pick your record, then submit." };
     case "filled":
-      return { tone: "action", action: true, text: "Form filled, but no submit button was found. Finish it in your browser." };
+      return { tone: "action", action: true, text: "Backend autofill found the form, but could not submit. Finish in your browser with your details copied for quick paste." };
     case "running":
       return { tone: "info", text: "Filling the form on a server-side browser…" };
     case "unavailable":
@@ -1323,6 +1324,16 @@ function openGhostUrl(url) {
   const opened = window.open(url, "_blank", "noopener,noreferrer");
   if (opened) opened.opener = null;
   return Boolean(opened);
+}
+
+async function openGhostOptOutWithPacket(broker, profile, searchUrl) {
+  const copiedPromise = copyTextToClipboard(goGhostCopyPacket(broker, profile, searchUrl)).catch(() => false);
+  const opened = openGhostUrl(goGhostBrokerOptOutUrl(broker, profile));
+  const copied = await copiedPromise;
+  if (opened && copied) return `${broker.name}: opened + details copied`;
+  if (opened) return `Opened ${broker.name}; copy details if the form is blank`;
+  if (copied) return `${broker.name} details copied`;
+  return `Open ${broker.name} manually and use Copy details`;
 }
 
 function hasGhostSearchProfile(profile) {
@@ -1699,17 +1710,14 @@ async function runGhostScopeAction(action) {
     return;
   }
   if (action === "optout") {
-    openGhostUrl(goGhostBrokerOptOutUrl(broker, profile));
-    showCopyToast(`Opened ${broker.name} opt-out`);
+    showCopyToast(await openGhostOptOutWithPacket(broker, profile, searchUrl));
     return;
   }
   if (action === "finish") {
-    // One-click handoff after a CAPTCHA/listing checkpoint: open the prefilled
-    // opt-out form AND copy the details packet so anything the form didn't
-    // auto-fill is one paste away. The human only does the CAPTCHA + submit.
-    openGhostUrl(goGhostBrokerOptOutUrl(broker, profile));
-    const copied = await copyTextToClipboard(goGhostCopyPacket(broker, profile, searchUrl)).catch(() => false);
-    showCopyToast(copied ? `${broker.name}: opened + details copied` : `Opened ${broker.name}`);
+    // One-click handoff after a CAPTCHA/listing checkpoint: open the opt-out
+    // page and copy the details packet. Most broker pages ignore query-string
+    // prefill values, so clipboard fallback is the reliable part.
+    showCopyToast(await openGhostOptOutWithPacket(broker, profile, searchUrl));
     return;
   }
   if (action === "copy") {
@@ -1806,6 +1814,17 @@ if (goGhostWorkspace) {
   });
 
   goGhostBrokerList?.addEventListener("click", async (event) => {
+    const optOutLink = event.target.closest("[data-ghost-optout]");
+    if (optOutLink) {
+      event.preventDefault();
+      const profile = getGhostProfile();
+      const broker = goGhostBrokers.find((item) => item.id === optOutLink.dataset.ghostOptout);
+      if (!broker) return;
+      const searchUrl = goGhostBrokerSearchUrl(broker, profile);
+      showCopyToast(await openGhostOptOutWithPacket(broker, profile, searchUrl));
+      return;
+    }
+
     const autoButton = event.target.closest("[data-ghost-auto]");
     if (autoButton) {
       const broker = goGhostBrokers.find((item) => item.id === autoButton.dataset.ghostAuto);
