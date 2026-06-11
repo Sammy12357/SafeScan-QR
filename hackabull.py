@@ -669,6 +669,17 @@ def init_db():
                          created_at TEXT NOT NULL,
                          user_id TEXT)''')
     cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_local_credentials_email_lower ON local_credentials(lower(email))")
+    # Discord account links. Both columns are unique on purpose: one SafeScan
+    # account links to one Discord account and vice versa, so a single Discord
+    # user can't "verify" many SafeScan accounts to farm airdrop perks.
+    cursor.execute('''CREATE TABLE IF NOT EXISTS discord_links
+                        (id TEXT PRIMARY KEY,
+                         user_id TEXT NOT NULL UNIQUE,
+                         discord_id TEXT NOT NULL UNIQUE,
+                         discord_username TEXT,
+                         guild_member INTEGER DEFAULT 0,
+                         role_granted INTEGER DEFAULT 0,
+                         linked_at TEXT NOT NULL)''')
     conn.commit()
     conn.close()
 
@@ -784,6 +795,129 @@ def send_email(to_address, subject, html_body, text_body=None):
     except Exception as exc:
         print({"warning": "email send failed", "to": to_address, "error": f"{type(exc).__name__}: {exc}"})
         return False
+
+
+# =============================================================================
+# DISCORD ACCOUNT LINKING (OAuth2 + REST role grant)
+# Lets a signed-in SafeScan user link their Discord account from the profile
+# page. Flow: /auth/discord redirects to Discord's OAuth consent screen ->
+# /auth/discord/callback exchanges the code, stores the link, and (when a bot
+# token + guild/role ids are configured) auto-joins the user to the server and
+# grants the "Verified" role over Discord's REST API — no separate bot process
+# required. Everything is optional: without DISCORD_CLIENT_ID/SECRET the
+# profile page simply hides the Discord card.
+# =============================================================================
+DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "").strip()
+DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "").strip()
+DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN", "").strip()
+DISCORD_GUILD_ID = os.getenv("DISCORD_GUILD_ID", "").strip()
+DISCORD_VERIFIED_ROLE_ID = os.getenv("DISCORD_VERIFIED_ROLE_ID", "").strip()
+DISCORD_INVITE_URL = os.getenv("DISCORD_INVITE_URL", "https://discord.gg/hqHBQ22z")
+DISCORD_API_BASE = "https://discord.com/api/v10"
+# HMAC secret for the OAuth state parameter (CSRF protection). Prefers a
+# stable configured secret; falls back to a per-boot random value, which is
+# fine because a state token only needs to survive the few minutes of one
+# OAuth round-trip.
+_DISCORD_STATE_SECRET = (os.getenv("SESSION_SECRET") or os.getenv("PRIVACY_HASH_SALT") or secrets.token_hex(32)).strip()
+
+
+def discord_linking_configured():
+    """True when the OAuth app credentials needed for linking are present."""
+    return bool(DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET)
+
+
+def discord_redirect_uri():
+    return f"{APP_URL}/auth/discord/callback"
+
+
+def discord_state_for_user(user_id):
+    """Signed, time-stamped state token binding the OAuth flow to this user."""
+    payload = f"{user_id}:{int(time.time())}"
+    sig = hmac.new(_DISCORD_STATE_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()[:32]
+    return base64.urlsafe_b64encode(f"{payload}:{sig}".encode()).decode().rstrip("=")
+
+
+def verify_discord_state(state, max_age_seconds=600):
+    """Return the user_id the state was issued for, or None if invalid/expired."""
+    try:
+        padded = state + "=" * (-len(state) % 4)
+        decoded = base64.urlsafe_b64decode(padded.encode()).decode()
+        payload_user, ts, sig = decoded.rsplit(":", 2)
+        expected = hmac.new(_DISCORD_STATE_SECRET.encode(), f"{payload_user}:{ts}".encode(), hashlib.sha256).hexdigest()[:32]
+        if not hmac.compare_digest(sig, expected):
+            return None
+        if time.time() - int(ts) > max_age_seconds:
+            return None
+        return payload_user
+    except Exception:
+        return None
+
+
+def discord_exchange_code(code):
+    """Swap the OAuth authorization code for an access token (blocking)."""
+    response = requests.post(
+        f"{DISCORD_API_BASE}/oauth2/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": discord_redirect_uri(),
+            "client_id": DISCORD_CLIENT_ID,
+            "client_secret": DISCORD_CLIENT_SECRET,
+        },
+        timeout=10,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def discord_fetch_identity(access_token):
+    """Fetch the linked user's Discord id/username (blocking)."""
+    response = requests.get(
+        f"{DISCORD_API_BASE}/users/@me",
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=10,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def discord_join_guild(discord_id, access_token):
+    """Add the user to our server using their guilds.join grant. Best-effort:
+    returns True when they are (or already were) a member."""
+    if not (DISCORD_BOT_TOKEN and DISCORD_GUILD_ID):
+        return False
+    try:
+        response = requests.put(
+            f"{DISCORD_API_BASE}/guilds/{DISCORD_GUILD_ID}/members/{discord_id}",
+            json={"access_token": access_token},
+            headers={"Authorization": f"Bot {DISCORD_BOT_TOKEN}"},
+            timeout=10,
+        )
+        return response.status_code in (201, 204)  # 201 = added, 204 = already a member
+    except requests.RequestException:
+        return False
+
+
+def discord_grant_verified_role(discord_id):
+    """Give the configured Verified role to a guild member. Best-effort."""
+    if not (DISCORD_BOT_TOKEN and DISCORD_GUILD_ID and DISCORD_VERIFIED_ROLE_ID):
+        return False
+    try:
+        response = requests.put(
+            f"{DISCORD_API_BASE}/guilds/{DISCORD_GUILD_ID}/members/{discord_id}/roles/{DISCORD_VERIFIED_ROLE_ID}",
+            headers={"Authorization": f"Bot {DISCORD_BOT_TOKEN}"},
+            timeout=10,
+        )
+        return response.status_code == 204
+    except requests.RequestException:
+        return False
+
+
+def get_discord_link(user_id):
+    """The user's stored Discord link row as a dict, or None."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM discord_links WHERE user_id = ?", (str(user_id),)).fetchone()
+    return dict(row) if row else None
 
 
 _COOKIE_SECURE = not LOCAL_AUTH_ENABLED
@@ -7355,6 +7489,83 @@ async def logout_post(request: Request):
 async def logout_get(request: Request):
     return await _do_logout(request)
 
+@qr_app.get("/auth/discord")
+async def auth_discord_start(request: Request):
+    """Kick off the Discord OAuth flow for the signed-in user."""
+    user = require_user(request)
+    if not discord_linking_configured():
+        raise SafeScanError("Discord linking is not configured on this deployment.", 503)
+    rate_limit = enforce_rate_limit(request, "discord_link", 10, 60 * 60, user_key=user.get("google_id"))
+    if rate_limit:
+        return rate_limit
+    # guilds.join lets us add the user to the server automatically, but only
+    # works when a bot token + guild id are configured. Otherwise just identify.
+    scope = "identify guilds.join" if (DISCORD_BOT_TOKEN and DISCORD_GUILD_ID) else "identify"
+    params = urlencode({
+        "client_id": DISCORD_CLIENT_ID,
+        "redirect_uri": discord_redirect_uri(),
+        "response_type": "code",
+        "scope": scope,
+        "state": discord_state_for_user(user["google_id"]),
+        "prompt": "consent",
+    })
+    return RedirectResponse(f"https://discord.com/oauth2/authorize?{params}", status_code=302)
+
+@qr_app.get("/auth/discord/callback")
+async def auth_discord_callback(request: Request, code: str = Query(""), state: str = Query(""), error: str = Query("")):
+    """Complete the OAuth flow: store the link, then best-effort join + role."""
+    user = require_user(request)
+    if error or not code:
+        return RedirectResponse("/profile?discord_error=" + quote("Discord linking was cancelled."), status_code=303)
+    state_user = verify_discord_state(state)
+    if not state_user or str(state_user) != str(user.get("google_id")):
+        audit_log("discord.link_state_mismatch", request=request, actor_user_id=user.get("google_id"))
+        return RedirectResponse("/profile?discord_error=" + quote("Discord linking expired or did not match this session. Try again."), status_code=303)
+    try:
+        token_payload = await asyncio.to_thread(discord_exchange_code, code)
+        identity = await asyncio.to_thread(discord_fetch_identity, token_payload.get("access_token", ""))
+    except Exception:
+        return RedirectResponse("/profile?discord_error=" + quote("Discord did not accept the link request. Try again."), status_code=303)
+    discord_id = str(identity.get("id") or "")
+    discord_username = str(identity.get("username") or "")[:80]
+    if not discord_id:
+        return RedirectResponse("/profile?discord_error=" + quote("Discord returned no account id."), status_code=303)
+
+    joined = await asyncio.to_thread(discord_join_guild, discord_id, token_payload.get("access_token", ""))
+    role_granted = await asyncio.to_thread(discord_grant_verified_role, discord_id)
+
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                """INSERT INTO discord_links (id, user_id, discord_id, discord_username, guild_member, role_granted, linked_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(user_id) DO UPDATE SET
+                     discord_id = excluded.discord_id,
+                     discord_username = excluded.discord_username,
+                     guild_member = excluded.guild_member,
+                     role_granted = excluded.role_granted,
+                     linked_at = excluded.linked_at""",
+                (make_id("dlink"), str(user["google_id"]), discord_id, discord_username, 1 if joined else 0, 1 if role_granted else 0, now_iso()),
+            )
+    except sqlite3.IntegrityError:
+        # discord_id UNIQUE tripped: that Discord account is already linked to
+        # a different SafeScan account (anti-abuse for airdrop perks).
+        audit_log("discord.link_duplicate", request=request, actor_user_id=user.get("google_id"), metadata={"discordId": discord_id})
+        return RedirectResponse("/profile?discord_error=" + quote("That Discord account is already linked to another SafeScan account."), status_code=303)
+
+    audit_log("discord.linked", request=request, actor_user_id=user.get("google_id"),
+              metadata={"discordId": discord_id, "guildMember": joined, "roleGranted": role_granted})
+    return RedirectResponse("/profile", status_code=303)
+
+@qr_app.post("/auth/discord/unlink")
+async def auth_discord_unlink(request: Request):
+    """Remove the stored Discord link (does not kick them from the server)."""
+    user = require_user(request)
+    with get_conn() as conn:
+        conn.execute("DELETE FROM discord_links WHERE user_id = ?", (str(user["google_id"]),))
+    audit_log("discord.unlinked", request=request, actor_user_id=user.get("google_id"))
+    return RedirectResponse("/profile", status_code=303)
+
 @qr_app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, error: str = Query(""), tab: str = Query("login"), next_url: str = Query("/", alias="next")):
     user = get_session_user(request)
@@ -7449,7 +7660,7 @@ async def username_onboarding_submit(request: Request, username: str = Form(...)
     return await profile_username_submit(request, username)
 
 @qr_app.get("/profile", response_class=HTMLResponse)
-async def profile_page(request: Request, error: str = Query("")):
+async def profile_page(request: Request, error: str = Query(""), discord_error: str = Query("")):
     user = require_user(request)
     email = user["email"]
     username = (user.get("username") or "").strip()
@@ -7461,6 +7672,10 @@ async def profile_page(request: Request, error: str = Query("")):
         "scan_count": get_scan_count(email),
         "leaderboard_status": "Live" if username else "Hidden",
         "error": error,
+        "discord_enabled": discord_linking_configured(),
+        "discord_link": get_discord_link(user["google_id"]),
+        "discord_error": discord_error,
+        "discord_invite": DISCORD_INVITE_URL,
     })
 
 @qr_app.post("/profile/username", response_class=HTMLResponse)

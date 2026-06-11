@@ -43,6 +43,7 @@ USER_COLUMN = {
     "abuse_flags": "email",
     "consent_logs": "user_id",
     "referrals": "referrer_email",
+    "discord_links": "user_id",
 }
 
 # Tables with no per-user owner column. These hold global/administrative data,

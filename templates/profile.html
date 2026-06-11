@@ -61,6 +61,32 @@
         {% endif %}
       </section>
 
+      {% if discord_enabled %}
+      <section class="profile-card">
+        <p class="eyebrow">Community</p>
+        <h2>Discord</h2>
+        {% if discord_error %}<p class="error-text">{{ discord_error }}</p>{% endif %}
+        {% if discord_link %}
+          <p class="success-text">Linked: @{{ discord_link.discord_username or discord_link.discord_id }}</p>
+          <p class="profile-muted">
+            {% if discord_link.role_granted %}
+              You have the Verified role in the SafeScan server.
+            {% elif discord_link.guild_member %}
+              You're in the SafeScan server. The Verified role will be granted shortly &mdash; re-link if it doesn't appear.
+            {% else %}
+              Account linked. <a href="{{ discord_invite }}" target="_blank" rel="noopener noreferrer">Join the SafeScan server</a> to claim your Verified role.
+            {% endif %}
+          </p>
+          <form action="/auth/discord/unlink" method="post">
+            <button class="sign-out-button" type="submit">Unlink Discord</button>
+          </form>
+        {% else %}
+          <p class="profile-muted">Link your Discord account to verify yourself in the SafeScan community server and unlock the Verified role (and future airdrop perks).</p>
+          <a class="profile-button" href="/auth/discord">Link Discord</a>
+        {% endif %}
+      </section>
+      {% endif %}
+
       <aside class="profile-card">
         <h2>Account</h2>
         <div class="profile-link-list">
