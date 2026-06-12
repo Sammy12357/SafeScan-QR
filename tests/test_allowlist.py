@@ -8,7 +8,10 @@ from pathlib import Path
 # Allow `import safescan_allowlist` when tests are run from the repo root.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import safescan_allowlist  # noqa: E402
+
 from safescan_allowlist import (  # noqa: E402
+    brand_near_miss,
     first_party_hosts,
     is_first_party,
     is_known_popular,
@@ -119,6 +122,17 @@ class TestSafetyScreen:
         assert ok is False
         assert "shortener" in reason
 
+    def test_high_risk_public_suffix_rejected(self):
+        ok, reason = safety_screen("https://www.robiox.com.py/users/282744267386/profile")
+        assert ok is False
+        assert "high-risk public suffix" in reason
+
+    def test_brand_near_miss_rejected(self):
+        assert brand_near_miss("robiox.com") == "roblox"
+        ok, reason = safety_screen("https://www.robiox.com/users/282744267386/profile")
+        assert ok is False
+        assert "brand impersonation" in reason
+
     def test_redirect_param_rejected(self):
         ok, reason = safety_screen("https://google.com/url?q=evil.test")
         assert ok is False
@@ -223,3 +237,17 @@ class TestShouldShortCircuit:
         ok, reason = should_short_circuit("https://phisher.github.io/wallet-claim")
         assert ok is False
         assert "Tranco" in reason
+
+    def test_popular_brand_impersonator_falls_through(self, monkeypatch):
+        monkeypatch.setattr(
+            safescan_allowlist,
+            "load_allowlist",
+            lambda: frozenset({"robiox.com", "robiox.com.py"}),
+        )
+        ok, reason = should_short_circuit("https://www.robiox.com/users/282744267386/profile")
+        assert ok is False
+        assert "brand impersonation" in reason
+
+        ok, reason = should_short_circuit("https://www.robiox.com.py/users/282744267386/profile")
+        assert ok is False
+        assert "high-risk public suffix" in reason

@@ -116,6 +116,12 @@ MULTI_TENANT_SUFFIXES = frozenset({
     "render.com", "onrender.com", "fly.dev", "ngrok.io", "ngrok-free.app",
 })
 
+# Public suffixes that are frequently abused by disposable phishing pages.
+# Even if one appears in Tranco, do not let it bypass deeper domain checks.
+HIGH_RISK_TWO_LABEL_PUBLIC_SUFFIXES = frozenset({
+    "com.py", "com.cm", "com.de",
+})
+
 # Common ccTLD suffixes where the registrable domain is 3 labels deep
 # (foo.co.uk, foo.com.au, etc.) rather than 2. Not exhaustive but covers
 # the cases that matter for an allowlist match against Tranco's 2-label
@@ -129,6 +135,30 @@ TWO_LABEL_PUBLIC_SUFFIXES = frozenset({
     "co.in", "co.za", "co.nz", "com.py",
 })
 
+PROTECTED_BRANDS = frozenset({
+    "roblox",
+    "steamcommunity",
+    "steampowered",
+    "paypal",
+    "microsoft",
+    "google",
+    "apple",
+    "amazon",
+    "facebook",
+    "instagram",
+    "netflix",
+    "binance",
+    "coinbase",
+    "metamask",
+    "discord",
+    "wellsfargo",
+    "bankofamerica",
+    "chase",
+    "ebay",
+    "linkedin",
+    "twitter",
+})
+
 IPV4_RE = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$")
 
 # Cyrillic / Greek characters that look identical to Latin letters and are
@@ -139,6 +169,22 @@ HOMOGRAPH_CHARS_RE = re.compile(r"[Ѐ-ӿͰ-Ͽ]")
 
 def _strip_port(host: str) -> str:
     return host.split(":", 1)[0]
+
+
+def _levenshtein(a: str, b: str) -> int:
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i] + [0] * len(b)
+        for j, cb in enumerate(b, 1):
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb))
+        prev = cur
+    return prev[-1]
 
 
 def registrable_domain(host: str) -> str:
@@ -162,6 +208,20 @@ def registrable_domain(host: str) -> str:
     if last_two in TWO_LABEL_PUBLIC_SUFFIXES and len(parts) >= 3:
         return ".".join(parts[-3:])
     return last_two
+
+
+def brand_near_miss(domain: str) -> str:
+    label = (domain or "").split(".", 1)[0]
+    if len(label) < 4:
+        return ""
+    for brand in PROTECTED_BRANDS:
+        distance = _levenshtein(label, brand)
+        if distance == 0:
+            continue
+        max_len = max(len(label), len(brand))
+        if distance <= 2 and (distance / max_len) <= 0.3:
+            return brand
+    return ""
 
 
 @lru_cache(maxsize=1)
@@ -244,6 +304,14 @@ def safety_screen(url: str) -> tuple[bool, str]:
     domain = registrable_domain(host)
     if host in SHORTENER_HOSTS or domain in SHORTENER_HOSTS:
         return False, f"known URL shortener: {host}"
+
+    public_suffix = ".".join(domain.split(".")[-2:]) if domain.count(".") >= 2 else ""
+    if public_suffix in HIGH_RISK_TWO_LABEL_PUBLIC_SUFFIXES:
+        return False, f"high-risk public suffix: {public_suffix}"
+
+    brand = brand_near_miss(domain)
+    if brand:
+        return False, f"brand impersonation near-miss: {domain} looks like {brand}"
 
     # Open-redirect-style query params on a "trusted" domain are the most
     # common abuse vector for popular sites - treat their presence as a
