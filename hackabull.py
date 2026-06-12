@@ -2507,6 +2507,23 @@ def score_from_signals(signals):
     medium_count = sum(1 for item in signals if item["severity"] == "medium")
     low_count = sum(1 for item in signals if item["severity"] == "low")
     score = min(80, high_count * 40) + medium_count * 15 + low_count * 5
+    malicious_signal_checks = {
+        "Brand Impersonation",
+        "Google Safe Browsing",
+        "VirusTotal Reputation",
+        "Crypto Pattern",
+        "Ethereum Approval Pattern",
+        "Token Permit Pattern",
+        "NFT Approval Pattern",
+        "Known Malicious Contract",
+        "Solana Address Placement",
+    }
+    has_malicious_signal = any(
+        item.get("severity") == "high" and item.get("check") in malicious_signal_checks
+        for item in signals
+    )
+    if has_malicious_signal:
+        score = max(score, 85)
     if high_count >= 2 and medium_count >= 1:
         score = max(score, 90)
     elif high_count == 1 and medium_count >= 2:
