@@ -9,7 +9,7 @@ def load_app(tmp_path, monkeypatch):
     monkeypatch.setenv("APP_URL", "https://testserver")
     monkeypatch.setenv("SAFESCAN_ML2_ENABLED", "false")
     monkeypatch.setenv("DOMAIN_AGE_CHECK_ENABLED", "false")
-    sys.modules.pop("hackabull", None)
+    [sys.modules.pop(_m, None) for _m in list(sys.modules) if _m == "hackabull" or _m.startswith("hackabull.")]
     sys.modules.pop("db", None)
     sys.modules.pop("storage", None)
     return importlib.import_module("hackabull")

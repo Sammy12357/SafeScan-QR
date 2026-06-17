@@ -31,8 +31,10 @@ WORKDIR /app
 COPY --from=builder /install /usr/local
 
 # Copy only application code
-COPY hackabull.py distribute.py scrop.py db.py storage.py ml_model_final.py \
-     safescan_allowlist.py safescan_model_calibration.py ./
+COPY distribute.py scrop.py db.py storage.py ml_model_final.py \
+     safescan_allowlist.py ./
+COPY hackabull/ ./hackabull/
+COPY safescan_model_calibration/ ./safescan_model_calibration/
 COPY templates/ ./templates/
 COPY static/ ./static/
 COPY models/ ./models/

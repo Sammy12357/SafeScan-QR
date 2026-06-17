@@ -8,8 +8,15 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-APP_JS = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
-SERVER = (ROOT / "hackabull.py").read_text(encoding="utf-8")
+# app.js was split into ordered app-*.js files; scan them all together.
+APP_JS = "\n".join(
+    p.read_text(encoding="utf-8") for p in sorted((ROOT / "static").glob("app-*.js"))
+)
+# The backend was split from a single hackabull.py into a hackabull/ package;
+# scan every module so these source assertions are location-independent.
+SERVER = "\n".join(
+    p.read_text(encoding="utf-8") for p in sorted((ROOT / "hackabull").glob("*.py"))
+)
 ENGINE = (ROOT / "removals" / "engine.py").read_text(encoding="utf-8")
 
 

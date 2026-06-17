@@ -1,0 +1,135 @@
+/* styles-theme-light.css — light-theme surface cleanup overrides (kept last).
+   Part of styles.css, imported by it in cascade order. */
+/* light-theme-v2 surface cleanup */
+:root[data-theme="light"] .hero,
+:root[data-theme="light"] .test-site-page .hero,
+:root[data-theme="light"] .test-section,
+:root[data-theme="light"] .airdrop-panel,
+:root[data-theme="light"] .scanner-panel,
+:root[data-theme="light"] .results-panel,
+:root[data-theme="light"] .generate-qr-panel,
+:root[data-theme="light"] .go-ghost-hero,
+:root[data-theme="light"] .go-ghost-card,
+:root[data-theme="light"] .legal-document,
+:root[data-theme="light"] .profile-card,
+:root[data-theme="light"] .account-card,
+:root[data-theme="light"] .sidenav {
+  background: rgba(226, 234, 242, 0.94);
+  border-color: rgba(16, 24, 39, 0.13);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .hero-card,
+:root[data-theme="light"] .story-card,
+:root[data-theme="light"] .airdrop-card,
+:root[data-theme="light"] .scanner-card,
+:root[data-theme="light"] .result-card,
+:root[data-theme="light"] .toggle-card,
+:root[data-theme="light"] .test-proof-card,
+:root[data-theme="light"] .test-price-card,
+:root[data-theme="light"] .test-social,
+:root[data-theme="light"] .broker-card,
+:root[data-theme="light"] .contact-card,
+:root[data-theme="light"] .risk-model-grid section,
+:root[data-theme="light"] .rights-grid article,
+:root[data-theme="light"] .payment-panel > div,
+:root[data-theme="light"] .scanner-subcard,
+:root[data-theme="light"] .footer-newsletter,
+:root[data-theme="light"] .model-caption,
+:root[data-theme="light"] .wallet-modal-card,
+:root[data-theme="light"] .qr-camera-card,
+:root[data-theme="light"] .ghost-consent-card,
+:root[data-theme="light"] .ghost-scope-card {
+  background: rgba(247, 249, 252, 0.97);
+  border-color: rgba(16, 24, 39, 0.14);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .hero-metrics div,
+:root[data-theme="light"] .test-stat-row div,
+:root[data-theme="light"] .test-faq-list details,
+:root[data-theme="light"] .airdrop-progress,
+:root[data-theme="light"] .wallet-panel,
+:root[data-theme="light"] .referral-panel,
+:root[data-theme="light"] .progress-stats div,
+:root[data-theme="light"] .token-address-row,
+:root[data-theme="light"] .maintenance-grid a,
+:root[data-theme="light"] .broker-checks label,
+:root[data-theme="light"] .ghost-automation-row,
+:root[data-theme="light"] .ghost-scope-keyword,
+:root[data-theme="light"] .ghost-scope-detail,
+:root[data-theme="light"] .contact-hero,
+:root[data-theme="light"] .ml-panel,
+:root[data-theme="light"] .vt-panel {
+  background: rgba(255, 255, 255, 0.66);
+  border-color: rgba(16, 24, 39, 0.12);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .test-proof-card:hover,
+:root[data-theme="light"] .test-price-card:hover,
+:root[data-theme="light"] .maintenance-grid a:hover,
+:root[data-theme="light"] .contact-card:hover,
+:root[data-theme="light"] .test-faq-list details:hover {
+  background: #ffffff;
+  border-color: rgba(31, 214, 163, 0.34);
+}
+
+:root[data-theme="light"] .spline-showcase {
+  background: #dce5ee;
+}
+
+:root[data-theme="light"] .screen-grid,
+:root[data-theme="light"] .scanner-video-frame,
+:root[data-theme="light"] .qr-frame,
+:root[data-theme="light"] .qr-camera-stage {
+  background: #f4f7fa;
+}
+
+:root[data-theme="light"] .footer-newsletter h2,
+:root[data-theme="light"] .footer-brand-name,
+:root[data-theme="light"] .test-section h2,
+:root[data-theme="light"] .test-faq-list summary,
+:root[data-theme="light"] .test-proof-card h3,
+:root[data-theme="light"] .test-price-card h3 {
+  color: var(--text);
+}
+
+:root[data-theme="light"] .footer-newsletter p,
+:root[data-theme="light"] .footer-brand-desc,
+:root[data-theme="light"] .footer-links a,
+:root[data-theme="light"] .footer-bottom,
+:root[data-theme="light"] .test-proof-card p,
+:root[data-theme="light"] .test-price-card p,
+:root[data-theme="light"] .test-stat-row span,
+:root[data-theme="light"] .scanner-subcard-label {
+  color: var(--muted);
+}
+
+:root[data-theme="light"] .go-ghost-device-notice {
+  background: rgba(255, 255, 255, 0.62);
+  border-color: rgba(16, 24, 39, 0.12);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .admin-dashboard-button {
+  color: #31215f;
+}
+
+:root[data-theme="light"] .footer-newsletter-form input,
+:root[data-theme="light"] input[type="text"],
+:root[data-theme="light"] .legal-form input,
+:root[data-theme="light"] .legal-form select,
+:root[data-theme="light"] .legal-form textarea,
+:root[data-theme="light"] .go-ghost-form input,
+:root[data-theme="light"] .scanner-subcard-url input[type="url"],
+:root[data-theme="light"] .generate-qr-form-row input[type="url"] {
+  background: rgba(255, 255, 255, 0.82);
+  border-color: rgba(16, 24, 39, 0.16);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .footer-newsletter-form button {
+  background: #101827;
+  color: #f8fafc;
+}

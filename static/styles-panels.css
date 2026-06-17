@@ -1,0 +1,111 @@
+/* styles-panels.css — Analyze Payload sub-cards and the Generate Safe QR panel.
+   Part of styles.css, imported by it in cascade order. */
+/* Stacked sub-cards in the Analyze Payload column. Upload/Scan sits on top,
+   the URL paste form sits directly below in its own sub-card. */
+.scanner-card-stack { display: flex; flex-direction: column; gap: 14px; }
+.scanner-subcard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+}
+.scanner-subcard-eyebrow {
+  margin: 0 0 4px;
+  color: var(--accent);
+  font-family: var(--display-font);
+  font-size: 0.75rem;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+}
+.scanner-subcard-label { display: block; margin: 0; color: var(--muted); font-size: 0.85rem; }
+.scanner-subcard-url input[type="url"] {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font: inherit;
+}
+.scanner-subcard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 4px;
+}
+.scanner-subcard-actions .primary-button,
+.scanner-subcard-actions .secondary-button {
+  flex: 1 1 180px;
+  padding: 12px 16px;
+  text-align: center;
+}
+.generated-qr-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid rgba(103, 242, 200, 0.22);
+  border-radius: 12px;
+  background: rgba(103, 242, 200, 0.04);
+}
+.generated-qr-image {
+  width: 192px;
+  height: 192px;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px;
+}
+.generated-qr-wrap .secondary-button { padding: 8px 14px; font-size: 0.9rem; }
+.generated-qr-error {
+  margin: 6px 0 0;
+  color: var(--danger);
+  font-size: 0.9rem;
+}
+
+
+/* Standalone "Generate Safe QR" panel sits between Analyze Payload and
+   Plans. Same panel chrome as the other sections; the form row is a
+   horizontal flex with the URL field stretching to fill. */
+.generate-qr-panel {
+  padding: 28px 26px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.generate-qr-copy {
+  margin: 14px 0 18px;
+  color: var(--muted);
+  max-width: 720px;
+  line-height: 1.55;
+}
+.generate-qr-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: stretch;
+  margin-bottom: 4px;
+}
+.generate-qr-form-row input[type="url"] {
+  flex: 1 1 320px;
+  min-width: 0;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font: inherit;
+}
+.generate-qr-form-row .primary-button {
+  flex: 0 0 auto;
+  padding: 12px 22px;
+}
+@media (max-width: 640px) {
+  .generate-qr-form-row .primary-button { flex: 1 1 100%; }
+}
+

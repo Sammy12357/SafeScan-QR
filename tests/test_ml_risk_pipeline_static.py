@@ -2,7 +2,11 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SERVER = (ROOT / "hackabull.py").read_text(encoding="utf-8")
+# The backend was split from a single hackabull.py into a hackabull/ package;
+# scan every module so these source assertions are location-independent.
+SERVER = "\n".join(
+    p.read_text(encoding="utf-8") for p in sorted((ROOT / "hackabull").glob("*.py"))
+)
 INDEX = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
 REQUIREMENTS = (ROOT / "requirements.txt").read_text(encoding="utf-8")
 

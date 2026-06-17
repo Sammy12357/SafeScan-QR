@@ -16,7 +16,7 @@ def security_app(tmp_path, monkeypatch):
     monkeypatch.setenv("OWNER_EMAILS", "owner@example.com")
     monkeypatch.setenv("GOOGLE_CLIENT_ID", "test-client")
 
-    sys.modules.pop("hackabull", None)
+    [sys.modules.pop(_m, None) for _m in list(sys.modules) if _m == "hackabull" or _m.startswith("hackabull.")]
     sys.modules.pop("db", None)
     module = importlib.import_module("hackabull")
     module.RATE_LIMITS.clear()
@@ -24,7 +24,7 @@ def security_app(tmp_path, monkeypatch):
 
     yield module, TestClient(module.qr_app, base_url="https://testserver"), db_path
 
-    sys.modules.pop("hackabull", None)
+    [sys.modules.pop(_m, None) for _m in list(sys.modules) if _m == "hackabull" or _m.startswith("hackabull.")]
     sys.modules.pop("db", None)
 
 
@@ -215,7 +215,7 @@ def test_admin_access_denylist_removes_contact_email_access(tmp_path, monkeypatc
     monkeypatch.setenv("OWNER_EMAILS", "owner@example.com,safescanqr@gmail.com")
     monkeypatch.setenv("GOOGLE_CLIENT_ID", "test-client")
 
-    sys.modules.pop("hackabull", None)
+    [sys.modules.pop(_m, None) for _m in list(sys.modules) if _m == "hackabull" or _m.startswith("hackabull.")]
     sys.modules.pop("db", None)
     module = importlib.import_module("hackabull")
 
@@ -236,5 +236,5 @@ def test_admin_access_denylist_removes_contact_email_access(tmp_path, monkeypatc
 
     assert role == "user"
 
-    sys.modules.pop("hackabull", None)
+    [sys.modules.pop(_m, None) for _m in list(sys.modules) if _m == "hackabull" or _m.startswith("hackabull.")]
     sys.modules.pop("db", None)

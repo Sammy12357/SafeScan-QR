@@ -3,7 +3,7 @@
 This checklist documents compliance-oriented controls implemented for audit, investor, and future developer review. It is not legal advice; production launch should include attorney review.
 
 ### GDPR
-- [x] Consent banner with reject option - `templates/footer.html`, `static/app.js`, `POST /api/consent`
+- [x] Consent banner with reject option - `templates/footer.html`, `static/app-widgets.js`, `POST /api/consent`
 - [x] Consent records stored with timestamp, IP hash, locale, banner version, and 12-month expiry - `consent_logs` table
 - [x] User rights portal - `/legal/data-request`
 - [x] Data processing records - `/admin/data-processing-log`

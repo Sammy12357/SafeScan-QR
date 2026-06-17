@@ -3,6 +3,19 @@ import sqlite3
 import sys
 
 
+def patch_everywhere(monkeypatch, name, value):
+    """Patch ``name`` on every loaded ``hackabull`` submodule that defines it.
+
+    The backend is now a package, so a helper imported ``from .x import foo``
+    has its own binding inside each consumer module. Patching only the
+    top-level package would miss those copies, so mirror the old single-module
+    behaviour by overriding the name wherever it appears.
+    """
+    for mod_name, mod in list(sys.modules.items()):
+        if (mod_name == "hackabull" or mod_name.startswith("hackabull.")) and hasattr(mod, name):
+            monkeypatch.setattr(mod, name, value, raising=False)
+
+
 def load_app(tmp_path, monkeypatch):
     db_path = tmp_path / "domain-age.db"
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path.as_posix()}")
@@ -10,7 +23,7 @@ def load_app(tmp_path, monkeypatch):
     monkeypatch.setenv("APP_URL", "https://testserver")
     monkeypatch.setenv("SAFESCAN_ML2_ENABLED", "false")
     monkeypatch.setenv("DOMAIN_AGE_CHECK_ENABLED", "true")
-    sys.modules.pop("hackabull", None)
+    [sys.modules.pop(_m, None) for _m in list(sys.modules) if _m == "hackabull" or _m.startswith("hackabull.")]
     sys.modules.pop("db", None)
     sys.modules.pop("storage", None)
     module = importlib.import_module("hackabull")
@@ -30,7 +43,7 @@ def age_result(module, domain, age_days, source="test"):
 
 def test_new_domain_generates_high_signal(tmp_path, monkeypatch):
     module, _ = load_app(tmp_path, monkeypatch)
-    monkeypatch.setattr(module, "lookup_domain_age_result", lambda url: age_result(module, "new.test", 5))
+    patch_everywhere(monkeypatch, "lookup_domain_age_result", lambda url: age_result(module, "new.test", 5))
 
     signals = module.check_domain_intelligence("https://new.test/login")
 
@@ -41,7 +54,7 @@ def test_new_domain_generates_high_signal(tmp_path, monkeypatch):
 
 def test_established_domain_adds_no_age_signal(tmp_path, monkeypatch):
     module, _ = load_app(tmp_path, monkeypatch)
-    monkeypatch.setattr(module, "lookup_domain_age_result", lambda url: age_result(module, "example.com", 730))
+    patch_everywhere(monkeypatch, "lookup_domain_age_result", lambda url: age_result(module, "example.com", 730))
 
     signals = module.check_domain_intelligence("https://example.com")
 
@@ -58,7 +71,7 @@ def test_cache_hit_skips_fetch(tmp_path, monkeypatch):
         "registrar": "Cached Registrar",
         "error": None,
     })
-    monkeypatch.setattr(module, "fetch_domain_age", lambda domain: (_ for _ in ()).throw(AssertionError("cache missed")))
+    patch_everywhere(monkeypatch, "fetch_domain_age", lambda domain: (_ for _ in ()).throw(AssertionError("cache missed")))
 
     result = module.get_domain_age_days("cached.test")
 
@@ -70,7 +83,7 @@ def test_cache_hit_skips_fetch(tmp_path, monkeypatch):
 
 def test_all_sources_fail_returns_low_unknown_signal(tmp_path, monkeypatch):
     module, _ = load_app(tmp_path, monkeypatch)
-    monkeypatch.setattr(module, "fetch_domain_age", lambda domain: {
+    patch_everywhere(monkeypatch, "fetch_domain_age", lambda domain: {
         "creation_date": None,
         "age_days": None,
         "source": "unavailable",
@@ -88,18 +101,18 @@ def test_all_sources_fail_returns_low_unknown_signal(tmp_path, monkeypatch):
 
 def test_ip_url_skips_domain_age(tmp_path, monkeypatch):
     module, _ = load_app(tmp_path, monkeypatch)
-    monkeypatch.setattr(module, "lookup_domain_age_result", lambda url: (_ for _ in ()).throw(AssertionError("IP should skip age lookup")))
+    patch_everywhere(monkeypatch, "lookup_domain_age_result", lambda url: (_ for _ in ()).throw(AssertionError("IP should skip age lookup")))
 
     assert module.check_domain_intelligence("https://8.8.8.8/path") == []
 
 
 def test_wayback_fallback(tmp_path, monkeypatch):
     module, _ = load_app(tmp_path, monkeypatch)
-    monkeypatch.setattr(module, "fetch_domain_age_whois", lambda domain: None)
-    monkeypatch.setattr(module, "fetch_domain_age_rdap", lambda domain: None)
-    monkeypatch.setattr(module, "fetch_domain_age_whoisxml", lambda domain: None)
-    monkeypatch.setattr(module, "fetch_domain_age_securitytrails", lambda domain: None)
-    monkeypatch.setattr(module, "fetch_domain_age_wayback", lambda domain: {
+    patch_everywhere(monkeypatch, "fetch_domain_age_whois", lambda domain: None)
+    patch_everywhere(monkeypatch, "fetch_domain_age_rdap", lambda domain: None)
+    patch_everywhere(monkeypatch, "fetch_domain_age_whoisxml", lambda domain: None)
+    patch_everywhere(monkeypatch, "fetch_domain_age_securitytrails", lambda domain: None)
+    patch_everywhere(monkeypatch, "fetch_domain_age_wayback", lambda domain: {
         "creation_date": "2024-01-01T00:00:00Z",
         "age_days": 891,
         "source": "wayback_lower_bound",

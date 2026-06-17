@@ -3,6 +3,18 @@ import importlib
 import sys
 
 
+def patch_everywhere(monkeypatch, name, value):
+    """Patch ``name`` on every loaded ``hackabull`` submodule that defines it.
+
+    The backend is a package now, so a helper imported ``from .x import foo``
+    has its own binding inside each consumer module; patching only the
+    top-level package would miss those copies.
+    """
+    for mod_name, mod in list(sys.modules.items()):
+        if (mod_name == "hackabull" or mod_name.startswith("hackabull.")) and hasattr(mod, name):
+            monkeypatch.setattr(mod, name, value, raising=False)
+
+
 def load_app(tmp_path, monkeypatch):
     db_path = tmp_path / "risk-regressions.db"
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path.as_posix()}")
@@ -12,28 +24,28 @@ def load_app(tmp_path, monkeypatch):
     monkeypatch.setenv("DOMAIN_AGE_CHECK_ENABLED", "false")
     monkeypatch.delenv("GOOGLE_SAFE_BROWSING_API_KEY", raising=False)
     monkeypatch.delenv("VIRUSTOTAL_API_KEY", raising=False)
-    sys.modules.pop("hackabull", None)
+    [sys.modules.pop(_m, None) for _m in list(sys.modules) if _m == "hackabull" or _m.startswith("hackabull.")]
     sys.modules.pop("db", None)
     sys.modules.pop("storage", None)
     return importlib.import_module("hackabull")
 
 
 def stub_external_services(module, monkeypatch):
-    monkeypatch.setattr(
-        module,
+    patch_everywhere(
+        monkeypatch,
         "trace_redirect_chain",
         lambda url: {
             "signal": module.signal("Redirect Chain", "0 hop(s)", "low", "Redirect chain is simple.", True),
             "redirectChain": [],
         },
     )
-    monkeypatch.setattr(
-        module,
+    patch_everywhere(
+        monkeypatch,
         "google_reputation_signal",
         lambda url: module.signal("Google Safe Browsing", "No matches", "low", "No known unsafe match returned.", True),
     )
-    monkeypatch.setattr(
-        module,
+    patch_everywhere(
+        monkeypatch,
         "virustotal_lookup_result",
         lambda url: {
             "url": url,
@@ -44,7 +56,7 @@ def stub_external_services(module, monkeypatch):
             "statusMessage": "Not configured.",
         },
     )
-    monkeypatch.setattr(module, "classify_qr_with_ml", lambda *args, **kwargs: {"enabled": False, "reason": "test"})
+    patch_everywhere(monkeypatch, "classify_qr_with_ml", lambda *args, **kwargs: {"enabled": False, "reason": "test"})
 
 
 def analyze(module, url):

@@ -2,8 +2,15 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SERVER = (ROOT / "hackabull.py").read_text(encoding="utf-8")
-CLIENT = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+# The backend was split from a single hackabull.py into a hackabull/ package;
+# scan every module so these source assertions are location-independent.
+SERVER = "\n".join(
+    p.read_text(encoding="utf-8") for p in sorted((ROOT / "hackabull").glob("*.py"))
+)
+# app.js was split into ordered app-*.js files; scan them all together.
+CLIENT = "\n".join(
+    p.read_text(encoding="utf-8") for p in sorted((ROOT / "static").glob("app-*.js"))
+)
 LOGIN = (ROOT / "templates" / "login.html").read_text(encoding="utf-8")
 INDEX = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
 QR_CAMERA = (ROOT / "static" / "qr-camera.js").read_text(encoding="utf-8")

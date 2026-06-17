@@ -16,7 +16,7 @@ def load_app(tmp_path, monkeypatch):
     monkeypatch.setenv("SAFESCAN_ML_ENABLED", "false")
     monkeypatch.setenv("STORAGE_BACKEND", "local")
     monkeypatch.setenv("METRICS_ALLOWED_IPS", "testclient,127.0.0.1,::1")
-    sys.modules.pop("hackabull", None)
+    [sys.modules.pop(_m, None) for _m in list(sys.modules) if _m == "hackabull" or _m.startswith("hackabull.")]
     sys.modules.pop("db", None)
     sys.modules.pop("storage", None)
     module = importlib.import_module("hackabull")

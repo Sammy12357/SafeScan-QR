@@ -14,6 +14,20 @@ import qrcode
 from fastapi.testclient import TestClient
 
 
+def set_everywhere(name, value):
+    """Bind ``name`` to ``value`` on every loaded ``hackabull`` submodule.
+
+    The backend is now a package, so a helper imported ``from .x import foo``
+    has its own binding inside each consumer module. Overriding it only on the
+    top-level package would miss those copies, so mirror the old single-module
+    behaviour by setting the name wherever it appears. (Each test re-imports the
+    package fresh, so these direct assignments do not leak across tests.)
+    """
+    for mod_name, mod in list(sys.modules.items()):
+        if (mod_name == "hackabull" or mod_name.startswith("hackabull.")) and hasattr(mod, name):
+            setattr(mod, name, value)
+
+
 @pytest.fixture()
 def auth_app(tmp_path, monkeypatch):
     db_path = tmp_path / "auth.db"
@@ -28,14 +42,14 @@ def auth_app(tmp_path, monkeypatch):
     monkeypatch.setenv("SOLANA_USD_PRICE_FALLBACK", "100")
     monkeypatch.setenv("ALPHA_SOLANA_ACCESS_DAYS", "30")
 
-    sys.modules.pop("hackabull", None)
+    [sys.modules.pop(_m, None) for _m in list(sys.modules) if _m == "hackabull" or _m.startswith("hackabull.")]
     module = importlib.import_module("hackabull")
     module.RATE_LIMITS.clear()
-    module.run_fraud_checks = lambda *args, **kwargs: []
+    set_everywhere("run_fraud_checks", lambda *args, **kwargs: [])
 
     yield module, TestClient(module.qr_app, base_url="https://testserver"), db_path
 
-    sys.modules.pop("hackabull", None)
+    [sys.modules.pop(_m, None) for _m in list(sys.modules) if _m == "hackabull" or _m.startswith("hackabull.")]
 
 
 def db_rows(db_path, query, params=()):
@@ -195,12 +209,12 @@ def test_solana_payment_link_and_verification_store_subscription(auth_app):
         "amount_lamports": 10000000,
     }]
 
-    module.verify_alpha_solana_payment = lambda ref: ""
+    set_everywhere("verify_alpha_solana_payment", lambda ref: "")
     pending = client.post("/pay/alpha/solana/verify")
     assert pending.status_code == 202
     assert not db_rows(db_path, "SELECT * FROM alpha_subscriptions WHERE email = ? AND provider = 'solana'", ("solana@example.com",))
 
-    module.verify_alpha_solana_payment = lambda ref: "solana_signature_123"
+    set_everywhere("verify_alpha_solana_payment", lambda ref: "solana_signature_123")
     verified = client.post("/pay/alpha/solana/verify")
 
     assert verified.status_code == 200
