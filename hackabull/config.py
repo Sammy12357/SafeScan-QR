@@ -102,6 +102,10 @@ from safescan_allowlist import should_short_circuit, registrable_domain as allow
 import safescan_model_calibration as sm_calibration
 
 CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID") or os.getenv("googe_client_id")
+# Auth0 mobile sign-in configuration. Production must set both variables in
+# Render; see .env.example and DEPLOYMENT.md. The fallback values exist only so
+# older local-development setups keep starting. A tenant mismatch causes
+# /auth/verify to reject the token because its issuer will not match.
 AUTH0_DOMAIN = (os.getenv("AUTH0_DOMAIN") or "dev-vnllaqnkkegs4xni.us.auth0.com").strip().rstrip("/")
 AUTH0_AUDIENCES = {audience.strip() for audience in (os.getenv("AUTH0_CLIENT_IDS") or os.getenv("AUTH0_CLIENT_ID") or "1XfWxWOtDtN18JCCztRehzcJ1jOSBBic").split(",") if audience.strip()}
 AUTH0_ISSUER = f"https://{AUTH0_DOMAIN}/"

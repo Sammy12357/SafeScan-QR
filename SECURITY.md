@@ -16,6 +16,8 @@ SafeScan QR currently runs as a FastAPI/Python application with SQLite storage i
 - Scan submission no longer trusts the hidden `user_email` form field; the server derives the email from the session.
 - URL analysis validates URL shape, max length, scheme, hostname, and blocks localhost/private/internal Render targets before reputation checks or redirects.
 - Redirect tracing follows redirects manually and validates every hop before requesting it.
+- Auth0 mobile ID tokens are verified server-side using an RS256 signature and the tenant JWKS. The verifier also checks `iss` against `AUTH0_DOMAIN`, `aud` against the `AUTH0_CLIENT_IDS` allowlist, expiration, and the presence of an email claim. JWKS responses are cached for one hour and refreshed once when a token references an unknown key ID.
+- `POST /auth/verify` selects the Auth0 or Google verifier from the token issuer, returns a generic `401` when verification fails, and is limited to 20 attempts per 15 minutes per IP before token validation begins.
 - Wallet connection now uses a server-issued 5-minute nonce and Ed25519 message-signature verification before a wallet is stored.
 - Wallet nonces are single-use, rotated after failed verification, rate-limited per wallet address, and cleaned up by a background task.
 - Verified wallets are stored in the `wallets` table; scan submission no longer trusts client-submitted wallet addresses.
@@ -80,6 +82,8 @@ SafeScan QR currently runs as a FastAPI/Python application with SQLite storage i
 Update these environment variables in Render, redeploy, and invalidate sessions by clearing the `sessions` table if auth secrets or session behavior changes:
 
 - `GOOGLE_CLIENT_SECRET`
+- `AUTH0_DOMAIN` (configuration, not a secret; must match the mobile Auth0 tenant)
+- `AUTH0_CLIENT_IDS` (configuration, not a secret; comma-separated Native application client ID allowlist)
 - `SESSION_SECRET`
 - `JWT_SECRET`
 - `AIRDROP_ADMIN_SECRET`
@@ -101,4 +105,5 @@ Send vulnerability reports to `safescanqr@gmail.com` or the address configured i
 - No URL-fetching code runs without `validate_public_url`.
 - No raw DB record is returned from JSON APIs if it contains internal or private fields.
 - `.env`, `.env.local`, SQLite databases, logs, and temporary dependency folders are not committed.
+- Render has explicit `AUTH0_DOMAIN` and `AUTH0_CLIENT_IDS` values that match the mobile Native application; deployments do not rely on the development fallback in `hackabull/config.py`.
 - Security tests pass once the test suite is added.
