@@ -83,7 +83,14 @@ def _safescan_logo_geometry():
     if _SAFESCAN_LOGO_GEOMETRY is not None:
         return _SAFESCAN_LOGO_GEOMETRY or None
     try:
-        svg_path = os.path.join(os.path.dirname(__file__), "static", "safescan-logo.svg")
+        # Static assets live beside the hackabull package at the repository
+        # root.  Using ``hackabull/static`` here made the package split fall
+        # back to the legacy check-mark badge on every generated QR.
+        svg_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "static",
+            "safescan-logo.svg",
+        )
         root = ElementTree.parse(svg_path).getroot()
         bg_fill, bg_radius, tiles = "#000307", 82.0, []
         for el in root.iter():

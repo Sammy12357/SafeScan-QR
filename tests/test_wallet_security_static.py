@@ -14,6 +14,7 @@ CLIENT = "\n".join(
 LOGIN = (ROOT / "templates" / "login.html").read_text(encoding="utf-8")
 INDEX = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
 QR_CAMERA = (ROOT / "static" / "qr-camera.js").read_text(encoding="utf-8")
+QR_IMAGE = (ROOT / "hackabull" / "qr_image.py").read_text(encoding="utf-8")
 AUTH = (ROOT / "static" / "auth.js").read_text(encoding="utf-8")
 REQUIREMENTS = (ROOT / "requirements.txt").read_text(encoding="utf-8")
 
@@ -104,6 +105,18 @@ def test_camera_scanner_uses_back_button_not_x_close():
     assert 'aria-label="Back to scanner"' in QR_CAMERA
     assert ">Back</button>" in QR_CAMERA
     assert 'aria-label="Close scanner">Ã—</button>' not in QR_CAMERA
+
+
+def test_generated_qr_loads_the_repository_safescan_logo():
+    assert 'os.path.dirname(os.path.dirname(__file__))' in QR_IMAGE
+    assert '"static",' in QR_IMAGE
+    assert '"safescan-logo.svg",' in QR_IMAGE
+
+
+def test_camera_scanner_requires_deliberate_capture():
+    assert '>Take picture</button>' in QR_CAMERA
+    assert 'captureBtn.addEventListener("click", capture)' in QR_CAMERA
+    assert "requestAnimationFrame(tick)" not in QR_CAMERA
 
 
 def test_risk_modal_has_close_button():
