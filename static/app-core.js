@@ -62,24 +62,8 @@ const loadingSteps = [
 let copyToastTimer = 0;
 let riskModalScrollGuard = 0;
 
-function targetHasScrollableAncestor(target) {
-  for (let el = target instanceof Element ? target : null; el && el !== document.body; el = el.parentElement) {
-    const style = window.getComputedStyle(el);
-    const canScrollY = /(auto|scroll)/.test(style.overflowY) && el.scrollHeight > el.clientHeight + 1;
-    if (canScrollY) return true;
-  }
-  return false;
-}
-
-window.addEventListener("wheel", (event) => {
-  if (document.body.classList.contains("sidenav-open")) return;
-  if (riskModal && !riskModal.classList.contains("hidden")) return;
-  if (targetHasScrollableAncestor(event.target)) return;
-  const before = window.scrollY || document.documentElement.scrollTop || 0;
-  window.scrollBy({ top: event.deltaY, left: 0, behavior: "auto" });
-  const after = window.scrollY || document.documentElement.scrollTop || 0;
-  if (after !== before) event.preventDefault();
-}, { passive: false });
+// Keep wheel and touch scrolling native. Intercepting wheel events here
+// competes with smooth scrolling and nested modal/menu scroll containers.
 
 function showCopyToast(message = "Copied") {
   let toast = document.getElementById("copyToast");

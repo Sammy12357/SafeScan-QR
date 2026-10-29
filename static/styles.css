@@ -1,7 +1,7 @@
 /* styles.css — manifest. Imports the modular stylesheets below in cascade
    order. Rules live in the styles-*.css files; edit those, not this list. */
 @import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap");
-@import url("/static/styles-base.css?v=ghost-assist-v1");
+@import url("/static/styles-base.css?v=native-scroll-v3");
 @import url("/static/styles-layout.css?v=ghost-assist-v1");
 @import url("/static/styles-scanner.css?v=ghost-assist-v1");
 @import url("/static/styles-go-ghost.css?v=ghost-assist-v1");
