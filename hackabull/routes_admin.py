@@ -170,6 +170,8 @@ async def admin_flag_scan(request: Request, scan_id: str):
         scan = conn.execute("SELECT * FROM scan_history WHERE id = ?", (scan_id,)).fetchone()
         if not scan:
             raise HTTPException(status_code=404, detail="Not found.")
+        if not str(scan["url"] or "").lower().startswith(("https://", "http://")):
+            raise HTTPException(status_code=400, detail="Only web URL scans can be added to the URL blocklist.")
         conn.execute("UPDATE scan_history SET verdict = 'MALICIOUS', risk_score = 100 WHERE id = ?", (scan_id,))
         conn.execute("INSERT OR IGNORE INTO url_blocklist VALUES (?, ?, ?, ?, ?, NULL)", (make_id("block"), scan["url"], "Admin confirmed malicious scan", admin_user.get("email"), now_iso()))
     audit_log("admin.url_flagged", request=request, actor_user_id=admin_user.get("google_id"), target_type="scan", target_id=scan_id)

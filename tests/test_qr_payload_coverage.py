@@ -8,7 +8,6 @@ import qrcode
 from PIL import Image
 
 from hackabull import qr_decode, qr_detect
-from hackabull.audit import SafeScanError
 
 
 @pytest.mark.parametrize(
@@ -45,41 +44,23 @@ def test_extract_all_distinct_embedded_urls_including_encoded():
     assert len(urls) == 2
 
 
-def test_embedded_url_verdict_uses_worst_result_and_keeps_raw_payload(monkeypatch):
+def test_embedded_url_entrypoint_never_fetches_private_payload_fields(monkeypatch):
     monkeypatch.setattr(qr_detect, "classify_qr_with_ml", lambda *_: {"enabled": False})
     monkeypatch.setattr(qr_detect, "blend_ml_score", lambda score, *_: score)
     monkeypatch.setattr(qr_detect, "ml_signal_from_result", lambda *_, **__: None)
-    seen = []
-
-    async def pipeline(url, qr_image=None):
-        seen.append(url)
-        if "blocked" in url:
-            raise SafeScanError("URL guard rejected this destination", 400)
-        dangerous = "bad" in url
-        return {
-            "url": url,
-            "overallRisk": "high" if dangerous else "safe",
-            "confidenceScore": 95 if dangerous else 10,
-            "threatType": "Known malicious" if dangerous else "No known threat",
-            "verdict": "Known malicious destination" if dangerous else "No known match",
-            "signals": [],
-            "verificationStatus": "unverified" if dangerous else "verified",
-            "unverifiedChecks": ["Redirect target"] if dangerous else [],
-        }
+    async def pipeline(*_args, **_kwargs):
+        raise AssertionError("non-URL QR content must stay local")
 
     monkeypatch.setattr(qr_detect, "analyze_full_pipeline", pipeline)
-    raw = "SMS:123:Visit https://good.example/ and https://bad.example/ then https://blocked.example/"
+    raw = "SMS:123:Visit https://good.example/ and https://bad.example/drain then http://127.0.0.1/"
     analysis = asyncio.run(qr_detect.analyze_embedded_url_payload(raw, "https://good.example/"))
 
-    assert seen == ["https://good.example/", "https://bad.example/", "https://blocked.example/"]
     assert analysis["status"] == "MALICIOUS"
-    assert analysis["score"] == "95"
+    assert int(analysis["score"]) >= 80
     assert analysis["normalized"] == raw
-    assert analysis["embeddedPayload"] == raw
-    assert len(analysis["analyzedUrls"]) == 3
-    assert "Redirect target" in analysis["unverifiedChecks"]
-    assert any("blocked.example" in check for check in analysis["unverifiedChecks"])
-    assert "Known malicious" in analysis["threat_class"]
+    assert analysis["analyzedUrls"] == []
+    assert "Embedded links not fetched" in analysis["unverifiedChecks"]
+    assert "No embedded destination was fetched" in analysis["verdict"]
 
 
 def test_too_many_embedded_urls_is_explicitly_incomplete(monkeypatch):
@@ -95,8 +76,8 @@ def test_too_many_embedded_urls_is_explicitly_incomplete(monkeypatch):
     result = asyncio.run(qr_detect.analyze_embedded_url_payload(raw, "https://destination0.example/"))
     assert result["status"] == "CAUTION"
     assert result["normalized"] == raw
-    assert "did not inspect them all" in result["verdict"]
-    assert "Embedded URLs beyond scan limit" in result["unverifiedChecks"]
+    assert "No embedded destination was fetched" in result["verdict"]
+    assert "Embedded URLs beyond local scan limit" in result["unverifiedChecks"]
 
 
 def test_upload_with_two_different_qr_codes_is_ambiguous():

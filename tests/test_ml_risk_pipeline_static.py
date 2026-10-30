@@ -34,16 +34,6 @@ def test_ml_runtime_dependencies_are_declared():
     assert "qrcode" in REQUIREMENTS
 
 
-def test_embedded_urls_use_full_pipeline():
-    assert "async def analyze_embedded_url_payload" in SERVER
-    assert "await analyze_full_pipeline(url, qr_image if index == 0 else None)" in SERVER
-    assert "embedded_urls = extract_urls(normalized_payload)" in SERVER
-    assert "await analyze_embedded_url_payload(url_qr, embedded_urls[0], qr_image_for_ml)" in SERVER
-    assert "virusTotal" in SERVER
-    assert "domainAge" in SERVER
-    assert "mlRisk" in SERVER
-
-
 def test_result_template_restores_analysis_panels():
     assert "ML model analysis" in INDEX
     assert "VirusTotal vendor scan" in INDEX

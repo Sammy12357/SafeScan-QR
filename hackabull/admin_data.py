@@ -56,10 +56,24 @@ from .config import AIRDROP_BASE_ALLOCATION
 from .config import AIRDROP_TOKEN_ALLOCATIONS
 from .config import templates
 from .history import admin_avatar
+from .history import safe_scan_history_record
+from .payload_privacy import safe_legacy_scan_value
 
 # =============================================================================
 # ADMIN CONSOLE — data-access helpers (the admin routes follow further below)
 # =============================================================================
+def safe_fraud_flag_record(row):
+    result = dict(row)
+    try:
+        metadata = json.loads(result.get("metadata") or "{}")
+    except (TypeError, ValueError):
+        return result
+    if isinstance(metadata, dict) and isinstance(metadata.get("url"), str):
+        metadata["url"] = safe_legacy_scan_value(metadata["url"])
+        result["metadata"] = json.dumps(metadata)
+    return result
+
+
 def admin_context(request, title, page, data=None, owner_only=False):
     admin_user = get_session_user(request)
     if not admin_user or not has_role(admin_user, "admin"):
@@ -139,9 +153,9 @@ def fetch_user_detail(email):
             """,
             (email, email)
         ).fetchone()
-        flags = [dict(row) for row in conn.execute("SELECT * FROM fraud_flags WHERE user_id = ? ORDER BY created_at DESC LIMIT 50", (email,))]
+        flags = [safe_fraud_flag_record(row) for row in conn.execute("SELECT * FROM fraud_flags WHERE user_id = ? ORDER BY created_at DESC LIMIT 50", (email,))]
         logs = [dict(row) for row in conn.execute("SELECT * FROM audit_logs WHERE actor_user_id = ? OR target_id = ? ORDER BY created_at DESC LIMIT 50", (email, email))]
-        scans = [dict(row) for row in conn.execute("SELECT * FROM scan_history WHERE email = ? ORDER BY created_at DESC LIMIT 50", (email,))]
+        scans = [safe_scan_history_record(row) for row in conn.execute("SELECT * FROM scan_history WHERE email = ? ORDER BY created_at DESC LIMIT 50", (email,))]
     return {"user": dict(user) if user else None, "flags": flags, "logs": logs, "scans": scans}
 
 def dashboard_data():
@@ -200,7 +214,7 @@ def fetch_scans(search="", verdict="", user="", limit=100):
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     with get_conn() as conn:
         conn.row_factory = sqlite3.Row
-        rows = [dict(row) for row in conn.execute(f"SELECT * FROM scan_history {where} ORDER BY created_at DESC LIMIT ?", params + [limit])]
+        rows = [safe_scan_history_record(row) for row in conn.execute(f"SELECT * FROM scan_history {where} ORDER BY created_at DESC LIMIT ?", params + [limit])]
         total = conn.execute("SELECT COUNT(*) FROM scan_history").fetchone()[0]
         flagged_today = conn.execute("SELECT COUNT(*) FROM scan_history WHERE risk_score >= 80 AND created_at >= ?", (datetime.utcnow().date().isoformat(),)).fetchone()[0]
         avg_risk = conn.execute("SELECT AVG(risk_score) FROM scan_history WHERE created_at >= ?", ((datetime.utcnow() - timedelta(days=7)).isoformat(),)).fetchone()[0] or 0
@@ -211,6 +225,8 @@ def fetch_reports(tab="reports"):
         conn.row_factory = sqlite3.Row
         reports = [dict(row) for row in conn.execute("SELECT * FROM url_reports ORDER BY created_at DESC LIMIT 200")]
         blocklist = [dict(row) for row in conn.execute("SELECT * FROM url_blocklist WHERE removed_at IS NULL ORDER BY created_at DESC LIMIT 200")]
+    for row in blocklist:
+        row["url"] = safe_legacy_scan_value(row.get("url"))
     return {"reports": reports, "blocklist": blocklist, "tab": tab}
 
 def fetch_waitlist(search="", limit=500):
