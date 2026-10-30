@@ -607,6 +607,10 @@ def test_malicious_qr_database_is_public_and_filters_scans(auth_app):
     assert evil["riskScore"] == 91
     assert evil["timesSeen"] == 2
     assert evil["lastScannedAt"] == "2026-06-03T00:00:00Z"
+    assert data["stats"]["totalUrls"] == 2
+    assert data["stats"]["totalSightings"] == 3
+    assert data["stats"]["criticalCount"] == 1
+    assert data["stats"]["suspiciousCount"] == 1
 
 
 def test_malicious_qr_database_search_pagination_and_compat_endpoint(auth_app):
@@ -638,6 +642,7 @@ def test_malicious_qr_database_search_pagination_and_compat_endpoint(auth_app):
     assert [entry["url"] for entry in second_page["entries"]] == ["https://first-bad.example"]
     assert searched["total"] == 1
     assert searched["entries"][0]["url"] == "https://needle-bad.example"
+    assert searched["stats"]["totalUrls"] == 3
     assert unsupported.status_code == 400
 
 

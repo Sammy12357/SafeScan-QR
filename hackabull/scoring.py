@@ -148,18 +148,26 @@ def virustotal_lookup_result(target_url):
 def virustotal_breakdown_signal(vt_result):
     mode = vt_result.get("mode")
     if mode != "live":
-        result_label = {"unavailable": "Not configured", "pending": "Scan submitted", "error": "Lookup failed"}.get(mode, "Unavailable")
-        return signal("VirusTotal Reputation", result_label, "low", vt_result.get("statusMessage", ""), True)
-    summary = vt_result["summary"]
+        result_label = {"unavailable": "Not configured", "pending": "Scan pending", "error": "Lookup failed"}.get(mode, "Unavailable")
+        finding = signal("VirusTotal Reputation", f"Unverified ({result_label.lower()})", "medium", vt_result.get("statusMessage", ""), False)
+        finding["verified"] = False
+        return finding
+    summary = vt_result.get("summary") or {}
+    if int(summary.get("total") or 0) == 0:
+        finding = signal("VirusTotal Reputation", "Unverified (no engine verdicts)", "medium", "VirusTotal returned no engine verdicts for this URL.", False)
+        finding["verified"] = False
+        return finding
     flagged = summary["malicious"]
     severity = "high" if flagged else "info"
-    return signal(
+    finding = signal(
         "VirusTotal Reputation",
         f"{flagged}/{summary['total']} engines flagged",
         severity,
         f"VirusTotal vendor breakdown: {summary['clean']} clean, {summary['unrated']} unrated, {summary['malicious']} malicious.",
         flagged == 0
     )
+    finding["verified"] = True
+    return finding
 
 def score_from_signals(signals):
     high_count = sum(1 for item in signals if item["severity"] == "high")
@@ -169,6 +177,7 @@ def score_from_signals(signals):
     malicious_signal_checks = {
         "Brand Impersonation",
         "Google Safe Browsing",
+        "Google Web Risk",
         "VirusTotal Reputation",
         "Crypto Pattern",
         "Ethereum Approval Pattern",

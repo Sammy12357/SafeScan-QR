@@ -55,14 +55,29 @@ from .config import image_libs
 # =============================================================================
 # QR IMAGE / SVG DECODING (read the payload out of an uploaded image)
 # =============================================================================
+class QRDecodeAmbiguityError(ValueError):
+    """The upload cannot be safely reduced to one fully inspected QR action."""
+
+
+def _qr_image_libs():
+    # ZXing can decode QR codes even when the optional native ZBar library is
+    # absent. The shared image_libs helper imports ZBar eagerly, so keep the
+    # image upload path usable with the installed ZXing decoder alone.
+    try:
+        return image_libs()
+    except ImportError:
+        from PIL import Image, ImageEnhance, ImageFilter, ImageOps
+        return Image, ImageEnhance, ImageFilter, ImageOps, lambda _image: []
+
+
 def decode_qr_image(image):
     """Extract the text payload from a PIL image of a QR code.
 
     Corrects orientation, then tries progressively harder decode strategies
     (contrast/threshold enhancement, ZXing fallback) since real-world photos are
-    often low-contrast, rotated, or noisy. Returns the decoded string or None.
+    often low-contrast, rotated, or noisy. Returns decoded barcode objects.
     """
-    Image, ImageEnhance, ImageFilter, ImageOps, decode = image_libs()
+    Image, ImageEnhance, ImageFilter, ImageOps, decode = _qr_image_libs()
     image = ImageOps.exif_transpose(image)
 
     def normalize_candidate(candidate):
@@ -102,9 +117,16 @@ def decode_qr_image(image):
             yield from grayscale_candidates(resized)
 
     for candidate in candidate_images():
-        zxing_result = decode_barcodes_with_zxing(candidate, qr_only=True)
-        if zxing_result:
-            return zxing_result
+        found = []
+        seen = set()
+
+        def include(results):
+            for result in results:
+                if result.data not in seen:
+                    seen.add(result.data)
+                    found.append(result)
+
+        include(decode_barcodes_with_zxing(candidate, qr_only=True))
 
         for angle in (0, 90, 180, 270):
             rotated = candidate if angle == 0 else candidate.rotate(angle, expand=True)
@@ -113,18 +135,24 @@ def decode_qr_image(image):
                 decoded = decode(rotated, symbols=[ZBarSymbol.QRCODE])
             except Exception:
                 decoded = decode(rotated)
-            if decoded:
-                return decoded
+            include(decoded)
+            if angle != 0:
+                rotated.close()
+            if len(found) > 1:
+                return found
 
-        zxing_result = decode_barcodes_with_zxing(candidate)
-        if zxing_result:
-            return zxing_result
+        if not found:
+            include(decode_barcodes_with_zxing(candidate))
+        if found:
+            return found
     return []
 
 def _decode_qr_from_pil_image(image):
     decoded_qr = decode_qr_image(image)
     if not decoded_qr:
         return None, None
+    if len(decoded_qr) > 1:
+        raise QRDecodeAmbiguityError("Multiple different QR payloads were found. Crop to one QR code and scan it again.")
     return decoded_qr[0].data.decode("utf-8", errors="replace"), image.copy()
 
 def _looks_like_svg(contents, filename="", content_type=""):
@@ -173,7 +201,7 @@ def _parse_viewbox(element, fallback_width=100.0, fallback_height=100.0):
     return (0.0, 0.0, fallback_width, fallback_height)
 
 def _render_basic_svg_qr(svg_bytes):
-    Image, _, _, _, _ = image_libs()
+    Image, _, _, _, _ = _qr_image_libs()
     try:
         root = ElementTree.fromstring(svg_bytes)
     except Exception:
@@ -257,13 +285,31 @@ def _render_basic_svg_qr(svg_bytes):
     return image
 
 def decode_qr_upload(contents, filename="", content_type=""):
-    Image, _, _, _, _ = image_libs()
+    Image, _, _, _, _ = _qr_image_libs()
+
+    selected_payload = None
+    selected_image = None
+
+    def remember(payload, qr_image):
+        nonlocal selected_payload, selected_image
+        if not payload:
+            return
+        if selected_payload is None:
+            selected_payload, selected_image = payload, qr_image
+        elif payload != selected_payload:
+            qr_image.close()
+            selected_image.close()
+            raise QRDecodeAmbiguityError("Multiple different QR payloads were found. Crop to one QR code and scan it again.")
+        else:
+            qr_image.close()
 
     try:
         with Image.open(io.BytesIO(contents)) as image:
             payload, qr_image = _decode_qr_from_pil_image(image)
             if payload:
                 return payload, qr_image
+    except QRDecodeAmbiguityError:
+        raise
     except Exception:
         pass
 
@@ -274,27 +320,36 @@ def decode_qr_upload(contents, filename="", content_type=""):
                 continue
             try:
                 payload, qr_image = _decode_qr_from_pil_image(image)
-                if payload:
-                    return payload, qr_image
+                remember(payload, qr_image)
             finally:
                 image.close()
+        if selected_payload:
+            return selected_payload, selected_image
 
     if _looks_like_pdf(contents, filename, content_type):
         try:
             import fitz
             document = fitz.open(stream=contents, filetype="pdf")
             try:
+                if document.page_count > MAX_QR_PDF_PAGES:
+                    raise QRDecodeAmbiguityError(
+                        f"This PDF has more than {MAX_QR_PDF_PAGES} pages, so SafeScan cannot inspect every page. Upload a shorter PDF or crop one QR code."
+                    )
                 for page_index in range(min(document.page_count, MAX_QR_PDF_PAGES)):
                     page = document.load_page(page_index)
                     pixmap = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5), alpha=False)
                     with Image.open(io.BytesIO(pixmap.tobytes("png"))) as image:
                         payload, qr_image = _decode_qr_from_pil_image(image)
-                        if payload:
-                            return payload, qr_image
+                        remember(payload, qr_image)
             finally:
                 document.close()
+        except QRDecodeAmbiguityError:
+            raise
         except Exception:
             pass
+
+    if selected_payload:
+        return selected_payload, selected_image
 
     return None, None
 
@@ -341,8 +396,8 @@ def decode_barcodes_with_zxing(image, qr_only=False):
             break
     decoded = []
     for result in results:
-        text = (getattr(result, "text", "") or "").strip()
-        if not text:
+        text = getattr(result, "text", "") or ""
+        if not text.strip():
             continue
         decoded.append(DecodedBarcode(text, str(getattr(result, "format", "Unknown"))))
     return decoded

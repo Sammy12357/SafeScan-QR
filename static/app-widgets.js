@@ -110,25 +110,64 @@ function closeRiskModal() {
 }
 
 blockReportButton?.addEventListener("click", async () => {
-  const payload = document.querySelector(".decoded-box .mono")?.textContent?.trim() || "";
-  const reports = JSON.parse(window.localStorage.getItem("safeScanReports") || "[]");
-  reports.push({ payload, reportedAt: new Date().toISOString(), verdict: riskModal?.dataset.verdict || "UNKNOWN" });
-  window.localStorage.setItem("safeScanReports", JSON.stringify(reports.slice(-25)));
+  const payload = blockReportButton.dataset.reportUrl?.trim() || "";
+  let parsed;
   try {
-    await fetch("/api/report", {
+    parsed = new URL(payload);
+  } catch (_err) {
+    parsed = null;
+  }
+  if (!parsed || !["http:", "https:"].includes(parsed.protocol)) {
+    if (reportStatus) reportStatus.textContent = "Only web URLs can be reported here. This payload was not submitted.";
+    return;
+  }
+
+  blockReportButton.disabled = true;
+  if (reportStatus) reportStatus.textContent = "Submitting report...";
+  try {
+    const response = await fetch("/api/report", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: payload, reason: "phishing" })
+      body: JSON.stringify({ url: payload, reason: "other" })
     });
-    if (reportStatus) reportStatus.textContent = "Blocked and sent to the SafeScan review queue.";
-  } catch {
-    if (reportStatus) reportStatus.textContent = "Blocked locally and added to your report queue.";
+    if (!response.ok) throw new Error(`Report request failed: ${response.status}`);
+    const result = await response.json();
+    if (!result.id || result.status !== "pending") throw new Error("Report was not confirmed");
+    if (reportStatus) reportStatus.textContent = "Report submitted for review. This does not block the link on your device.";
+  } catch (_err) {
+    if (reportStatus) reportStatus.textContent = "We could not confirm this report was received. Please try again.";
+  } finally {
+    blockReportButton.disabled = false;
   }
 });
 
-continueSafelyButton?.addEventListener("click", () => {
-  closeRiskModal();
-});
+const cautionOpenConsent = document.getElementById("cautionOpenConsent");
+if (continueSafelyButton && cautionOpenConsent) {
+  const destination = continueSafelyButton.dataset.destination || "";
+  let webDestination = "";
+  try {
+    const parsed = new URL(destination);
+    if (["http:", "https:"].includes(parsed.protocol)) webDestination = parsed.href;
+  } catch (_err) {
+    // Keep the action disabled if the decoded destination is malformed.
+  }
+  const syncCautionOpen = () => {
+    const enabled = Boolean(webDestination && cautionOpenConsent.checked);
+    if (enabled) continueSafelyButton.href = webDestination;
+    else continueSafelyButton.removeAttribute("href");
+    continueSafelyButton.classList.toggle("caution-open-disabled", !enabled);
+    continueSafelyButton.setAttribute("aria-disabled", String(!enabled));
+    continueSafelyButton.tabIndex = enabled ? 0 : -1;
+  };
+  cautionOpenConsent.addEventListener("change", syncCautionOpen);
+  continueSafelyButton.addEventListener("click", (event) => {
+    if (!cautionOpenConsent.checked || !webDestination) {
+      event.preventDefault();
+      cautionOpenConsent.focus();
+    }
+  });
+  syncCautionOpen();
+}
 
 riskModalCloseButton?.addEventListener("click", closeRiskModal);
 

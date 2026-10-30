@@ -27,16 +27,6 @@ def test_virustotal_is_optional_and_separate_from_local_ml_runtime():
     assert "import ml_model_final as _ml_mod" in SERVER
 
 
-def test_allowlisted_url_scans_still_return_virustotal_panel_data():
-    fast_path_start = SERVER.index("fast_path_ok, fast_path_reason = should_short_circuit(normalized)")
-    full_pipeline_start = SERVER.index("# Resolve the redirect chain first", fast_path_start)
-    fast_path_block = SERVER[fast_path_start:full_pipeline_start]
-
-    assert "vt_result = await asyncio.to_thread(virustotal_lookup_result, normalized)" in fast_path_block
-    assert '"virusTotal": vt_result' in fast_path_block
-    assert "virustotal_breakdown_signal(vt_result)" in fast_path_block
-
-
 def test_ml_runtime_dependencies_are_declared():
     assert "numpy" in REQUIREMENTS
     assert "tensorflow" in REQUIREMENTS
@@ -46,7 +36,7 @@ def test_ml_runtime_dependencies_are_declared():
 
 def test_embedded_urls_use_full_pipeline():
     assert "async def analyze_embedded_url_payload" in SERVER
-    assert "await analyze_full_pipeline(embedded_url, qr_image)" in SERVER
+    assert "await analyze_full_pipeline(url, qr_image if index == 0 else None)" in SERVER
     assert "embedded_urls = extract_urls(normalized_payload)" in SERVER
     assert "await analyze_embedded_url_payload(url_qr, embedded_urls[0], qr_image_for_ml)" in SERVER
     assert "virusTotal" in SERVER

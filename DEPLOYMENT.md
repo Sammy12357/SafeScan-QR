@@ -34,6 +34,14 @@ GET /health/ready
 
 `database.persistent` must be `true` in production. If it is `false`, the service is using reset-prone storage and leaderboard data can be lost on deploys or restarts. For a custom persistent mount, set `PERSISTENT_DATA_DIR` to that mount path, or set `LEADERBOARD_STORAGE_PERSISTENT=true` only after confirming the database path is durable.
 
+## URL reputation and branded QR generation
+
+Set `GOOGLE_WEB_RISK_API_KEY` and `VIRUSTOTAL_API_KEY` in Render before enabling branded QR generation. The Web Risk key takes precedence over the legacy `GOOGLE_SAFE_BROWSING_API_KEY` fallback. Google's Safe Browsing API is restricted to noncommercial use; use Web Risk for a revenue-generating service.
+
+A scan that cannot complete a required reputation or redirect check must be shown as incomplete. `/api/qr/generate` refuses to stamp a branded QR unless the verdict is safe and verification status is complete. Monitor provider errors and quota exhaustion: they reduce scan coverage and temporarily stop branded QR generation. A completed lookup means no *known* threat match was returned at scan time, not that a destination will remain safe.
+
+Redirect inspection connects directly to the validated public IP for each hop and retains the original hostname for TLS verification. It intentionally ignores `HTTP_PROXY` and `HTTPS_PROXY`; ensure the deployment can make direct outbound HTTP/HTTPS connections or redirect checks will be reported as incomplete.
+
 ## Auth0 mobile sign-in
 
 The mobile app uses Auth0 Universal Login and sends the resulting Auth0 ID token to:

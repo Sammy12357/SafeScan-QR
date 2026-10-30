@@ -89,6 +89,7 @@ Update these environment variables in Render, redeploy, and invalidate sessions 
 - `AIRDROP_ADMIN_SECRET`
 - `PRIVACY_HASH_SALT`
 - `VIRUSTOTAL_API_KEY`
+- `GOOGLE_WEB_RISK_API_KEY` (preferred for a commercial deployment)
 - `GOOGLE_SAFE_BROWSING_API_KEY`
 - `ANTHROPIC_API_KEY`
 - `OPENAI_API_KEY`

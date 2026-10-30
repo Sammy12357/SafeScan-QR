@@ -17,7 +17,7 @@ import time
 import csv
 from decimal import Decimal, InvalidOperation
 from html import escape as escape_html
-from urllib.parse import quote, urlencode, urljoin, urlparse, parse_qsl
+from urllib.parse import quote, urlencode, urljoin, urlparse, parse_qsl, unquote
 from datetime import datetime, timedelta, timezone
 from xml.etree import ElementTree
 
@@ -66,14 +66,37 @@ from .scoring import risk_from_score
 from .scoring import risk_reason
 from .scoring import status_from_risk
 from .security import validate_public_url
+from .audit import SafeScanError
 
 # =============================================================================
 # QR PAYLOAD DETECTION & ANALYSIS
 # Classifies a decoded payload (URL, wifi, vcard, crypto address, etc.) and
 # routes it to the right analyzer.
 # =============================================================================
+MAX_EMBEDDED_URLS = 16
+
+
 def extract_urls(text):
-    return re.findall(r"https?://[^\s<>'\"]+", text, flags=re.IGNORECASE)
+    """Find distinct HTTP(S) destinations, including percent-encoded links.
+
+    QR action formats often put a URL in a field or encode it once or twice in
+    an app fallback parameter. Keep source order and never silently inspect
+    only the first destination.
+    """
+    found = []
+    seen = set()
+    candidate = text or ""
+    for _ in range(3):
+        for match in re.finditer(r"https?://[^\s<>'\"\\\[\]{};]+", candidate, flags=re.IGNORECASE):
+            url = match.group(0).rstrip(".,;)")
+            if url and url not in seen:
+                seen.add(url)
+                found.append(url)
+        decoded = unquote(candidate)
+        if decoded == candidate:
+            break
+        candidate = decoded
+    return found
 
 def _truncate_description(value, limit=90):
     value = (value or "").strip()
@@ -115,6 +138,13 @@ def describe_qr_action(payload_type, normalized):
     if payload_type == "Crypto/payment":
         scheme = normalized.split(":", 1)[0].lower()
         return f"Open a {scheme} wallet or payment request; approval should happen only inside the wallet."
+    if payload_type == "Phone":
+        return f"Open a call to {_truncate_description(normalized.split(':', 1)[1], 48)}; review the number before dialing."
+    if payload_type == "Authentication":
+        return "Import a one-time-password secret into an authenticator. Keep the secret private and verify the account."
+    if payload_type == "App/deep link":
+        scheme = normalized.split(":", 1)[0].lower()
+        return f"Hand this {scheme} link to an app, which may perform an app-specific action."
     if payload_type == "Contact card":
         name = _qr_field_value(normalized, "FN") or _qr_field_value(normalized, "N")
         contact = f" for {_truncate_description(name, 48)}" if name else ""
@@ -141,8 +171,14 @@ def detect_payload(raw_payload):
         return "SMS", "Open prefilled text message", payload
     if upper.startswith("MAILTO:"):
         return "Email", "Open prefilled email", payload
-    if upper.startswith(("SOLANA:", "BITCOIN:", "ETHEREUM:")):
+    if upper.startswith(("SOLANA:", "BITCOIN:", "ETHEREUM:", "WC:", "UPI:")):
         return "Crypto/payment", "Open wallet or payment request", payload
+    if upper.startswith("TEL:"):
+        return "Phone", "Dial phone number", payload
+    if upper.startswith("OTPAUTH:"):
+        return "Authentication", "Import authenticator secret", payload
+    if upper.startswith("INTENT:"):
+        return "App/deep link", "Open app intent", payload
     if upper.startswith("BEGIN:VEVENT") or "BEGIN:VCALENDAR" in upper:
         return "Calendar", "Add calendar event", payload
 
@@ -150,7 +186,12 @@ def detect_payload(raw_payload):
         json.loads(payload)
         return "JSON/custom", "Run app-specific data flow", payload
     except ValueError:
-        return "Plain text", "Display text payload", payload
+        pass
+    # Unknown URI schemes are actionable: another app may claim them. Treating
+    # them as plain text would give an unsupported app action a SAFE verdict.
+    if re.match(r"^[a-z][a-z0-9+.-]*:", payload, flags=re.IGNORECASE):
+        return "App/deep link", "Open app-specific link", payload
+    return "Plain text", "Display text payload", payload
 
 def analyze_non_url_payload(raw_payload):
     payload_type, action, normalized = detect_payload(raw_payload)
@@ -186,6 +227,21 @@ def analyze_non_url_payload(raw_payload):
         status = "CAUTION"
         threat_class = "Wallet/payment request: verify destination before approving"
         reasons.append(risk_reason("Wallet or payment request", "high", "The QR can launch a crypto wallet or payment flow. Verify the destination before approving."))
+    elif payload_type == "Phone":
+        score = 40
+        status = "CAUTION"
+        threat_class = "Phone call request: verify the number before dialing"
+        reasons.append(risk_reason("Phone call request", "medium", "The QR can initiate a call, including to a premium-rate or impersonator number."))
+    elif payload_type == "Authentication":
+        score = 65
+        status = "CAUTION"
+        threat_class = "Authenticator import: protect the one-time-password secret"
+        reasons.append(risk_reason("Authenticator secret", "high", "The QR can import an account secret into an authenticator. Verify the account and do not share this payload."))
+    elif payload_type == "App/deep link":
+        score = 60
+        status = "CAUTION"
+        threat_class = "App deep link: app-specific action is not verified"
+        reasons.append(risk_reason("App deep link", "high", "This scheme can hand control to another app. SafeScan cannot verify what that app will do."))
     elif payload_type == "Calendar":
         score = 20
         status = "CAUTION"
@@ -221,11 +277,12 @@ def analyze_non_url_payload(raw_payload):
     # page shows what the model thinks. Popular/trusted domains never reach
     # this path (they short-circuit on the allowlist), so the model only
     # surfaces for non-trusted destinations - which is the intent.
+    minimum_action_score = 40 if status == "CAUTION" else 0
+    score = max(score, minimum_action_score)
     ml_result = classify_qr_with_ml(normalized)
     blended = blend_ml_score(score, ml_result, reasons)
-    if blended != score:
-        score = blended
-        status = status_from_risk(risk_from_score(score))
+    score = max(blended, minimum_action_score)
+    status = status_from_risk(risk_from_score(score))
     ml_signal = ml_signal_from_result(ml_result, label="ML Risk Model", description_prefix="QR payload classifier")
     if ml_signal and ML_SIGNAL_VISIBLE:
         reasons.append(ml_signal)
@@ -238,6 +295,8 @@ def analyze_non_url_payload(raw_payload):
         "normalized": normalized,
         "payload_type": payload_type,
         "action_description": action_description,
+        "verificationStatus": "unverified" if payload_type != "Plain text" else "not_applicable",
+        "unverifiedChecks": ["Action in the receiving app"] if payload_type != "Plain text" else [],
         "reputation": {"provider": "SafeScan Payload Analyzer", "status": "NOT_APPLICABLE", "matches": [], "detail": "Reputation lookup only runs for URL payloads."},
         "reasons": reasons,
         "mlRisk": ml_result
@@ -359,6 +418,8 @@ def pipeline_response_to_template_analysis(pipeline_response):
         "domainAge": pipeline_response.get("domainAge"),
         "mlRisk": pipeline_response.get("mlRisk"),
         "ruleScore": pipeline_response.get("ruleScore"),
+        "verificationStatus": pipeline_response.get("verificationStatus"),
+        "unverifiedChecks": pipeline_response.get("unverifiedChecks", []),
         # Present when the allowlist/first-party fast path produced the verdict;
         # the result modal uses it to show the "verified instantly" chip.
         "fastPath": pipeline_response.get("fastPath")
@@ -366,31 +427,101 @@ def pipeline_response_to_template_analysis(pipeline_response):
 
 async def analyze_embedded_url_payload(raw_payload, embedded_url, qr_image=None):
     payload_type, _, normalized_payload = detect_payload(raw_payload)
-    pipeline_response = await analyze_full_pipeline(embedded_url, qr_image)
-    analysis = pipeline_response_to_template_analysis(pipeline_response)
-    pipeline_score = clamp_score(analysis.get("score"))
-    final_score = max(45, pipeline_score)
-    final_risk = risk_from_score(final_score)
+    urls = extract_urls(normalized_payload)
+    if embedded_url and embedded_url not in urls:
+        urls.insert(0, embedded_url)
+    base = analyze_non_url_payload(raw_payload)
 
-    embedded_reason = risk_reason(
-        "Embedded URL detected",
-        "medium",
-        "The QR payload is not a plain URL, but it contains a URL that SafeScan extracted and analyzed with the full URL pipeline."
-    )
-    analysis["score"] = str(final_score)
-    analysis["status"] = status_from_risk(final_risk)
-    analysis["overallRisk"] = final_risk
-    analysis["payload_type"] = payload_type
-    analysis["threat_class"] = f"{payload_type} containing embedded URL: {analysis['threat_class']}"
-    analysis["action_description"] = (
-        f"{describe_qr_action(payload_type, normalized_payload)} "
-        f"SafeScan extracted and analyzed the embedded URL: {analysis['normalized']}."
-    )
-    analysis["verdict"] = (
-        f"The QR contains an embedded URL inside a {payload_type.lower()} payload, so SafeScan analyzed "
-        f"{analysis['normalized']} before allowing navigation. {analysis.get('verdict', '')}"
-    ).strip()
-    analysis["reasons"] = [embedded_reason, *analysis.get("reasons", [])]
-    analysis["embeddedPayload"] = normalized_payload
-    return analysis
+    # A crafted QR can contain many tiny links and exhaust reputation/network
+    # lookups. Refuse to give a safe verdict when the full set cannot be
+    # inspected within a bounded request.
+    if len(urls) > MAX_EMBEDDED_URLS:
+        over_limit_score = max(79, clamp_score(base["score"]))
+        over_limit_risk = risk_from_score(over_limit_score)
+        base.update({
+            "status": status_from_risk(over_limit_risk),
+            "score": str(over_limit_score),
+            "overallRisk": over_limit_risk,
+            "normalized": raw_payload,
+            "embeddedPayload": raw_payload,
+            "analyzedUrls": [],
+            "verificationStatus": "unverified",
+            "unverifiedChecks": ["Embedded URLs beyond scan limit", "Action in the receiving app"],
+            "threat_class": "Too many embedded URLs to inspect",
+            "verdict": f"This QR contains {len(urls)} distinct links. SafeScan did not inspect them all; do not follow the QR action.",
+            "reasons": [risk_reason("Analysis incomplete", "high", f"The payload has {len(urls)} distinct links; the scan limit is {MAX_EMBEDDED_URLS}."), *base["reasons"]],
+        })
+        return base
+
+    analyzed = []
+    worst = None
+    for index, url in enumerate(urls):
+        try:
+            pipeline_response = await analyze_full_pipeline(url, qr_image if index == 0 else None)
+            item = pipeline_response_to_template_analysis(pipeline_response)
+        except SafeScanError as exc:
+            # A blocked/private/invalid embedded destination is itself a
+            # danger signal. Never fall back to the non-URL result and hide it.
+            item = {
+                "normalized": url,
+                "status": "MALICIOUS",
+                "score": "95",
+                "threat_class": "Blocked embedded URL",
+                "verdict": str(exc),
+                "reasons": [risk_reason("Embedded URL blocked", "high", str(exc))],
+                "verificationStatus": "unverified",
+                "unverifiedChecks": [f"Embedded URL could not be inspected: {url}"],
+            }
+        analyzed.append(item)
+        if worst is None or clamp_score(item["score"]) > clamp_score(worst["score"]):
+            worst = item
+
+    baseline_score = clamp_score(base["score"])
+    worst_score = clamp_score(worst["score"]) if worst else 0
+    final_score = max(45, baseline_score, worst_score)
+    final_risk = risk_from_score(final_score)
+    source = worst if worst_score >= baseline_score else base
+    summaries = [
+        risk_reason(
+            f"Embedded URL {index + 1}: {item['status']}",
+            "high" if item["status"] == "MALICIOUS" else "medium",
+            f"{item['normalized']} — {item['score']}/100. {item.get('verdict') or item['threat_class']}"
+        )
+        for index, item in enumerate(analyzed)
+    ]
+    return {
+        **base,
+        "status": status_from_risk(final_risk),
+        "score": str(final_score),
+        "overallRisk": final_risk,
+        "source": "SafeScan Payload + URL Analyzer",
+        "normalized": raw_payload,
+        "embeddedPayload": raw_payload,
+        "analyzedUrls": [
+            {"url": item["normalized"], "status": item["status"], "score": clamp_score(item["score"])}
+            for item in analyzed
+        ],
+        "threat_class": f"{payload_type} with embedded URL: {source['threat_class']}",
+        "action_description": (
+            f"{describe_qr_action(payload_type, normalized_payload)} "
+            f"SafeScan inspected all {len(analyzed)} embedded URL(s); the highest risk destination is "
+            f"{worst['normalized'] if worst else 'unknown'}."
+        ),
+        "verdict": (
+            f"This {payload_type.lower()} QR contains {len(analyzed)} embedded URL(s). "
+            f"The verdict uses the highest risk URL and the QR action: {source.get('verdict') or source['threat_class']}"
+        ),
+        "reasons": [risk_reason("Embedded URLs inspected", "medium", f"SafeScan checked all {len(analyzed)} distinct embedded URL(s)."), *summaries, *base["reasons"], *source.get("reasons", [])],
+        "reputation": source.get("reputation", base["reputation"]),
+        "virusTotal": source.get("virusTotal"),
+        "domainAge": source.get("domainAge"),
+        "mlRisk": source.get("mlRisk", base.get("mlRisk")),
+        "ruleScore": source.get("ruleScore"),
+        "fastPath": None,
+        "verificationStatus": "unverified" if base.get("unverifiedChecks") or any(item.get("unverifiedChecks") for item in analyzed) else "verified",
+        "unverifiedChecks": list(dict.fromkeys([
+            *base.get("unverifiedChecks", []),
+            *(check for item in analyzed for check in item.get("unverifiedChecks", [])),
+        ])),
+    }
 

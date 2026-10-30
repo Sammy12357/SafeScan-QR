@@ -130,6 +130,10 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: var(--radiu
 .risk-modal-caution { border-color: rgba(255, 187, 85, 0.38); }
 .risk-modal-dangerous { border-color: rgba(255, 110, 127, 0.42); }
 .risk-warning-banner { display: flow-root; margin-bottom: 16px; padding: 13px 14px; border-radius: 8px; border: 1px solid rgba(255, 110, 127, 0.38); background: rgba(255, 110, 127, 0.16); color: #ffd7dc; font-weight: 900; line-height: 1.45; }
+.verification-incomplete { margin-top: 18px; padding: 14px 16px; border: 1px solid rgba(255, 187, 85, 0.42); border-radius: 8px; background: rgba(255, 187, 85, 0.12); color: var(--text); line-height: 1.5; }
+.verification-incomplete strong { color: var(--warning); }
+.verification-incomplete p { margin: 7px 0 0; }
+.verification-incomplete ul { margin: 5px 0 0; padding-left: 22px; }
 .risk-verdict-top { display: grid; grid-template-columns: 112px 1fr; gap: 18px; align-items: center; }
 .risk-verdict-top h2 { margin: 4px 0 8px; font-family: var(--display-font); font-size: 2.6rem; line-height: 1; letter-spacing: 0; }
 .threat-type-line { margin-top: 18px; color: var(--accent); font-weight: 900; }
@@ -144,6 +148,7 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: var(--radiu
 .risk-modal-dangerous .score-gauge { --gauge-color: var(--danger); box-shadow: 0 0 46px rgba(255, 110, 127, 0.26); }
 .decoded-box, .confidence-panel { margin-top: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.04); }
 .decoded-box p:last-child { margin-bottom: 0; }
+.decoded-payload { margin: 8px 0 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .confidence-header { display: flex; justify-content: space-between; gap: 14px; align-items: center; margin-bottom: 14px; }
 .confidence-header h3 { margin: 4px 0 0; font-size: 1.35rem; }
 .reputation-row { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; padding: 12px; border-radius: 8px; background: rgba(255, 255, 255, 0.04); color: var(--muted); }
@@ -213,12 +218,20 @@ input[type="text"] { width: 100%; padding: 14px 16px; border-radius: var(--radiu
 .vt-empty { margin: 0; padding: 18px; color: var(--muted); }
 .modal-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
 .modal-actions .primary-button, .modal-actions .danger-button { display: inline-flex; align-items: center; justify-content: center; min-height: 52px; text-align: center; }
+.modal-actions .secondary-button { display: inline-flex; align-items: center; justify-content: center; min-height: 52px; text-align: center; }
+.caution-open-control, .risk-action-note { grid-column: 1 / -1; }
+.caution-open-control { display: grid; gap: 12px; padding: 14px; border: 1px solid rgba(255, 187, 85, 0.38); border-radius: 8px; background: rgba(255, 187, 85, 0.08); }
+.caution-open-control label { display: flex; gap: 10px; align-items: flex-start; color: var(--text); font-weight: 700; line-height: 1.45; cursor: pointer; }
+.caution-open-control input { flex: 0 0 auto; width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--warning); }
+.caution-open-disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
+.risk-action-note { margin: 0; padding: 14px; border: 1px solid rgba(255, 110, 127, 0.4); border-radius: 8px; background: rgba(255, 110, 127, 0.1); color: #ffd7dc; font-weight: 800; line-height: 1.5; }
+.report-note { margin: 10px 0 0; color: var(--muted); font-size: 0.85rem; line-height: 1.45; }
 .report-status { min-height: 22px; margin: 12px 0 0; color: var(--muted); font-weight: 700; }
 @keyframes modalSlideUp { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: translateY(0); } }
 
 /* --- Verdict micro-interactions ------------------------------------------
-   Small, on-brand touches: the allowlist fast path gets a quietly pulsing
-   "verified instantly" chip, and safe verdicts get a single soft ring that
+   Small, on-brand touches: the recognized-destination fast path gets a quietly
+   pulsing chip, and safe verdicts get a single soft ring that
    expands from the score gauge. All of it uses the existing color tokens and
    is disabled automatically by the prefers-reduced-motion block above. */
 .fast-path-chip { display: inline-flex; align-items: center; gap: 9px; width: fit-content; max-width: 100%; margin: 14px 0 0; padding: 8px 14px; border: 1px solid rgba(80, 227, 164, 0.3); border-radius: 999px; background: rgba(80, 227, 164, 0.09); color: var(--safe); font-size: 0.8rem; font-weight: 800; letter-spacing: 0.04em; line-height: 1.35; animation: fastPathSettle 0.5s var(--ease) both; }

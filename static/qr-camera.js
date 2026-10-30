@@ -60,8 +60,39 @@
   }
 
   function decodeWithJsQRPasses(jsQR, imageData, w, h, includeEnhanced) {
-    const raw = jsQR(imageData.data, w, h, { inversionAttempts: "attemptBoth" });
-    if (raw && raw.data) return raw.data;
+    function oneOrAmbiguous(pixels) {
+      const first = jsQR(pixels, w, h, { inversionAttempts: "attemptBoth" });
+      if (!first || !first.data) return null;
+      // jsQR returns only one code. Mask the first code and make one bounded
+      // second pass so a competing QR is not silently ignored on fallback
+      // browsers. Native BarcodeDetector can report all visible codes.
+      const corners = first.location && [
+        first.location.topLeftCorner, first.location.topRightCorner,
+        first.location.bottomLeftCorner, first.location.bottomRightCorner
+      ];
+      if (corners && corners.every((point) => point && Number.isFinite(point.x) && Number.isFinite(point.y))) {
+        const masked = new Uint8ClampedArray(pixels);
+        const x0 = Math.max(0, Math.floor(Math.min(...corners.map((point) => point.x)) - 8));
+        const x1 = Math.min(w, Math.ceil(Math.max(...corners.map((point) => point.x)) + 8));
+        const y0 = Math.max(0, Math.floor(Math.min(...corners.map((point) => point.y)) - 8));
+        const y1 = Math.min(h, Math.ceil(Math.max(...corners.map((point) => point.y)) + 8));
+        for (let y = y0; y < y1; y += 1) {
+          for (let x = x0; x < x1; x += 1) {
+            const offset = (y * w + x) * 4;
+            masked[offset] = 255;
+            masked[offset + 1] = 255;
+            masked[offset + 2] = 255;
+            masked[offset + 3] = 255;
+          }
+        }
+        const second = jsQR(masked, w, h, { inversionAttempts: "attemptBoth" });
+        if (second && second.data && second.data !== first.data) return { ambiguous: true };
+      }
+      return first.data;
+    }
+
+    const raw = oneOrAmbiguous(imageData.data);
+    if (raw) return raw;
     if (!includeEnhanced) return null;
 
     const source = imageData.data;
@@ -88,8 +119,8 @@
         enhanced[index + 2] = value;
         enhanced[index + 3] = 255;
       }
-      const code = jsQR(enhanced, w, h, { inversionAttempts: "attemptBoth" });
-      if (code && code.data) return code.data;
+      const code = oneOrAmbiguous(enhanced);
+      if (code) return code;
     }
     return null;
   }
@@ -112,7 +143,9 @@
             kind: "BarcodeDetector",
             decode: async (video, canvas, ctx, forceEnhanced) => {
               const codes = await detector.detect(video);
-              if (codes && codes[0]) return codes[0].rawValue;
+              const values = [...new Set((codes || []).map((code) => code.rawValue).filter(Boolean))];
+              if (values.length > 1) return { ambiguous: true };
+              if (values.length === 1) return values[0];
               // On an explicit capture, spend the extra effort: load jsQR (if
               // it isn't already) and run the stylized-threshold enhancement
               // pass so a single press has the best possible chance of reading
@@ -307,6 +340,13 @@
       }
 
       if (!active) return;
+
+      if (value && value.ambiguous) {
+        status.textContent = "Multiple different QR codes found. Aim at one code or crop the picture, then try again.";
+        captureBtn.disabled = false;
+        scanning = false;
+        return;
+      }
 
       if (value) {
         status.textContent = "QR detected — analysing…";

@@ -116,12 +116,44 @@ def check_url_reputation(target_url):
             "matches": ["SSRF_BLOCKED"],
             "detail": str(exc)
         }
+    # Web Risk is the commercial Google threat lookup. Prefer it when
+    # configured; keep Safe Browsing only as a legacy noncommercial fallback.
+    web_risk_key = os.getenv("GOOGLE_WEB_RISK_API_KEY", "").strip()
+    if web_risk_key:
+        try:
+            response = requests.get(
+                "https://webrisk.googleapis.com/v1/uris:search",
+                params=[
+                    ("uri", target_url),
+                    ("threatTypes", "MALWARE"),
+                    ("threatTypes", "SOCIAL_ENGINEERING"),
+                    ("threatTypes", "UNWANTED_SOFTWARE"),
+                    ("key", web_risk_key),
+                ],
+                timeout=5,
+            )
+            response.raise_for_status()
+            result = response.json()
+        except (requests.RequestException, ValueError) as exc:
+            return {
+                "provider": "Google Web Risk",
+                "status": "ERROR",
+                "matches": [],
+                "detail": f"Reputation lookup failed: {type(exc).__name__}",
+            }
+        matches = (result.get("threat") or {}).get("threatTypes") or []
+        return {
+            "provider": "Google Web Risk",
+            "status": "MALICIOUS" if matches else "CLEAR",
+            "matches": matches,
+            "detail": "Known unsafe URL match found." if matches else "No known unsafe URL match returned.",
+        }
     if not api_key:
         return {
             "provider": "Google Safe Browsing",
             "status": "UNCONFIGURED",
             "matches": [],
-            "detail": "Set GOOGLE_SAFE_BROWSING_API_KEY to enable live reputation checks."
+            "detail": "Set GOOGLE_WEB_RISK_API_KEY for commercial URL reputation checks."
         }
 
     payload = {
@@ -155,12 +187,26 @@ def check_url_reputation(target_url):
 
 def google_reputation_signal(target_url):
     reputation = check_url_reputation(target_url)
+    provider = reputation.get("provider") or "Google Safe Browsing"
     if reputation["status"] == "MALICIOUS":
         result = ", ".join(reputation["matches"]) or "Unsafe match"
-        return signal("Google Safe Browsing", result, "high", "Google Safe Browsing returned a known unsafe threat match.", False)
+        finding = signal(provider, result, "high", f"{provider} returned a known unsafe threat match.", False)
+        finding["verified"] = True
+        return finding
     if reputation["status"] == "CLEAR":
-        return signal("Google Safe Browsing", "No matches", "low", "Google Safe Browsing did not return a known unsafe match.", True)
-    return signal("Google Safe Browsing", reputation["status"], "low", reputation["detail"], True)
+        finding = signal(provider, "No matches", "low", f"{provider} did not return a known unsafe match.", True)
+        finding["verified"] = True
+        return finding
+    severity = "high" if reputation["status"] == "BLOCKED" else "medium"
+    finding = signal(
+        provider,
+        f"Unverified ({reputation['status'].lower()})",
+        severity,
+        reputation["detail"],
+        False,
+    )
+    finding["verified"] = False
+    return finding
 
 
 

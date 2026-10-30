@@ -87,18 +87,24 @@ def trace_redirect_chain(target_url):
     try:
         all_responses = follow_safe_redirects(target_url)
     except SafeScanError as exc:
+        finding = signal("Redirect Chain", "Blocked internal redirect target", "high", str(exc), False)
+        finding["verified"] = False
         return {
-            "signal": signal("Redirect Chain", "Blocked internal redirect target", "high", str(exc), False),
+            "signal": finding,
             "redirectChain": []
         }
     except requests.TooManyRedirects:
+        finding = signal("Redirect Chain", "More than 10 redirects", "high", "The URL exceeded the 10-hop redirect limit.", False)
+        finding["verified"] = False
         return {
-            "signal": signal("Redirect Chain", "More than 10 redirects", "high", "The URL exceeded the 10-hop redirect limit.", False),
+            "signal": finding,
             "redirectChain": []
         }
     except requests.RequestException as exc:
+        finding = signal("Redirect Chain", "Unverified (inspection failed)", "medium", f"Redirect inspection failed: {type(exc).__name__}", False)
+        finding["verified"] = False
         return {
-            "signal": signal("Redirect Chain", "Inspection failed", "low", f"Redirect inspection failed: {type(exc).__name__}", True),
+            "signal": finding,
             "redirectChain": []
         }
 
@@ -208,8 +214,10 @@ def trace_redirect_chain(target_url):
     else:
         description = "Suspicious redirect pattern: " + ", ".join(details) + "."
         result_label = f"{hop_count} hop(s)"
+    finding = signal("Redirect Chain", result_label, severity, description, not suspicious)
+    finding["verified"] = True
     return {
-        "signal": signal("Redirect Chain", result_label, severity, description, not suspicious),
+        "signal": finding,
         "redirectChain": chain
     }
 

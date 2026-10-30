@@ -605,7 +605,7 @@ qrImageInput?.addEventListener("change", () => {
 
 // Live camera scan. The scanner module (qr-camera.js) handles camera
 // access, frame decoding, and cooldown; we just feed the decoded payload
-// into the existing manual-URL form so the same /search_qr_api pipeline
+// into the manual payload form so the same /search_qr_api pipeline
 // runs on the result.
 const scanCameraButton = document.getElementById("scanCameraButton");
 function openCameraScanner() {
@@ -616,7 +616,7 @@ function openCameraScanner() {
   window.SafeScanQrCamera.open({
     onResult: (value) => {
       const urlInput = document.getElementById("urlInput");
-      const form = document.getElementById("qrForm");
+      const form = document.getElementById("urlForm");
       if (urlInput) urlInput.value = value;
       if (analysisLoadingState) {
         analysisLoadingState.textContent = "QR detected - analysing...";

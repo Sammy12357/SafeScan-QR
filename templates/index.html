@@ -7,7 +7,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=native-scroll-v3">
+  <link rel="stylesheet" href="/static/styles.css?v=qr-defense-v1">
 </head>
 <body class="{{ 'test-site-page' if test_site else '' }}">
   {% if not logged_in and google_client_id and not local_auth_enabled %}
@@ -34,8 +34,8 @@
           <div class="powered-by-solana"><span>Powered By</span><svg viewBox="0 0 398 312"><defs><linearGradient id="solanaGradientTop" x1="360" y1="28" x2="62" y2="301" gradientUnits="userSpaceOnUse"><stop stop-color="#14F195"/><stop offset="0.5" stop-color="#55A6F8"/><stop offset="1" stop-color="#9945FF"/></linearGradient></defs><path fill="url(#solanaGradientTop)" d="M64.6 3.8C67 1.4 70.4 0 73.8 0h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1L64.6 3.8Z"/><path fill="url(#solanaGradientTop)" d="M333.1 120.1c-2.4-2.4-5.7-3.8-9.2-3.8H6.5c-5.8 0-8.7 7-4.6 11.1l62.7 62.7c2.4 2.4 5.7 3.8 9.2 3.8h317.4c5.8 0 8.7-7 4.6-11.1l-62.7-62.7Z"/><path fill="url(#solanaGradientTop)" d="M64.6 237.9c2.4-2.4 5.7-3.8 9.2-3.8h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1l62.7-62.7Z"/></svg></div>
         </div>
         <h1>SafeScan QR</h1>
-        <p class="hero-problem">{{ "Stop malicious QR links before they open." if test_site else "Can you distinguish a malicious QR?" }}</p>
-        <p class="hero-text">{{ "SafeScan turns every QR scan into a clear security decision: decode the payload, trace redirects, inspect wallet actions, score the risk, and let users continue only when they understand what is happening." if test_site else "A trust layer for QR links, wallet prompts, and payment redirects. Decode the payload, score the risk, and keep the user in control before anything runs." }}</p>
+        <p class="hero-problem">{{ "Check QR links before they open." if test_site else "Can you distinguish a malicious QR?" }}</p>
+        <p class="hero-text">{{ "SafeScan decodes QR payloads, checks supported links and actions for risk, and explains what it found before you choose what to do." if test_site else "Review QR links, wallet prompts, and payment requests before opening them. SafeScan explains the payload and flags risks it can detect." }}</p>
         <div class="hero-actions"><a class="primary-button" href="#scanner">Scan QR</a><a class="secondary-button" href="{{ '/#scanner' if test_site_path else '/go-ghost' }}">{{ "Scanner" if test_site_path else "Go Ghost" }}</a></div>
         <div class="hero-metrics" aria-label="SafeScan QR demo capabilities">
           <div><span>ML</span><p>Risk verdicts</p></div>
@@ -82,7 +82,7 @@
         <div class="test-proof-grid">
           <article class="test-proof-card reveal-on-scroll"><span>01</span><h3>Payload decode</h3><p>Reads URLs, wallet prompts, redirects, and non-web QR payloads before the phone hands control to another app.</p></article>
           <article class="test-proof-card reveal-on-scroll"><span>02</span><h3>Threat scoring</h3><p>Combines domain intelligence, reputation signals, redirect tracing, crypto patterns, and ML analysis into one verdict.</p></article>
-          <article class="test-proof-card reveal-on-scroll"><span>03</span><h3>User control</h3><p>Shows the destination, risk reasons, and next action so the user can block, report, or continue with context.</p></article>
+          <article class="test-proof-card reveal-on-scroll"><span>03</span><h3>User control</h3><p>Shows the destination and risk reasons so the user can avoid or report a suspicious link.</p></article>
         </div>
       </section>
 
@@ -116,11 +116,11 @@
             </form>
 
             <form id="urlForm" action="/search_qr_api" method="post" class="scanner-subcard scanner-subcard-url">
-              <p class="scanner-subcard-eyebrow">Or paste a URL</p>
+              <p class="scanner-subcard-eyebrow">Or paste decoded content</p>
               <input type="hidden" name="template_variant" value="{{ 'test_site' if test_site_path else ('main_site' if test_site else '') }}">
               <input type="hidden" name="user_email" value="{{ email }}">
-              <label for="urlInput" class="scanner-subcard-label">Destination URL</label>
-              <input id="urlInput" name="manual_url" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://example.com">
+              <label for="urlInput" class="scanner-subcard-label">URL or QR payload</label>
+              <textarea id="urlInput" name="manual_url" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://example.com or a decoded Wi-Fi, contact, or payment payload" required></textarea>
               <div class="scanner-subcard-actions">
                 <button type="submit" class="primary-button">Analyze Payload</button>
               </div>
@@ -150,7 +150,7 @@
               </div>
               <div class="scan-line"></div>
             </div>
-            <p class="visual-copy">The SafeScan Tool shows the real QR journey: scan, decode the payload, classify the action, explain risk, then safely continue.</p>
+            <p class="visual-copy">Scan, decode the payload, review the action and risk reasons, then choose whether to leave or open a supported link.</p>
           </div>
         </div>
       </section>
@@ -176,24 +176,35 @@
             <div>
               <p class="engine-label">Scan verdict</p>
               <h2 id="riskVerdictTitle">{{ status }}</h2>
-              <p class="result-support">{{ verdict_summary | default("SafeScan decoded the QR and checked the payload before any wallet, browser, or payment flow opened.") }}</p>
+              <p class="result-support">{{ verdict_summary | default("SafeScan decoded the QR and checked the payload. A scan cannot guarantee that a destination stays safe.") }}</p>
               <p class="threat-type-line"><strong>Threat type:</strong> {{ threat_class }}</p>
-              {% if fast_path and fast_path.hit %}
-              <p class="fast-path-chip" role="status"><span class="fast-path-dot" aria-hidden="true"></span>Trusted destination &mdash; verified instantly</p>
+              {% if fast_path and fast_path.hit and verification_status == 'complete' and status == 'SAFE' %}
+              <p class="fast-path-chip" role="status"><span class="fast-path-dot" aria-hidden="true"></span>Recognized destination &mdash; required checks completed</p>
               {% endif %}
             </div>
           </div>
 
+          {% if verification_status in ('incomplete', 'unverified') %}
+          <div class="verification-incomplete" role="status">
+            <strong>{{ 'This action cannot be fully verified.' if verification_status == 'unverified' else 'Some checks did not complete.' }}</strong>
+            <p>{{ 'SafeScan cannot verify what another app will do with this QR payload. Confirm the source independently.' if verification_status == 'unverified' else 'SafeScan could not fully assess this destination. Treat this result as unverified and confirm the source independently.' }}</p>
+            {% if unverified_checks %}
+            <p>Unverified checks:</p>
+            <ul>{% for check in unverified_checks %}<li>{{ check }}</li>{% endfor %}</ul>
+            {% endif %}
+          </div>
+          {% endif %}
+
           {% if action_description %}
           <div class="decoded-box">
-            <p class="engine-label">What this QR executes</p>
+            <p class="engine-label">What this QR requests</p>
             <p>{{ action_description }}</p>
           </div>
           {% endif %}
 
           <div class="decoded-box">
-            <p class="engine-label">Decoded URL / payload</p>
-            <p class="mono">{{ url_found }}</p>
+            <p class="engine-label">Exact decoded QR payload</p>
+            <pre class="mono decoded-payload">{{ raw_payload | default(url_found, true) }}</pre>
           </div>
 
           <div class="confidence-panel">
@@ -317,13 +328,27 @@
 
           <div class="modal-actions">
             <a href="{{ '/test-site' if test_site_path else '/' }}" class="secondary-button">&#8592; Back</a>
-            <button id="blockReportButton" class="danger-button" type="button">Block &amp; Report</button>
-            {% if url_found.startswith("http://") or url_found.startswith("https://") %}
-            <a id="continueSafelyButton" class="primary-button" href="{{ url_found }}" target="_blank" rel="noopener noreferrer">Continue Safely</a>
-            {% else %}
-            <a id="continueSafelyButton" class="primary-button" href="#scanner">Continue Safely</a>
+            {% set has_web_url = payload_type == 'URL' and url_found and (url_found.startswith('http://') or url_found.startswith('https://')) %}
+            {% if has_web_url %}
+            <button id="blockReportButton" class="danger-button" type="button" data-report-url="{{ url_found }}">Report this URL</button>
+            {% endif %}
+            {% if status in ('MALICIOUS', 'DANGEROUS') or overall_risk == 'high' %}
+            <p class="risk-action-note">{{ 'Do not open this destination. Leave this result or report the URL for review.' if has_web_url else 'Do not act on this QR payload. Leave this result and verify its source independently.' }}</p>
+            {% elif has_web_url and status == 'SAFE' and overall_risk == 'safe' and verification_status == 'complete' %}
+            <a id="continueSafelyButton" class="primary-button" href="{{ url_found }}" target="_blank" rel="noopener noreferrer">Open destination</a>
+            {% elif has_web_url and status == 'CAUTION' %}
+            <div class="caution-open-control">
+              <label for="cautionOpenConsent"><input id="cautionOpenConsent" type="checkbox"> I understand this link may be unsafe and want to open it anyway.</label>
+              <a id="continueSafelyButton" class="secondary-button caution-open-disabled" data-destination="{{ url_found }}" aria-disabled="true" tabindex="-1" target="_blank" rel="noopener noreferrer">Open link anyway</a>
+            </div>
+            {% elif has_web_url %}
+            <p class="risk-action-note">This link could not be cleared for opening. Review the scan details before taking any action.</p>
+            {% elif not has_web_url %}
+            <p class="risk-action-note">This payload has no web link to open. Review the action above before using it in another app.</p>
             {% endif %}
           </div>
+          {% if not has_web_url %}<p class="report-note">Reports currently support web URLs only.</p>{% endif %}
+          {% if has_web_url %}<p class="report-note">Reporting sends this URL for review. It does not block the link on your device.</p>{% endif %}
           <p id="reportStatus" class="report-status" aria-live="polite"></p>
         </div>
       </div>
@@ -347,10 +372,10 @@
   </div>
   <script type="module" src="/static/safescan-3d.js?v=brave-webgl-v1"></script>
   <script src="/static/qr-camera.js?v=manual-capture-v2" defer></script>
-  <script src="/static/app-core.js?v=native-scroll-v3"></script>
-  <script src="/static/app-widgets.js?v=native-scroll-v3"></script>
+  <script src="/static/app-core.js?v=qr-defense-v1"></script>
+  <script src="/static/app-widgets.js?v=qr-defense-v1"></script>
   <script src="/static/app-go-ghost.js?v=native-scroll-v3"></script>
   <script src="/static/app-go-ghost-ui.js?v=native-scroll-v3"></script>
-  <script src="/static/app-generate-qr.js?v=native-scroll-v3"></script>
+  <script src="/static/app-generate-qr.js?v=qr-defense-v1"></script>
 </body>
 </html>

@@ -128,7 +128,7 @@ def get_malicious_qr_codes(page=1, limit=20, query=""):
                 GROUP BY url
             )
             """,
-            base_params + base_params,
+            base_params * 3,
         ).fetchone()
 
     entries = []

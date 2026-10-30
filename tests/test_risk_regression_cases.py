@@ -31,6 +31,9 @@ def load_app(tmp_path, monkeypatch):
 
 
 def stub_external_services(module, monkeypatch):
+    # These tests exercise scoring, not live DNS. Public test domains can be
+    # sinkholed to private addresses by a resolver at any time.
+    patch_everywhere(monkeypatch, "is_private_hostname", lambda _: False)
     patch_everywhere(
         monkeypatch,
         "trace_redirect_chain",
@@ -93,6 +96,17 @@ def test_wallet_drain_signature_is_malicious_even_without_reputation_apis(tmp_pa
 def test_popular_clean_url_stays_safe_on_fast_path(tmp_path, monkeypatch):
     module = load_app(tmp_path, monkeypatch)
     stub_external_services(module, monkeypatch)
+    patch_everywhere(
+        monkeypatch,
+        "virustotal_lookup_result",
+        lambda url: {
+            "url": url,
+            "mode": "live",
+            "summary": {"clean": 2, "unrated": 0, "malicious": 0, "total": 2},
+            "engines": [],
+            "groups": {"clean": [], "unrated": [], "malicious": []},
+        },
+    )
 
     result = analyze(module, "https://www.youtube.com/watch?v=abc123")
 
@@ -100,3 +114,4 @@ def test_popular_clean_url_stays_safe_on_fast_path(tmp_path, monkeypatch):
     assert result["confidenceScore"] < 40
     assert result["threatType"] == "Benign popular destination"
     assert result["fastPath"]["reason"] == "tranco_allowlist"
+    assert result["verificationStatus"] == "complete"

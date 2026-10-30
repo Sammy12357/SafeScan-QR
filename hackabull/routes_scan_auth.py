@@ -94,6 +94,7 @@ from .history import index_user_context
 from .history import persist_qr_upload
 from .history import save_scan_history
 from .pipeline import analyze_full_pipeline
+from .qr_decode import QRDecodeAmbiguityError
 from .qr_decode import decode_qr_upload
 from .qr_detect import analyze_embedded_url_payload
 from .qr_detect import analyze_qr_payload
@@ -137,9 +138,10 @@ async def scan_qr(
     wallet_address = verified_wallet["address"] if verified_wallet else ""
     url_qr = None
     qr_image_for_ml = None
+    decode_error = None
 
     if manual_url and manual_url.strip():
-        url_qr = manual_url.strip()
+        url_qr = manual_url
     elif file and file.filename:
         contents = await file.read()
         if len(contents) > MAX_QR_UPLOAD_BYTES:
@@ -160,17 +162,20 @@ async def scan_qr(
                 **index_user_context(user)
             })
         persist_qr_upload(contents, file.filename, file.content_type, user)
-        url_qr, qr_image_for_ml = decode_qr_upload(contents, file.filename, file.content_type)
+        try:
+            url_qr, qr_image_for_ml = decode_qr_upload(contents, file.filename, file.content_type)
+        except QRDecodeAmbiguityError as exc:
+            decode_error = str(exc)
 
     if not url_qr:
         return templates.TemplateResponse("index.html", {
             "request": request, "logged_in": True, "results_visible": True,
-            "status": "ERROR", "url_found": "No QR code or valid URL detected.",
+            "status": "ERROR", "url_found": decode_error or "No QR code or valid payload detected.",
             "source": "Scanner", "score": "0", "threat_class": "N/A",
             "overall_risk": "suspicious",
-            "verdict_summary": "SafeScan could not decode a QR payload from this file.",
-            "reputation": {"provider": "Scanner", "status": "ERROR", "matches": [], "detail": "No decodable payload was found."},
-            "risk_reasons": [risk_reason("No QR payload decoded", "medium", "Upload a clearer image, SVG, or PDF containing a QR code, or paste the destination manually.")],
+            "verdict_summary": decode_error or "SafeScan could not decode a QR payload from this file.",
+            "reputation": {"provider": "Scanner", "status": "ERROR", "matches": [], "detail": decode_error or "No decodable payload was found."},
+            "risk_reasons": [risk_reason("Ambiguous QR upload" if decode_error else "No QR payload decoded", "medium", decode_error or "Upload a clearer image, SVG, or PDF containing a QR code, or paste the destination manually.")],
             "virus_total": None,
             "domain_age": None,
             "email": user_email, "scan_count": get_scan_count(user_email) if user_email else 0, "google_client_id": CLIENT_ID,
@@ -198,12 +203,11 @@ async def scan_qr(
     else:
         embedded_urls = extract_urls(normalized_payload)
         if embedded_urls:
-            try:
-                analysis = await analyze_embedded_url_payload(url_qr, embedded_urls[0], qr_image_for_ml)
-            except SafeScanError:
-                analysis = analyze_qr_payload(url_qr)
+            analysis = await analyze_embedded_url_payload(url_qr, embedded_urls[0], qr_image_for_ml)
         else:
             analysis = analyze_qr_payload(url_qr)
+        analysis["normalized"] = url_qr
+    analysis["rawPayload"] = url_qr
     if qr_image_for_ml is not None:
         qr_image_for_ml.close()
     counted = False
@@ -216,6 +220,8 @@ async def scan_qr(
     return templates.TemplateResponse("index.html", {
         "request": request, "logged_in": True, "results_visible": True,
         "status": analysis["status"], "url_found": analysis["normalized"], "source": analysis["source"],
+        "raw_payload": url_qr,
+        "payload_type": analysis.get("payload_type", payload_type),
         "score": analysis["score"],
         "threat_class": analysis["threat_class"],
         "action_description": analysis.get("action_description"),
@@ -227,6 +233,8 @@ async def scan_qr(
         "domain_age": analysis.get("domainAge"),
         "ml_risk": analysis.get("mlRisk"),
         "fast_path": analysis.get("fastPath"),
+        "verification_status": analysis.get("verificationStatus"),
+        "unverified_checks": analysis.get("unverifiedChecks", []),
         "email": user_email, "scan_count": get_scan_count(user_email) if user_email else 0, "google_client_id": CLIENT_ID,
         "test_site": test_site,
         "test_site_path": test_site_path,

@@ -1,11 +1,9 @@
-// app-generate-qr.js — Generate-QR tool: render a SafeScan-verified QR for a typed URL.
+// app-generate-qr.js — Generate a QR only after the server reports a low-risk URL verdict.
 // Split from app.js; the app-*.js files share one global scope and MUST
 // load in this order: app-core.js -> app-widgets.js -> app-go-ghost.js -> app-go-ghost-ui.js -> app-generate-qr.js.
-// Generate QR: takes whatever URL is currently typed into the paste-URL
-// input and asks the backend to render a SafeScan-verified QR PNG for it.
-// The backend runs the URL through the full risk pipeline and refuses to
-// render anything flagged as suspicious or dangerous, so the button is a
-// "publish a safe QR" tool, not a generic QR maker.
+// The image identifies the service that generated it, not a permanent safety
+// certification. The server must enforce the verdict; this UI also checks the
+// response before making a generated image available for download.
 (() => {
   const generateBtn = document.getElementById("generateQrButton");
   const urlInputField = document.getElementById("generateQrUrlInput");
@@ -14,11 +12,20 @@
   const dl = document.getElementById("generatedQrDownload");
   const errEl = document.getElementById("generateQrError");
   if (!generateBtn || !urlInputField || !wrap || !img || !errEl) return;
+  let currentObjectUrl = null;
+
+  const clearImage = () => {
+    wrap.classList.add("hidden");
+    img.removeAttribute("src");
+    if (dl) dl.removeAttribute("href");
+    if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
+    currentObjectUrl = null;
+  };
 
   const showError = (message) => {
     errEl.textContent = message;
     errEl.classList.remove("hidden");
-    wrap.classList.add("hidden");
+    clearImage();
   };
   const clearError = () => {
     errEl.textContent = "";
@@ -27,15 +34,21 @@
 
   generateBtn.addEventListener("click", async () => {
     clearError();
+    clearImage();
     const raw = urlInputField.value.trim();
     if (!raw) {
       showError("Paste a URL above first.");
       return;
     }
     let normalized = raw;
-    if (!/^https?:\/\//i.test(normalized)) normalized = `https://${normalized}`;
+    if (!/^[a-z][a-z\d+.-]*:/i.test(normalized)) normalized = `https://${normalized}`;
     try {
-      new URL(normalized);
+      const parsed = new URL(normalized);
+      if (!["http:", "https:"].includes(parsed.protocol) || !parsed.hostname || parsed.username || parsed.password) {
+        showError("Enter a valid http or https URL without embedded credentials.");
+        return;
+      }
+      normalized = parsed.href;
     } catch (_err) {
       showError("That does not look like a valid URL.");
       return;
@@ -60,8 +73,13 @@
         showError(detail);
         return;
       }
+      if (res.headers.get("X-SafeScan-Verdict")?.toLowerCase() !== "safe" || !res.headers.get("Content-Type")?.toLowerCase().startsWith("image/png")) {
+        showError("SafeScan could not confirm a low-risk result for this URL. No QR was made available.");
+        return;
+      }
       const blob = await res.blob();
       const objectUrl = URL.createObjectURL(blob);
+      currentObjectUrl = objectUrl;
       img.src = objectUrl;
       dl.href = objectUrl;
       wrap.classList.remove("hidden");
