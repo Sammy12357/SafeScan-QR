@@ -21,8 +21,10 @@
   text-transform: uppercase;
 }
 .scanner-subcard-label { display: block; margin: 0; color: var(--muted); font-size: 0.85rem; }
-.scanner-subcard-url input[type="url"] {
+.scanner-subcard-url textarea {
   width: 100%;
+  min-height: 92px;
+  resize: vertical;
   padding: 14px 16px;
   border-radius: 12px;
   border: 1px solid var(--line);
@@ -60,6 +62,7 @@
   background: #ffffff;
   padding: 12px;
 }
+.generated-qr-status { max-width: 440px; margin: 0; color: var(--muted); font-size: 0.85rem; line-height: 1.45; text-align: center; }
 .generated-qr-wrap .secondary-button { padding: 8px 14px; font-size: 0.9rem; }
 .generated-qr-error {
   margin: 6px 0 0;

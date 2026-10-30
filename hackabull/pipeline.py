@@ -47,7 +47,7 @@ from storage import download_file as storage_download_file
 from storage import object_key as storage_object_key
 from storage import upload_bytes as storage_upload_bytes
 
-from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party
+from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party, safety_screen
 import safescan_model_calibration as sm_calibration
 from .config import ANTHROPIC_API_KEY
 from .config import ML_SIGNAL_VISIBLE
@@ -78,6 +78,7 @@ from .security import validate_public_url
 # parallel) and blends them into one verdict — this is the product's core.
 # =============================================================================
 def generate_ai_verdict(signals):
+    """Return a rule-based verdict; untrusted prose cannot set the risk score."""
     score = score_from_signals(signals)
     overall_risk = risk_from_score(score)
     high_checks = [item["check"] for item in signals if item["severity"] == "high"]
@@ -90,64 +91,33 @@ def generate_ai_verdict(signals):
     else:
         verdict = "SafeScan did not find strong phishing or wallet-drain indicators in this QR payload. Still verify the destination before connecting a wallet or sending funds."
 
-    fallback = {"overallRisk": overall_risk, "confidenceScore": score, "verdict": verdict}
-    analyst_prompt = (
-        "You are a QR security analyst. Review these SafeScan signal objects and return JSON only with "
-        "overallRisk as safe, suspicious, or high; confidenceScore from 0-100; and verdict as a two-sentence "
-        "plain-English explanation. Weight high severity at 40 points each capped at 80, medium at 15, low at 5, "
-        "and push new-domain + redirect + wallet-pattern combinations to 90+.\n\n"
-        f"Signals JSON:\n{json.dumps(signals)}"
+    return {"overallRisk": overall_risk, "confidenceScore": score, "verdict": verdict}
+
+
+def verification_coverage(signals):
+    """Identify checks that could not return a definitive result."""
+    unverified = list(dict.fromkeys(
+        item["check"] for item in signals if item.get("verified") is False
+    ))
+    return ("incomplete" if unverified else "complete"), unverified
+
+
+def known_malicious_reputation(signals):
+    return any(
+        item.get("check") in ("Google Safe Browsing", "Google Web Risk", "VirusTotal Reputation")
+        and item.get("severity") == "high"
+        and item.get("verified") is not False
+        and item.get("passed") is False
+        for item in signals
     )
-
-    try:
-        if ANTHROPIC_API_KEY:
-            response = requests.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": ANTHROPIC_API_KEY,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json"
-                },
-                json={
-                    "model": os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-latest"),
-                    "max_tokens": 300,
-                    "system": "Return structured JSON only. Do not include markdown.",
-                    "messages": [{"role": "user", "content": analyst_prompt}]
-                },
-                timeout=10
-            )
-            response.raise_for_status()
-            content = response.json()["content"][0]["text"]
-            return json.loads(content)
-        if OPENAI_API_KEY:
-            response = requests.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers={"Authorization": f"Bearer {OPENAI_API_KEY}", "content-type": "application/json"},
-                json={
-                    "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-                    "response_format": {"type": "json_object"},
-                    "messages": [
-                        {"role": "system", "content": "You are a QR security analyst. Return structured JSON only."},
-                        {"role": "user", "content": analyst_prompt}
-                    ]
-                },
-                timeout=10
-            )
-            response.raise_for_status()
-            return json.loads(response.json()["choices"][0]["message"]["content"])
-    except (requests.RequestException, KeyError, IndexError, ValueError, json.JSONDecodeError):
-        return fallback
-
-    return fallback
 
 async def analyze_full_pipeline(target_url, qr_image=None):
     """Run the complete risk analysis for a URL and return the verdict dict.
 
     This is the product's core. Flow:
       1. Validate/normalise the URL (also blocks SSRF to private hosts).
-      2. Fast path: if the domain is on the Tranco popular-site allowlist and
-         passes a structural safety screen, only run Google Safe Browsing and
-         return ``safe`` immediately (skips the expensive stages).
+      2. Fast path: for official or popular domains that pass a structural
+         screen, require reputation and redirect checks before returning safe.
       3. Otherwise trace the redirect chain so every downstream check runs
          against the *final* destination, then run the rule signals, ML
          classifier, VirusTotal/GSB reputation, domain-age and crypto/typosquat
@@ -161,101 +131,154 @@ async def analyze_full_pipeline(target_url, qr_image=None):
     """
     normalized = validate_public_url(target_url)
     if MOCK_MODE:
-        return mock_analysis_response(normalized)
+        result = mock_analysis_response(normalized)
+        result["verificationStatus"] = "incomplete"
+        result["unverifiedChecks"] = ["Live reputation and redirect checks"]
+        return result
 
-    if is_first_party(normalized):
-        # The URL points at this SafeScan deployment itself (generator page,
-        # shared scan results, referral links). The ML pipeline misfires on
-        # onrender.com because it's multi-tenant hosting, and asking outside
-        # reputation services about our own domain is circular - so first-party
-        # links get a deterministic SAFE verdict. Exact-hostname matching plus
-        # the absence of any open-redirect endpoint in the app (safe_next_url
-        # only allows same-site relative paths) makes this safe to trust.
-        first_party_host = urlparse(normalized).hostname or ""
-        first_party_signal = signal(
-            "Official SafeScan link",
-            f"{first_party_host} is this SafeScan deployment",
-            "low",
-            "This URL points at SafeScan's own domain. First-party pages are served by this deployment and can't be tampered with by third parties, so the ML and reputation pipeline was skipped in favor of a deterministic safe verdict.",
-            True,
-        )
-        first_party_score = clamp_score(2)
-        return {
-            "url": normalized,
-            "overallRisk": "safe",
-            "confidenceScore": first_party_score,
-            "ruleScore": first_party_score,
-            "mlRisk": {"enabled": False, "reason": "first-party short-circuit"},
-            "threatType": "Official SafeScan page",
-            "verdict": "safe",
-            "signals": [first_party_signal],
-            "virusTotal": None,
-            "domainAge": None,
-            "redirectChain": [],
-            "scannedAt": datetime.utcnow().isoformat() + "Z",
-            "fastPath": {"hit": True, "reason": "first_party"},
-        }
-
-    fast_path_ok, fast_path_reason = should_short_circuit(normalized)
+    prechecked_redirect = None
+    is_official = is_first_party(normalized)
+    fast_path_ok = is_official and safety_screen(normalized)[0]
+    if not fast_path_ok:
+        fast_path_ok, _ = should_short_circuit(normalized)
     if fast_path_ok:
-        # Run only the cheap reputation check before declaring safe. If Google
-        # Safe Browsing flags the URL (compromised popular site, abused open
-        # redirect that slipped past the screen, etc.) we fall through to the
-        # full pipeline for a real verdict.
-        gsb_signal = await asyncio.to_thread(google_reputation_signal, normalized)
-        if gsb_signal.get("passed", False) and gsb_signal.get("severity") == "low":
-            vt_result = await asyncio.to_thread(virustotal_lookup_result, normalized)
+        gsb_signal, vt_result, fast_redirect = await asyncio.gather(
+            asyncio.to_thread(google_reputation_signal, normalized),
+            asyncio.to_thread(virustotal_lookup_result, normalized),
+            asyncio.to_thread(trace_redirect_chain, normalized),
+        )
+        if is_official:
+            allowlist_signal = signal(
+                "Official SafeScan link",
+                f"{urlparse(normalized).hostname} is a configured SafeScan host",
+                "low",
+                "This URL uses a configured SafeScan host and passed structural screening. Reputation and redirect checks were also required.",
+                True,
+            )
+        else:
             allowlist_signal = signal(
                 "Allowlist match",
                 f"{allowlist_registrable_domain(normalized.split('//', 1)[-1].split('/', 1)[0])} on Tranco popularity allowlist",
                 "low",
-                "SafeScan recognized this destination as a widely-trafficked, popular domain that passed structural safety screening (HTTPS, no homograph chars, no shorteners, no redirect parameters). The full ML/domain pipeline was skipped because no expensive analysis is warranted; Google Safe Browsing and VirusTotal were still consulted for reputation context.",
+                "This popular HTTPS destination passed structural safety screening. Reputation and redirect checks were also required.",
                 True,
             )
-            fast_signals = sorted([allowlist_signal, gsb_signal, virustotal_breakdown_signal(vt_result)], key=severity_rank)
-            fast_score = clamp_score(8)
+        fast_signals = sorted(
+            [allowlist_signal, gsb_signal, virustotal_breakdown_signal(vt_result), fast_redirect["signal"]],
+            key=severity_rank,
+        )
+        verification_status, unverified_checks = verification_coverage(fast_signals)
+        # A confirmed reputation hit takes precedence even if another provider
+        # is down. Never let the popularity allowlist overwrite it.
+        dangerous_redirect = fast_redirect["signal"].get("severity") == "high"
+        known_bad = known_malicious_reputation(fast_signals)
+        has_redirect = len(fast_redirect.get("redirectChain") or []) > 1
+        if known_bad:
+            fast_risk, fast_score, fast_type = "high", 95, "Known malicious destination"
+            fast_verdict = "A reputation provider identified this destination as unsafe. Do not open it."
+        elif dangerous_redirect:
+            fast_risk, fast_score, fast_type = "high", 80, "High-risk redirect path"
+            fast_verdict = "This URL has a high-risk redirect pattern or a blocked redirect target. Review the destination before continuing."
+        elif verification_status == "incomplete":
+            fast_risk, fast_score, fast_type = "suspicious", max(40, score_from_signals(fast_signals)), "Unverified destination"
+            fast_verdict = "SafeScan could not complete every required check for this destination. Verify it independently before continuing."
+        else:
+            fast_risk, fast_score, fast_type = "safe", 8, "Official SafeScan destination" if is_official else "Benign popular destination"
+            fast_verdict = "No known unsafe match or redirect was found for this destination."
+        # A redirect needs destination-specific analysis; the popularity of
+        # the first hop says nothing about its landing page.
+        needs_landing_page_analysis = has_redirect and not known_bad
+        if not needs_landing_page_analysis:
             return {
                 "url": normalized,
-                "overallRisk": "safe",
-                "confidenceScore": fast_score,
-                "ruleScore": fast_score,
-                "mlRisk": {"enabled": False, "reason": "allowlist short-circuit"},
-                "threatType": "Benign popular destination",
-                "verdict": "safe",
+                "overallRisk": fast_risk,
+                "confidenceScore": clamp_score(fast_score),
+                "ruleScore": clamp_score(fast_score),
+                "mlRisk": {"enabled": False, "reason": "first-party short-circuit" if is_official else "allowlist short-circuit"},
+                "threatType": fast_type,
+                "verdict": fast_verdict,
                 "signals": fast_signals,
                 "virusTotal": vt_result,
                 "domainAge": None,
-                "redirectChain": [],
+                "redirectChain": fast_redirect.get("redirectChain", []),
+                "verificationStatus": verification_status,
+                "unverifiedChecks": unverified_checks,
                 "scannedAt": datetime.utcnow().isoformat() + "Z",
-                "fastPath": {"hit": True, "reason": "tranco_allowlist"},
+                "fastPath": {"hit": True, "reason": "first_party" if is_official else "tranco_allowlist"},
             }
-        # GSB returned a non-trivial signal - fall through to full pipeline.
+        prechecked_redirect = fast_redirect
 
     # Resolve the redirect chain first so reputation/domain/crypto checks run
     # against the actual destination, not the (possibly shortened) QR
     # payload URL. A bit.ly link that redirects to a wallet-drain page is
     # otherwise checked against bit.ly's clean reputation and brand-new
     # crypto-drain query params on the final hop are never inspected.
-    redirect_result = await asyncio.to_thread(trace_redirect_chain, normalized)
+    redirect_result = prechecked_redirect or await asyncio.to_thread(trace_redirect_chain, normalized)
     chain = redirect_result.get("redirectChain") or []
     final_url = chain[-1]["url"] if chain else normalized
 
-    vt_task = asyncio.to_thread(virustotal_lookup_result, final_url)
+    # Check each distinct hop, including the original QR URL. Limit lookups
+    # for unusually long chains; skipped hops make verification incomplete.
+    hop_urls = list(dict.fromkeys([normalized, *(item["url"] for item in chain)]))
+    skipped_hops = len(hop_urls) > 6
+    if skipped_hops:
+        hop_urls = hop_urls[:3] + hop_urls[-3:]
+    reputation_slots = asyncio.Semaphore(3)
+
+    async def inspect_hop(url):
+        async with reputation_slots:
+            return await asyncio.gather(
+                asyncio.to_thread(check_reputation_signals, url),
+                asyncio.to_thread(virustotal_lookup_result, url),
+            )
+
+    hop_task = asyncio.gather(*(inspect_hop(url) for url in hop_urls))
     domain_task = asyncio.to_thread(check_domain_intelligence, final_url)
-    reputation_task = asyncio.to_thread(check_reputation_signals, final_url)
     crypto_task = asyncio.to_thread(check_crypto_pattern_signals, final_url)
     input_source = "uploaded_qr" if qr_image is not None else "generated_qr"
-    ml_task = asyncio.to_thread(classify_qr_with_ml, normalized, qr_image, input_source)
-    domain_result, reputation_signals, crypto_signals, ml_result, vt_result = await asyncio.gather(
-        domain_task, reputation_task, crypto_task, ml_task, vt_task
+    ml_task = (
+        asyncio.sleep(0, result={"enabled": False, "reason": "first-party host"})
+        if is_official else asyncio.to_thread(classify_qr_with_ml, normalized, qr_image, input_source)
     )
+    domain_result, crypto_signals, ml_result, hop_results = await asyncio.gather(
+        domain_task, crypto_task, ml_task, hop_task
+    )
+    google_hop_signals = []
+    for checked_url, (reputation_signals, _) in zip(hop_urls, hop_results):
+        for item in reputation_signals:
+            finding = dict(item)
+            finding["checkedUrl"] = checked_url
+            google_hop_signals.append(finding)
+    if not google_hop_signals:
+        finding = signal("Google Reputation", "Unverified (no result)", "medium", "The reputation provider returned no result.", False)
+        finding["verified"] = False
+        google_hop_signals.append(finding)
+    vt_hop_results = [result for _, result in hop_results]
+    vt_hop_signals = [virustotal_breakdown_signal(result) for result in vt_hop_results]
+    for checked_url, finding in zip(hop_urls, vt_hop_signals):
+        finding["checkedUrl"] = checked_url
+
+    def most_concerning_index(findings):
+        for index, finding in enumerate(findings):
+            if finding.get("severity") == "high" and finding.get("passed") is False:
+                return index
+        for index, finding in enumerate(findings):
+            if finding.get("verified") is False:
+                return index
+        return len(findings) - 1
+
+    google_signal = google_hop_signals[most_concerning_index(google_hop_signals)]
+    vt_index = most_concerning_index(vt_hop_signals)
+    vt_signal = vt_hop_signals[vt_index]
+    vt_result = vt_hop_results[vt_index]
+    _, hop_unverified_checks = verification_coverage([*google_hop_signals, *vt_hop_signals])
 
     signals = []
     signals.extend(domain_result if isinstance(domain_result, list) else [domain_result])
     domain_age = next((item.get("domainAge") for item in signals if item.get("domainAge")), None)
     signals.append(redirect_result["signal"])
-    signals.extend(reputation_signals)
-    signals.append(virustotal_breakdown_signal(vt_result))
+    signals.append(google_signal)
+    signals.append(vt_signal)
     signals.extend(crypto_signals)
     # ML signal is kept around so the score blend + audit trail can use it,
     # but it's NOT appended to the user-visible signals list by default —
@@ -268,14 +291,26 @@ async def analyze_full_pipeline(target_url, qr_image=None):
         signals.append(ml_signal)
     signals = sorted(signals, key=severity_rank)
     ai_verdict = generate_ai_verdict(signals)
-    final_score = blend_ml_score(ai_verdict["confidenceScore"], ml_result, signals)
+    rule_score = score_from_signals(signals)
+    final_score = blend_ml_score(rule_score, ml_result, signals)
+    verification_status, unverified_checks = verification_coverage(signals)
+    unverified_checks = list(dict.fromkeys([*hop_unverified_checks, *unverified_checks]))
+    if skipped_hops:
+        unverified_checks.append("Additional redirect hops")
+    verification_status = "incomplete" if unverified_checks else "complete"
+    if known_malicious_reputation(signals):
+        final_score = max(final_score, 85)
+    if redirect_result["signal"].get("severity") == "high":
+        final_score = max(final_score, 80)
+    if verification_status == "incomplete":
+        final_score = max(final_score, 40)
     overall_risk = risk_from_score(final_score)
 
     return {
         "url": normalized,
         "overallRisk": overall_risk,
         "confidenceScore": final_score,
-        "ruleScore": clamp_score(ai_verdict["confidenceScore"]),
+        "ruleScore": clamp_score(rule_score),
         "mlRisk": ml_result,
         "threatType": threat_type_for_analysis(overall_risk, signals, ml_result),
         "verdict": verdict_with_ml(ai_verdict["verdict"], final_score, ml_result, signals),
@@ -283,6 +318,8 @@ async def analyze_full_pipeline(target_url, qr_image=None):
         "virusTotal": vt_result,
         "domainAge": domain_age,
         "redirectChain": redirect_result.get("redirectChain", []),
+        "verificationStatus": verification_status,
+        "unverifiedChecks": unverified_checks,
         "scannedAt": datetime.utcnow().isoformat() + "Z"
     }
 

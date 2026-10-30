@@ -122,7 +122,7 @@
 :root[data-theme="light"] .legal-form select,
 :root[data-theme="light"] .legal-form textarea,
 :root[data-theme="light"] .go-ghost-form input,
-:root[data-theme="light"] .scanner-subcard-url input[type="url"],
+:root[data-theme="light"] .scanner-subcard-url textarea,
 :root[data-theme="light"] .generate-qr-form-row input[type="url"] {
   background: rgba(255, 255, 255, 0.82);
   border-color: rgba(16, 24, 39, 0.16);

@@ -330,21 +330,21 @@ async def product_getting_started(request: Request):
 async def risk_engine_page(request: Request):
     body = """
     <h2>Risk analysis model</h2>
-    <p>SafeScan QR turns a QR payload into a 0-100 risk score by decoding the payload, classifying the action, inspecting URLs, checking reputation sources, matching wallet-drain patterns, and optionally blending in the local ML model. The final verdict is informational, not a guarantee of safety.</p>
+    <p>SafeScan QR turns a QR payload into a 0-100 risk score by decoding the payload, classifying the action, inspecting URLs, checking configured reputation sources, matching wallet-drain patterns, and optionally blending in the local ML model. An incomplete check is reported as unverified. The final verdict describes what SafeScan found at scan time; it is not a guarantee of safety.</p>
 
     <div class="risk-model-grid">
       <section>
         <h3>Score bands</h3>
         <ul>
-          <li><strong>0-39 SAFE:</strong> no major suspicious indicators were found.</li>
-          <li><strong>40-79 CAUTION:</strong> one or more suspicious signals need review.</li>
+          <li><strong>0-34 SAFE:</strong> no major suspicious indicators were found and required checks completed.</li>
+          <li><strong>35-79 CAUTION:</strong> suspicious signals or incomplete checks need review.</li>
           <li><strong>80-100 MALICIOUS:</strong> high-risk signals indicate likely phishing, malware, credential theft, or wallet drain behavior.</li>
         </ul>
       </section>
       <section>
         <h3>Output data</h3>
         <ul>
-          <li>Final verdict, risk score, confidence score, and threat class.</li>
+          <li>Final verdict, risk score, threat class, and check coverage.</li>
           <li>Decoded URL or non-URL QR payload.</li>
           <li>Human-readable explanation and next-action guidance.</li>
           <li>Signal list with label, severity, detail, and whether the signal is positive or negative.</li>
@@ -375,8 +375,9 @@ async def risk_engine_page(request: Request):
       <section>
         <h3>Reputation data</h3>
         <ul>
-          <li>Google Safe Browsing threat matches when the API key is configured.</li>
-          <li>VirusTotal-style engine summary: clean, unrated, malicious, and suspicious vendor results.</li>
+          <li>Google Web Risk threat matches when configured (or Safe Browsing in eligible noncommercial setups).</li>
+          <li>VirusTotal engine summary when a live lookup is configured and returns a result.</li>
+          <li>A visible incomplete-check state when a reputation or redirect lookup is unavailable.</li>
           <li>Local URL cache so repeated scans can reuse recent verdicts quickly.</li>
           <li>Admin-confirmed reports and blocklist decisions.</li>
         </ul>
@@ -397,7 +398,7 @@ async def risk_engine_page(request: Request):
       <li><strong>Decode:</strong> read the QR image, pasted payload, SVG, PDF, or manual URL input.</li>
       <li><strong>Normalize:</strong> trim and classify the payload type, extract embedded URLs, and validate URL shape.</li>
       <li><strong>Inspect:</strong> check scheme, domain, path, query, redirects, reputation matches, domain age, and crypto patterns.</li>
-      <li><strong>Score:</strong> convert each signal into weighted risk, then clamp the final confidence score from 0 to 100.</li>
+      <li><strong>Score:</strong> convert each signal into weighted risk, then clamp the final risk score from 0 to 100.</li>
       <li><strong>Blend ML:</strong> when enabled, combine the local QR ML model score with rule-based evidence.</li>
       <li><strong>Explain:</strong> return the verdict, score, reasons, action description, threat class, and optional admin/reporting metadata.</li>
     </ol>
@@ -406,7 +407,7 @@ async def risk_engine_page(request: Request):
     <p>For signed-in users, SafeScan can save scan history and counters so profile progress, scan history, fraud prevention, and leaderboard features work across sessions permanently unless deletion is requested or the account is removed. Stored scan rows may include user id, email, URL or payload, risk score, verdict, signal JSON, report status, and created time. Uploaded QR image files may be stored temporarily according to the configured upload retention policy.</p>
 
     <h2>Privacy and limits</h2>
-    <p>SafeScan avoids sending direct personal identifiers to external AI analysis providers. URL payloads and risk signals may be processed by configured reputation or AI services. The engine is designed to explain risk clearly, but users should still verify important links, wallet prompts, and payment requests independently.</p>
+    <p>URL payloads may be sent to configured reputation providers. SafeScan shows what checks completed, but a URL with no known threat match can still be harmful or change after the scan. Verify important links, wallet prompts, and payment recipients independently.</p>
     """
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Risk Engine", body))
 

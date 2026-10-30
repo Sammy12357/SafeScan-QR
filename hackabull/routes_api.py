@@ -69,6 +69,7 @@ from .history import persist_qr_upload
 from .history import save_scan_history
 from .history import serialize_scan_history_row
 from .pipeline import analyze_full_pipeline
+from .qr_decode import QRDecodeAmbiguityError
 from .qr_decode import decode_qr_upload
 from .qr_detect import analyze_embedded_url_payload
 from .qr_detect import analyze_qr_payload
@@ -84,6 +85,7 @@ from .referrals import referral_code_for_user
 from .reputation import google_reputation_signal
 from .reputation import virustotal_reputation_signal
 from .request_helpers import make_id
+from .scoring import risk_from_score
 from .scoring import signal
 from .security import enforce_rate_limit
 from .security import validate_public_url
@@ -116,8 +118,8 @@ async def api_scan(request: Request, payload: dict = Body(...)):
     if rate_limit:
         return rate_limit
     validate_strict_payload(payload, {"payload"})
-    raw_payload = (payload.get("payload") or "").strip()
-    if not raw_payload:
+    raw_payload = payload.get("payload")
+    if not isinstance(raw_payload, str) or not raw_payload.strip():
         raise SafeScanError("No QR payload supplied.", 400)
     if len(raw_payload) > 4096:
         raise SafeScanError("QR payload is too large.", 400)
@@ -135,7 +137,10 @@ async def api_scan_file(request: Request, file: UploadFile = File(...)):
         raise SafeScanError(f"Uploaded file is too large. Use a file under {MAX_QR_UPLOAD_BYTES // (1024 * 1024)} MB.", 400)
 
     persist_qr_upload(contents, file.filename, file.content_type, user)
-    raw_payload, qr_image_for_ml = decode_qr_upload(contents, file.filename, file.content_type)
+    try:
+        raw_payload, qr_image_for_ml = decode_qr_upload(contents, file.filename, file.content_type)
+    except QRDecodeAmbiguityError as exc:
+        raise SafeScanError(str(exc), 400) from exc
     if not raw_payload:
         raise SafeScanError("No QR code or valid payload detected in this file.", 400)
 
@@ -147,20 +152,18 @@ async def api_scan_file(request: Request, file: UploadFile = File(...)):
 
 @qr_app.post("/api/qr/generate")
 async def api_qr_generate(request: Request, payload: dict = Body(...)):
-    """Generate a SafeScan-verified QR PNG for a URL.
+    """Generate a SafeScan-screened QR PNG for a URL.
 
-    Runs the URL through the same risk pipeline as `/api/scan` (rule signals
-    plus the ML model) and refuses to render the QR when the maliciousness
-    score is 90 or higher — so any QR coming out of this endpoint has been
-    screened and isn't a likely-malicious link.
+    Runs the URL through the same risk pipeline as `/api/scan` and only
+    renders a branded QR when the verdict is safe and required checks have
+    completed. An incomplete lookup is not proof that a destination is safe.
 
     Returns a PNG image with the SafeScan logo overlaid in the centre (high
     error correction tolerates the badge without breaking scanning).
     """
     user = get_session_user(request)
     user_key = user.get("google_id") if user else None
-    # Guests on the homepage get 5/hour per IP; signed-in users still get 20/hour
-    # under their user key. The analyzer still refuses to render risky URLs.
+    # Guests on the homepage get 5/hour per IP; signed-in users get 20/hour.
     limit = 20 if user else 5
     rate_limit = enforce_rate_limit(request, "qr_generate", limit, 60 * 60, user_key=user_key)
     if rate_limit:
@@ -171,18 +174,16 @@ async def api_qr_generate(request: Request, payload: dict = Body(...)):
 
     analysis = await analyze_full_pipeline(target_url)
     overall_risk = (analysis.get("overallRisk") or "").lower()
-    # Maliciousness score (0-100) from the full risk pipeline: rule signals
-    # (domain age, redirect chain, reputation, VirusTotal, Safe Browsing,
-    # crypto patterns) blended with the ML model score.
-    risk_score = int(analysis.get("confidenceScore") or analysis.get("score") or 0)
-
-    # A score of 90 or higher means the link is almost certainly malicious, so
-    # SafeScan refuses to mint a QR code for it.
-    if risk_score >= 90:
+    verification_status = analysis.get("verificationStatus")
+    if overall_risk != "safe":
         raise SafeScanError(
-            f"This link is likely malicious (risk score {risk_score}/100). "
-            "SafeScan won't generate a QR code for it.",
+            "SafeScan only generates branded QR codes for destinations with a safe scan verdict.",
             400,
+        )
+    if verification_status != "complete":
+        raise SafeScanError(
+            "SafeScan could not complete every required check for this destination. Try again later.",
+            503,
         )
 
     # Lazy-imports keep boot-time fast for non-generator requests.
@@ -257,7 +258,8 @@ async def api_qr_generate(request: Request, payload: dict = Body(...)):
         content=png_bytes,
         media_type="image/png",
         headers={
-            "X-SafeScan-Verdict": overall_risk or "safe",
+            "X-SafeScan-Verdict": "safe",
+            "X-SafeScan-Verification": "complete",
             "X-SafeScan-Score": str(int(analysis.get("confidenceScore") or 0)),
             "Cache-Control": "no-store",
             "Content-Disposition": 'inline; filename="safescan-qr.png"',
@@ -290,16 +292,13 @@ async def analyze_and_record_scan(request, user, raw_payload, device_fingerprint
     else:
         embedded_urls = extract_urls(normalized_payload)
         if embedded_urls:
-            try:
-                history_analysis = await analyze_embedded_url_payload(raw_payload, embedded_urls[0], qr_image_for_ml)
-            except SafeScanError:
-                history_analysis = analyze_qr_payload(raw_payload)
+            history_analysis = await analyze_embedded_url_payload(raw_payload, embedded_urls[0], qr_image_for_ml)
         else:
             history_analysis = analyze_qr_payload(raw_payload)
+        history_analysis["normalized"] = raw_payload
         template_analysis = history_analysis
-        history_analysis = template_analysis
         score = int(template_analysis.get("score") or 0)
-        overall_risk = "high" if score >= 80 else ("suspicious" if score >= 40 else "safe")
+        overall_risk = template_analysis.get("overallRisk") or risk_from_score(score)
         analysis = {
             "url": template_analysis["normalized"],
             "overallRisk": template_analysis.get("overallRisk", overall_risk),
@@ -314,9 +313,13 @@ async def analyze_and_record_scan(request, user, raw_payload, device_fingerprint
             "domainAge": template_analysis.get("domainAge"),
             "mlRisk": template_analysis.get("mlRisk"),
             "ruleScore": template_analysis.get("ruleScore"),
+            "verificationStatus": template_analysis.get("verificationStatus"),
+            "unverifiedChecks": template_analysis.get("unverifiedChecks", []),
+            "analyzedUrls": template_analysis.get("analyzedUrls", []),
             "scannedAt": now_iso(),
         }
 
+    history_analysis["rawPayload"] = raw_payload
     counted = record_unique_scan(email, raw_payload, wallet_address, user_id=user.get("google_id"))
     save_scan_history(email, history_analysis["normalized"], history_analysis, user_id=user.get("google_id"))
     run_fraud_checks("scan", email, request, {"url": history_analysis["normalized"], "deviceFingerprint": device_fingerprint})
@@ -327,6 +330,8 @@ async def analyze_and_record_scan(request, user, raw_payload, device_fingerprint
         "counted": counted,
         "scanCount": get_scan_count(email),
         "payloadType": payload_type,
+        "rawPayload": raw_payload,
+        "analyzedUrls": history_analysis.get("analyzedUrls", []),
     }
 
 @qr_app.get("/api/scan-history")
