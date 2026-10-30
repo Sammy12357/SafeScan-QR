@@ -59,6 +59,7 @@ from .qr_image import blend_ml_score
 from .qr_image import classify_qr_with_ml
 from .qr_image import ml_signal_from_result
 from .qr_image import verdict_with_ml
+from .phish_feed import phishtank_signal
 from .redirects import trace_redirect_chain
 from .reputation import google_reputation_signal
 from .reputation import mock_analysis_response
@@ -104,7 +105,7 @@ def verification_coverage(signals):
 
 def known_malicious_reputation(signals):
     return any(
-        item.get("check") in ("Google Safe Browsing", "Google Web Risk", "VirusTotal Reputation")
+        item.get("check") in ("Google Safe Browsing", "Google Web Risk", "PhishTank", "VirusTotal Reputation")
         and item.get("severity") == "high"
         and item.get("verified") is not False
         and item.get("passed") is False
@@ -120,7 +121,7 @@ async def analyze_full_pipeline(target_url, qr_image=None):
          screen, require reputation and redirect checks before returning safe.
       3. Otherwise trace the redirect chain so every downstream check runs
          against the *final* destination, then run the rule signals, ML
-         classifier, VirusTotal/GSB reputation, domain-age and crypto/typosquat
+         classifier, Web Risk/PhishTank reputation, domain-age and crypto/typosquat
          heuristics (largely in parallel).
       4. Blend the rule score with the ML score, derive the overall risk band,
          status and threat type, and return a single result dict consumed by
@@ -142,8 +143,9 @@ async def analyze_full_pipeline(target_url, qr_image=None):
     if not fast_path_ok:
         fast_path_ok, _ = should_short_circuit(normalized)
     if fast_path_ok:
-        gsb_signal, vt_result, fast_redirect = await asyncio.gather(
+        google_signal, phish_signal, vt_result, fast_redirect = await asyncio.gather(
             asyncio.to_thread(google_reputation_signal, normalized),
+            asyncio.to_thread(phishtank_signal, normalized),
             asyncio.to_thread(virustotal_lookup_result, normalized),
             asyncio.to_thread(trace_redirect_chain, normalized),
         )
@@ -163,8 +165,14 @@ async def analyze_full_pipeline(target_url, qr_image=None):
                 "This popular HTTPS destination passed structural safety screening. Reputation and redirect checks were also required.",
                 True,
             )
+        vt_finding = virustotal_breakdown_signal(vt_result)
+        optional_checks = [] if vt_finding.get("verified") is True else [{
+            "check": "VirusTotal Reputation", "status": vt_result.get("mode", "unavailable"),
+            "detail": vt_result.get("statusMessage", "Optional enrichment unavailable."),
+        }]
         fast_signals = sorted(
-            [allowlist_signal, gsb_signal, virustotal_breakdown_signal(vt_result), fast_redirect["signal"]],
+            [allowlist_signal, google_signal, phish_signal, fast_redirect["signal"],
+             *([vt_finding] if vt_finding.get("verified") is True else [])],
             key=severity_rank,
         )
         verification_status, unverified_checks = verification_coverage(fast_signals)
@@ -203,6 +211,7 @@ async def analyze_full_pipeline(target_url, qr_image=None):
                 "redirectChain": fast_redirect.get("redirectChain", []),
                 "verificationStatus": verification_status,
                 "unverifiedChecks": unverified_checks,
+                "optionalChecks": optional_checks,
                 "scannedAt": datetime.utcnow().isoformat() + "Z",
                 "fastPath": {"hit": True, "reason": "first_party" if is_official else "tranco_allowlist"},
             }
@@ -243,16 +252,16 @@ async def analyze_full_pipeline(target_url, qr_image=None):
     domain_result, crypto_signals, ml_result, hop_results = await asyncio.gather(
         domain_task, crypto_task, ml_task, hop_task
     )
-    google_hop_signals = []
+    required_hop_signals = []
     for checked_url, (reputation_signals, _) in zip(hop_urls, hop_results):
         for item in reputation_signals:
             finding = dict(item)
             finding["checkedUrl"] = checked_url
-            google_hop_signals.append(finding)
-    if not google_hop_signals:
+            required_hop_signals.append(finding)
+    if not required_hop_signals:
         finding = signal("Google Reputation", "Unverified (no result)", "medium", "The reputation provider returned no result.", False)
         finding["verified"] = False
-        google_hop_signals.append(finding)
+        required_hop_signals.append(finding)
     vt_hop_results = [result for _, result in hop_results]
     vt_hop_signals = [virustotal_breakdown_signal(result) for result in vt_hop_results]
     for checked_url, finding in zip(hop_urls, vt_hop_signals):
@@ -267,18 +276,31 @@ async def analyze_full_pipeline(target_url, qr_image=None):
                 return index
         return len(findings) - 1
 
-    google_signal = google_hop_signals[most_concerning_index(google_hop_signals)]
+    google_hop_signals = [item for item in required_hop_signals if item["check"] != "PhishTank"]
+    phish_hop_signals = [item for item in required_hop_signals if item["check"] == "PhishTank"]
+    google_signal = google_hop_signals[most_concerning_index(google_hop_signals)] if google_hop_signals else None
+    phish_signal = phish_hop_signals[most_concerning_index(phish_hop_signals)] if phish_hop_signals else None
     vt_index = most_concerning_index(vt_hop_signals)
     vt_signal = vt_hop_signals[vt_index]
     vt_result = vt_hop_results[vt_index]
-    _, hop_unverified_checks = verification_coverage([*google_hop_signals, *vt_hop_signals])
+    _, hop_unverified_checks = verification_coverage(required_hop_signals)
+    optional_checks = [
+        {"check": "VirusTotal Reputation", "status": result.get("mode", "unavailable"),
+         "detail": result.get("statusMessage", "Optional enrichment unavailable."), "checkedUrl": url}
+        for url, result, finding in zip(hop_urls, vt_hop_results, vt_hop_signals)
+        if finding.get("verified") is not True
+    ]
 
     signals = []
     signals.extend(domain_result if isinstance(domain_result, list) else [domain_result])
     domain_age = next((item.get("domainAge") for item in signals if item.get("domainAge")), None)
     signals.append(redirect_result["signal"])
-    signals.append(google_signal)
-    signals.append(vt_signal)
+    if google_signal:
+        signals.append(google_signal)
+    if phish_signal:
+        signals.append(phish_signal)
+    if vt_signal.get("verified") is True:
+        signals.append(vt_signal)
     signals.extend(crypto_signals)
     # ML signal is kept around so the score blend + audit trail can use it,
     # but it's NOT appended to the user-visible signals list by default —
@@ -320,11 +342,12 @@ async def analyze_full_pipeline(target_url, qr_image=None):
         "redirectChain": redirect_result.get("redirectChain", []),
         "verificationStatus": verification_status,
         "unverifiedChecks": unverified_checks,
+        "optionalChecks": optional_checks,
         "scannedAt": datetime.utcnow().isoformat() + "Z"
     }
 
 def check_reputation_signals(target_url):
-    return [google_reputation_signal(target_url)]
+    return [google_reputation_signal(target_url), phishtank_signal(target_url)]
 
 def is_url_like(value):
     return bool(re.match(r"^https?://", value, re.IGNORECASE) or re.match(r"^[a-z0-9.-]+\.[a-z]{2,}(/|$)", value, re.IGNORECASE))

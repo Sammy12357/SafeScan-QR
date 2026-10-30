@@ -61,6 +61,7 @@ def test_popular_url_with_virustotal_detection_is_high_risk(modules, monkeypatch
     url = "https://www.youtube.com/watch?v=abc123"
     monkeypatch.setattr(pipeline, "should_short_circuit", lambda _: (True, "ok"))
     monkeypatch.setattr(pipeline, "google_reputation_signal", lambda _: _finding(pipeline, "Google Safe Browsing"))
+    monkeypatch.setattr(pipeline, "phishtank_signal", lambda _: _finding(pipeline, "PhishTank"))
     monkeypatch.setattr(pipeline, "virustotal_lookup_result", lambda _: _vt(url, malicious=1))
     monkeypatch.setattr(pipeline, "trace_redirect_chain", lambda _: _redirect(pipeline, url))
 
@@ -73,11 +74,72 @@ def test_popular_url_with_virustotal_detection_is_high_risk(modules, monkeypatch
     assert any(item["check"] == "VirusTotal Reputation" and item["severity"] == "high" for item in result["signals"])
 
 
-def test_unavailable_virustotal_prevents_green_fast_path(modules, monkeypatch):
+def test_unavailable_optional_virustotal_allows_clean_required_fast_path(modules, monkeypatch):
     pipeline, _, _, _ = modules
     url = "https://www.youtube.com/watch?v=abc123"
     monkeypatch.setattr(pipeline, "should_short_circuit", lambda _: (True, "ok"))
     monkeypatch.setattr(pipeline, "google_reputation_signal", lambda _: _finding(pipeline, "Google Safe Browsing"))
+    monkeypatch.setattr(pipeline, "phishtank_signal", lambda _: _finding(pipeline, "PhishTank"))
+    monkeypatch.setattr(pipeline, "virustotal_lookup_result", lambda _: _vt(url, mode="unavailable"))
+    monkeypatch.setattr(pipeline, "trace_redirect_chain", lambda _: _redirect(pipeline, url))
+
+    result = asyncio.run(pipeline.analyze_full_pipeline(url))
+
+    assert result["overallRisk"] == "safe"
+    assert result["verificationStatus"] == "complete"
+    assert result["unverifiedChecks"] == []
+    assert result["optionalChecks"][0]["check"] == "VirusTotal Reputation"
+    assert all(item.get("verified") is not False for item in result["signals"])
+    assert all(item["severity"] in {"low", "medium", "high"} for item in result["signals"])
+    assert not any(item["check"] == "VirusTotal Reputation" for item in result["signals"])
+
+
+def test_web_risk_and_fresh_phishtank_can_complete_full_scan_without_vt(modules, monkeypatch):
+    pipeline, _, _, _ = modules
+    url = "https://example.org/ordinary-path"
+    monkeypatch.setattr(pipeline, "should_short_circuit", lambda _: (False, "test"))
+    monkeypatch.setattr(pipeline, "google_reputation_signal", lambda _: _finding(pipeline, "Google Web Risk"))
+    monkeypatch.setattr(pipeline, "phishtank_signal", lambda _: _finding(pipeline, "PhishTank"))
+    monkeypatch.setattr(pipeline, "virustotal_lookup_result", lambda _: _vt(url, mode="unavailable"))
+    monkeypatch.setattr(pipeline, "trace_redirect_chain", lambda _: _redirect(pipeline, url))
+    monkeypatch.setattr(pipeline, "check_domain_intelligence", lambda _: [])
+    monkeypatch.setattr(pipeline, "check_crypto_pattern_signals", lambda _: [])
+    monkeypatch.setattr(pipeline, "classify_qr_with_ml", lambda *args: {"enabled": False})
+
+    result = asyncio.run(pipeline.analyze_full_pipeline(url))
+
+    assert result["overallRisk"] == "safe"
+    assert result["verificationStatus"] == "complete"
+    assert result["unverifiedChecks"] == []
+    assert result["optionalChecks"][0]["check"] == "VirusTotal Reputation"
+    assert {item["check"] for item in result["signals"]} >= {"Google Web Risk", "PhishTank", "Redirect Chain"}
+    assert all(item.get("verified") is not False for item in result["signals"])
+    assert all(item["severity"] in {"low", "medium", "high"} for item in result["signals"])
+
+
+def test_phishtank_hit_overrides_popularity_even_without_vt(modules, monkeypatch):
+    pipeline, _, _, _ = modules
+    url = "https://www.youtube.com/compromised-path"
+    monkeypatch.setattr(pipeline, "should_short_circuit", lambda _: (True, "test"))
+    monkeypatch.setattr(pipeline, "google_reputation_signal", lambda _: _finding(pipeline, "Google Web Risk"))
+    monkeypatch.setattr(pipeline, "phishtank_signal", lambda _: _finding(pipeline, "PhishTank", "high", False))
+    monkeypatch.setattr(pipeline, "virustotal_lookup_result", lambda _: _vt(url, mode="unavailable"))
+    monkeypatch.setattr(pipeline, "trace_redirect_chain", lambda _: _redirect(pipeline, url))
+
+    result = asyncio.run(pipeline.analyze_full_pipeline(url))
+
+    assert result["overallRisk"] == "high"
+    assert result["confidenceScore"] >= 85
+    assert result["verificationStatus"] == "complete"
+    assert any(item["check"] == "PhishTank" and item["severity"] == "high" for item in result["signals"])
+
+
+def test_missing_phishtank_feed_keeps_popular_url_unverified(modules, monkeypatch):
+    pipeline, _, _, _ = modules
+    url = "https://www.youtube.com/"
+    monkeypatch.setattr(pipeline, "should_short_circuit", lambda _: (True, "test"))
+    monkeypatch.setattr(pipeline, "google_reputation_signal", lambda _: _finding(pipeline, "Google Web Risk"))
+    monkeypatch.setattr(pipeline, "phishtank_signal", lambda _: _finding(pipeline, "PhishTank", "medium", False, False))
     monkeypatch.setattr(pipeline, "virustotal_lookup_result", lambda _: _vt(url, mode="unavailable"))
     monkeypatch.setattr(pipeline, "trace_redirect_chain", lambda _: _redirect(pipeline, url))
 
@@ -85,8 +147,7 @@ def test_unavailable_virustotal_prevents_green_fast_path(modules, monkeypatch):
 
     assert result["overallRisk"] == "suspicious"
     assert result["verificationStatus"] == "incomplete"
-    assert result["unverifiedChecks"] == ["VirusTotal Reputation"]
-    assert next(item for item in result["signals"] if item["check"] == "VirusTotal Reputation")["passed"] is False
+    assert result["unverifiedChecks"] == ["PhishTank"]
 
 
 def test_confirmed_google_hit_overrides_bad_model_and_prose(modules, monkeypatch):
@@ -160,12 +221,105 @@ def test_web_risk_is_preferred_when_configured(modules, monkeypatch, body, expec
     assert sum(key == "threatTypes" for key, _ in calls[0][1]) == 3
 
 
+@pytest.mark.parametrize("key_name", ["GOOGLE_SAFE_BROWSING_API_KEY", "googe_api_key"])
+def test_legacy_safe_browsing_key_requires_explicit_noncommercial_opt_in(modules, monkeypatch, key_name):
+    _, reputation, _, _ = modules
+    monkeypatch.delenv("GOOGLE_WEB_RISK_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_SAFE_BROWSING_API_KEY", raising=False)
+    monkeypatch.delenv("googe_api_key", raising=False)
+    monkeypatch.setenv(key_name, "legacy-test-key")
+    monkeypatch.delenv("SAFESCAN_ENABLE_NONCOMMERCIAL_SAFE_BROWSING", raising=False)
+    monkeypatch.setattr(reputation, "validate_public_url", lambda url: url)
+    calls = []
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {}
+
+    monkeypatch.setattr(reputation.requests, "post", lambda url, **kwargs: calls.append((url, kwargs)) or Response())
+    blocked = reputation.check_url_reputation("https://example.org/")
+    finding = reputation.google_reputation_signal("https://example.org/")
+
+    assert blocked["status"] == "UNCONFIGURED"
+    assert blocked["provider"] == "Google Web Risk"
+    assert finding["verified"] is False
+    assert calls == []
+
+    monkeypatch.setenv("SAFESCAN_ENABLE_NONCOMMERCIAL_SAFE_BROWSING", "true")
+    allowed = reputation.check_url_reputation("https://example.org/")
+
+    assert allowed["status"] == "CLEAR"
+    assert allowed["provider"] == "Google Safe Browsing"
+    assert calls[0][0] == "https://safebrowsing.googleapis.com/v4/threatMatches:find"
+    assert calls[0][1]["params"] == {"key": "legacy-test-key"}
+
+
+def test_virustotal_requires_license_and_does_not_submit_unknown_urls_by_default(modules, monkeypatch):
+    _, reputation, scoring, _ = modules
+    monkeypatch.setenv("VIRUSTOTAL_API_KEY", "vt-test-key")
+    monkeypatch.delenv("SAFESCAN_VIRUSTOTAL_LICENSED", raising=False)
+    monkeypatch.delenv("SAFESCAN_VIRUSTOTAL_SUBMIT_UNKNOWN_URLS", raising=False)
+    calls = []
+
+    class MissingResponse:
+        status_code = 404
+
+        def raise_for_status(self):
+            return None
+
+    monkeypatch.setattr(scoring.requests, "get", lambda *args, **kwargs: calls.append("get") or MissingResponse())
+    monkeypatch.setattr(scoring.requests, "post", lambda *args, **kwargs: calls.append("post") or MissingResponse())
+
+    disabled = scoring.virustotal_lookup_result("https://example.org/private?token=secret")
+    disabled_signal = reputation.virustotal_reputation_signal("https://example.org/private?token=secret")
+    assert disabled["mode"] == "unavailable"
+    assert disabled_signal["verified"] is False
+    assert calls == []
+
+    monkeypatch.setenv("SAFESCAN_VIRUSTOTAL_LICENSED", "true")
+    unknown = scoring.virustotal_lookup_result("https://example.org/private?token=secret")
+    unknown_signal = reputation.virustotal_reputation_signal("https://example.org/private?token=secret")
+    assert unknown["mode"] == "unavailable"
+    assert "not submitted" in unknown["statusMessage"]
+    assert unknown_signal["verified"] is False
+    assert calls == ["get", "get"]
+
+    monkeypatch.setenv("SAFESCAN_VIRUSTOTAL_SUBMIT_UNKNOWN_URLS", "true")
+    submitted = scoring.virustotal_lookup_result("https://example.org/private?token=secret")
+    assert submitted["mode"] == "pending"
+    assert calls[-2:] == ["get", "post"]
+
+
+def test_standalone_reputation_endpoint_uses_same_unverified_vt_result(modules, monkeypatch):
+    pipeline, _, _, _ = modules
+    routes = importlib.import_module("hackabull.routes_api")
+    monkeypatch.delenv("VIRUSTOTAL_API_KEY", raising=False)
+    monkeypatch.setattr(routes, "validate_public_url", lambda url: url)
+    monkeypatch.setattr(routes, "google_reputation_signal", lambda _: _finding(pipeline, "Google Web Risk"))
+    monkeypatch.setattr(routes, "phishtank_signal", lambda _: _finding(pipeline, "PhishTank"))
+
+    result = asyncio.run(routes.api_check_reputation({"url": "https://example.org/"}))
+
+    vt = result["optionalChecks"][0]
+    assert vt["verified"] is False
+    assert vt["passed"] is False
+    assert result["verificationStatus"] == "complete"
+    assert result["unverifiedChecks"] == []
+    assert not any(item["check"] == "VirusTotal Reputation" for item in result["signals"])
+
+
 def test_redirected_popular_url_checks_landing_page_even_if_first_check_is_incomplete(modules, monkeypatch):
     pipeline, _, _, _ = modules
     start = "https://www.youtube.com/go"
     end = "https://example.org/landing"
     monkeypatch.setattr(pipeline, "should_short_circuit", lambda _: (True, "ok"))
     monkeypatch.setattr(pipeline, "google_reputation_signal", lambda _: _finding(pipeline, "Google Safe Browsing"))
+    monkeypatch.setattr(pipeline, "phishtank_signal", lambda url: _finding(
+        pipeline, "PhishTank", "medium", False, False
+    ) if url == start else _finding(pipeline, "PhishTank"))
     monkeypatch.setattr(pipeline, "virustotal_lookup_result", lambda url: _vt(url, mode="pending" if url == start else "live"))
     monkeypatch.setattr(pipeline, "trace_redirect_chain", lambda _: {
         "signal": _finding(pipeline, "Redirect Chain", "medium", False),
@@ -183,7 +337,8 @@ def test_redirected_popular_url_checks_landing_page_even_if_first_check_is_incom
 
     assert end in seen
     assert result["verificationStatus"] == "incomplete"
-    assert "VirusTotal Reputation" in result["unverifiedChecks"]
+    assert "PhishTank" in result["unverifiedChecks"]
+    assert any(item["check"] == "VirusTotal Reputation" for item in result["optionalChecks"])
     assert result["overallRisk"] != "safe"
 
 
@@ -224,6 +379,7 @@ def test_first_party_shortcut_requires_completed_checks(modules, monkeypatch):
     url = "https://safescan-qr.onrender.com/"
     monkeypatch.setattr(pipeline, "is_first_party", lambda _: True)
     monkeypatch.setattr(pipeline, "google_reputation_signal", lambda _: _finding(pipeline, "Google Safe Browsing", "medium", False, False))
+    monkeypatch.setattr(pipeline, "phishtank_signal", lambda _: _finding(pipeline, "PhishTank"))
     monkeypatch.setattr(pipeline, "virustotal_lookup_result", lambda _: _vt(url, mode="unavailable"))
     monkeypatch.setattr(pipeline, "trace_redirect_chain", lambda _: _redirect(pipeline, url))
 
@@ -231,7 +387,7 @@ def test_first_party_shortcut_requires_completed_checks(modules, monkeypatch):
 
     assert result["overallRisk"] == "suspicious"
     assert result["verificationStatus"] == "incomplete"
-    assert set(result["unverifiedChecks"]) == {"Google Safe Browsing", "VirusTotal Reputation"}
+    assert result["unverifiedChecks"] == ["Google Safe Browsing"]
 
     monkeypatch.setattr(pipeline, "google_reputation_signal", lambda _: _finding(pipeline, "Google Safe Browsing"))
     monkeypatch.setattr(pipeline, "virustotal_lookup_result", lambda _: _vt(url))
@@ -240,3 +396,4 @@ def test_first_party_shortcut_requires_completed_checks(modules, monkeypatch):
     assert verified["overallRisk"] == "safe"
     assert verified["verificationStatus"] == "complete"
     assert verified["fastPath"]["reason"] == "first_party"
+    assert verified["optionalChecks"] == []

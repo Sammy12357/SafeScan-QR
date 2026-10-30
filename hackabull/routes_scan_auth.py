@@ -235,6 +235,7 @@ async def scan_qr(
         "fast_path": analysis.get("fastPath"),
         "verification_status": analysis.get("verificationStatus"),
         "unverified_checks": analysis.get("unverifiedChecks", []),
+        "optional_checks": analysis.get("optionalChecks", []),
         "email": user_email, "scan_count": get_scan_count(user_email) if user_email else 0, "google_client_id": CLIENT_ID,
         "test_site": test_site,
         "test_site_path": test_site_path,

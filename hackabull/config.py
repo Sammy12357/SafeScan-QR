@@ -111,7 +111,6 @@ AUTH0_AUDIENCES = {audience.strip() for audience in (os.getenv("AUTH0_CLIENT_IDS
 AUTH0_ISSUER = f"https://{AUTH0_DOMAIN}/"
 _AUTH0_JWKS_CACHE = {"keys": None, "fetched_at": 0.0}
 _AUTH0_JWKS_TTL_SECONDS = 60 * 60
-api_key = os.getenv("GOOGLE_SAFE_BROWSING_API_KEY") or os.getenv("googe_api_key")
 AIRDROP_ADMIN_SECRET = os.getenv("AIRDROP_ADMIN_SECRET")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "safescanqr@gmail.com")
 ADMIN_EMAIL_GMAIL_COMPOSE_URL = f"https://mail.google.com/mail/?view=cm&fs=1&to={quote(ADMIN_EMAIL)}"
@@ -159,8 +158,6 @@ AIRDROP_TOKEN_ALLOCATIONS = {
 }
 LEGAL_VERSION = "v1.0"
 LEGAL_LAST_UPDATED = "May 2026"
-safe_browsing_url = f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={api_key}"
-VIRUSTOTAL_API_KEY = os.getenv("VIRUSTOTAL_API_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SOLANA_RPC_URL = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")

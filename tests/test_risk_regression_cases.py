@@ -49,6 +49,11 @@ def stub_external_services(module, monkeypatch):
     )
     patch_everywhere(
         monkeypatch,
+        "phishtank_signal",
+        lambda url: module.signal("PhishTank", "No known match", "low", "Current local feed has no match.", True),
+    )
+    patch_everywhere(
+        monkeypatch,
         "virustotal_lookup_result",
         lambda url: {
             "url": url,

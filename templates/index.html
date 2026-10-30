@@ -265,7 +265,7 @@
             <div class="vt-panel">
               <div class="vt-panel-top">
                 <div>
-                  <p class="engine-label">VirusTotal vendor scan</p>
+                  <p class="engine-label">Optional VirusTotal enrichment</p>
                   <h3>{{ "No threats detected" if virus_total.summary.malicious == 0 else virus_total.summary.malicious ~ " threats detected" }}</h3>
                   <p>{{ virus_total.summary.clean }} clean engines and {{ virus_total.summary.unrated }} unrated engines support this SafeScan score.</p>
                 </div>
@@ -305,9 +305,9 @@
             </div>
             {% elif virus_total %}
             <div class="vt-panel vt-panel-status">
-              <p class="engine-label">VirusTotal vendor scan</p>
+              <p class="engine-label">Optional VirusTotal enrichment</p>
               <p>{{ virus_total.statusMessage or "VirusTotal results are unavailable for this scan." }}</p>
-              <a class="vt-powered" href="{{ virus_total.reportUrl or 'https://www.virustotal.com/gui/home/url' }}" target="_blank" rel="noopener noreferrer">View on VirusTotal</a>
+              <p>Required URL checks use Google reputation, the current local PhishTank feed, and redirect inspection.</p>
             </div>
             {% endif %}
 
