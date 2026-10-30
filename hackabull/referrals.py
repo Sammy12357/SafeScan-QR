@@ -52,6 +52,8 @@ import safescan_model_calibration as sm_calibration
 from .audit import now_iso
 from .config import APP_URL
 from .fraud import lookup_user_id_by_email
+from .payload_privacy import safe_legacy_scan_value
+from .payload_privacy import scan_storage_reference
 
 # =============================================================================
 # REFERRALS & UNIQUE-SCAN COUNTING
@@ -68,10 +70,10 @@ def referral_code_for_user(email):
         conn.execute("UPDATE users SET referral_code = ? WHERE email = ?", (code, normalized_email))
         return code
 
-def record_unique_scan(email, url, wallet, user_id=None):
+def record_unique_scan(email, url, wallet, user_id=None, payload_type=None):
     normalized_email = (email or "").strip().lower()
     resolved_user_id = user_id or lookup_user_id_by_email(normalized_email)
-    normalized_payload = url.strip()[:2048]
+    normalized_payload = scan_storage_reference(url, resolved_user_id or normalized_email, payload_type)
     payload_hash = hashlib.sha256(normalized_payload.encode("utf-8")).hexdigest()
     cutoff = (datetime.utcnow() - timedelta(seconds=60)).isoformat()
 
@@ -102,14 +104,15 @@ def record_unique_scan(email, url, wallet, user_id=None):
 
         # Existing rows may already have counted the last scanned payload before
         # scan_events existed. Backfill that event without giving an extra scan.
-        previous_urls = [entry.strip() for entry in str(previous_url or "").split(",") if entry.strip()]
+        previous_urls = [safe_legacy_scan_value(entry.strip()) for entry in str(previous_url or "").split(",") if entry.strip()]
         if normalized_payload in previous_urls and current_count > 0:
             cursor.execute("""
                 UPDATE scans
                 SET wallet_address = COALESCE(?, wallet_address),
-                    user_id = COALESCE(user_id, ?)
+                    user_id = COALESCE(user_id, ?),
+                    url_found = ?
                 WHERE email = ?
-            """, (wallet, resolved_user_id, normalized_email))
+            """, (wallet, resolved_user_id, ",".join(previous_urls), normalized_email))
             return False
 
         previous_urls.append(normalized_payload)

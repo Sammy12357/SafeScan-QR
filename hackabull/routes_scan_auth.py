@@ -91,15 +91,13 @@ from .discord_link import get_discord_link
 from .discord_link import verify_discord_state
 from .fraud import run_fraud_checks
 from .history import index_user_context
-from .history import persist_qr_upload
+from .payload_privacy import scan_storage_reference
 from .history import save_scan_history
 from .pipeline import analyze_full_pipeline
 from .qr_decode import QRDecodeAmbiguityError
 from .qr_decode import decode_qr_upload
-from .qr_detect import analyze_embedded_url_payload
 from .qr_detect import analyze_qr_payload
 from .qr_detect import detect_payload
-from .qr_detect import extract_urls
 from .qr_detect import pipeline_response_to_template_analysis
 from .referrals import get_scan_count
 from .referrals import record_unique_scan
@@ -161,7 +159,6 @@ async def scan_qr(
                 "version": LEGAL_VERSION,
                 **index_user_context(user)
             })
-        persist_qr_upload(contents, file.filename, file.content_type, user)
         try:
             url_qr, qr_image_for_ml = decode_qr_upload(contents, file.filename, file.content_type)
         except QRDecodeAmbiguityError as exc:
@@ -201,23 +198,24 @@ async def scan_qr(
             }
         analysis = pipeline_response_to_template_analysis(pipeline_response)
     else:
-        embedded_urls = extract_urls(normalized_payload)
-        if embedded_urls:
-            analysis = await analyze_embedded_url_payload(url_qr, embedded_urls[0], qr_image_for_ml)
-        else:
-            analysis = analyze_qr_payload(url_qr)
+        # A non-URL QR may contain secrets in any field. Do not submit
+        # URL-shaped text from it to external reputation or redirect services.
+        analysis = analyze_qr_payload(url_qr)
         analysis["normalized"] = url_qr
     analysis["rawPayload"] = url_qr
     if qr_image_for_ml is not None:
         qr_image_for_ml.close()
     counted = False
     if user_email:
-        counted = record_unique_scan(user_email, url_qr, wallet_address, user_id=user.get("google_id") if user else None)
+        counted = record_unique_scan(user_email, url_qr, wallet_address, user_id=user.get("google_id") if user else None, payload_type=payload_type)
         save_scan_history(user_email, analysis["normalized"], analysis, user_id=user.get("google_id") if user else None)
-        run_fraud_checks("scan", user_email, request, {"url": analysis["normalized"], "deviceFingerprint": device_fingerprint})
+        # Fraud velocity is keyed by email, so its private fingerprint uses
+        # the same owner identity across scans and later cleanup migrations.
+        stored_reference = scan_storage_reference(url_qr, user_email, payload_type)
+        run_fraud_checks("scan", user_email, request, {"url": stored_reference, "deviceFingerprint": device_fingerprint})
     audit_log("qr.scanned", request=request, actor_user_id=user.get("google_id") if user else None, target_type="scan", metadata={"counted": counted, "payloadType": payload_type, "guest": not bool(user_email)})
 
-    return templates.TemplateResponse("index.html", {
+    result_response = templates.TemplateResponse("index.html", {
         "request": request, "logged_in": True, "results_visible": True,
         "status": analysis["status"], "url_found": analysis["normalized"], "source": analysis["source"],
         "raw_payload": url_qr,
@@ -241,6 +239,9 @@ async def scan_qr(
         "version": LEGAL_VERSION,
         **index_user_context(user)
     })
+    result_response.headers["Cache-Control"] = "no-store"
+    result_response.headers["Pragma"] = "no-cache"
+    return result_response
 
 @qr_app.post("/auth/google", response_class=HTMLResponse)
 @qr_app.get("/auth/google", response_class=HTMLResponse)

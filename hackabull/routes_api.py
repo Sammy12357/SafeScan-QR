@@ -51,6 +51,7 @@ from safescan_allowlist import should_short_circuit, registrable_domain as allow
 import safescan_model_calibration as sm_calibration
 from .admin_data import airdrop_tier
 from .admin_data import next_airdrop_milestone
+from .admin_data import safe_fraud_flag_record
 from .app_module import qr_app
 from .audit import SafeScanError
 from .audit import audit_log
@@ -65,17 +66,16 @@ from .fraud import run_fraud_checks
 from .heuristics import check_crypto_pattern_signals
 from .heuristics import check_domain_intelligence
 from .history import group_scan_history
-from .history import persist_qr_upload
+from .payload_privacy import safe_legacy_scan_value
+from .payload_privacy import scan_storage_reference
 from .history import save_scan_history
 from .history import serialize_scan_history_row
 from .pipeline import analyze_full_pipeline
 from .qr_decode import QRDecodeAmbiguityError
 from .qr_decode import decode_qr_upload
-from .qr_detect import analyze_embedded_url_payload
 from .qr_detect import analyze_qr_payload
 from .qr_detect import describe_qr_action
 from .qr_detect import detect_payload
-from .qr_detect import extract_urls
 from .qr_detect import pipeline_response_to_template_analysis
 from .qr_image import render_safescan_logo
 from .redirects import trace_redirect_chain
@@ -112,7 +112,7 @@ async def api_analyze(request: Request, payload: dict = Body(...)):
     return await analyze_full_pipeline(target_url)
 
 @qr_app.post("/api/scan")
-async def api_scan(request: Request, payload: dict = Body(...)):
+async def api_scan(request: Request, response: Response, payload: dict = Body(...)):
     user = require_user(request)
     rate_limit = enforce_rate_limit(request, "scan", 30, 60 * 60, user_key=user.get("google_id"))
     if rate_limit:
@@ -124,10 +124,12 @@ async def api_scan(request: Request, payload: dict = Body(...)):
     if len(raw_payload) > 4096:
         raise SafeScanError("QR payload is too large.", 400)
 
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     return await analyze_and_record_scan(request, user, raw_payload, request.headers.get("x-device-fingerprint", ""))
 
 @qr_app.post("/api/scan/file")
-async def api_scan_file(request: Request, file: UploadFile = File(...)):
+async def api_scan_file(request: Request, response: Response, file: UploadFile = File(...)):
     user = require_user(request)
     rate_limit = enforce_rate_limit(request, "scan_file", 30, 60 * 60, user_key=user.get("google_id"))
     if rate_limit:
@@ -136,7 +138,8 @@ async def api_scan_file(request: Request, file: UploadFile = File(...)):
     if len(contents) > MAX_QR_UPLOAD_BYTES:
         raise SafeScanError(f"Uploaded file is too large. Use a file under {MAX_QR_UPLOAD_BYTES // (1024 * 1024)} MB.", 400)
 
-    persist_qr_upload(contents, file.filename, file.content_type, user)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     try:
         raw_payload, qr_image_for_ml = decode_qr_upload(contents, file.filename, file.content_type)
     except QRDecodeAmbiguityError as exc:
@@ -290,11 +293,9 @@ async def analyze_and_record_scan(request, user, raw_payload, device_fingerprint
             }
         history_analysis = pipeline_response_to_template_analysis(analysis)
     else:
-        embedded_urls = extract_urls(normalized_payload)
-        if embedded_urls:
-            history_analysis = await analyze_embedded_url_payload(raw_payload, embedded_urls[0], qr_image_for_ml)
-        else:
-            history_analysis = analyze_qr_payload(raw_payload)
+        # Non-URL actions can carry private data in any field. Analyze their
+        # structure locally rather than fetching embedded URL-shaped text.
+        history_analysis = analyze_qr_payload(raw_payload)
         history_analysis["normalized"] = raw_payload
         template_analysis = history_analysis
         score = int(template_analysis.get("score") or 0)
@@ -320,9 +321,10 @@ async def analyze_and_record_scan(request, user, raw_payload, device_fingerprint
         }
 
     history_analysis["rawPayload"] = raw_payload
-    counted = record_unique_scan(email, raw_payload, wallet_address, user_id=user.get("google_id"))
+    counted = record_unique_scan(email, raw_payload, wallet_address, user_id=user.get("google_id"), payload_type=payload_type)
     save_scan_history(email, history_analysis["normalized"], history_analysis, user_id=user.get("google_id"))
-    run_fraud_checks("scan", email, request, {"url": history_analysis["normalized"], "deviceFingerprint": device_fingerprint})
+    stored_reference = scan_storage_reference(raw_payload, email, payload_type)
+    run_fraud_checks("scan", email, request, {"url": stored_reference, "deviceFingerprint": device_fingerprint})
     audit_log("qr.scanned", request=request, actor_user_id=user.get("google_id"), target_type="scan", metadata={"counted": counted, "payloadType": payload_type})
     return {
         **analysis,
@@ -437,6 +439,13 @@ async def api_scans(request: Request):
     with get_conn() as conn:
         scans = [dict(row) for row in user_scoped_select(conn, "scans")]
         events = [dict(row) for row in user_scoped_select(conn, "scan_events")]
+    # Historical rows may predate payload redaction. The account endpoint
+    # needs counts and timestamps, not raw QR contents or guessable hashes.
+    for row in scans:
+        row["url_found"] = "[Scan payload list hidden]"
+    for row in events:
+        row["url_found"] = safe_legacy_scan_value(row.get("url_found"))
+        row.pop("payload_hash", None)
     return {"scans": scans, "events": events}
 
 @qr_app.get("/api/referral")
@@ -684,7 +693,7 @@ async def api_admin_stats_fraud_flags(request: Request):
 async def api_fraud_flags(request: Request):
     require_role_user(request, "admin")
     with get_conn() as conn:
-        rows = [dict(row) for row in user_scoped_select(conn, "fraud_flags", "reviewed = 0")]
+        rows = [safe_fraud_flag_record(row) for row in user_scoped_select(conn, "fraud_flags", "reviewed = 0")]
     return {"rows": rows}
 
 @qr_app.post("/api/check-reputation")

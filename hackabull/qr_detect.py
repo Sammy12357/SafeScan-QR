@@ -111,6 +111,30 @@ def _qr_field_value(payload, field):
         return ""
     return match.group(1).replace("\\;", ";").strip()
 
+
+def local_embedded_url_risk(url):
+    """Inspect URL-shaped text in a private QR without DNS or network calls."""
+    try:
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+    except ValueError:
+        return 80, risk_reason("Malformed embedded link", "high", "An embedded link has an invalid host and was not opened or sent to a provider.")
+    if not host or parsed.username is not None or parsed.password is not None:
+        return 80, risk_reason("Deceptive embedded link", "high", "An embedded link contains a missing host or user-info camouflage.")
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        address = None
+    if host == "localhost" or host.endswith(".local") or (address and not address.is_global):
+        return 80, risk_reason("Internal embedded link", "high", "An embedded link points at a local or non-public address.")
+    if any(marker in url.lower() for marker in ("drain", "seed", "recovery", "password", "sign-message", "permit")):
+        return 70, risk_reason("Sensitive embedded link wording", "high", "An embedded link contains wallet-drain or credential-related wording.")
+    if "xn--" in host:
+        return 65, risk_reason("Encoded embedded domain", "medium", "An embedded link uses an internationalized domain encoding that should be reviewed.")
+    if parsed.scheme != "https":
+        return 55, risk_reason("Non-HTTPS embedded link", "medium", "An embedded link does not use HTTPS.")
+    return 45, risk_reason("Embedded link not fetched", "medium", "A URL-shaped value was found, but its destination was not contacted because this QR may contain private data.")
+
 def describe_qr_action(payload_type, normalized):
     if payload_type == "URL":
         parsed = urlparse(normalized)
@@ -257,7 +281,14 @@ def analyze_non_url_payload(raw_payload):
         score = max(score, 45)
         status = "CAUTION"
         threat_class = f"{payload_type} containing embedded URL: inspect destination before action"
-        reasons.append(risk_reason("Embedded URL detected", "medium", "The payload contains a link hidden inside another QR action."))
+        reasons.append(risk_reason("Embedded URL detected", "medium", "The payload contains URL-shaped text inside another QR action; SafeScan did not fetch it."))
+        if len(embedded_urls) > MAX_EMBEDDED_URLS:
+            score = max(score, 79)
+            reasons.append(risk_reason("Embedded link limit", "high", f"Only the first {MAX_EMBEDDED_URLS} URL-shaped values were checked locally."))
+        for embedded_url in embedded_urls[:MAX_EMBEDDED_URLS]:
+            local_score, local_reason = local_embedded_url_risk(embedded_url)
+            score = max(score, local_score)
+            reasons.append(local_reason)
 
     risky_words = ("password", "seed", "recovery", "verify", "login", "wallet", "bank", "urgent")
     if any(word in normalized.lower() for word in risky_words):
@@ -295,8 +326,8 @@ def analyze_non_url_payload(raw_payload):
         "normalized": normalized,
         "payload_type": payload_type,
         "action_description": action_description,
-        "verificationStatus": "unverified" if payload_type != "Plain text" else "not_applicable",
-        "unverifiedChecks": ["Action in the receiving app"] if payload_type != "Plain text" else [],
+        "verificationStatus": "unverified" if payload_type != "Plain text" or embedded_urls else "not_applicable",
+        "unverifiedChecks": (["Action in the receiving app"] if payload_type != "Plain text" else []) + (["Embedded links not fetched"] if embedded_urls else []) + (["Embedded URLs beyond local scan limit"] if len(embedded_urls) > MAX_EMBEDDED_URLS else []),
         "reputation": {"provider": "SafeScan Payload Analyzer", "status": "NOT_APPLICABLE", "matches": [], "detail": "Reputation lookup only runs for URL payloads."},
         "reasons": reasons,
         "mlRisk": ml_result
@@ -425,103 +456,16 @@ def pipeline_response_to_template_analysis(pipeline_response):
         "fastPath": pipeline_response.get("fastPath")
     }
 
-async def analyze_embedded_url_payload(raw_payload, embedded_url, qr_image=None):
-    payload_type, _, normalized_payload = detect_payload(raw_payload)
-    urls = extract_urls(normalized_payload)
-    if embedded_url and embedded_url not in urls:
-        urls.insert(0, embedded_url)
-    base = analyze_non_url_payload(raw_payload)
+async def analyze_embedded_url_payload(raw_payload, embedded_url=None, qr_image=None):
+    """Legacy async entrypoint for private QR actions.
 
-    # A crafted QR can contain many tiny links and exhaust reputation/network
-    # lookups. Refuse to give a safe verdict when the full set cannot be
-    # inspected within a bounded request.
-    if len(urls) > MAX_EMBEDDED_URLS:
-        over_limit_score = max(79, clamp_score(base["score"]))
-        over_limit_risk = risk_from_score(over_limit_score)
-        base.update({
-            "status": status_from_risk(over_limit_risk),
-            "score": str(over_limit_score),
-            "overallRisk": over_limit_risk,
-            "normalized": raw_payload,
-            "embeddedPayload": raw_payload,
-            "analyzedUrls": [],
-            "verificationStatus": "unverified",
-            "unverifiedChecks": ["Embedded URLs beyond scan limit", "Action in the receiving app"],
-            "threat_class": "Too many embedded URLs to inspect",
-            "verdict": f"This QR contains {len(urls)} distinct links. SafeScan did not inspect them all; do not follow the QR action.",
-            "reasons": [risk_reason("Analysis incomplete", "high", f"The payload has {len(urls)} distinct links; the scan limit is {MAX_EMBEDDED_URLS}."), *base["reasons"]],
-        })
-        return base
-
-    analyzed = []
-    worst = None
-    for index, url in enumerate(urls):
-        try:
-            pipeline_response = await analyze_full_pipeline(url, qr_image if index == 0 else None)
-            item = pipeline_response_to_template_analysis(pipeline_response)
-        except SafeScanError as exc:
-            # A blocked/private/invalid embedded destination is itself a
-            # danger signal. Never fall back to the non-URL result and hide it.
-            item = {
-                "normalized": url,
-                "status": "MALICIOUS",
-                "score": "95",
-                "threat_class": "Blocked embedded URL",
-                "verdict": str(exc),
-                "reasons": [risk_reason("Embedded URL blocked", "high", str(exc))],
-                "verificationStatus": "unverified",
-                "unverifiedChecks": [f"Embedded URL could not be inspected: {url}"],
-            }
-        analyzed.append(item)
-        if worst is None or clamp_score(item["score"]) > clamp_score(worst["score"]):
-            worst = item
-
-    baseline_score = clamp_score(base["score"])
-    worst_score = clamp_score(worst["score"]) if worst else 0
-    final_score = max(45, baseline_score, worst_score)
-    final_risk = risk_from_score(final_score)
-    source = worst if worst_score >= baseline_score else base
-    summaries = [
-        risk_reason(
-            f"Embedded URL {index + 1}: {item['status']}",
-            "high" if item["status"] == "MALICIOUS" else "medium",
-            f"{item['normalized']} — {item['score']}/100. {item.get('verdict') or item['threat_class']}"
-        )
-        for index, item in enumerate(analyzed)
-    ]
-    return {
-        **base,
-        "status": status_from_risk(final_risk),
-        "score": str(final_score),
-        "overallRisk": final_risk,
-        "source": "SafeScan Payload + URL Analyzer",
-        "normalized": raw_payload,
-        "embeddedPayload": raw_payload,
-        "analyzedUrls": [
-            {"url": item["normalized"], "status": item["status"], "score": clamp_score(item["score"])}
-            for item in analyzed
-        ],
-        "threat_class": f"{payload_type} with embedded URL: {source['threat_class']}",
-        "action_description": (
-            f"{describe_qr_action(payload_type, normalized_payload)} "
-            f"SafeScan inspected all {len(analyzed)} embedded URL(s); the highest risk destination is "
-            f"{worst['normalized'] if worst else 'unknown'}."
-        ),
-        "verdict": (
-            f"This {payload_type.lower()} QR contains {len(analyzed)} embedded URL(s). "
-            f"The verdict uses the highest risk URL and the QR action: {source.get('verdict') or source['threat_class']}"
-        ),
-        "reasons": [risk_reason("Embedded URLs inspected", "medium", f"SafeScan checked all {len(analyzed)} distinct embedded URL(s)."), *summaries, *base["reasons"], *source.get("reasons", [])],
-        "reputation": source.get("reputation", base["reputation"]),
-        "virusTotal": source.get("virusTotal"),
-        "domainAge": source.get("domainAge"),
-        "mlRisk": source.get("mlRisk", base.get("mlRisk")),
-        "ruleScore": source.get("ruleScore"),
-        "fastPath": None,
-        "verificationStatus": "unverified" if base.get("unverifiedChecks") or any(item.get("unverifiedChecks") for item in analyzed) else "verified",
-        "unverifiedChecks": list(dict.fromkeys([
-            *base.get("unverifiedChecks", []),
-            *(check for item in analyzed for check in item.get("unverifiedChecks", [])),
-        ])),
-    }
-
+    Embedded URL-shaped values are examined only by local heuristics. Their
+    fields can contain secrets, so this helper must never fetch them or send
+    them to URL reputation providers.
+    """
+    result = analyze_non_url_payload(raw_payload)
+    result["normalized"] = raw_payload
+    result["overallRisk"] = risk_from_score(clamp_score(result["score"]))
+    result["analyzedUrls"] = []
+    result["verdict"] = "This QR action and any embedded URL-shaped values were assessed locally. No embedded destination was fetched or verified."
+    return result

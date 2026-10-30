@@ -151,8 +151,10 @@ def classify_qr_with_ml(payload, image=None, input_source="generated_qr"):
     if not ML_MODEL_ENABLED:
         return {"enabled": False, "reason": "disabled"}
 
-    # Cache hit short-circuits the entire ML stack and any image rendering.
-    cached = sm_calibration.cache_get(payload) if payload else None
+    # The ML cache stores its key in SQLite. Never put a non-URL QR payload
+    # (for example an otpauth seed or Wi-Fi password) into that cache.
+    cacheable = bool(payload and re.match(r"^https?://", payload, re.IGNORECASE))
+    cached = sm_calibration.cache_get(payload) if cacheable else None
     if cached is not None:
         cached["cacheHit"] = True
         return cached
@@ -221,7 +223,7 @@ def classify_qr_with_ml(payload, image=None, input_source="generated_qr"):
             "raw": [round(1.0 - adjusted_prob, 6), round(adjusted_prob, 6)],
             "cacheHit": False,
         }
-        if payload:
+        if cacheable:
             sm_calibration.cache_put(payload, payload_obj)
         return payload_obj
     except Exception as exc:

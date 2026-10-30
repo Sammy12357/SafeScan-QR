@@ -42,6 +42,36 @@ A scan that cannot complete a required reputation or redirect check must be show
 
 Redirect inspection connects directly to the validated public IP for each hop and retains the original hostname for TLS verification. It intentionally ignores `HTTP_PROXY` and `HTTPS_PROXY`; ensure the deployment can make direct outbound HTTP/HTTPS connections or redirect checks will be reported as incomplete.
 
+## Private QR payload retention
+
+Non-URL QR payloads can contain authenticator seeds, Wi-Fi passwords, WalletConnect pairing keys, contact details, and payment information. The scanner displays the decoded value in the immediate `Cache-Control: no-store` result, but stores only a per-user keyed fingerprint and generic verdict metadata for scan counting and history. Uploaded QR files are analyzed in memory and are not retained by normal scan routes. Non-URL payloads are not submitted to external URL reputation or redirect services; embedded URL-shaped text receives local checks and an unverified/caution result instead.
+
+Set `QR_PAYLOAD_FINGERPRINT_KEY` to a stable, random secret of at least 32 bytes in Render. If absent, an `AIRDROP_ADMIN_SECRET` of at least 32 bytes is used; if neither strong key is configured, an in-memory random key protects private payloads but duplicate-scan recognition can reset when the service restarts. Never store a decoded QR secret in this environment variable.
+
+### Earlier stored scans
+
+This change does not erase records or uploads created by older versions. Before any cleanup, take a protected backup of `/var/data/qr_cache.db` and the `DATA_DIR/uploads` directory (or the configured S3/R2 bucket), then verify that the backup can be restored. Plan a maintenance window and review these locations without printing payload values in logs:
+
+- `scan_history.url` and `scan_history.signals`
+- `scans.url_found`, `scan_events.url_found`, and `scan_events.payload_hash`
+- `scan_velocity.last_scan_url`, `fraud_flags.metadata` entries with a `url` field, and any non-web `url_blocklist.url` entries
+- `ml_cache.sqlite` → `ml_cache.url_key` for non-URL predictions
+- `upload_artifacts.object_key` and the corresponding `DATA_DIR/uploads/<object_key>` files or S3/R2 objects
+
+Treat all earlier uploaded QR files as potentially sensitive because the stored image type does not reveal whether it encodes a secret. The dry-run-first database helper reports counts without printing payloads:
+
+```text
+python scripts/scrub_legacy_private_qr.py --database /var/data/qr_cache.db --ml-cache /var/data/ml_cache.sqlite
+```
+
+After stopping the service for a maintenance window, verifying a protected off-host backup plan, and setting a strong `QR_PAYLOAD_FINGERPRINT_KEY`, apply the database cleanup with an unused backup path in an existing protected directory:
+
+```text
+python scripts/scrub_legacy_private_qr.py --database /var/data/qr_cache.db --ml-cache /var/data/ml_cache.sqlite --execute --backup /protected-backups/safescan-before-private-qr-cleanup.db --confirm "SCRUB PRIVATE QR DATA"
+```
+
+The helper creates and verifies SQLite backups before changing records. It replaces old non-URL scan values with keyed references, retains scan counts, and vacuums/checkpoints SQLite. Because the old ML cache strips URL schemes from its keys, the helper purges the **entire disposable ML prediction cache**, including web predictions; future scans recompute them. It deliberately does **not** delete upload objects or `upload_artifacts` rows. Use its `upload_artifacts_manual_cleanup` count to inventory local `DATA_DIR/uploads/<object_key>` files and S3/R2 objects, then back up and remove those under an approved retention plan. Account for backup and object-store version retention too. The normal history and scan APIs redact legacy non-URL records on read, but the underlying historical copies remain until this cleanup is completed. `QR_UPLOAD_RETENTION_DAYS` is not currently an automatic deletion job.
+
 ## Auth0 mobile sign-in
 
 The mobile app uses Auth0 Universal Login and sends the resulting Auth0 ID token to:

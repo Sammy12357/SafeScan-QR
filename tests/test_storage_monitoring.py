@@ -24,13 +24,19 @@ def load_app(tmp_path, monkeypatch):
     return module, TestClient(module.qr_app, base_url="https://testserver"), db_path
 
 
-def test_local_storage_persists_upload_artifact(tmp_path, monkeypatch):
+def test_upload_artifact_requires_explicit_retention(tmp_path, monkeypatch):
     module, _, db_path = load_app(tmp_path, monkeypatch)
+    assert module.persist_qr_upload(b"qr-bytes", "scan.png", "image/png", None) is None
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM upload_artifacts").fetchone()[0] == 0
+    assert not (tmp_path / "uploads").exists()
+
     artifact = module.persist_qr_upload(
         b"qr-bytes",
         "scan.png",
         "image/png",
         {"google_id": "user_1", "email": "user@example.com"},
+        retain=True,
     )
 
     assert artifact["backend"] == "local"
