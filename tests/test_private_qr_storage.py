@@ -193,3 +193,26 @@ def test_legacy_private_history_is_hidden_in_normal_api_and_admin_data(tmp_path,
     assert threat_image.status_code == 404
     module.record_unique_scan("alice@example.com", "https://safe.example/", "")
     assert secret not in rows(db_path, "scans")[0]["url_found"]
+
+
+def test_admin_fraud_flags_api_redacts_legacy_private_qr_metadata(tmp_path, monkeypatch):
+    monkeypatch.setenv("ADMIN_EMAILS", "admin@example.com")
+    _, client, db_path = load_app(tmp_path, monkeypatch)
+    assert client.post("/auth/register", data={"email": "admin@example.com", "password": "password123"}).status_code == 200
+    secret = "LEGACY_OTP_SEED_IN_FRAUD_FLAG"
+    private_payload = f"otpauth://totp/Alice?secret={secret}"
+    web_url = "https://example.com/known-threat"
+    with sqlite3.connect(db_path) as conn:
+        for flag_id, url in (("private", private_payload), ("web", web_url)):
+            conn.execute(
+                "INSERT INTO fraud_flags (id, user_id, check_name, severity, reason, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (flag_id, "alice@example.com", "duplicate_url_scans", "medium", "Repeated scan", json.dumps({"url": url, "duplicateCount": 4}), "2026-10-30T00:00:00Z"),
+            )
+
+    response = client.get("/api/fraud-flags")
+
+    assert response.status_code == 200
+    assert secret not in response.text
+    records = {row["id"]: row for row in response.json()["rows"]}
+    assert json.loads(records["private"]["metadata"])["url"] == "[Non-URL QR payload redacted]"
+    assert json.loads(records["web"]["metadata"])["url"] == web_url

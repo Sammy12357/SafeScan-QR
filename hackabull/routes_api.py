@@ -51,6 +51,7 @@ from safescan_allowlist import should_short_circuit, registrable_domain as allow
 import safescan_model_calibration as sm_calibration
 from .admin_data import airdrop_tier
 from .admin_data import next_airdrop_milestone
+from .admin_data import safe_fraud_flag_record
 from .app_module import qr_app
 from .audit import SafeScanError
 from .audit import audit_log
@@ -692,7 +693,7 @@ async def api_admin_stats_fraud_flags(request: Request):
 async def api_fraud_flags(request: Request):
     require_role_user(request, "admin")
     with get_conn() as conn:
-        rows = [dict(row) for row in user_scoped_select(conn, "fraud_flags", "reviewed = 0")]
+        rows = [safe_fraud_flag_record(row) for row in user_scoped_select(conn, "fraud_flags", "reviewed = 0")]
     return {"rows": rows}
 
 @qr_app.post("/api/check-reputation")
