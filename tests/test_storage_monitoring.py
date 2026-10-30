@@ -3,6 +3,7 @@ import json
 import os
 import sqlite3
 import sys
+import time
 
 from fastapi.testclient import TestClient
 
@@ -66,9 +67,11 @@ def test_provider_health_reports_configuration_without_secrets(tmp_path, monkeyp
     assert degraded.status_code == 200
     assert degraded.json() == {
         "status": "incomplete",
-        "scope": "configuration_only",
+        "scope": "configuration_and_local_feed_only",
         "providers": {
             "google": "legacy_key_disabled",
+            "phishtank": "terms_not_confirmed",
+            "phishtankFeedAgeSeconds": None,
             "virustotal": "license_confirmation_required",
             "completeChecksConfigured": False,
         },
@@ -78,12 +81,22 @@ def test_provider_health_reports_configuration_without_secrets(tmp_path, monkeyp
     assert "vt-secret-value" not in degraded.text
 
     monkeypatch.setenv("GOOGLE_WEB_RISK_API_KEY", "web-risk-secret-value")
-    monkeypatch.setenv("SAFESCAN_VIRUSTOTAL_LICENSED", "true")
+    monkeypatch.setenv("PHISHTANK_APP_KEY", "phish-test-key")
+    monkeypatch.setenv("SAFESCAN_PHISHTANK_TERMS_CONFIRMED", "true")
+    feed = importlib.import_module("hackabull.phish_feed")
+    feed._write_snapshot(
+        b"url,verified,online\nhttps://known-phish.example/,yes,yes\n",
+        feed._feed_path(),
+        time.time(),
+    )
     configured = client.get("/health/providers")
     assert configured.json()["status"] == "configured"
     assert configured.json()["providers"]["google"] == "web_risk_configured"
-    assert configured.json()["providers"]["virustotal"] == "licensed_configured"
+    assert configured.json()["providers"]["phishtank"] == "fresh"
+    assert configured.json()["providers"]["virustotal"] == "license_confirmation_required"
+    assert configured.json()["providers"]["completeChecksConfigured"] is True
     assert "web-risk-secret-value" not in configured.text
+    assert "phish-test-key" not in configured.text
 
 
 def test_scan_history_persists_classification(tmp_path, monkeypatch):

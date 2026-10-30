@@ -61,6 +61,7 @@ from .config import REQUEST_LATENCY
 from .config import SESSION_COOKIE_NAME
 from .config import generate_latest
 from .provider_policy import reputation_configuration
+from .phish_feed import refresh_feed_loop
 from .request_helpers import request_ip
 from .security import enforce_rate_limit
 from .sessions import cleanup_persistent_sessions
@@ -106,11 +107,11 @@ async def health_ready():
 
 @qr_app.get("/health/providers", include_in_schema=False)
 async def health_providers():
-    """Configuration coverage only; provider uptime is checked during scans."""
+    """Configuration and local-feed coverage; provider uptime is checked per scan."""
     configuration = reputation_configuration()
     return {
         "status": "configured" if configuration["completeChecksConfigured"] else "incomplete",
-        "scope": "configuration_only",
+        "scope": "configuration_and_local_feed_only",
         "providers": configuration,
     }
 
@@ -264,6 +265,7 @@ async def start_wallet_nonce_cleanup():
     cleanup_persistent_sessions()
     expire_alpha_subscriptions()
     asyncio.create_task(wallet_nonce_cleanup_loop())
+    asyncio.create_task(refresh_feed_loop())
 
 @qr_app.middleware("http")
 async def security_headers_and_rate_limits(request: Request, call_next):

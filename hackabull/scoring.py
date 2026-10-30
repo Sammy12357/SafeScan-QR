@@ -167,7 +167,7 @@ def virustotal_breakdown_signal(vt_result):
         finding["verified"] = False
         return finding
     flagged = summary["malicious"]
-    severity = "high" if flagged else "info"
+    severity = "high" if flagged else "low"
     finding = signal(
         "VirusTotal Reputation",
         f"{flagged}/{summary['total']} engines flagged",
@@ -187,6 +187,7 @@ def score_from_signals(signals):
         "Brand Impersonation",
         "Google Safe Browsing",
         "Google Web Risk",
+        "PhishTank",
         "VirusTotal Reputation",
         "Crypto Pattern",
         "Ethereum Approval Pattern",

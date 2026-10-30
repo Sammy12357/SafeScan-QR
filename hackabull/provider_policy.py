@@ -37,7 +37,10 @@ def virustotal_submit_unknown_urls():
 
 
 def reputation_configuration():
-    """Report configuration state without exposing keys or claiming live uptime."""
+    """Report configuration and local-feed state without claiming live uptime."""
+    from .phish_feed import feed_status
+
+    phishtank = feed_status()
     if web_risk_key():
         google = "web_risk_configured"
     elif legacy_safe_browsing_enabled():
@@ -56,7 +59,9 @@ def reputation_configuration():
 
     return {
         "google": google,
+        "phishtank": phishtank["state"],
+        "phishtankFeedAgeSeconds": phishtank.get("ageSeconds"),
         "virustotal": virustotal,
         "completeChecksConfigured": google in {"web_risk_configured", "safe_browsing_noncommercial_enabled"}
-        and virustotal == "licensed_configured",
+        and phishtank["state"] == "fresh",
     }

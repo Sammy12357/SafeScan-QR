@@ -69,6 +69,8 @@ from .history import persist_qr_upload
 from .history import save_scan_history
 from .history import serialize_scan_history_row
 from .pipeline import analyze_full_pipeline
+from .pipeline import verification_coverage
+from .phish_feed import phishtank_signal
 from .qr_decode import QRDecodeAmbiguityError
 from .qr_decode import decode_qr_upload
 from .qr_detect import analyze_embedded_url_payload
@@ -315,6 +317,7 @@ async def analyze_and_record_scan(request, user, raw_payload, device_fingerprint
             "ruleScore": template_analysis.get("ruleScore"),
             "verificationStatus": template_analysis.get("verificationStatus"),
             "unverifiedChecks": template_analysis.get("unverifiedChecks", []),
+            "optionalChecks": template_analysis.get("optionalChecks", []),
             "analyzedUrls": template_analysis.get("analyzedUrls", []),
             "scannedAt": now_iso(),
         }
@@ -692,9 +695,20 @@ async def api_check_reputation(payload: dict = Body(...)):
     validate_strict_payload(payload, {"url"})
     normalized = validate_public_url((payload.get("url") or "").strip())
     google_task = asyncio.to_thread(google_reputation_signal, normalized)
+    phishtank_task = asyncio.to_thread(phishtank_signal, normalized)
     virustotal_task = asyncio.to_thread(virustotal_reputation_signal, normalized)
-    results = await asyncio.gather(google_task, virustotal_task)
-    return {"url": normalized, "signals": list(results), "scannedAt": datetime.utcnow().isoformat() + "Z"}
+    google, phishtank, virustotal = await asyncio.gather(google_task, phishtank_task, virustotal_task)
+    required_signals = [google, phishtank]
+    verification_status, unverified_checks = verification_coverage(required_signals)
+    optional_checks = [] if virustotal.get("verified") is True else [virustotal]
+    return {
+        "url": normalized,
+        "signals": [*required_signals, *([virustotal] if virustotal.get("verified") is True else [])],
+        "verificationStatus": verification_status,
+        "unverifiedChecks": unverified_checks,
+        "optionalChecks": optional_checks,
+        "scannedAt": datetime.utcnow().isoformat() + "Z",
+    }
 
 @qr_app.post("/api/trace-redirects")
 async def api_trace_redirects(payload: dict = Body(...)):

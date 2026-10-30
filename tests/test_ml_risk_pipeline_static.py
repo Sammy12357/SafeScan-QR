@@ -46,7 +46,8 @@ def test_embedded_urls_use_full_pipeline():
 
 def test_result_template_restores_analysis_panels():
     assert "ML model analysis" in INDEX
-    assert "VirusTotal vendor scan" in INDEX
+    assert "Optional VirusTotal enrichment" in INDEX
+    assert "PhishTank" in INDEX
     assert "Full Report" in INDEX
     assert "View on VirusTotal" in INDEX
     assert "Domain age" in INDEX
