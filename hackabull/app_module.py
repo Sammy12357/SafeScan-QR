@@ -60,6 +60,7 @@ from .config import REQUEST_COUNT
 from .config import REQUEST_LATENCY
 from .config import SESSION_COOKIE_NAME
 from .config import generate_latest
+from .provider_policy import reputation_configuration
 from .request_helpers import request_ip
 from .security import enforce_rate_limit
 from .sessions import cleanup_persistent_sessions
@@ -101,6 +102,17 @@ async def health_ready():
         return {"status": "ready", "storage": storage["backend"], "database": database}
     except Exception as exc:
         return JSONResponse({"status": "not_ready", "error": str(exc)}, status_code=503)
+
+
+@qr_app.get("/health/providers", include_in_schema=False)
+async def health_providers():
+    """Configuration coverage only; provider uptime is checked during scans."""
+    configuration = reputation_configuration()
+    return {
+        "status": "configured" if configuration["completeChecksConfigured"] else "incomplete",
+        "scope": "configuration_only",
+        "providers": configuration,
+    }
 
 
 @qr_app.get("/metrics", include_in_schema=False)

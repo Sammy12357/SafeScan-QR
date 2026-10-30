@@ -36,7 +36,11 @@ GET /health/ready
 
 ## URL reputation and branded QR generation
 
-Set `GOOGLE_WEB_RISK_API_KEY` and `VIRUSTOTAL_API_KEY` in Render before enabling branded QR generation. The Web Risk key takes precedence over the legacy `GOOGLE_SAFE_BROWSING_API_KEY` fallback. Google's Safe Browsing API is restricted to noncommercial use; use Web Risk for a revenue-generating service.
+For a commercial deployment, set `GOOGLE_WEB_RISK_API_KEY` in Render. Google Web Risk takes precedence over the legacy Safe Browsing key. The legacy `GOOGLE_SAFE_BROWSING_API_KEY` or `googe_api_key` is ignored by default; `SAFESCAN_ENABLE_NONCOMMERCIAL_SAFE_BROWSING=true` opts in only when that use is permitted by Google's terms or a separate agreement. Do not enable the legacy fallback solely to make scans appear complete.
+
+VirusTotal also requires a key licensed for commercial use. Set `VIRUSTOTAL_API_KEY` and `SAFESCAN_VIRUSTOTAL_LICENSED=true` only after confirming the license. A key without that flag is ignored. A licensed lookup still sends the full scanned URL to VirusTotal, encoded in the `GET /api/v3/urls/{url_id}` path; base64 encoding does not make URL tokens private. On a cache miss, SafeScan does not additionally submit the URL for analysis by default. VirusTotal shares submitted URL data with its partners. `SAFESCAN_VIRUSTOTAL_SUBMIT_UNKNOWN_URLS=true` enables that submission only after reviewing the data-sharing behavior. An unknown or pending URL remains unverified either way.
+
+`GET /health/providers` reports provider configuration states without exposing credentials or claiming that a live lookup succeeded. It returns `200` even when coverage is incomplete; `/health/ready` remains the storage and service readiness check. Missing or failing provider checks produce an incomplete verdict, and branded QR generation is paused until all required checks complete.
 
 A scan that cannot complete a required reputation or redirect check must be shown as incomplete. `/api/qr/generate` refuses to stamp a branded QR unless the verdict is safe and verification status is complete. Monitor provider errors and quota exhaustion: they reduce scan coverage and temporarily stop branded QR generation. A completed lookup means no *known* threat match was returned at scan time, not that a destination will remain safe.
 

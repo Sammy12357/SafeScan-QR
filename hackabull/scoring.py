@@ -50,9 +50,10 @@ from storage import upload_bytes as storage_upload_bytes
 from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party
 import safescan_model_calibration as sm_calibration
 from .audit import now_iso
-from .config import VIRUSTOTAL_API_KEY
 from .lowlevel import virustotal_gui_url
 from .lowlevel import virustotal_url_id
+from .provider_policy import virustotal_key
+from .provider_policy import virustotal_submit_unknown_urls
 
 # =============================================================================
 # RISK SIGNALS & SCORING
@@ -95,23 +96,31 @@ def empty_virustotal_result(target_url, mode, status_message):
 def virustotal_lookup_result(target_url):
     """Look up `target_url` against the live VirusTotal v3 API and return a
     vt_result dict (engines/groups/summary) used both for the scan signal and
-    the vendor-breakdown panel. Falls back to an empty/neutral result (which
-    does not affect the risk score) when VT isn't configured, has no cached
-    verdict yet, or the lookup fails.
+    the vendor-breakdown panel. Unavailable, unknown, and failed lookups
+    remain unverified and cannot produce a safe verdict.
     """
-    if not VIRUSTOTAL_API_KEY:
-        return empty_virustotal_result(target_url, "unavailable", "Set VIRUSTOTAL_API_KEY to enable VirusTotal reputation lookups.")
+    licensed_key = virustotal_key()
+    if not licensed_key:
+        return empty_virustotal_result(
+            target_url,
+            "unavailable",
+            "VirusTotal is not enabled. A licensed key and SAFESCAN_VIRUSTOTAL_LICENSED=true are required.",
+        )
 
-    headers = {"x-apikey": VIRUSTOTAL_API_KEY}
+    headers = {"x-apikey": licensed_key}
     url_id = virustotal_url_id(target_url)
     try:
         response = requests.get(f"https://www.virustotal.com/api/v3/urls/{url_id}", headers=headers, timeout=8)
         if response.status_code == 404:
+            if not virustotal_submit_unknown_urls():
+                return empty_virustotal_result(
+                    target_url, "unavailable", "VirusTotal has no cached verdict; the URL was not submitted."
+                )
             try:
                 requests.post("https://www.virustotal.com/api/v3/urls", headers=headers, data={"url": target_url}, timeout=8).raise_for_status()
-            except requests.RequestException:
-                pass
-            return empty_virustotal_result(target_url, "pending", "VirusTotal had no cached verdict, so the URL was submitted for analysis.")
+            except requests.RequestException as exc:
+                return empty_virustotal_result(target_url, "error", f"VirusTotal submission failed: {type(exc).__name__}")
+            return empty_virustotal_result(target_url, "pending", "VirusTotal accepted the URL for analysis; a verdict is pending.")
         response.raise_for_status()
         data = response.json()
     except requests.RequestException as exc:

@@ -52,6 +52,40 @@ def test_readiness_and_metrics_endpoints(tmp_path, monkeypatch):
     assert b"safescan_requests_total" in metrics.content or b"prometheus-client is not installed" in metrics.content
 
 
+def test_provider_health_reports_configuration_without_secrets(tmp_path, monkeypatch):
+    monkeypatch.delenv("GOOGLE_WEB_RISK_API_KEY", raising=False)
+    monkeypatch.setenv("GOOGLE_SAFE_BROWSING_API_KEY", "legacy-secret-value")
+    monkeypatch.delenv("SAFESCAN_ENABLE_NONCOMMERCIAL_SAFE_BROWSING", raising=False)
+    monkeypatch.setenv("VIRUSTOTAL_API_KEY", "vt-secret-value")
+    monkeypatch.delenv("SAFESCAN_VIRUSTOTAL_LICENSED", raising=False)
+    _, client, _ = load_app(tmp_path, monkeypatch)
+
+    degraded = client.get("/health/providers")
+    ready = client.get("/health/ready")
+
+    assert degraded.status_code == 200
+    assert degraded.json() == {
+        "status": "incomplete",
+        "scope": "configuration_only",
+        "providers": {
+            "google": "legacy_key_disabled",
+            "virustotal": "license_confirmation_required",
+            "completeChecksConfigured": False,
+        },
+    }
+    assert ready.status_code == 200
+    assert "legacy-secret-value" not in degraded.text
+    assert "vt-secret-value" not in degraded.text
+
+    monkeypatch.setenv("GOOGLE_WEB_RISK_API_KEY", "web-risk-secret-value")
+    monkeypatch.setenv("SAFESCAN_VIRUSTOTAL_LICENSED", "true")
+    configured = client.get("/health/providers")
+    assert configured.json()["status"] == "configured"
+    assert configured.json()["providers"]["google"] == "web_risk_configured"
+    assert configured.json()["providers"]["virustotal"] == "licensed_configured"
+    assert "web-risk-secret-value" not in configured.text
+
+
 def test_scan_history_persists_classification(tmp_path, monkeypatch):
     module, _, db_path = load_app(tmp_path, monkeypatch)
 

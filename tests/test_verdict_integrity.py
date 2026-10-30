@@ -160,6 +160,92 @@ def test_web_risk_is_preferred_when_configured(modules, monkeypatch, body, expec
     assert sum(key == "threatTypes" for key, _ in calls[0][1]) == 3
 
 
+@pytest.mark.parametrize("key_name", ["GOOGLE_SAFE_BROWSING_API_KEY", "googe_api_key"])
+def test_legacy_safe_browsing_key_requires_explicit_noncommercial_opt_in(modules, monkeypatch, key_name):
+    _, reputation, _, _ = modules
+    monkeypatch.delenv("GOOGLE_WEB_RISK_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_SAFE_BROWSING_API_KEY", raising=False)
+    monkeypatch.delenv("googe_api_key", raising=False)
+    monkeypatch.setenv(key_name, "legacy-test-key")
+    monkeypatch.delenv("SAFESCAN_ENABLE_NONCOMMERCIAL_SAFE_BROWSING", raising=False)
+    monkeypatch.setattr(reputation, "validate_public_url", lambda url: url)
+    calls = []
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {}
+
+    monkeypatch.setattr(reputation.requests, "post", lambda url, **kwargs: calls.append((url, kwargs)) or Response())
+    blocked = reputation.check_url_reputation("https://example.org/")
+    finding = reputation.google_reputation_signal("https://example.org/")
+
+    assert blocked["status"] == "UNCONFIGURED"
+    assert blocked["provider"] == "Google Web Risk"
+    assert finding["verified"] is False
+    assert calls == []
+
+    monkeypatch.setenv("SAFESCAN_ENABLE_NONCOMMERCIAL_SAFE_BROWSING", "true")
+    allowed = reputation.check_url_reputation("https://example.org/")
+
+    assert allowed["status"] == "CLEAR"
+    assert allowed["provider"] == "Google Safe Browsing"
+    assert calls[0][0] == "https://safebrowsing.googleapis.com/v4/threatMatches:find"
+    assert calls[0][1]["params"] == {"key": "legacy-test-key"}
+
+
+def test_virustotal_requires_license_and_does_not_submit_unknown_urls_by_default(modules, monkeypatch):
+    _, reputation, scoring, _ = modules
+    monkeypatch.setenv("VIRUSTOTAL_API_KEY", "vt-test-key")
+    monkeypatch.delenv("SAFESCAN_VIRUSTOTAL_LICENSED", raising=False)
+    monkeypatch.delenv("SAFESCAN_VIRUSTOTAL_SUBMIT_UNKNOWN_URLS", raising=False)
+    calls = []
+
+    class MissingResponse:
+        status_code = 404
+
+        def raise_for_status(self):
+            return None
+
+    monkeypatch.setattr(scoring.requests, "get", lambda *args, **kwargs: calls.append("get") or MissingResponse())
+    monkeypatch.setattr(scoring.requests, "post", lambda *args, **kwargs: calls.append("post") or MissingResponse())
+
+    disabled = scoring.virustotal_lookup_result("https://example.org/private?token=secret")
+    disabled_signal = reputation.virustotal_reputation_signal("https://example.org/private?token=secret")
+    assert disabled["mode"] == "unavailable"
+    assert disabled_signal["verified"] is False
+    assert calls == []
+
+    monkeypatch.setenv("SAFESCAN_VIRUSTOTAL_LICENSED", "true")
+    unknown = scoring.virustotal_lookup_result("https://example.org/private?token=secret")
+    unknown_signal = reputation.virustotal_reputation_signal("https://example.org/private?token=secret")
+    assert unknown["mode"] == "unavailable"
+    assert "not submitted" in unknown["statusMessage"]
+    assert unknown_signal["verified"] is False
+    assert calls == ["get", "get"]
+
+    monkeypatch.setenv("SAFESCAN_VIRUSTOTAL_SUBMIT_UNKNOWN_URLS", "true")
+    submitted = scoring.virustotal_lookup_result("https://example.org/private?token=secret")
+    assert submitted["mode"] == "pending"
+    assert calls[-2:] == ["get", "post"]
+
+
+def test_standalone_reputation_endpoint_uses_same_unverified_vt_result(modules, monkeypatch):
+    pipeline, _, _, _ = modules
+    routes = importlib.import_module("hackabull.routes_api")
+    monkeypatch.delenv("VIRUSTOTAL_API_KEY", raising=False)
+    monkeypatch.setattr(routes, "validate_public_url", lambda url: url)
+    monkeypatch.setattr(routes, "google_reputation_signal", lambda _: _finding(pipeline, "Google Web Risk"))
+
+    result = asyncio.run(routes.api_check_reputation({"url": "https://example.org/"}))
+
+    vt = next(item for item in result["signals"] if item["check"] == "VirusTotal Reputation")
+    assert vt["verified"] is False
+    assert vt["passed"] is False
+
+
 def test_redirected_popular_url_checks_landing_page_even_if_first_check_is_incomplete(modules, monkeypatch):
     pipeline, _, _, _ = modules
     start = "https://www.youtube.com/go"
