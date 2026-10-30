@@ -74,6 +74,25 @@ def test_ml_cache_rejects_private_qr_keys(tmp_path, monkeypatch):
     assert_secret_absent_from_disk(tmp_path, "NeverCacheThisSeed")
 
 
+def test_weak_fingerprint_keys_are_ignored(tmp_path, monkeypatch):
+    load_app(tmp_path, monkeypatch)
+    privacy = importlib.import_module("hackabull.payload_privacy")
+    monkeypatch.setattr(privacy, "_PROCESS_FINGERPRINT_KEY", b"p" * 32)
+    monkeypatch.setenv("QR_PAYLOAD_FINGERPRINT_KEY", "too-short")
+    monkeypatch.setenv("AIRDROP_ADMIN_SECRET", "also-short")
+    payload = "WIFI:T:WPA;S:Example;P:private-password;;"
+
+    first = privacy.scan_storage_reference(payload, "user-1", "Wi-Fi")
+    monkeypatch.setenv("QR_PAYLOAD_FINGERPRINT_KEY", "a-different-short-key")
+    second = privacy.scan_storage_reference(payload, "user-1", "Wi-Fi")
+    monkeypatch.setenv("AIRDROP_ADMIN_SECRET", "s" * 32)
+    with_strong_fallback = privacy.scan_storage_reference(payload, "user-1", "Wi-Fi")
+
+    assert first == second
+    assert with_strong_fallback != first
+    assert "private-password" not in first
+
+
 def test_authenticated_wifi_upload_keeps_counts_but_not_password_or_image(tmp_path, monkeypatch):
     module, client, db_path = load_app(tmp_path, monkeypatch)
     assert client.post("/auth/register", data={"email": "alice@example.com", "password": "password123"}).status_code == 200

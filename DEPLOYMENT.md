@@ -58,7 +58,19 @@ This change does not erase records or uploads created by older versions. Before 
 - `ml_cache.sqlite` → `ml_cache.url_key` for non-URL predictions
 - `upload_artifacts.object_key` and the corresponding `DATA_DIR/uploads/<object_key>` files or S3/R2 objects
 
-Treat all earlier uploaded QR files as potentially sensitive because the stored image type does not reveal whether it encodes a secret. Redact the listed non-URL database fields and remove their old plain hashes, remove old prediction-cache rows for non-URL payloads, and delete retained QR upload objects and artifact records under an approved retention plan. After database cleanup, checkpoint/truncate SQLite WAL files and vacuum the database; also account for backup and object-store version retention. The normal history and scan APIs redact legacy non-URL records on read, but the underlying historical copies remain until this operator cleanup is completed. `QR_UPLOAD_RETENTION_DAYS` is not currently an automatic deletion job.
+Treat all earlier uploaded QR files as potentially sensitive because the stored image type does not reveal whether it encodes a secret. The dry-run-first database helper reports counts without printing payloads:
+
+```text
+python scripts/scrub_legacy_private_qr.py --database /var/data/qr_cache.db --ml-cache /var/data/ml_cache.sqlite
+```
+
+After stopping the service for a maintenance window, verifying a protected off-host backup plan, and setting a strong `QR_PAYLOAD_FINGERPRINT_KEY`, apply the database cleanup with an unused backup path in an existing protected directory:
+
+```text
+python scripts/scrub_legacy_private_qr.py --database /var/data/qr_cache.db --ml-cache /var/data/ml_cache.sqlite --execute --backup /protected-backups/safescan-before-private-qr-cleanup.db --confirm "SCRUB PRIVATE QR DATA"
+```
+
+The helper creates and verifies SQLite backups before changing records. It replaces old non-URL scan values with keyed references, retains scan counts, and vacuums/checkpoints SQLite. Because the old ML cache strips URL schemes from its keys, the helper purges the **entire disposable ML prediction cache**, including web predictions; future scans recompute them. It deliberately does **not** delete upload objects or `upload_artifacts` rows. Use its `upload_artifacts_manual_cleanup` count to inventory local `DATA_DIR/uploads/<object_key>` files and S3/R2 objects, then back up and remove those under an approved retention plan. Account for backup and object-store version retention too. The normal history and scan APIs redact legacy non-URL records on read, but the underlying historical copies remain until this cleanup is completed. `QR_UPLOAD_RETENTION_DAYS` is not currently an automatic deletion job.
 
 ## Auth0 mobile sign-in
 

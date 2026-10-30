@@ -209,7 +209,9 @@ async def scan_qr(
     if user_email:
         counted = record_unique_scan(user_email, url_qr, wallet_address, user_id=user.get("google_id") if user else None, payload_type=payload_type)
         save_scan_history(user_email, analysis["normalized"], analysis, user_id=user.get("google_id") if user else None)
-        stored_reference = scan_storage_reference(url_qr, user.get("google_id") or user_email, payload_type)
+        # Fraud velocity is keyed by email, so its private fingerprint uses
+        # the same owner identity across scans and later cleanup migrations.
+        stored_reference = scan_storage_reference(url_qr, user_email, payload_type)
         run_fraud_checks("scan", user_email, request, {"url": stored_reference, "deviceFingerprint": device_fingerprint})
     audit_log("qr.scanned", request=request, actor_user_id=user.get("google_id") if user else None, target_type="scan", metadata={"counted": counted, "payloadType": payload_type, "guest": not bool(user_email)})
 

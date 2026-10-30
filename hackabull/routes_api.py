@@ -322,7 +322,7 @@ async def analyze_and_record_scan(request, user, raw_payload, device_fingerprint
     history_analysis["rawPayload"] = raw_payload
     counted = record_unique_scan(email, raw_payload, wallet_address, user_id=user.get("google_id"), payload_type=payload_type)
     save_scan_history(email, history_analysis["normalized"], history_analysis, user_id=user.get("google_id"))
-    stored_reference = scan_storage_reference(raw_payload, user.get("google_id") or email, payload_type)
+    stored_reference = scan_storage_reference(raw_payload, email, payload_type)
     run_fraud_checks("scan", email, request, {"url": stored_reference, "deviceFingerprint": device_fingerprint})
     audit_log("qr.scanned", request=request, actor_user_id=user.get("google_id"), target_type="scan", metadata={"counted": counted, "payloadType": payload_type})
     return {
