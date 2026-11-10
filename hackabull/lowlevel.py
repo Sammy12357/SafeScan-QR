@@ -56,12 +56,3 @@ def normalize_url(target_url):
         return f"https://{trimmed}"
     return trimmed
 
-def virustotal_url_id(target_url):
-    encoded = base64.urlsafe_b64encode(target_url.encode("utf-8")).decode("utf-8")
-    return encoded.rstrip("=")
-
-def virustotal_gui_url(target_url):
-    if not target_url:
-        return "https://www.virustotal.com/gui/home/url"
-    return f"https://www.virustotal.com/gui/url/{virustotal_url_id(target_url)}"
-

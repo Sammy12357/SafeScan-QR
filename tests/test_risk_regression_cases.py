@@ -23,7 +23,6 @@ def load_app(tmp_path, monkeypatch):
     monkeypatch.setenv("SAFESCAN_ML2_ENABLED", "false")
     monkeypatch.setenv("DOMAIN_AGE_CHECK_ENABLED", "false")
     monkeypatch.delenv("GOOGLE_SAFE_BROWSING_API_KEY", raising=False)
-    monkeypatch.delenv("VIRUSTOTAL_API_KEY", raising=False)
     [sys.modules.pop(_m, None) for _m in list(sys.modules) if _m == "hackabull" or _m.startswith("hackabull.")]
     sys.modules.pop("db", None)
     sys.modules.pop("storage", None)
@@ -49,15 +48,8 @@ def stub_external_services(module, monkeypatch):
     )
     patch_everywhere(
         monkeypatch,
-        "virustotal_lookup_result",
-        lambda url: {
-            "url": url,
-            "mode": "unavailable",
-            "summary": {"clean": 0, "unrated": 0, "malicious": 0, "total": 0},
-            "engines": [],
-            "groups": {"clean": [], "unrated": [], "malicious": []},
-            "statusMessage": "Not configured.",
-        },
+        "phishtank_signal",
+        lambda url: module.signal("PhishTank", "No known match", "low", "Current local feed has no match.", True),
     )
     patch_everywhere(monkeypatch, "classify_qr_with_ml", lambda *args, **kwargs: {"enabled": False, "reason": "test"})
 
@@ -96,17 +88,6 @@ def test_wallet_drain_signature_is_malicious_even_without_reputation_apis(tmp_pa
 def test_popular_clean_url_stays_safe_on_fast_path(tmp_path, monkeypatch):
     module = load_app(tmp_path, monkeypatch)
     stub_external_services(module, monkeypatch)
-    patch_everywhere(
-        monkeypatch,
-        "virustotal_lookup_result",
-        lambda url: {
-            "url": url,
-            "mode": "live",
-            "summary": {"clean": 2, "unrated": 0, "malicious": 0, "total": 2},
-            "engines": [],
-            "groups": {"clean": [], "unrated": [], "malicious": []},
-        },
-    )
 
     result = analyze(module, "https://www.youtube.com/watch?v=abc123")
 

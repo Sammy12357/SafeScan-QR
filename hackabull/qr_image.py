@@ -264,7 +264,7 @@ def blend_ml_score(rule_score, ml_results, signals):
     """Weighted blend of the rule score and the available ML score(s).
 
     Rule signals (domain age, redirect chain, reputation, crypto patterns,
-    VirusTotal, Google Safe Browsing) are the source of truth and account
+    Google Web Risk and PhishTank) are the source of truth and account
     for `1 - ML_AGGREGATE_WEIGHT` of the final score (default 80%). The
     enabled ML models share the remaining `ML_AGGREGATE_WEIGHT` equally
     (default 20%, averaged across enabled models). With no enabled ML
