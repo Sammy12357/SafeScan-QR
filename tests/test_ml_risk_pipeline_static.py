@@ -19,11 +19,10 @@ def test_pipeline_uses_local_ml_model_probability():
     assert '"confidenceScore": final_score' in SERVER
 
 
-def test_virustotal_is_optional_and_separate_from_local_ml_runtime():
-    assert "VIRUSTOTAL_API_KEY" in SERVER
-    assert "virustotal_reputation_signal" in SERVER
-    assert "def virustotal_gui_url" in SERVER
-    assert '"reportUrl": virustotal_gui_url(target_url)' in SERVER
+def test_retired_virustotal_provider_has_no_live_lookup_code():
+    assert "VIRUSTOTAL_API_KEY" not in SERVER
+    assert "virustotal_lookup_result" not in SERVER
+    assert "www.virustotal.com/api" not in SERVER
     assert "import ml_model_final as _ml_mod" in SERVER
 
 
@@ -34,10 +33,11 @@ def test_ml_runtime_dependencies_are_declared():
     assert "qrcode" in REQUIREMENTS
 
 
-def test_result_template_restores_analysis_panels():
+def test_result_template_keeps_core_analysis_panels():
     assert "ML model analysis" in INDEX
-    assert "VirusTotal vendor scan" in INDEX
-    assert "Full Report" in INDEX
-    assert "View on VirusTotal" in INDEX
+    assert "Optional VirusTotal enrichment" not in INDEX
+    assert "View on VirusTotal" not in INDEX
+    assert "Unverified checks:" in INDEX
+    assert "Exact decoded QR payload" in INDEX
     assert "Domain age" in INDEX
     assert "ml-probability-bars" in INDEX

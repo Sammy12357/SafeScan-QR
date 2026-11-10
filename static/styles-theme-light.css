@@ -59,8 +59,7 @@
 :root[data-theme="light"] .ghost-scope-keyword,
 :root[data-theme="light"] .ghost-scope-detail,
 :root[data-theme="light"] .contact-hero,
-:root[data-theme="light"] .ml-panel,
-:root[data-theme="light"] .vt-panel {
+:root[data-theme="light"] .ml-panel {
   background: rgba(255, 255, 255, 0.66);
   border-color: rgba(16, 24, 39, 0.12);
   color: var(--text);

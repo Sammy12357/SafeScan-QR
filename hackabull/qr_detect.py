@@ -451,6 +451,7 @@ def pipeline_response_to_template_analysis(pipeline_response):
         "ruleScore": pipeline_response.get("ruleScore"),
         "verificationStatus": pipeline_response.get("verificationStatus"),
         "unverifiedChecks": pipeline_response.get("unverifiedChecks", []),
+        "optionalChecks": pipeline_response.get("optionalChecks", []),
         # Present when the allowlist/first-party fast path produced the verdict;
         # the result modal uses it to show the "verified instantly" chip.
         "fastPath": pipeline_response.get("fastPath")

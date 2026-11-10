@@ -7,7 +7,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=qr-defense-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=no-vt-v1">
 </head>
 <body class="{{ 'test-site-page' if test_site else '' }}">
   {% if not logged_in and google_client_id and not local_auth_enabled %}
@@ -261,56 +261,6 @@
             </div>
             {% endif %}
 
-            {% if virus_total and virus_total.summary.total %}
-            <div class="vt-panel">
-              <div class="vt-panel-top">
-                <div>
-                  <p class="engine-label">VirusTotal vendor scan</p>
-                  <h3>{{ "No threats detected" if virus_total.summary.malicious == 0 else virus_total.summary.malicious ~ " threats detected" }}</h3>
-                  <p>{{ virus_total.summary.clean }} clean engines and {{ virus_total.summary.unrated }} unrated engines support this SafeScan score.</p>
-                </div>
-                <div class="vt-report-links">
-                  <span>Full Report</span>
-                  <a class="vt-powered" href="{{ virus_total.reportUrl or 'https://www.virustotal.com/gui/home/url' }}" target="_blank" rel="noopener noreferrer">View on VirusTotal</a>
-                </div>
-              </div>
-              <div class="vt-score-bar" aria-label="VirusTotal engine breakdown">
-                {% if virus_total.summary.clean %}<span class="vt-score-clean" style="width: {{ (virus_total.summary.clean / virus_total.summary.total * 100) | round(2) }}%;"></span>{% endif %}
-                {% if virus_total.summary.unrated %}<span class="vt-score-unrated" style="width: {{ (virus_total.summary.unrated / virus_total.summary.total * 100) | round(2) }}%;"></span>{% endif %}
-                {% if virus_total.summary.malicious %}<span class="vt-score-malicious" style="width: {{ (virus_total.summary.malicious / virus_total.summary.total * 100) | round(2) }}%;"></span>{% endif %}
-              </div>
-              <div class="vt-badge-row">
-                <button class="vt-tab active" type="button" data-vt-tab="clean">OK {{ virus_total.summary.clean }} Clean</button>
-                <button class="vt-tab" type="button" data-vt-tab="unrated">â—‹ {{ virus_total.summary.unrated }} Unrated</button>
-                <button class="vt-tab" type="button" data-vt-tab="malicious">X {{ virus_total.summary.malicious }} Malicious</button>
-              </div>
-              <input class="vt-engine-search" type="search" placeholder="Search security engines" aria-label="Search VirusTotal engines">
-              <button class="vt-mobile-toggle" type="button">Show engine details</button>
-              <div class="vt-engine-groups">
-                {% for verdict, engines in virus_total.groups.items() %}
-                <div class="vt-engine-group {{ '' if verdict == 'clean' else 'hidden' }}" data-vt-group="{{ verdict }}">
-                  {% if engines %}
-                    {% for engine in engines %}
-                    <div class="vt-engine-row" data-engine-name="{{ engine.name | lower }}">
-                      <span>{{ engine.name }}</span>
-                      <span class="vt-pill vt-pill-{{ engine.verdict }}">{{ engine.verdict | title }}</span>
-                    </div>
-                    {% endfor %}
-                  {% else %}
-                    <p class="vt-empty">No {{ verdict }} engine results.</p>
-                  {% endif %}
-                </div>
-                {% endfor %}
-              </div>
-            </div>
-            {% elif virus_total %}
-            <div class="vt-panel vt-panel-status">
-              <p class="engine-label">VirusTotal vendor scan</p>
-              <p>{{ virus_total.statusMessage or "VirusTotal results are unavailable for this scan." }}</p>
-              <a class="vt-powered" href="{{ virus_total.reportUrl or 'https://www.virustotal.com/gui/home/url' }}" target="_blank" rel="noopener noreferrer">View on VirusTotal</a>
-            </div>
-            {% endif %}
-
             <div class="reason-accordion">
               {% for reason in risk_reasons %}
               {% if reason.check not in ('ML Risk Model', 'VirusTotal Reputation') %}
@@ -373,7 +323,7 @@
   <script type="module" src="/static/safescan-3d.js?v=brave-webgl-v1"></script>
   <script src="/static/qr-camera.js?v=manual-capture-v2" defer></script>
   <script src="/static/app-core.js?v=qr-defense-v1"></script>
-  <script src="/static/app-widgets.js?v=qr-defense-v1"></script>
+  <script src="/static/app-widgets.js?v=no-vt-v1"></script>
   <script src="/static/app-go-ghost.js?v=native-scroll-v3"></script>
   <script src="/static/app-go-ghost-ui.js?v=native-scroll-v3"></script>
   <script src="/static/app-generate-qr.js?v=qr-defense-v1"></script>

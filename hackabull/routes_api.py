@@ -71,6 +71,8 @@ from .payload_privacy import scan_storage_reference
 from .history import save_scan_history
 from .history import serialize_scan_history_row
 from .pipeline import analyze_full_pipeline
+from .pipeline import verification_coverage
+from .phish_feed import phishtank_signal
 from .qr_decode import QRDecodeAmbiguityError
 from .qr_decode import decode_qr_upload
 from .qr_detect import analyze_qr_payload
@@ -83,7 +85,6 @@ from .referrals import get_scan_count
 from .referrals import record_unique_scan
 from .referrals import referral_code_for_user
 from .reputation import google_reputation_signal
-from .reputation import virustotal_reputation_signal
 from .request_helpers import make_id
 from .scoring import risk_from_score
 from .scoring import signal
@@ -310,12 +311,13 @@ async def analyze_and_record_scan(request, user, raw_payload, device_fingerprint
                 signal(reason.get("label", "Payload Pattern"), template_analysis["status"], reason.get("severity", "low"), reason.get("detail", ""), score < 40)
                 for reason in template_analysis.get("reasons", [])
             ],
-            "virusTotal": template_analysis.get("virusTotal"),
+            "virusTotal": None,
             "domainAge": template_analysis.get("domainAge"),
             "mlRisk": template_analysis.get("mlRisk"),
             "ruleScore": template_analysis.get("ruleScore"),
             "verificationStatus": template_analysis.get("verificationStatus"),
             "unverifiedChecks": template_analysis.get("unverifiedChecks", []),
+            "optionalChecks": template_analysis.get("optionalChecks", []),
             "analyzedUrls": template_analysis.get("analyzedUrls", []),
             "scannedAt": now_iso(),
         }
@@ -700,10 +702,20 @@ async def api_fraud_flags(request: Request):
 async def api_check_reputation(payload: dict = Body(...)):
     validate_strict_payload(payload, {"url"})
     normalized = validate_public_url((payload.get("url") or "").strip())
-    google_task = asyncio.to_thread(google_reputation_signal, normalized)
-    virustotal_task = asyncio.to_thread(virustotal_reputation_signal, normalized)
-    results = await asyncio.gather(google_task, virustotal_task)
-    return {"url": normalized, "signals": list(results), "scannedAt": datetime.utcnow().isoformat() + "Z"}
+    google, phishtank = await asyncio.gather(
+        asyncio.to_thread(google_reputation_signal, normalized),
+        asyncio.to_thread(phishtank_signal, normalized),
+    )
+    required_signals = [google, phishtank]
+    verification_status, unverified_checks = verification_coverage(required_signals)
+    return {
+        "url": normalized,
+        "signals": required_signals,
+        "verificationStatus": verification_status,
+        "unverifiedChecks": unverified_checks,
+        "optionalChecks": [],
+        "scannedAt": datetime.utcnow().isoformat() + "Z",
+    }
 
 @qr_app.post("/api/trace-redirects")
 async def api_trace_redirects(payload: dict = Body(...)):

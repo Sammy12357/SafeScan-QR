@@ -76,6 +76,21 @@ def test_safe_link_requires_complete_verification():
     assert "continueSafelyButton" not in incomplete
 
 
+def test_retired_provider_data_does_not_render_or_block_required_checks():
+    html, elements = render_result(
+        "SAFE", "safe", "URL", "https://example.com/",
+        virus_total={
+            "mode": "live",
+            "summary": {"clean": 1, "unrated": 0, "malicious": 0, "total": 1},
+            "statusMessage": "Retired provider data must not be shown.",
+        },
+    )
+
+    assert elements["continueSafelyButton"][1]["href"] == "https://example.com/"
+    assert "VirusTotal" not in html
+    assert "Retired provider data" not in html
+
+
 def test_non_url_payload_is_shown_exactly_and_cannot_be_reported_as_url():
     payload = "WIFI:S:Cafe;<script>alert(1)</script>\nT:WPA;;"
     html, elements = render_result("CAUTION", "suspicious", "Wi-Fi", payload)

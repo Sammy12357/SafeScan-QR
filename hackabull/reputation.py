@@ -50,22 +50,21 @@ from storage import upload_bytes as storage_upload_bytes
 from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party
 import safescan_model_calibration as sm_calibration
 from .audit import SafeScanError
-from .config import VIRUSTOTAL_API_KEY
-from .config import api_key
-from .config import safe_browsing_url
 from .lowlevel import normalize_url
-from .lowlevel import virustotal_url_id
+from .provider_policy import legacy_safe_browsing_enabled
+from .provider_policy import legacy_safe_browsing_key
+from .provider_policy import web_risk_key
 from .scoring import signal
 from .security import validate_public_url
 
 # =============================================================================
-# THREAT TYPING & EXTERNAL REPUTATION (Google Safe Browsing / VirusTotal)
+# THREAT TYPING & EXTERNAL REPUTATION (Google Web Risk / PhishTank)
 # =============================================================================
 def threat_type_for_analysis(overall_risk, signals, ml_results=None):
     """Threat type label shown to the user.
 
     Prefer the most severe deterministic rule signal — those are explainable
-    (e.g. "Domain Age", "VirusTotal Reputation"). Only fall back to the ML
+    (e.g. "Domain Age", "Google Web Risk"). Only fall back to the ML
     label when the overall risk is already high AND no rule signal qualifies,
     so a misfiring URL classifier can't single-handedly label a known-good
     domain as "Malicious QR".
@@ -91,12 +90,12 @@ def mock_analysis_response(target_url):
     normalized = normalize_url(target_url)
     signals = [
         signal("Domain Age", "8 days old", "high", "Domain registered less than 30 days ago, a common phishing indicator.", False),
-        signal("VirusTotal Reputation", "12/90 engines flagged", "high", "Multiple reputation engines flagged this destination as unsafe.", False),
+        signal("Brand Impersonation", "Lookalike domain detected", "high", "The domain resembles a trusted brand and needs independent verification.", False),
         signal("Redirect Chain", "2 redirect hops detected", "medium", "The QR destination redirects before reaching the final landing page.", False),
         signal("URL Shortener", "Shortener found in chain", "medium", "Shortened URLs can hide the true destination from users.", False),
         signal("TLD Risk", "Non-standard TLD .xyz", "low", "The domain uses a TLD that appears frequently in disposable campaigns.", False),
     ]
-    verdict = "This QR code shows multiple high-risk signals, including a newly registered domain and reputation engine detections. Treat it as a likely phishing or wallet-drain attempt unless you can independently verify the sender."
+    verdict = "This QR code shows multiple high-risk signals, including a newly registered domain and lookalike branding. Treat it as a likely phishing or wallet-drain attempt unless you can independently verify the sender."
     return {
         "url": normalized,
         "overallRisk": "high",
@@ -118,8 +117,8 @@ def check_url_reputation(target_url):
         }
     # Web Risk is the commercial Google threat lookup. Prefer it when
     # configured; keep Safe Browsing only as a legacy noncommercial fallback.
-    web_risk_key = os.getenv("GOOGLE_WEB_RISK_API_KEY", "").strip()
-    if web_risk_key:
+    commercial_key = web_risk_key()
+    if commercial_key:
         try:
             response = requests.get(
                 "https://webrisk.googleapis.com/v1/uris:search",
@@ -128,7 +127,7 @@ def check_url_reputation(target_url):
                     ("threatTypes", "MALWARE"),
                     ("threatTypes", "SOCIAL_ENGINEERING"),
                     ("threatTypes", "UNWANTED_SOFTWARE"),
-                    ("key", web_risk_key),
+                    ("key", commercial_key),
                 ],
                 timeout=5,
             )
@@ -148,12 +147,12 @@ def check_url_reputation(target_url):
             "matches": matches,
             "detail": "Known unsafe URL match found." if matches else "No known unsafe URL match returned.",
         }
-    if not api_key:
+    if not legacy_safe_browsing_enabled():
         return {
-            "provider": "Google Safe Browsing",
+            "provider": "Google Web Risk",
             "status": "UNCONFIGURED",
             "matches": [],
-            "detail": "Set GOOGLE_WEB_RISK_API_KEY for commercial URL reputation checks."
+            "detail": "Set GOOGLE_WEB_RISK_API_KEY for commercial URL reputation checks. Legacy Safe Browsing requires explicit noncommercial opt-in."
         }
 
     payload = {
@@ -166,7 +165,12 @@ def check_url_reputation(target_url):
         }
     }
     try:
-        response = requests.post(safe_browsing_url, json=payload, timeout=5)
+        response = requests.post(
+            "https://safebrowsing.googleapis.com/v4/threatMatches:find",
+            params={"key": legacy_safe_browsing_key()},
+            json=payload,
+            timeout=5,
+        )
         response.raise_for_status()
         result = response.json()
     except requests.RequestException as exc:
@@ -207,35 +211,3 @@ def google_reputation_signal(target_url):
     )
     finding["verified"] = False
     return finding
-
-
-
-def virustotal_reputation_signal(target_url):
-    if not VIRUSTOTAL_API_KEY:
-        return signal("VirusTotal Reputation", "Not configured", "low", "Set VIRUSTOTAL_API_KEY to enable VirusTotal v3 reputation checks.", True)
-
-    headers = {"x-apikey": VIRUSTOTAL_API_KEY}
-    url_id = virustotal_url_id(target_url)
-    try:
-        response = requests.get(f"https://www.virustotal.com/api/v3/urls/{url_id}", headers=headers, timeout=8)
-        if response.status_code == 404:
-            scan_response = requests.post("https://www.virustotal.com/api/v3/urls", headers=headers, data={"url": target_url}, timeout=8)
-            scan_response.raise_for_status()
-            return signal("VirusTotal Reputation", "Scan submitted", "low", "VirusTotal did not have a cached verdict, so the URL was submitted for analysis.", True)
-        response.raise_for_status()
-        data = response.json()
-    except requests.RequestException as exc:
-        return signal("VirusTotal Reputation", "Lookup failed", "low", f"VirusTotal lookup failed: {type(exc).__name__}", True)
-
-    stats = data.get("data", {}).get("attributes", {}).get("last_analysis_stats", {})
-    flagged = int(stats.get("malicious", 0)) + int(stats.get("suspicious", 0))
-    total = sum(int(value or 0) for value in stats.values()) or 90
-    severity = "high" if flagged else "low"
-    return signal(
-        "VirusTotal Reputation",
-        f"{flagged}/{total} engines flagged",
-        severity,
-        "VirusTotal engines flagged this URL." if flagged else "VirusTotal did not report malicious or suspicious engine detections.",
-        flagged == 0
-    )
-
