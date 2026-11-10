@@ -62,6 +62,10 @@ from .fraud import SCAN_CLASSIFICATION_LABELS
 from .fraud import SCAN_HISTORY_MAX_SIGNALS
 from .fraud import SCAN_HISTORY_MAX_SIGNAL_TEXT
 from .fraud import lookup_user_id_by_email
+from .payload_privacy import is_web_url_payload
+from .payload_privacy import private_history_signals
+from .payload_privacy import safe_legacy_scan_value
+from .payload_privacy import scan_storage_reference
 from .request_helpers import make_id
 from .scoring import status_from_risk
 
@@ -130,10 +134,14 @@ def serialize_scan_history_row(row):
     except (TypeError, json.JSONDecodeError):
         signals = []
     classification = scan_classification_from_row(row)
+    stored_url = row["url"] or ""
+    safe_url = safe_legacy_scan_value(stored_url)
+    if safe_url != stored_url:
+        signals = private_history_signals(None, int(row["risk_score"] or 0))
     return {
         "scanId": row["id"],
         "id": row["id"],
-        "url": row["url"],
+        "url": safe_url,
         "verdict": row["verdict"] or classification.lower(),
         "classification": classification,
         "classificationLabel": SCAN_CLASSIFICATION_LABELS.get(classification, "Unknown"),
@@ -146,6 +154,16 @@ def serialize_scan_history_row(row):
         "analyzedAt": row["created_at"],
         "created_at": row["created_at"],
     }
+
+
+def safe_scan_history_record(row):
+    """Scrub pre-fix private QR rows before rendering admin views."""
+    result = dict(row)
+    safe_url = safe_legacy_scan_value(result.get("url"))
+    if safe_url != result.get("url"):
+        result["url"] = safe_url
+        result["signals"] = json.dumps(private_history_signals(None, int(result.get("risk_score") or 0)))
+    return result
 
 def group_scan_history(items):
     by_classification = {key: [] for key, _ in SCAN_CLASSIFICATIONS}
@@ -174,14 +192,20 @@ def save_scan_history(email, url, analysis, reported=False, user_id=None):
     risk_score = int(analysis.get("score") or analysis.get("confidenceScore") or 0)
     verdict = analysis.get("status") or status_from_risk(analysis.get("overallRisk"))
     classification = scan_classification_from_analysis(analysis)
-    compact_signals = compact_scan_signals(analysis)
+    payload_type = analysis.get("payload_type") or analysis.get("payloadType")
+    private_payload = not is_web_url_payload(url, payload_type)
+    stored_url = scan_storage_reference(url, resolved_user_id or normalized_email, payload_type)
+    compact_signals = (
+        private_history_signals(payload_type, risk_score)
+        if private_payload else compact_scan_signals(analysis)
+    )
     with get_conn() as conn:
         conn.execute(
             "INSERT INTO scan_history (id, email, url, risk_score, verdict, signals, reported, created_at, user_id, classification) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 make_id("scan"),
                 normalized_email,
-                url[:2048],
+                stored_url,
                 risk_score,
                 verdict,
                 json.dumps(compact_signals, separators=(",", ":")),
@@ -242,8 +266,12 @@ def get_user_scan_history(user_id, limit=100):
     return [dict(row) for row in rows]
 
 
-def persist_qr_upload(content: bytes, filename: str, content_type: str, user: dict | None):
-    if not content:
+def persist_qr_upload(content: bytes, filename: str, content_type: str, user: dict | None, *, retain: bool = False):
+    """Retain an uploaded scan only after a caller explicitly opts in.
+
+    Normal scan endpoints analyze images in memory and never call this path.
+    """
+    if not content or not retain:
         return None
     user_id = (user or {}).get("google_id") or (user or {}).get("email")
     email = (user or {}).get("email")

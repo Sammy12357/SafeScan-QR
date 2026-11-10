@@ -120,7 +120,7 @@ def cache_get(url: str) -> Optional[dict]:
     the stored raw probability before returning, so threshold changes
     don't require flushing.
     """
-    if not url:
+    if not url or not url.lower().startswith(("https://", "http://")):
         return None
     conn = _cache_connection()
     if conn is None:
@@ -148,8 +148,8 @@ def cache_get(url: str) -> Optional[dict]:
 
 
 def cache_put(url: str, payload: dict) -> None:
-    """Store a prediction for `url`. Best-effort - failures are swallowed."""
-    if not url or not payload:
+    """Store a web URL prediction; never key SQLite by a private QR action."""
+    if not url or not url.lower().startswith(("https://", "http://")) or not payload:
         return
     conn = _cache_connection()
     if conn is None:

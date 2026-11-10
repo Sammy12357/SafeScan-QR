@@ -77,7 +77,8 @@ def get_malicious_qr_codes(page=1, limit=20, query=""):
 
     where_base = (
         "WHERE (COALESCE(risk_score, 0) >= ? OR upper(COALESCE(verdict, '')) = 'MALICIOUS') "
-        "AND url IS NOT NULL AND url != ''"
+        "AND url IS NOT NULL AND url != '' "
+        "AND (lower(url) LIKE 'https://%' OR lower(url) LIKE 'http://%')"
     )
     base_params = [MALICIOUS_RISK_THRESHOLD]
 

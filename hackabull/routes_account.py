@@ -174,6 +174,8 @@ async def api_malicious_qr_image(request: Request, u: str = Query(...)):
     target = (u or "").strip()
     if not target:
         raise HTTPException(status_code=400, detail="Missing URL.")
+    if not target.lower().startswith(("https://", "http://")):
+        raise HTTPException(status_code=404, detail="Not a known malicious URL QR.")
     with get_conn() as conn:
         row = conn.execute(
             "SELECT 1 FROM scan_history WHERE url = ? AND "
