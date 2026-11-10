@@ -67,6 +67,7 @@ from .sessions import clear_remember_me_cookie
 from .sessions import set_remember_me_cookie
 from .sessions import set_session_cookie
 from .sessions import validate_and_rotate_remember_me
+from .upload_limits import QRUploadBodyLimitMiddleware
 from .wallet import cleanup_wallet_nonces
 from .wallet import expire_alpha_subscriptions
 
@@ -282,6 +283,10 @@ async def metrics_middleware(request: Request, call_next):
         REQUEST_LATENCY.labels(path=request.url.path).observe(duration)
         if request.url.path in ("/api/scan", "/api/scan/file", "/search_qr_api"):
             ACTIVE_SCANS.dec()
+
+# Keep this outside the HTTP middleware stack so oversized multipart bodies are
+# rejected before FastAPI's form parser can spool them to disk.
+qr_app.add_middleware(QRUploadBodyLimitMiddleware)
 
 @qr_app.exception_handler(SafeScanError)
 async def safe_scan_error_handler(request: Request, exc: SafeScanError):

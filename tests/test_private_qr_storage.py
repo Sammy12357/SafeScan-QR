@@ -10,6 +10,8 @@ from html import escape
 
 import qrcode
 from fastapi.testclient import TestClient
+from PIL import Image
+from starlette.datastructures import UploadFile
 
 
 def load_app(tmp_path, monkeypatch):
@@ -60,6 +62,89 @@ def test_guest_uploaded_authenticator_secret_is_not_retained(tmp_path, monkeypat
     assert rows(db_path, "upload_artifacts") == []
     assert rows(db_path, "scan_history") == []
     assert_secret_absent_from_disk(tmp_path, secret)
+
+
+def test_oversized_decoded_image_returns_413_on_both_upload_routes(tmp_path, monkeypatch):
+    _, client, db_path = load_app(tmp_path, monkeypatch)
+    decoder = importlib.import_module("hackabull.qr_decode")
+    output = io.BytesIO()
+    Image.new("RGB", (decoder.MAX_QR_RENDER_SIDE + 1, 1), "white").save(output, format="PNG")
+    image_bytes = output.getvalue()
+
+    guest = client.post("/search_qr_api", files={"file": ("wide.png", image_bytes, "image/png")})
+    assert guest.status_code == 413
+    assert "too large to inspect safely" in guest.text
+
+    assert client.post("/auth/register", data={"email": "alice@example.com", "password": "password123"}).status_code == 200
+    authenticated = client.post("/api/scan/file", files={"file": ("wide.png", image_bytes, "image/png")})
+    assert authenticated.status_code == 413
+    assert "too large to inspect safely" in authenticated.text
+    assert rows(db_path, "upload_artifacts") == []
+    assert rows(db_path, "scan_history") == []
+
+
+def test_upload_byte_limit_bounds_file_reads(tmp_path, monkeypatch):
+    _, client, db_path = load_app(tmp_path, monkeypatch)
+    monkeypatch.setattr(importlib.import_module("hackabull.routes_api"), "MAX_QR_UPLOAD_BYTES", 64)
+    monkeypatch.setattr(importlib.import_module("hackabull.routes_scan_auth"), "MAX_QR_UPLOAD_BYTES", 64)
+    original_read = UploadFile.read
+    read_sizes = []
+
+    async def checked_read(self, size=-1):
+        read_sizes.append(size)
+        return await original_read(self, size)
+
+    monkeypatch.setattr(UploadFile, "read", checked_read)
+    oversized = b"x" * 100
+    guest = client.post("/search_qr_api", files={"file": ("large.png", oversized, "image/png")})
+    assert guest.status_code == 413
+
+    assert client.post("/auth/register", data={"email": "alice@example.com", "password": "password123"}).status_code == 200
+    authenticated = client.post("/api/scan/file", files={"file": ("large.png", oversized, "image/png")})
+    assert authenticated.status_code == 413
+    assert read_sizes == [65, 65]
+    assert rows(db_path, "upload_artifacts") == []
+
+
+def test_upload_body_limit_rejects_declared_and_streamed_multipart(tmp_path, monkeypatch):
+    _, client, _ = load_app(tmp_path, monkeypatch)
+    limits = importlib.import_module("hackabull.upload_limits")
+    monkeypatch.setattr(limits, "MAX_QR_UPLOAD_BYTES", 64)
+    monkeypatch.setattr(limits, "MULTIPART_OVERHEAD_BYTES", 64)
+
+    declared = client.post(
+        "/search_qr_api",
+        files={"file": ("small.png", b"x", "image/png")},
+        headers={"Content-Length": "999"},
+    )
+    assert declared.status_code == 413
+    assert declared.headers["cache-control"] == "no-store"
+    assert declared.headers["content-type"].startswith("text/html")
+    assert "Back to SafeScan" in declared.text
+
+    boundary = "qr-upload-test"
+    multipart = (
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"large.png\"\r\n"
+        "Content-Type: image/png\r\n\r\n"
+    ).encode() + b"x" * 100 + f"\r\n--{boundary}--\r\n".encode()
+    chunks = (multipart[:40], multipart[40:90], multipart[90:])
+    streamed = client.post(
+        "/api/scan/file",
+        content=iter(chunks),
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}", "Content-Length": "1"},
+    )
+    assert streamed.status_code == 413, streamed.text
+    assert streamed.json()["error"] == "QR upload request is too large."
+    assert streamed.headers["cache-control"] == "no-store"
+
+    chunked = client.post(
+        "/search_qr_api",
+        content=iter(chunks),
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}", "Transfer-Encoding": "chunked"},
+    )
+    assert chunked.status_code == 413
+    assert chunked.headers["cache-control"] == "no-store"
+    assert "Choose a smaller QR image or PDF" in chunked.text
 
 
 def test_ml_cache_rejects_private_qr_keys(tmp_path, monkeypatch):
