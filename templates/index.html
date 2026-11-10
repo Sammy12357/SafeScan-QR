@@ -7,7 +7,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=qr-defense-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=scan-story-v1">
 </head>
 <body class="{{ 'test-site-page' if test_site else '' }}">
   {% if not logged_in and google_client_id and not local_auth_enabled %}
@@ -73,32 +73,6 @@
     </header>
 
     <main>
-      {% if test_site %}
-      <section class="test-section test-proof" aria-label="SafeScan trust signals">
-        <div class="test-section-header reveal-on-scroll">
-          <p class="eyebrow">Risk intelligence</p>
-          <h2>QR security that feels instant, but thinks in layers.</h2>
-        </div>
-        <div class="test-proof-grid">
-          <article class="test-proof-card reveal-on-scroll"><span>01</span><h3>Payload decode</h3><p>Reads URLs, wallet prompts, redirects, and non-web QR payloads before the phone hands control to another app.</p></article>
-          <article class="test-proof-card reveal-on-scroll"><span>02</span><h3>Threat scoring</h3><p>Combines domain intelligence, reputation signals, redirect tracing, crypto patterns, and ML analysis into one verdict.</p></article>
-          <article class="test-proof-card reveal-on-scroll"><span>03</span><h3>User control</h3><p>Shows the destination and risk reasons so the user can avoid or report a suspicious link.</p></article>
-        </div>
-      </section>
-
-      <section class="test-section test-social reveal-on-scroll">
-        <div>
-          <p class="eyebrow">Built for the scan moment</p>
-          <h2>Designed for wallets, events, menus, payments, and public QR codes.</h2>
-        </div>
-        <div class="test-stat-row">
-          <div><strong>90+</strong><span>target Lighthouse score</span></div>
-          <div><strong>5</strong><span>risk signal families</span></div>
-          <div><strong>SQR</strong><span>airdrop-ready rewards</span></div>
-        </div>
-      </section>
-      {% endif %}
-
       <section class="scanner-panel" id="scanner">
         <div class="panel-header"><div><p class="eyebrow">SafeScan Tool</p><h2>Analyze Payload</h2></div></div>
         <div class="scanner-grid">
@@ -136,21 +110,16 @@
             </div>
           </div>
           <div class="scanner-card visual-card">
-            <p class="visual-label">Scan simulator</p>
-            <div class="qr-frame {{ 'scanning' if not results_visible }}">
-              <div class="qr-grid">
-                <span class="qr-tile qr-white"></span><span class="qr-tile"></span><span class="qr-tile"></span><span class="qr-tile qr-white"></span><span class="qr-tile"></span><span class="qr-tile qr-white"></span><span class="qr-tile"></span><span class="qr-tile qr-white"></span>
-                <span class="qr-tile"></span><span class="qr-tile qr-white"></span><span class="qr-tile"></span><span class="qr-tile qr-white"></span><span class="qr-tile qr-white"></span><span class="qr-tile"></span><span class="qr-tile qr-white"></span><span class="qr-tile"></span>
-                <span class="qr-tile"></span><span class="qr-tile"></span><span class="qr-tile"></span><span class="qr-tile"></span><span class="qr-tile qr-white"></span><span class="qr-tile qr-white"></span><span class="qr-tile"></span><span class="qr-tile qr-white"></span>
-                <span class="qr-tile qr-white"></span><span class="qr-tile qr-white"></span><span class="qr-tile"></span><span class="qr-tile qr-white"></span><span class="qr-tile qr-white"></span><span class="qr-tile"></span><span class="qr-tile qr-white"></span><span class="qr-tile"></span>
-                <span class="qr-tile qr-white"></span><span class="qr-tile qr-white"></span><span class="qr-tile qr-white"></span><span class="qr-tile"></span><span class="qr-tile"></span><span class="qr-tile qr-white"></span><span class="qr-tile"></span><span class="qr-tile qr-white"></span>
-                <span class="qr-tile qr-white"></span><span class="qr-tile"></span><span class="qr-tile qr-white"></span><span class="qr-tile qr-white"></span><span class="qr-tile qr-white"></span><span class="qr-tile"></span><span class="qr-tile qr-white"></span><span class="qr-tile"></span>
-                <span class="qr-tile"></span><span class="qr-tile qr-white"></span><span class="qr-tile qr-white"></span><span class="qr-tile"></span><span class="qr-tile"></span><span class="qr-tile qr-white"></span><span class="qr-tile"></span><span class="qr-tile"></span>
-                <span class="qr-tile qr-white"></span><span class="qr-tile"></span><span class="qr-tile qr-white"></span><span class="qr-tile qr-white"></span><span class="qr-tile"></span><span class="qr-tile"></span><span class="qr-tile qr-white"></span><span class="qr-tile qr-white"></span>
-              </div>
-              <div class="scan-line"></div>
+            <div class="scan-story">
+              <p class="visual-label">How SafeScan works</p>
+              <h3>Know before you open.</h3>
+              <ol class="scan-story-steps">
+                <li><span aria-hidden="true">01</span><div><strong>Decode</strong><p>Read links, wallet prompts, payments, and other QR content.</p></div></li>
+                <li><span aria-hidden="true">02</span><div><strong>Assess</strong><p>Check destinations, redirects, reputation, and suspicious patterns; use ML when available.</p></div></li>
+                <li><span aria-hidden="true">03</span><div><strong>Decide</strong><p>See the action and risk reasons. Avoid or report suspicious links.</p></div></li>
+              </ol>
+              <p class="visual-copy">Built for wallets, events, menus, payments, and public QR codes.</p>
             </div>
-            <p class="visual-copy">Scan, decode the payload, review the action and risk reasons, then choose whether to leave or open a supported link.</p>
           </div>
         </div>
       </section>
