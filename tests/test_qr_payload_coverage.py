@@ -5,6 +5,7 @@ import io
 
 import pytest
 import qrcode
+import fitz
 from PIL import Image
 
 from hackabull import qr_decode, qr_detect
@@ -91,3 +92,41 @@ def test_upload_with_two_different_qr_codes_is_ambiguous():
 
     with pytest.raises(qr_decode.QRDecodeAmbiguityError, match="Multiple different QR payloads"):
         qr_decode.decode_qr_upload(output.getvalue(), "two-qr.png", "image/png")
+
+
+def test_raster_pixel_limit_rejects_metadata_before_image_transforms(monkeypatch):
+    class ImageMetadataOnly:
+        width = 4_001
+        height = 4_001
+
+    monkeypatch.setattr(qr_decode, "_qr_image_libs", lambda: pytest.fail("pixel data must not be processed"))
+
+    with pytest.raises(qr_decode.QRDecodeLimitError, match="too large to inspect safely"):
+        qr_decode.decode_qr_image(ImageMetadataOnly())
+
+
+def test_large_pdf_page_rejected_before_pixmap_allocation(monkeypatch):
+    with fitz.open() as document:
+        document.new_page(width=2_200, height=2_200)
+        pdf_bytes = document.tobytes()
+
+    monkeypatch.setattr(fitz.Page, "get_pixmap", lambda *_args, **_kwargs: pytest.fail("large pixmap must not be allocated"))
+
+    with pytest.raises(qr_decode.QRDecodeLimitError, match="PDF page is too large"):
+        qr_decode.decode_qr_upload(pdf_bytes, "large-page.pdf", "application/pdf")
+
+
+def test_regular_pdf_qr_still_decodes():
+    url = "https://example.org/qr-upload"
+    qr_bytes = io.BytesIO()
+    qrcode.make(url).save(qr_bytes, format="PNG")
+    with fitz.open() as document:
+        page = document.new_page(width=300, height=300)
+        page.insert_image(fitz.Rect(20, 20, 280, 280), stream=qr_bytes.getvalue())
+        pdf_bytes = document.tobytes()
+
+    payload, image = qr_decode.decode_qr_upload(pdf_bytes, "regular.pdf", "application/pdf")
+
+    assert payload == url
+    assert image is not None
+    image.close()

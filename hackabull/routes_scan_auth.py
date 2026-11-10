@@ -95,6 +95,7 @@ from .payload_privacy import scan_storage_reference
 from .history import save_scan_history
 from .pipeline import analyze_full_pipeline
 from .qr_decode import QRDecodeAmbiguityError
+from .qr_decode import QRDecodeLimitError
 from .qr_decode import decode_qr_upload
 from .qr_detect import analyze_qr_payload
 from .qr_detect import detect_payload
@@ -137,11 +138,12 @@ async def scan_qr(
     url_qr = None
     qr_image_for_ml = None
     decode_error = None
+    decode_error_status = 200
 
     if manual_url and manual_url.strip():
         url_qr = manual_url
     elif file and file.filename:
-        contents = await file.read()
+        contents = await file.read(MAX_QR_UPLOAD_BYTES + 1)
         if len(contents) > MAX_QR_UPLOAD_BYTES:
             return templates.TemplateResponse("index.html", {
                 "request": request, "logged_in": True, "results_visible": True,
@@ -158,13 +160,17 @@ async def scan_qr(
                 "test_site_path": test_site_path,
                 "version": LEGAL_VERSION,
                 **index_user_context(user)
-            })
+            }, status_code=413)
         try:
             url_qr, qr_image_for_ml = decode_qr_upload(contents, file.filename, file.content_type)
+        except QRDecodeLimitError as exc:
+            decode_error = str(exc)
+            decode_error_status = 413
         except QRDecodeAmbiguityError as exc:
             decode_error = str(exc)
 
     if not url_qr:
+        reason_label = "Upload too large" if decode_error_status == 413 else ("Ambiguous QR upload" if decode_error else "No QR payload decoded")
         return templates.TemplateResponse("index.html", {
             "request": request, "logged_in": True, "results_visible": True,
             "status": "ERROR", "url_found": decode_error or "No QR code or valid payload detected.",
@@ -172,7 +178,7 @@ async def scan_qr(
             "overall_risk": "suspicious",
             "verdict_summary": decode_error or "SafeScan could not decode a QR payload from this file.",
             "reputation": {"provider": "Scanner", "status": "ERROR", "matches": [], "detail": decode_error or "No decodable payload was found."},
-            "risk_reasons": [risk_reason("Ambiguous QR upload" if decode_error else "No QR payload decoded", "medium", decode_error or "Upload a clearer image, SVG, or PDF containing a QR code, or paste the destination manually.")],
+            "risk_reasons": [risk_reason(reason_label, "medium", decode_error or "Upload a clearer image, SVG, or PDF containing a QR code, or paste the destination manually.")],
             "virus_total": None,
             "domain_age": None,
             "email": user_email, "scan_count": get_scan_count(user_email) if user_email else 0, "google_client_id": CLIENT_ID,
@@ -180,7 +186,7 @@ async def scan_qr(
             "test_site_path": test_site_path,
             "version": LEGAL_VERSION,
             **index_user_context(user)
-        })
+        }, status_code=decode_error_status)
 
     payload_type, _, normalized_payload = detect_payload(url_qr)
     if payload_type == "URL":

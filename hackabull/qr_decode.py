@@ -55,8 +55,43 @@ from .config import image_libs
 # =============================================================================
 # QR IMAGE / SVG DECODING (read the payload out of an uploaded image)
 # =============================================================================
-class QRDecodeAmbiguityError(ValueError):
+class QRDecodeError(ValueError):
+    """An upload cannot be fully inspected as a QR code."""
+
+
+class QRDecodeAmbiguityError(QRDecodeError):
     """The upload cannot be safely reduced to one fully inspected QR action."""
+
+
+class QRDecodeLimitError(QRDecodeError):
+    """The image or rendered PDF would exceed the scanner's resource limits."""
+
+
+MAX_QR_RENDER_PIXELS = 16_000_000
+MAX_QR_RENDER_SIDE = 6_000
+PDF_RENDER_SCALE = 2.5
+
+
+def _check_render_dimensions(width, height, kind):
+    if (
+        width < 1 or height < 1
+        or width > MAX_QR_RENDER_SIDE or height > MAX_QR_RENDER_SIDE
+        or width * height > MAX_QR_RENDER_PIXELS
+    ):
+        raise QRDecodeLimitError(
+            f"{kind} is too large to inspect safely. Crop or resize it to at most "
+            f"{MAX_QR_RENDER_SIDE:,} pixels per side and {MAX_QR_RENDER_PIXELS // 1_000_000} megapixels."
+        )
+
+
+def _check_pdf_page_dimensions(page):
+    # PyMuPDF allocates the entire pixmap in get_pixmap(). Check its projected
+    # raster size first, allowing for rounding at page boundaries.
+    width = page.rect.width * PDF_RENDER_SCALE
+    height = page.rect.height * PDF_RENDER_SCALE
+    if not (math.isfinite(width) and math.isfinite(height) and width > 0 and height > 0):
+        raise QRDecodeLimitError("PDF page dimensions are invalid or too large to inspect safely.")
+    _check_render_dimensions(math.ceil(width) + 2, math.ceil(height) + 2, "PDF page")
 
 
 def _qr_image_libs():
@@ -77,6 +112,7 @@ def decode_qr_image(image):
     (contrast/threshold enhancement, ZXing fallback) since real-world photos are
     often low-contrast, rotated, or noisy. Returns decoded barcode objects.
     """
+    _check_render_dimensions(image.width, image.height, "QR image")
     Image, ImageEnhance, ImageFilter, ImageOps, decode = _qr_image_libs()
     image = ImageOps.exif_transpose(image)
 
@@ -308,7 +344,7 @@ def decode_qr_upload(contents, filename="", content_type=""):
             payload, qr_image = _decode_qr_from_pil_image(image)
             if payload:
                 return payload, qr_image
-    except QRDecodeAmbiguityError:
+    except QRDecodeError:
         raise
     except Exception:
         pass
@@ -337,13 +373,14 @@ def decode_qr_upload(contents, filename="", content_type=""):
                     )
                 for page_index in range(min(document.page_count, MAX_QR_PDF_PAGES)):
                     page = document.load_page(page_index)
-                    pixmap = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5), alpha=False)
+                    _check_pdf_page_dimensions(page)
+                    pixmap = page.get_pixmap(matrix=fitz.Matrix(PDF_RENDER_SCALE, PDF_RENDER_SCALE), alpha=False)
                     with Image.open(io.BytesIO(pixmap.tobytes("png"))) as image:
                         payload, qr_image = _decode_qr_from_pil_image(image)
                         remember(payload, qr_image)
             finally:
                 document.close()
-        except QRDecodeAmbiguityError:
+        except QRDecodeError:
             raise
         except Exception:
             pass

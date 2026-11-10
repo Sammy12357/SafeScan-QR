@@ -72,6 +72,7 @@ from .history import save_scan_history
 from .history import serialize_scan_history_row
 from .pipeline import analyze_full_pipeline
 from .qr_decode import QRDecodeAmbiguityError
+from .qr_decode import QRDecodeLimitError
 from .qr_decode import decode_qr_upload
 from .qr_detect import analyze_qr_payload
 from .qr_detect import describe_qr_action
@@ -134,14 +135,16 @@ async def api_scan_file(request: Request, response: Response, file: UploadFile =
     rate_limit = enforce_rate_limit(request, "scan_file", 30, 60 * 60, user_key=user.get("google_id"))
     if rate_limit:
         return rate_limit
-    contents = await file.read()
+    contents = await file.read(MAX_QR_UPLOAD_BYTES + 1)
     if len(contents) > MAX_QR_UPLOAD_BYTES:
-        raise SafeScanError(f"Uploaded file is too large. Use a file under {MAX_QR_UPLOAD_BYTES // (1024 * 1024)} MB.", 400)
+        raise SafeScanError(f"Uploaded file is too large. Use a file under {MAX_QR_UPLOAD_BYTES // (1024 * 1024)} MB.", 413)
 
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
     try:
         raw_payload, qr_image_for_ml = decode_qr_upload(contents, file.filename, file.content_type)
+    except QRDecodeLimitError as exc:
+        raise SafeScanError(str(exc), 413) from exc
     except QRDecodeAmbiguityError as exc:
         raise SafeScanError(str(exc), 400) from exc
     if not raw_payload:
