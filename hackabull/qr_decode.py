@@ -341,6 +341,11 @@ def decode_qr_upload(contents, filename="", content_type=""):
 
     try:
         with Image.open(io.BytesIO(contents)) as image:
+            _check_render_dimensions(image.width, image.height, "QR image")
+            if getattr(image, "n_frames", 1) > 1:
+                raise QRDecodeAmbiguityError(
+                    "Animated images can contain different QR codes in later frames. Upload a still image of one QR code."
+                )
             payload, qr_image = _decode_qr_from_pil_image(image)
             if payload:
                 return payload, qr_image

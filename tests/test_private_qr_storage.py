@@ -106,6 +106,47 @@ def test_upload_byte_limit_bounds_file_reads(tmp_path, monkeypatch):
     assert rows(db_path, "upload_artifacts") == []
 
 
+def test_upload_body_limit_rejects_declared_and_streamed_multipart(tmp_path, monkeypatch):
+    _, client, _ = load_app(tmp_path, monkeypatch)
+    limits = importlib.import_module("hackabull.upload_limits")
+    monkeypatch.setattr(limits, "MAX_QR_UPLOAD_BYTES", 64)
+    monkeypatch.setattr(limits, "MULTIPART_OVERHEAD_BYTES", 64)
+
+    declared = client.post(
+        "/search_qr_api",
+        files={"file": ("small.png", b"x", "image/png")},
+        headers={"Content-Length": "999"},
+    )
+    assert declared.status_code == 413
+    assert declared.headers["cache-control"] == "no-store"
+    assert declared.headers["content-type"].startswith("text/html")
+    assert "Back to SafeScan" in declared.text
+
+    boundary = "qr-upload-test"
+    multipart = (
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"large.png\"\r\n"
+        "Content-Type: image/png\r\n\r\n"
+    ).encode() + b"x" * 100 + f"\r\n--{boundary}--\r\n".encode()
+    chunks = (multipart[:40], multipart[40:90], multipart[90:])
+    streamed = client.post(
+        "/api/scan/file",
+        content=iter(chunks),
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}", "Content-Length": "1"},
+    )
+    assert streamed.status_code == 413, streamed.text
+    assert streamed.json()["error"] == "QR upload request is too large."
+    assert streamed.headers["cache-control"] == "no-store"
+
+    chunked = client.post(
+        "/search_qr_api",
+        content=iter(chunks),
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}", "Transfer-Encoding": "chunked"},
+    )
+    assert chunked.status_code == 413
+    assert chunked.headers["cache-control"] == "no-store"
+    assert "Choose a smaller QR image or PDF" in chunked.text
+
+
 def test_ml_cache_rejects_private_qr_keys(tmp_path, monkeypatch):
     _, _, _ = load_app(tmp_path, monkeypatch)
     cache = importlib.import_module("safescan_model_calibration.cache")

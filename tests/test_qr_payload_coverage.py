@@ -94,6 +94,16 @@ def test_upload_with_two_different_qr_codes_is_ambiguous():
         qr_decode.decode_qr_upload(output.getvalue(), "two-qr.png", "image/png")
 
 
+def test_animated_image_with_different_qr_frames_is_rejected():
+    first = qrcode.make("https://first.example/").convert("RGB")
+    second = qrcode.make("https://second.example/").convert("RGB")
+    output = io.BytesIO()
+    first.save(output, format="GIF", save_all=True, append_images=[second], duration=100, loop=0)
+
+    with pytest.raises(qr_decode.QRDecodeAmbiguityError, match="Animated images"):
+        qr_decode.decode_qr_upload(output.getvalue(), "moving.gif", "image/gif")
+
+
 def test_raster_pixel_limit_rejects_metadata_before_image_transforms(monkeypatch):
     class ImageMetadataOnly:
         width = 4_001
