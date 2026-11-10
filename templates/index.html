@@ -261,7 +261,7 @@
             </div>
             {% endif %}
 
-            {% if virus_total and virus_total.summary.total %}
+            {% if virus_total and virus_total.mode != 'disabled' and virus_total.summary.total %}
             <div class="vt-panel">
               <div class="vt-panel-top">
                 <div>
@@ -303,7 +303,7 @@
                 {% endfor %}
               </div>
             </div>
-            {% elif virus_total %}
+            {% elif virus_total and virus_total.mode != 'disabled' %}
             <div class="vt-panel vt-panel-status">
               <p class="engine-label">Optional VirusTotal enrichment</p>
               <p>{{ virus_total.statusMessage or "VirusTotal results are unavailable for this scan." }}</p>

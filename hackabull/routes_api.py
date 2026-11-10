@@ -73,6 +73,7 @@ from .history import serialize_scan_history_row
 from .pipeline import analyze_full_pipeline
 from .pipeline import verification_coverage
 from .phish_feed import phishtank_signal
+from .provider_policy import virustotal_key
 from .qr_decode import QRDecodeAmbiguityError
 from .qr_decode import decode_qr_upload
 from .qr_detect import analyze_qr_payload
@@ -705,14 +706,18 @@ async def api_check_reputation(payload: dict = Body(...)):
     normalized = validate_public_url((payload.get("url") or "").strip())
     google_task = asyncio.to_thread(google_reputation_signal, normalized)
     phishtank_task = asyncio.to_thread(phishtank_signal, normalized)
-    virustotal_task = asyncio.to_thread(virustotal_reputation_signal, normalized)
-    google, phishtank, virustotal = await asyncio.gather(google_task, phishtank_task, virustotal_task)
+    if virustotal_key():
+        virustotal_task = asyncio.to_thread(virustotal_reputation_signal, normalized)
+        google, phishtank, virustotal = await asyncio.gather(google_task, phishtank_task, virustotal_task)
+    else:
+        google, phishtank = await asyncio.gather(google_task, phishtank_task)
+        virustotal = None
     required_signals = [google, phishtank]
     verification_status, unverified_checks = verification_coverage(required_signals)
-    optional_checks = [] if virustotal.get("verified") is True else [virustotal]
+    optional_checks = [] if virustotal is None or virustotal.get("verified") is True else [virustotal]
     return {
         "url": normalized,
-        "signals": [*required_signals, *([virustotal] if virustotal.get("verified") is True else [])],
+        "signals": [*required_signals, *([virustotal] if virustotal and virustotal.get("verified") is True else [])],
         "verificationStatus": verification_status,
         "unverifiedChecks": unverified_checks,
         "optionalChecks": optional_checks,

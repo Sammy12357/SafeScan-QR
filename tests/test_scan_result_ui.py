@@ -92,6 +92,16 @@ def test_optional_virustotal_outage_is_labeled_without_blocking_required_checks(
     assert "VirusTotal vendor scan" not in html
 
 
+def test_disabled_virustotal_has_no_result_panel():
+    html, _ = render_result(
+        "SAFE", "safe", "URL", "https://example.com/",
+        virus_total={"mode": "disabled", "summary": {"total": 0}},
+    )
+
+    assert "Optional VirusTotal enrichment" not in html
+    assert "View on VirusTotal" not in html
+
+
 def test_non_url_payload_is_shown_exactly_and_cannot_be_reported_as_url():
     payload = "WIFI:S:Cafe;<script>alert(1)</script>\nT:WPA;;"
     html, elements = render_result("CAUTION", "suspicious", "Wi-Fi", payload)

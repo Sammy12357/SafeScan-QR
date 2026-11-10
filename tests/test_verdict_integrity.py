@@ -94,13 +94,34 @@ def test_unavailable_optional_virustotal_allows_clean_required_fast_path(modules
     assert not any(item["check"] == "VirusTotal Reputation" for item in result["signals"])
 
 
+def test_unconfigured_virustotal_is_hidden_on_fast_path(modules, monkeypatch):
+    pipeline, _, scoring, _ = modules
+    url = "https://www.youtube.com/watch?v=abc123"
+    monkeypatch.delenv("VIRUSTOTAL_API_KEY", raising=False)
+    monkeypatch.delenv("SAFESCAN_VIRUSTOTAL_LICENSED", raising=False)
+    monkeypatch.setattr(pipeline, "should_short_circuit", lambda _: (True, "ok"))
+    monkeypatch.setattr(pipeline, "google_reputation_signal", lambda _: _finding(pipeline, "Google Web Risk"))
+    monkeypatch.setattr(pipeline, "phishtank_signal", lambda _: _finding(pipeline, "PhishTank"))
+    monkeypatch.setattr(pipeline, "trace_redirect_chain", lambda _: _redirect(pipeline, url))
+    monkeypatch.setattr(scoring.requests, "get", lambda *args, **kwargs: pytest.fail("disabled VirusTotal must not make an HTTP request"))
+
+    result = asyncio.run(pipeline.analyze_full_pipeline(url))
+
+    assert result["overallRisk"] == "safe"
+    assert result["verificationStatus"] == "complete"
+    assert result["virusTotal"] is None
+    assert result["optionalChecks"] == []
+
+
 def test_web_risk_and_fresh_phishtank_can_complete_full_scan_without_vt(modules, monkeypatch):
-    pipeline, _, _, _ = modules
+    pipeline, _, scoring, _ = modules
     url = "https://example.org/ordinary-path"
+    monkeypatch.delenv("VIRUSTOTAL_API_KEY", raising=False)
+    monkeypatch.delenv("SAFESCAN_VIRUSTOTAL_LICENSED", raising=False)
     monkeypatch.setattr(pipeline, "should_short_circuit", lambda _: (False, "test"))
     monkeypatch.setattr(pipeline, "google_reputation_signal", lambda _: _finding(pipeline, "Google Web Risk"))
     monkeypatch.setattr(pipeline, "phishtank_signal", lambda _: _finding(pipeline, "PhishTank"))
-    monkeypatch.setattr(pipeline, "virustotal_lookup_result", lambda _: _vt(url, mode="unavailable"))
+    monkeypatch.setattr(scoring.requests, "get", lambda *args, **kwargs: pytest.fail("disabled VirusTotal must not make an HTTP request"))
     monkeypatch.setattr(pipeline, "trace_redirect_chain", lambda _: _redirect(pipeline, url))
     monkeypatch.setattr(pipeline, "check_domain_intelligence", lambda _: [])
     monkeypatch.setattr(pipeline, "check_crypto_pattern_signals", lambda _: [])
@@ -111,7 +132,8 @@ def test_web_risk_and_fresh_phishtank_can_complete_full_scan_without_vt(modules,
     assert result["overallRisk"] == "safe"
     assert result["verificationStatus"] == "complete"
     assert result["unverifiedChecks"] == []
-    assert result["optionalChecks"][0]["check"] == "VirusTotal Reputation"
+    assert result["optionalChecks"] == []
+    assert result["virusTotal"] is None
     assert {item["check"] for item in result["signals"]} >= {"Google Web Risk", "PhishTank", "Redirect Chain"}
     assert all(item.get("verified") is not False for item in result["signals"])
     assert all(item["severity"] in {"low", "medium", "high"} for item in result["signals"])
@@ -275,7 +297,7 @@ def test_virustotal_requires_license_and_does_not_submit_unknown_urls_by_default
 
     disabled = scoring.virustotal_lookup_result("https://example.org/private?token=secret")
     disabled_signal = reputation.virustotal_reputation_signal("https://example.org/private?token=secret")
-    assert disabled["mode"] == "unavailable"
+    assert disabled["mode"] == "disabled"
     assert disabled_signal["verified"] is False
     assert calls == []
 
@@ -293,22 +315,27 @@ def test_virustotal_requires_license_and_does_not_submit_unknown_urls_by_default
     assert calls[-2:] == ["get", "post"]
 
 
-def test_standalone_reputation_endpoint_uses_same_unverified_vt_result(modules, monkeypatch):
+def test_standalone_reputation_endpoint_omits_disabled_vt(modules, monkeypatch):
     pipeline, _, _, _ = modules
     routes = importlib.import_module("hackabull.routes_api")
     monkeypatch.delenv("VIRUSTOTAL_API_KEY", raising=False)
     monkeypatch.setattr(routes, "validate_public_url", lambda url: url)
     monkeypatch.setattr(routes, "google_reputation_signal", lambda _: _finding(pipeline, "Google Web Risk"))
     monkeypatch.setattr(routes, "phishtank_signal", lambda _: _finding(pipeline, "PhishTank"))
+    monkeypatch.setattr(routes, "virustotal_reputation_signal", lambda _: pytest.fail("disabled VirusTotal must not be queried"))
 
     result = asyncio.run(routes.api_check_reputation({"url": "https://example.org/"}))
 
-    vt = result["optionalChecks"][0]
-    assert vt["verified"] is False
-    assert vt["passed"] is False
+    assert result["optionalChecks"] == []
     assert result["verificationStatus"] == "complete"
     assert result["unverifiedChecks"] == []
     assert not any(item["check"] == "VirusTotal Reputation" for item in result["signals"])
+
+    monkeypatch.setenv("VIRUSTOTAL_API_KEY", "licensed-test-key")
+    monkeypatch.setenv("SAFESCAN_VIRUSTOTAL_LICENSED", "true")
+    monkeypatch.setattr(routes, "virustotal_reputation_signal", lambda _: _finding(pipeline, "VirusTotal Reputation", "medium", False, False))
+    licensed = asyncio.run(routes.api_check_reputation({"url": "https://example.org/"}))
+    assert licensed["optionalChecks"][0]["check"] == "VirusTotal Reputation"
 
 
 def test_redirected_popular_url_checks_landing_page_even_if_first_check_is_incomplete(modules, monkeypatch):

@@ -103,7 +103,7 @@ def virustotal_lookup_result(target_url):
     if not licensed_key:
         return empty_virustotal_result(
             target_url,
-            "unavailable",
+            "disabled",
             "VirusTotal is not enabled. A licensed key and SAFESCAN_VIRUSTOTAL_LICENSED=true are required.",
         )
 
@@ -157,7 +157,7 @@ def virustotal_lookup_result(target_url):
 def virustotal_breakdown_signal(vt_result):
     mode = vt_result.get("mode")
     if mode != "live":
-        result_label = {"unavailable": "Not configured", "pending": "Scan pending", "error": "Lookup failed"}.get(mode, "Unavailable")
+        result_label = {"disabled": "Not enabled", "unavailable": "No verdict", "pending": "Scan pending", "error": "Lookup failed"}.get(mode, "Unavailable")
         finding = signal("VirusTotal Reputation", f"Unverified ({result_label.lower()})", "medium", vt_result.get("statusMessage", ""), False)
         finding["verified"] = False
         return finding
