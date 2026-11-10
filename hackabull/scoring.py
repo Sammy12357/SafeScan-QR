@@ -49,11 +49,6 @@ from storage import upload_bytes as storage_upload_bytes
 
 from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party
 import safescan_model_calibration as sm_calibration
-from .audit import now_iso
-from .lowlevel import virustotal_gui_url
-from .lowlevel import virustotal_url_id
-from .provider_policy import virustotal_key
-from .provider_policy import virustotal_submit_unknown_urls
 
 # =============================================================================
 # RISK SIGNALS & SCORING
@@ -74,110 +69,6 @@ def signal(check, result, severity, description, passed=True):
         "passed": passed
     }
 
-def build_virustotal_summary(engines):
-    clean = sum(1 for engine in engines if engine["verdict"] == "clean")
-    unrated = sum(1 for engine in engines if engine["verdict"] == "unrated")
-    malicious = sum(1 for engine in engines if engine["verdict"] == "malicious")
-    return {"clean": clean, "unrated": unrated, "malicious": malicious, "total": len(engines)}
-
-def empty_virustotal_result(target_url, mode, status_message):
-    return {
-        "url": target_url,
-        "scannedAt": now_iso(),
-        "engines": [],
-        "groups": {"clean": [], "unrated": [], "malicious": []},
-        "summary": {"clean": 0, "unrated": 0, "malicious": 0, "total": 0},
-        "provider": "VirusTotal",
-        "mode": mode,
-        "reportUrl": virustotal_gui_url(target_url),
-        "statusMessage": status_message,
-    }
-
-def virustotal_lookup_result(target_url):
-    """Look up `target_url` against the live VirusTotal v3 API and return a
-    vt_result dict (engines/groups/summary) used both for the scan signal and
-    the vendor-breakdown panel. Unavailable, unknown, and failed lookups
-    remain unverified and cannot produce a safe verdict.
-    """
-    licensed_key = virustotal_key()
-    if not licensed_key:
-        return empty_virustotal_result(
-            target_url,
-            "disabled",
-            "VirusTotal is not enabled. A licensed key and SAFESCAN_VIRUSTOTAL_LICENSED=true are required.",
-        )
-
-    headers = {"x-apikey": licensed_key}
-    url_id = virustotal_url_id(target_url)
-    try:
-        response = requests.get(f"https://www.virustotal.com/api/v3/urls/{url_id}", headers=headers, timeout=8)
-        if response.status_code == 404:
-            if not virustotal_submit_unknown_urls():
-                return empty_virustotal_result(
-                    target_url, "unavailable", "VirusTotal has no cached verdict; the URL was not submitted."
-                )
-            try:
-                requests.post("https://www.virustotal.com/api/v3/urls", headers=headers, data={"url": target_url}, timeout=8).raise_for_status()
-            except requests.RequestException as exc:
-                return empty_virustotal_result(target_url, "error", f"VirusTotal submission failed: {type(exc).__name__}")
-            return empty_virustotal_result(target_url, "pending", "VirusTotal accepted the URL for analysis; a verdict is pending.")
-        response.raise_for_status()
-        data = response.json()
-    except requests.RequestException as exc:
-        return empty_virustotal_result(target_url, "error", f"VirusTotal lookup failed: {type(exc).__name__}")
-
-    last_results = data.get("data", {}).get("attributes", {}).get("last_analysis_results", {}) or {}
-    engines = []
-    for name, info in last_results.items():
-        category = (info or {}).get("category", "undetected")
-        if category in ("malicious", "suspicious"):
-            verdict = "malicious"
-        elif category == "harmless":
-            verdict = "clean"
-        else:
-            verdict = "unrated"
-        engines.append({"name": name, "verdict": verdict})
-    engines = sorted(engines, key=lambda engine: engine["name"].lower())
-    groups = {
-        "clean": [engine for engine in engines if engine["verdict"] == "clean"],
-        "unrated": [engine for engine in engines if engine["verdict"] == "unrated"],
-        "malicious": [engine for engine in engines if engine["verdict"] == "malicious"],
-    }
-    return {
-        "url": target_url,
-        "scannedAt": now_iso(),
-        "engines": engines,
-        "groups": groups,
-        "summary": build_virustotal_summary(engines),
-        "provider": "VirusTotal",
-        "mode": "live",
-        "reportUrl": virustotal_gui_url(target_url),
-    }
-
-def virustotal_breakdown_signal(vt_result):
-    mode = vt_result.get("mode")
-    if mode != "live":
-        result_label = {"disabled": "Not enabled", "unavailable": "No verdict", "pending": "Scan pending", "error": "Lookup failed"}.get(mode, "Unavailable")
-        finding = signal("VirusTotal Reputation", f"Unverified ({result_label.lower()})", "medium", vt_result.get("statusMessage", ""), False)
-        finding["verified"] = False
-        return finding
-    summary = vt_result.get("summary") or {}
-    if int(summary.get("total") or 0) == 0:
-        finding = signal("VirusTotal Reputation", "Unverified (no engine verdicts)", "medium", "VirusTotal returned no engine verdicts for this URL.", False)
-        finding["verified"] = False
-        return finding
-    flagged = summary["malicious"]
-    severity = "high" if flagged else "low"
-    finding = signal(
-        "VirusTotal Reputation",
-        f"{flagged}/{summary['total']} engines flagged",
-        severity,
-        f"VirusTotal vendor breakdown: {summary['clean']} clean, {summary['unrated']} unrated, {summary['malicious']} malicious.",
-        flagged == 0
-    )
-    finding["verified"] = True
-    return finding
-
 def score_from_signals(signals):
     high_count = sum(1 for item in signals if item["severity"] == "high")
     medium_count = sum(1 for item in signals if item["severity"] == "medium")
@@ -188,7 +79,6 @@ def score_from_signals(signals):
         "Google Safe Browsing",
         "Google Web Risk",
         "PhishTank",
-        "VirusTotal Reputation",
         "Crypto Pattern",
         "Ethereum Approval Pattern",
         "Token Permit Pattern",

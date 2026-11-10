@@ -76,30 +76,19 @@ def test_safe_link_requires_complete_verification():
     assert "continueSafelyButton" not in incomplete
 
 
-def test_optional_virustotal_outage_is_labeled_without_blocking_required_checks():
+def test_retired_provider_data_does_not_render_or_block_required_checks():
     html, elements = render_result(
         "SAFE", "safe", "URL", "https://example.com/",
         virus_total={
-            "mode": "unavailable",
-            "summary": {"clean": 0, "unrated": 0, "malicious": 0, "total": 0},
-            "statusMessage": "VirusTotal is not enabled.",
+            "mode": "live",
+            "summary": {"clean": 1, "unrated": 0, "malicious": 0, "total": 1},
+            "statusMessage": "Retired provider data must not be shown.",
         },
     )
 
     assert elements["continueSafelyButton"][1]["href"] == "https://example.com/"
-    assert "Optional VirusTotal enrichment" in html
-    assert "Required URL checks use Google reputation" in html
-    assert "VirusTotal vendor scan" not in html
-
-
-def test_disabled_virustotal_has_no_result_panel():
-    html, _ = render_result(
-        "SAFE", "safe", "URL", "https://example.com/",
-        virus_total={"mode": "disabled", "summary": {"total": 0}},
-    )
-
-    assert "Optional VirusTotal enrichment" not in html
-    assert "View on VirusTotal" not in html
+    assert "VirusTotal" not in html
+    assert "Retired provider data" not in html
 
 
 def test_non_url_payload_is_shown_exactly_and_cannot_be_reported_as_url():

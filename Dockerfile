@@ -19,6 +19,7 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 # System deps only - no build tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libzbar0 \
+    libatomic1 \
     curl \
     && rm -rf /var/lib/apt/lists/*
 

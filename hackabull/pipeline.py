@@ -69,8 +69,6 @@ from .scoring import risk_from_score
 from .scoring import score_from_signals
 from .scoring import severity_rank
 from .scoring import signal
-from .scoring import virustotal_breakdown_signal
-from .scoring import virustotal_lookup_result
 from .security import validate_public_url
 
 # =============================================================================
@@ -105,7 +103,7 @@ def verification_coverage(signals):
 
 def known_malicious_reputation(signals):
     return any(
-        item.get("check") in ("Google Safe Browsing", "Google Web Risk", "PhishTank", "VirusTotal Reputation")
+        item.get("check") in ("Google Safe Browsing", "Google Web Risk", "PhishTank")
         and item.get("severity") == "high"
         and item.get("verified") is not False
         and item.get("passed") is False
@@ -143,10 +141,9 @@ async def analyze_full_pipeline(target_url, qr_image=None):
     if not fast_path_ok:
         fast_path_ok, _ = should_short_circuit(normalized)
     if fast_path_ok:
-        google_signal, phish_signal, vt_result, fast_redirect = await asyncio.gather(
+        google_signal, phish_signal, fast_redirect = await asyncio.gather(
             asyncio.to_thread(google_reputation_signal, normalized),
             asyncio.to_thread(phishtank_signal, normalized),
-            asyncio.to_thread(virustotal_lookup_result, normalized),
             asyncio.to_thread(trace_redirect_chain, normalized),
         )
         if is_official:
@@ -165,14 +162,8 @@ async def analyze_full_pipeline(target_url, qr_image=None):
                 "This popular HTTPS destination passed structural safety screening. Reputation and redirect checks were also required.",
                 True,
             )
-        vt_finding = virustotal_breakdown_signal(vt_result)
-        optional_checks = [] if vt_result.get("mode") == "disabled" or vt_finding.get("verified") is True else [{
-            "check": "VirusTotal Reputation", "status": vt_result.get("mode", "unavailable"),
-            "detail": vt_result.get("statusMessage", "Optional enrichment unavailable."),
-        }]
         fast_signals = sorted(
-            [allowlist_signal, google_signal, phish_signal, fast_redirect["signal"],
-             *([vt_finding] if vt_finding.get("verified") is True else [])],
+            [allowlist_signal, google_signal, phish_signal, fast_redirect["signal"]],
             key=severity_rank,
         )
         verification_status, unverified_checks = verification_coverage(fast_signals)
@@ -206,12 +197,12 @@ async def analyze_full_pipeline(target_url, qr_image=None):
                 "threatType": fast_type,
                 "verdict": fast_verdict,
                 "signals": fast_signals,
-                "virusTotal": None if vt_result.get("mode") == "disabled" else vt_result,
+                "virusTotal": None,
                 "domainAge": None,
                 "redirectChain": fast_redirect.get("redirectChain", []),
                 "verificationStatus": verification_status,
                 "unverifiedChecks": unverified_checks,
-                "optionalChecks": optional_checks,
+                "optionalChecks": [],
                 "scannedAt": datetime.utcnow().isoformat() + "Z",
                 "fastPath": {"hit": True, "reason": "first_party" if is_official else "tranco_allowlist"},
             }
@@ -236,10 +227,7 @@ async def analyze_full_pipeline(target_url, qr_image=None):
 
     async def inspect_hop(url):
         async with reputation_slots:
-            return await asyncio.gather(
-                asyncio.to_thread(check_reputation_signals, url),
-                asyncio.to_thread(virustotal_lookup_result, url),
-            )
+            return await asyncio.to_thread(check_reputation_signals, url)
 
     hop_task = asyncio.gather(*(inspect_hop(url) for url in hop_urls))
     domain_task = asyncio.to_thread(check_domain_intelligence, final_url)
@@ -253,7 +241,7 @@ async def analyze_full_pipeline(target_url, qr_image=None):
         domain_task, crypto_task, ml_task, hop_task
     )
     required_hop_signals = []
-    for checked_url, (reputation_signals, _) in zip(hop_urls, hop_results):
+    for checked_url, reputation_signals in zip(hop_urls, hop_results):
         for item in reputation_signals:
             finding = dict(item)
             finding["checkedUrl"] = checked_url
@@ -262,11 +250,6 @@ async def analyze_full_pipeline(target_url, qr_image=None):
         finding = signal("Google Reputation", "Unverified (no result)", "medium", "The reputation provider returned no result.", False)
         finding["verified"] = False
         required_hop_signals.append(finding)
-    vt_hop_results = [result for _, result in hop_results]
-    vt_hop_signals = [virustotal_breakdown_signal(result) for result in vt_hop_results]
-    for checked_url, finding in zip(hop_urls, vt_hop_signals):
-        finding["checkedUrl"] = checked_url
-
     def most_concerning_index(findings):
         for index, finding in enumerate(findings):
             if finding.get("severity") == "high" and finding.get("passed") is False:
@@ -280,22 +263,7 @@ async def analyze_full_pipeline(target_url, qr_image=None):
     phish_hop_signals = [item for item in required_hop_signals if item["check"] == "PhishTank"]
     google_signal = google_hop_signals[most_concerning_index(google_hop_signals)] if google_hop_signals else None
     phish_signal = phish_hop_signals[most_concerning_index(phish_hop_signals)] if phish_hop_signals else None
-    active_vt_hops = [
-        (result, finding) for result, finding in zip(vt_hop_results, vt_hop_signals)
-        if result.get("mode") != "disabled"
-    ]
-    if active_vt_hops:
-        vt_index = most_concerning_index([finding for _, finding in active_vt_hops])
-        vt_result, vt_signal = active_vt_hops[vt_index]
-    else:
-        vt_result = vt_signal = None
     _, hop_unverified_checks = verification_coverage(required_hop_signals)
-    optional_checks = [
-        {"check": "VirusTotal Reputation", "status": result.get("mode", "unavailable"),
-         "detail": result.get("statusMessage", "Optional enrichment unavailable."), "checkedUrl": url}
-        for url, result, finding in zip(hop_urls, vt_hop_results, vt_hop_signals)
-        if result.get("mode") != "disabled" and finding.get("verified") is not True
-    ]
 
     signals = []
     signals.extend(domain_result if isinstance(domain_result, list) else [domain_result])
@@ -305,8 +273,6 @@ async def analyze_full_pipeline(target_url, qr_image=None):
         signals.append(google_signal)
     if phish_signal:
         signals.append(phish_signal)
-    if vt_signal and vt_signal.get("verified") is True:
-        signals.append(vt_signal)
     signals.extend(crypto_signals)
     # ML signal is kept around so the score blend + audit trail can use it,
     # but it's NOT appended to the user-visible signals list by default —
@@ -343,12 +309,12 @@ async def analyze_full_pipeline(target_url, qr_image=None):
         "threatType": threat_type_for_analysis(overall_risk, signals, ml_result),
         "verdict": verdict_with_ml(ai_verdict["verdict"], final_score, ml_result, signals),
         "signals": signals,
-        "virusTotal": vt_result,
+        "virusTotal": None,
         "domainAge": domain_age,
         "redirectChain": redirect_result.get("redirectChain", []),
         "verificationStatus": verification_status,
         "unverifiedChecks": unverified_checks,
-        "optionalChecks": optional_checks,
+        "optionalChecks": [],
         "scannedAt": datetime.utcnow().isoformat() + "Z"
     }
 

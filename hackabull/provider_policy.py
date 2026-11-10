@@ -26,16 +26,6 @@ def legacy_safe_browsing_enabled():
     return bool(legacy_safe_browsing_key()) and _enabled("SAFESCAN_ENABLE_NONCOMMERCIAL_SAFE_BROWSING")
 
 
-def virustotal_key():
-    if not _enabled("SAFESCAN_VIRUSTOTAL_LICENSED"):
-        return ""
-    return os.getenv("VIRUSTOTAL_API_KEY", "").strip()
-
-
-def virustotal_submit_unknown_urls():
-    return bool(virustotal_key()) and _enabled("SAFESCAN_VIRUSTOTAL_SUBMIT_UNKNOWN_URLS")
-
-
 def reputation_configuration():
     """Report configuration and local-feed state without claiming live uptime."""
     from .phish_feed import feed_status
@@ -50,18 +40,10 @@ def reputation_configuration():
     else:
         google = "unconfigured"
 
-    if virustotal_key():
-        virustotal = "licensed_configured"
-    elif os.getenv("VIRUSTOTAL_API_KEY", "").strip():
-        virustotal = "license_confirmation_required"
-    else:
-        virustotal = "unconfigured"
-
     return {
         "google": google,
         "phishtank": phishtank["state"],
         "phishtankFeedAgeSeconds": phishtank.get("ageSeconds"),
-        "virustotal": virustotal,
         "completeChecksConfigured": google in {"web_risk_configured", "safe_browsing_noncommercial_enabled"}
         and phishtank["state"] == "fresh",
     }

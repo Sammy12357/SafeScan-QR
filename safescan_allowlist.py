@@ -3,16 +3,14 @@ Tranco top-N domain allowlist short-circuit.
 
 Why this exists
 ---------------
-The full analyzer pipeline (`analyze_full_pipeline` in hackabull.py) runs an
-EfficientNet QR image classifier, an LLM verdict generator, a VirusTotal
-lookup, redirect tracing, and Google Safe Browsing in parallel for every
-single URL. That's 5-10 seconds plus paid API spend on every scan.
+The full analyzer pipeline runs an EfficientNet QR image classifier,
+redirect tracing, Google Web Risk, and a local PhishTank feed lookup.
+External URL checks can add latency to every scan.
 
 For QR codes that point at the long tail of mainstream websites (Google,
-YouTube, Apple, GitHub, Wikipedia, etc.) the ML+LLM stages add zero signal
-- those domains are obviously fine. We can short-circuit them with a small
-allowlist lookup and only run the cheap reputation checks (Google Safe
-Browsing) before returning a SAFE verdict.
+YouTube, Apple, GitHub, Wikipedia, etc.) the optional ML stage often adds
+little signal. We can short-circuit it with a small allowlist lookup while
+still requiring reputation and redirect checks before returning SAFE.
 
 What this is NOT
 ----------------
@@ -384,8 +382,8 @@ def is_first_party(url: str) -> bool:
 
 def should_short_circuit(url: str) -> tuple[bool, str]:
     """
-    Decide whether the analyzer can skip the ML / LLM / VirusTotal stages
-    for this URL. Caller should still run Google Safe Browsing on the
+    Decide whether the analyzer can skip the ML stage for this URL.
+    Caller must still run Google Web Risk, PhishTank, and redirect checks on the
     fast path - this short-circuit does NOT guarantee safety on its own.
 
     Returns (ok, reason). When ok is False, reason explains why we fell

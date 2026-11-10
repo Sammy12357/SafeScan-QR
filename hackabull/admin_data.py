@@ -397,7 +397,6 @@ PRIVACY_POLICY_HTML = f"""
 <ul>
   <li>Google for OAuth authentication and, when configured, Google Web Risk checks of web URLs.</li>
   <li>PhishTank supplies a phishing feed that SafeScan checks locally; individual scanned URLs are not sent to PhishTank.</li>
-  <li>VirusTotal receives scanned web URLs only if a licensed lookup is explicitly enabled. User identity is not included.</li>
   <li>Anthropic or OpenAI for AI analysis. URL payloads and risk signals may be sent, but direct personal identifiers are excluded.</li>
   <li>Solana RPC providers for wallet interactions involving public blockchain data.</li>
   <li>Render.com for hosting infrastructure.</li>

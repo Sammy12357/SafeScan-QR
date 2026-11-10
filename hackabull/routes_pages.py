@@ -377,7 +377,6 @@ async def risk_engine_page(request: Request):
         <ul>
           <li>Google Web Risk threat matches when configured (or Safe Browsing in eligible noncommercial setups).</li>
           <li>A locally matched PhishTank feed of verified, active phishing URLs.</li>
-          <li>VirusTotal engine summary when a live lookup is configured and returns a result.</li>
           <li>A visible incomplete-check state when a reputation or redirect lookup is unavailable.</li>
           <li>Local URL cache so repeated scans can reuse recent verdicts quickly.</li>
           <li>Admin-confirmed reports and blocklist decisions.</li>
@@ -761,7 +760,7 @@ async def data_processing_log(request: Request, secret: str = Query("")):
     admin_user = require_role_user(request, "admin")
     categories = [
         ("OAuth profile", "Authentication", "Contractual necessity", "Google, Render", "Until deletion or 2 years inactivity"),
-        ("QR payload URLs", "Risk analysis, scan history, and leaderboard records", "Legitimate interest", "Google Web Risk when configured; AI provider if enabled; VirusTotal only with licensed opt-in. PhishTank feed checked locally", "Long-term account record until deletion is requested or account is removed"),
+        ("QR payload URLs", "Risk analysis, scan history, and leaderboard records", "Legitimate interest", "Google Web Risk when configured; AI provider if enabled; PhishTank feed checked locally", "Long-term account record until deletion is requested or account is removed"),
         ("Wallet address", "Airdrop eligibility", "Contractual necessity", "Solana RPC providers", "Until disconnect or deletion"),
         ("Consent records", "Compliance evidence", "Legal obligation", "Internal only", "5 years"),
         ("IP hash and user agent", "Fraud prevention", "Legitimate interest", "Render", "90 days unless tied to compliance record"),

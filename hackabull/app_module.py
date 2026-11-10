@@ -200,7 +200,7 @@ CSP_POLICY = "; ".join([
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: blob: https://lh3.googleusercontent.com https://ssl.gstatic.com https://www.gstatic.com",
-    # VirusTotal, Google Safe Browsing, Solana RPC, and the AI verdict
+    # URL reputation providers, Solana RPC, and the AI verdict
     # providers (Anthropic/OpenAI) are all called server-side via `requests`
     # - the browser never connects to them directly, so they're deliberately
     # left out of connect-src to keep the XSS exfiltration surface minimal.

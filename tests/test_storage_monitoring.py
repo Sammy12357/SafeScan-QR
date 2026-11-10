@@ -64,7 +64,7 @@ def test_provider_health_reports_configuration_without_secrets(tmp_path, monkeyp
     monkeypatch.setenv("GOOGLE_SAFE_BROWSING_API_KEY", "legacy-secret-value")
     monkeypatch.delenv("SAFESCAN_ENABLE_NONCOMMERCIAL_SAFE_BROWSING", raising=False)
     monkeypatch.setenv("VIRUSTOTAL_API_KEY", "vt-secret-value")
-    monkeypatch.delenv("SAFESCAN_VIRUSTOTAL_LICENSED", raising=False)
+    monkeypatch.setenv("SAFESCAN_VIRUSTOTAL_LICENSED", "true")
     _, client, _ = load_app(tmp_path, monkeypatch)
 
     degraded = client.get("/health/providers")
@@ -78,7 +78,6 @@ def test_provider_health_reports_configuration_without_secrets(tmp_path, monkeyp
             "google": "legacy_key_disabled",
             "phishtank": "terms_not_confirmed",
             "phishtankFeedAgeSeconds": None,
-            "virustotal": "license_confirmation_required",
             "completeChecksConfigured": False,
         },
     }
@@ -99,7 +98,7 @@ def test_provider_health_reports_configuration_without_secrets(tmp_path, monkeyp
     assert configured.json()["status"] == "configured"
     assert configured.json()["providers"]["google"] == "web_risk_configured"
     assert configured.json()["providers"]["phishtank"] == "fresh"
-    assert configured.json()["providers"]["virustotal"] == "license_confirmation_required"
+    assert "virustotal" not in configured.json()["providers"]
     assert configured.json()["providers"]["completeChecksConfigured"] is True
     assert "web-risk-secret-value" not in configured.text
     assert "phish-test-key" not in configured.text

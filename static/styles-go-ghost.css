@@ -194,11 +194,6 @@
   .domain-age-grid { grid-template-columns: 1fr 1fr; }
   .ml-panel-top { flex-direction: column; }
   .ml-model-pill { max-width: 100%; }
-  .vt-panel-top { flex-direction: column; }
-  .vt-report-links { justify-items: start; }
-  .vt-mobile-toggle { display: block; }
-  .vt-engine-groups { max-height: 0; overflow: hidden; transition: max-height 0.28s ease; }
-  .vt-panel.vt-mobile-open .vt-engine-groups { max-height: 230px; overflow: auto; }
   .modal-actions { grid-template-columns: 1fr; }
   .consent-banner, .rights-grid { grid-template-columns: 1fr; }
   .consent-actions { justify-content: stretch; }

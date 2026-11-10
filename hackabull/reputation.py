@@ -55,18 +55,16 @@ from .provider_policy import legacy_safe_browsing_enabled
 from .provider_policy import legacy_safe_browsing_key
 from .provider_policy import web_risk_key
 from .scoring import signal
-from .scoring import virustotal_breakdown_signal
-from .scoring import virustotal_lookup_result
 from .security import validate_public_url
 
 # =============================================================================
-# THREAT TYPING & EXTERNAL REPUTATION (Google Safe Browsing / VirusTotal)
+# THREAT TYPING & EXTERNAL REPUTATION (Google Web Risk / PhishTank)
 # =============================================================================
 def threat_type_for_analysis(overall_risk, signals, ml_results=None):
     """Threat type label shown to the user.
 
     Prefer the most severe deterministic rule signal — those are explainable
-    (e.g. "Domain Age", "VirusTotal Reputation"). Only fall back to the ML
+    (e.g. "Domain Age", "Google Web Risk"). Only fall back to the ML
     label when the overall risk is already high AND no rule signal qualifies,
     so a misfiring URL classifier can't single-handedly label a known-good
     domain as "Malicious QR".
@@ -92,12 +90,12 @@ def mock_analysis_response(target_url):
     normalized = normalize_url(target_url)
     signals = [
         signal("Domain Age", "8 days old", "high", "Domain registered less than 30 days ago, a common phishing indicator.", False),
-        signal("VirusTotal Reputation", "12/90 engines flagged", "high", "Multiple reputation engines flagged this destination as unsafe.", False),
+        signal("Brand Impersonation", "Lookalike domain detected", "high", "The domain resembles a trusted brand and needs independent verification.", False),
         signal("Redirect Chain", "2 redirect hops detected", "medium", "The QR destination redirects before reaching the final landing page.", False),
         signal("URL Shortener", "Shortener found in chain", "medium", "Shortened URLs can hide the true destination from users.", False),
         signal("TLD Risk", "Non-standard TLD .xyz", "low", "The domain uses a TLD that appears frequently in disposable campaigns.", False),
     ]
-    verdict = "This QR code shows multiple high-risk signals, including a newly registered domain and reputation engine detections. Treat it as a likely phishing or wallet-drain attempt unless you can independently verify the sender."
+    verdict = "This QR code shows multiple high-risk signals, including a newly registered domain and lookalike branding. Treat it as a likely phishing or wallet-drain attempt unless you can independently verify the sender."
     return {
         "url": normalized,
         "overallRisk": "high",
@@ -213,11 +211,3 @@ def google_reputation_signal(target_url):
     )
     finding["verified"] = False
     return finding
-
-
-
-def virustotal_reputation_signal(target_url):
-    # Keep the standalone reputation endpoint aligned with the scanner's
-    # licensed-provider and incomplete-verification behavior.
-    return virustotal_breakdown_signal(virustotal_lookup_result(target_url))
-
