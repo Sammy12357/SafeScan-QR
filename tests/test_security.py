@@ -53,7 +53,8 @@ def test_security_headers_are_present_on_health_response(security_app):
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert "max-age=31536000" in response.headers["Strict-Transport-Security"]
     assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
-    assert "https://www.youtube-nocookie.com" in response.headers["Content-Security-Policy"]
+    assert "frame-src https://accounts.google.com" in response.headers["Content-Security-Policy"]
+    assert "youtube.com" not in response.headers["Content-Security-Policy"]
     assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
     assert "Server" not in response.headers
 

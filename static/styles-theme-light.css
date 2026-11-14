@@ -93,7 +93,6 @@
 }
 
 :root[data-theme="light"] .screen-grid,
-:root[data-theme="light"] .scanner-video-frame,
 :root[data-theme="light"] .qr-frame,
 :root[data-theme="light"] .qr-camera-stage {
   background: #f4f5f7;

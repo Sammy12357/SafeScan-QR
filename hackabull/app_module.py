@@ -205,7 +205,7 @@ CSP_POLICY = "; ".join([
     # - the browser never connects to them directly, so they're deliberately
     # left out of connect-src to keep the XSS exfiltration surface minimal.
     "connect-src 'self' https://safescan-qr.onrender.com https://accounts.google.com https://cdn.jsdelivr.net",
-    "frame-src https://accounts.google.com https://www.youtube.com https://www.youtube-nocookie.com",
+    "frame-src https://accounts.google.com",
     "object-src 'none'",
     "frame-ancestors 'none'",
     "form-action 'self'",
