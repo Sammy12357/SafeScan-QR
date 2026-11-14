@@ -5,6 +5,7 @@ import importlib
 import json
 import sqlite3
 import sys
+from types import ModuleType
 
 import httpx
 import pytest
@@ -233,3 +234,43 @@ def test_same_email_needs_no_delegation_attestation(ghost_app):
         assert conn.execute(
             "SELECT COUNT(*) FROM audit_logs WHERE action = 'go_ghost.delegated_attestation'"
         ).fetchone()[0] == 0
+
+
+def test_browser_closes_when_page_creation_is_cancelled(monkeypatch):
+    from removals.engine import RemovalProfile, run_broker_removal
+
+    closed = []
+
+    class Browser:
+        async def new_page(self, **_kwargs):
+            raise asyncio.CancelledError()
+
+        async def close(self):
+            closed.append(True)
+
+    class Chromium:
+        async def launch(self, **_kwargs):
+            return Browser()
+
+    class Playwright:
+        chromium = Chromium()
+
+    class Manager:
+        async def __aenter__(self):
+            return Playwright()
+
+        async def __aexit__(self, *_args):
+            return False
+
+    api = ModuleType("playwright.async_api")
+    api.TimeoutError = TimeoutError
+    api.async_playwright = lambda: Manager()
+    monkeypatch.setitem(sys.modules, "playwright", ModuleType("playwright"))
+    monkeypatch.setitem(sys.modules, "playwright.async_api", api)
+
+    async def run():
+        with pytest.raises(asyncio.CancelledError):
+            await run_broker_removal("fastpeoplesearch", RemovalProfile(name="Person", email="person@example.com"))
+
+    asyncio.run(run())
+    assert closed == [True]
