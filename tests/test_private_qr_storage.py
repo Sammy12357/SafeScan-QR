@@ -124,8 +124,11 @@ def test_camera_upload_bounds_and_client_budget_cannot_use_forged_xff(tmp_path, 
     )
     assert streamed.status_code == 413
 
-    module.RATE_LIMITS["qr_upload_client:testclient"] = [time.time()] * 90
-    blocked = client.post(
+    # TestClient's default "testclient" peer is not an IP literal. Use a real
+    # socket-style peer so this checks the same identity path as production.
+    primary = TestClient(module.qr_app, base_url="https://testserver", client=("198.51.100.10", 50000))
+    module.RATE_LIMITS["qr_upload_client:198.51.100.10"] = [time.time()] * 90
+    blocked = primary.post(
         "/search_qr_api",
         data={"manual_url": "WIFI:T:WPA;S:Cafe;P:test;;"},
         headers={"x-forwarded-for": "198.51.100.77", "cf-connecting-ip": "198.51.100.88"},

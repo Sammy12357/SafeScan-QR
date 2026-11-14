@@ -55,7 +55,7 @@ from .audit import now_iso
 from .config import RATE_LIMITS
 from .lowlevel import normalize_url
 from .request_helpers import make_id
-from .request_helpers import request_ip
+from .client_ip import rate_limit_identity
 import certifi
 import urllib3
 from requests.structures import CaseInsensitiveDict
@@ -64,7 +64,7 @@ from requests.structures import CaseInsensitiveDict
 # RATE LIMITING, PAYLOAD VALIDATION & SSRF GUARDS
 # =============================================================================
 def enforce_rate_limit(request, bucket, limit, window_seconds, user_key=None):
-    identity = user_key or request_ip(request)
+    identity = user_key or rate_limit_identity(request)
     key = f"{bucket}:{identity}"
     now = time.time()
     hits = [stamp for stamp in RATE_LIMITS.get(key, []) if now - stamp < window_seconds]

@@ -11,7 +11,6 @@ import mimetypes
 import re
 import asyncio
 import base64
-import ipaddress
 import secrets
 import socket
 import time
@@ -52,6 +51,7 @@ from storage import upload_bytes as storage_upload_bytes
 from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party
 import safescan_model_calibration as sm_calibration
 from .audit import SafeScanError
+from .client_ip import rate_limit_identity
 from .auth import create_session
 from .auth import get_session_user
 from .config import ACTIVE_SCANS
@@ -143,20 +143,8 @@ QR_REQUEST_READ_TIMEOUT_SECONDS = 15
 
 
 def qr_request_client_identity(request: Request):
-    """Use Render's edge-authored client IP, never caller-supplied XFF.
-
-    On Render, Cloudflare overwrites CF-Connecting-IP before the request
-    reaches the app. Outside Render, the ASGI peer is the only trusted source.
-    A missing/invalid edge header disables the per-client bucket rather than
-    grouping every visitor behind one Render load-balancer address.
-    """
-    if os.getenv("RENDER", "").lower() == "true":
-        candidate = request.headers.get("cf-connecting-ip", "")
-        try:
-            return str(ipaddress.ip_address(candidate))
-        except ValueError:
-            return None
-    return request.client.host if request.client else None
+    """Apply QR upload limits even when Render's edge identity is missing."""
+    return rate_limit_identity(request)
 
 qr_app.add_middleware(
     CORSMiddleware,
