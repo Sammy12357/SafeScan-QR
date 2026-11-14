@@ -345,22 +345,26 @@ def decode_qr_image(image, *, is_pure=False):
             if found:
                 return found
 
-        # Tier C: ZBar is a cheap independent second opinion.
-        found = run_tier("pyzbar", lambda: _pyzbar_barcodes(work, decode, scale_x=scale_x, scale_y=scale_y))
-        if found:
-            return found
+        # Tier C: ZBar is a cheap independent second opinion. A single ZBar
+        # hit is not enough to accept an image: enhanced ZXing passes can
+        # expose another physical QR that ZBar missed (for example a poster
+        # with several codes under uneven lighting).
+        secondary_found = run_tier("pyzbar", lambda: _pyzbar_barcodes(work, decode, scale_x=scale_x, scale_y=scale_y))
+        if len(secondary_found) > 1:
+            return secondary_found
 
         # Tier D is optional and disabled until its Render resource cost is measured.
         if os.getenv("QR_WECHAT_ENABLED", "false").lower() in ("1", "true", "yes", "on"):
             found = run_tier("wechat", lambda: _wechat_barcodes(work, scale_x=scale_x, scale_y=scale_y))
-            if found:
-                return found
+            secondary_found = _distinct_barcodes([*secondary_found, *found])
+            if len(secondary_found) > 1:
+                return secondary_found
 
         # Tier E: preserve low thresholds for stylized/logo codes. Collect all
         # distinct results across candidates before returning, so a candidate
         # that exposes a second QR cannot silently narrow an ambiguous image.
         def enhanced():
-            all_found = []
+            all_found = list(secondary_found)
             candidates = _enhanced_candidates(work, Image, ImageEnhance, ImageFilter, ImageOps)
             try:
                 for candidate in candidates:
@@ -387,7 +391,10 @@ def decode_qr_image(image, *, is_pure=False):
                 candidates.close()
             return all_found
 
-        return run_tier("enhanced", enhanced)
+        found = run_tier("enhanced", enhanced)
+        if secondary_found and len(found) < 2 and time.monotonic() >= deadline:
+            raise QRDecodeSafetyError("QR inspection exceeded the time limit before checking for a second code.")
+        return found
     finally:
         QR_DECODE_SECONDS.observe(time.monotonic() - started)
         if work is not gray:
