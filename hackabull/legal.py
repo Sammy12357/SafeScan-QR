@@ -75,18 +75,25 @@ def get_user_export(email, user_id):
         conn.row_factory = sqlite3.Row
         conn.execute("BEGIN")
         if not unique_email_owner(conn, email, user_id):
-            count = sum(conn.execute(
-                f"SELECT COUNT(*) FROM {table} WHERE user_id = ? OR lower(email) = lower(?)",
-                (user_id, email),
-            ).fetchone()[0] for table in ("scans", "scan_events", "scan_history"))
+            count_queries = (
+                "SELECT COUNT(*) FROM scans WHERE user_id = ? OR lower(email) = lower(?)",
+                "SELECT COUNT(*) FROM scan_events WHERE user_id = ? OR lower(email) = lower(?)",
+                "SELECT COUNT(*) FROM scan_history WHERE user_id = ? OR lower(email) = lower(?)",
+            )
+            count = sum(conn.execute(query, (user_id, email)).fetchone()[0] for query in count_queries)
             if count:
                 logging.getLogger(__name__).warning(
                     "Withheld %d scan rows from ambiguous privacy export pending ownership review", count
                 )
             return None
-        owner_where = "user_id = ? OR ((user_id IS NULL OR user_id = '') AND lower(email) = lower(?))"
-        scans = [dict(row) for row in conn.execute(f"SELECT * FROM scans WHERE {owner_where}", (user_id, email))]
-        events = [dict(row) for row in conn.execute(f"SELECT * FROM scan_events WHERE {owner_where}", (user_id, email))]
+        scans = [dict(row) for row in conn.execute(
+            "SELECT * FROM scans WHERE user_id = ? OR ((user_id IS NULL OR user_id = '') AND lower(email) = lower(?))",
+            (user_id, email),
+        )]
+        events = [dict(row) for row in conn.execute(
+            "SELECT * FROM scan_events WHERE user_id = ? OR ((user_id IS NULL OR user_id = '') AND lower(email) = lower(?))",
+            (user_id, email),
+        )]
         requests_ = [dict(row) for row in conn.execute("SELECT * FROM data_requests WHERE email = ?", (email,))]
         age = [dict(row) for row in conn.execute("SELECT * FROM age_confirmations WHERE email = ?", (email,))]
         opt_outs = [dict(row) for row in conn.execute("SELECT * FROM privacy_opt_outs WHERE email = ?", (email,))]
@@ -97,10 +104,18 @@ def delete_user_data(email, user_id):
         conn.execute("BEGIN IMMEDIATE")
         if not unique_email_owner(conn, email, user_id):
             return False
-        owner_where = "user_id = ? OR ((user_id IS NULL OR user_id = '') AND lower(email) = lower(?))"
-        conn.execute(f"DELETE FROM scans WHERE {owner_where}", (user_id, email))
-        conn.execute(f"DELETE FROM scan_events WHERE {owner_where}", (user_id, email))
-        conn.execute(f"DELETE FROM scan_history WHERE {owner_where}", (user_id, email))
+        conn.execute(
+            "DELETE FROM scans WHERE user_id = ? OR ((user_id IS NULL OR user_id = '') AND lower(email) = lower(?))",
+            (user_id, email),
+        )
+        conn.execute(
+            "DELETE FROM scan_events WHERE user_id = ? OR ((user_id IS NULL OR user_id = '') AND lower(email) = lower(?))",
+            (user_id, email),
+        )
+        conn.execute(
+            "DELETE FROM scan_history WHERE user_id = ? OR ((user_id IS NULL OR user_id = '') AND lower(email) = lower(?))",
+            (user_id, email),
+        )
         conn.execute("DELETE FROM users WHERE google_id = ?", (user_id,))
         conn.execute("DELETE FROM age_confirmations WHERE email = ?", (email,))
     return True
