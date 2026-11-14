@@ -130,8 +130,9 @@ scanner uploads do not spill to a disk file.
   account scan-history row. The server audit log records scan metadata, not the
   JPEG bytes.
 - Decoder metrics contain tier, outcome, and duration. Do not add payloads,
-  images, device IDs, or URLs to labels. With `SCANNER_V3=true`, the browser
-  also sends fixed-category scanner counts to `/api/telemetry/scan`; the server
+  images, device IDs, or URLs to labels. With `SCANNER_V3=true` and a current
+  **Accept All** analytics choice, the browser sends fixed-category scanner
+  counts to `/api/telemetry/scan`; the server
   aggregates them into counters and discards individual events. The event
   contains no QR text, photo, device identifier, session cookie, or free-form
   guidance message.

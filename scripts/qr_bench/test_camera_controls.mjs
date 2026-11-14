@@ -84,6 +84,7 @@ document.createElement = (tag) => tag === "div" ? modal : {
 };
 
 const localValues = new Map();
+localValues.set("safeScanConsent", JSON.stringify({ consentType: "all", timestamp: new Date().toISOString() }));
 const window = new Emitter();
 window.location = { origin: "https://sqafe.com" };
 window.isSecureContext = true;
@@ -275,6 +276,16 @@ assert.ok(telemetryEvents.some((event) => event.engine === "unavailable" &&
   event.stage === "capture" && event.outcome === "offered" && event.frames_tried === 1));
 await elements[".qr-camera-server-send"].dispatch("click");
 assert.equal(sentAfterWorkerFailure.type, "image/jpeg");
+
+localValues.set("safeScanConsent", JSON.stringify({ consentType: "essential_only", timestamp: new Date().toISOString() }));
+const priorEvents = telemetryEvents.length;
+scenario = "single";
+const privacyResults = [];
+window.SafeScanQrCamera.open({ onResult: (payload) => privacyResults.push(payload) });
+await eventually(() => !elements[".qr-camera-capture"].disabled, "privacy preview");
+await elements[".qr-camera-capture"].dispatch("click");
+await eventually(() => privacyResults.length === 1, "privacy scan result");
+assert.equal(telemetryEvents.length, priorEvents, "essential-only consent must suppress scanner analytics");
 assert.ok(telemetryEvents.some((event) => event.stage === "capture" && event.outcome === "success"));
 assert.ok(telemetryEvents.some((event) => event.stage === "capture" && event.outcome === "ambiguous"));
 assert.ok(telemetryEvents.some((event) => event.stage === "server_retry" && event.outcome === "sent"));

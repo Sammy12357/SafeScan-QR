@@ -26,6 +26,14 @@
 
   function postScanCount(event) {
     if (typeof window.fetch !== "function") return;
+    // The site's privacy banner makes scanner analytics optional. Treat an
+    // absent, expired, essential-only, or custom choice as no consent.
+    try {
+      const choice = JSON.parse(window.localStorage.getItem("safeScanConsent") || "null");
+      const age = Date.now() - Date.parse(choice?.timestamp);
+      if (choice?.consentType !== "all" || !Number.isFinite(age) || age < 0 ||
+          age >= 365 * 24 * 60 * 60 * 1000) return;
+    } catch (_err) { return; }
     // keepalive is beacon-like on navigation. Omit account cookies and referrer.
     try {
       void window.fetch("/api/telemetry/scan", {

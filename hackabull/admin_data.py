@@ -378,7 +378,7 @@ PRIVACY_POLICY_HTML = f"""
   <li>Cookies and local storage values for authentication state, consent state, referral state, wallet state, and local report queues.</li>
 </ul>
 <p>Live camera preview frames are checked in your browser. If the local reader fails, SafeScan sends a captured photo to its server only after you choose “Send photo to SafeScan.” The server processes that photo in memory to read the QR code and does not store the image. The decoded payload follows the scan-history rules described here; signed-in scans may be saved.</p>
-<p>The upgraded scanner sends aggregate performance counts, such as decoder type, elapsed time, outcome, and guidance category. These counts do not include QR text, photos, or device identifiers.</p>
+<p>If you accept optional analytics, the upgraded scanner sends aggregate performance counts, such as decoder type, elapsed time, outcome, and guidance category. These counts do not include QR text, photos, or device identifiers.</p>
 <h2>2. Why We Collect It and Legal Basis</h2>
 <ul>
   <li>Authentication: contractual necessity.</li>
