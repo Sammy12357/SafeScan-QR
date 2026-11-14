@@ -51,6 +51,7 @@ from safescan_allowlist import should_short_circuit, registrable_domain as allow
 import safescan_model_calibration as sm_calibration
 from .request_helpers import make_id
 from .request_helpers import request_ip
+from .security_alerts import record_audit_event
 
 # =============================================================================
 # ERRORS, AUDIT LOGGING & METADATA HELPERS
@@ -107,4 +108,6 @@ def audit_log(action, request=None, actor_user_id=None, target_type=None, target
             )
     except sqlite3.Error:
         pass
+    finally:
+        record_audit_event(action, request.url.path if request else "")
 

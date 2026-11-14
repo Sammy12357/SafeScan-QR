@@ -575,7 +575,13 @@ async def alpha_solana_payment_verify(request: Request):
 @qr_app.post("/webhooks/stripe")
 async def stripe_webhook(request: Request):
     payload = await request.body()
-    verify_stripe_webhook_signature(payload, request.headers.get("stripe-signature", ""))
+    try:
+        verify_stripe_webhook_signature(payload, request.headers.get("stripe-signature", ""))
+    except HTTPException as exc:
+        if exc.status_code == 400:
+            # No signature, payload, or visitor identifier enters this event.
+            audit_log("stripe.signature_failed")
+        raise
     try:
         event = json.loads(payload.decode("utf-8"))
     except json.JSONDecodeError as exc:
