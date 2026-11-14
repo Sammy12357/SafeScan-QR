@@ -68,14 +68,18 @@ def test_data_request_accepts_full_length_details_without_truncation(field_app):
 
 
 def test_waitlist_rejects_long_email_before_rate_keys_or_storage(field_app):
-    client, db_path, _ = field_app
+    client, db_path, monkeypatch = field_app
 
     assert client.post("/waitlist", data={"email": "a" * 255}).status_code == 400
     assert _rows(db_path, "waitlist_signups") == 0
+    pages = importlib.import_module("hackabull.routes_pages")
+    monkeypatch.setattr(pages, "email_sending_configured", lambda: True)
+    monkeypatch.setattr(pages, "send_email", lambda *_args: True)
     assert client.post("/waitlist", data={"email": " Person@Example.com "}).status_code == 200
     with sqlite3.connect(db_path) as conn:
-        stored = conn.execute("SELECT email FROM waitlist_signups").fetchone()[0]
+        stored = conn.execute("SELECT email FROM waitlist_confirmation_tokens").fetchone()[0]
     assert stored == "person@example.com"
+    assert _rows(db_path, "waitlist_signups") == 0
 
 
 @pytest.mark.parametrize("field,invalid", [
@@ -125,7 +129,7 @@ def test_go_ghost_accepts_fields_at_existing_caps(field_app):
 
     monkeypatch.setattr(engine, "run_broker_removal", done)
     email = "E" * (254 - len("@example.com")) + "@example.com"
-    profile = {"name": "N" * 160, "address": "A" * 220, "cityState": "C" * 140, "phone": "P" * 80, "email": email}
+    profile = {"name": "N" * 160, "address": "A" * 220, "cityState": "C" * 140, "phone": "P" * 80, "email": email, "delegateAttestation": True}
 
     response = client.post("/api/go-ghost/removals/example", json=profile)
 

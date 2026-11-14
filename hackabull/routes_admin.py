@@ -71,6 +71,7 @@ from .config import VALID_ROLES
 from .config import templates
 from .history import admin_avatar
 from .pipeline import analyze_full_pipeline
+from .provider_budget import usage_snapshot
 from .request_helpers import make_id
 
 # =============================================================================
@@ -409,6 +410,7 @@ async def admin_settings(request: Request):
             "app_url": APP_URL,
             "admin_emails": [row["email"] for row in privileged if row["role"] == "admin"],
             "owner_emails": [row["email"] for row in privileged if row["role"] == "owner"],
+            "provider_usage": usage_snapshot(),
         }
 
     return admin_context(request, "Settings", "settings", load_data, owner_only=True)

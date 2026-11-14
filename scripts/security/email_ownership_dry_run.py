@@ -42,6 +42,7 @@ EMAIL_FIELDS = {
     "age_confirmations": (("email",), False),
     "privacy_opt_outs": (("email",), False),
     "waitlist_signups": (("email",), False),
+    "waitlist_confirmation_tokens": (("email",), False),
     "abuse_flags": (("email",), False),
     "referrals": (("referrer_email", "referred_email"), False),
     "url_reports": (("reporter_email",), False),

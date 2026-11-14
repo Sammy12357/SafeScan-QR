@@ -89,13 +89,80 @@ from .request_helpers import locale_from_request
 from .request_helpers import make_id
 from .request_helpers import request_ip
 from .security import enforce_rate_limit
+from .waitlist import CONFIRM_COOKIE
+from .waitlist import CONFIRM_SECONDS
+from .waitlist import confirm_waitlist
+from .waitlist import issue_confirmation
+from .waitlist import revoke_unsent_confirmation
+from .waitlist import valid_token
 from .security import html_rate_limit_response
 from .security import validate_strict_payload
+from .turnstile import verify_turnstile
 from .wallet import expire_alpha_subscriptions
 
 # =============================================================================
 # ROUTES — SERVER-RENDERED HTML PAGES (home, product, legal, account, etc.)
 # =============================================================================
+GO_GHOST_GLOBAL_SLOT = asyncio.Semaphore(1)
+GO_GHOST_RUN_TIMEOUT_SECONDS = 60
+GO_GHOST_STALE_JOB_SECONDS = 120
+
+
+def _go_ghost_busy_response():
+    return JSONResponse(
+        {"error": "A removal is already running. Try again shortly."},
+        status_code=429,
+        headers={"Retry-After": "5"},
+    )
+
+
+def _reserve_go_ghost_job(user_id, account_email, broker, target_url, job_id, *, delegated_attestation=False):
+    """Reserve a single per-user job, including across workers sharing SQLite."""
+    created_at = now_iso()
+    stale_before = (datetime.utcnow() - timedelta(seconds=GO_GHOST_STALE_JOB_SECONDS)).isoformat() + "Z"
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            """UPDATE go_ghost_removal_jobs SET status = 'interrupted',
+                      detail = 'The earlier automation did not finish.', updated_at = ?
+               WHERE user_id = ? AND status = 'running' AND updated_at < ?""",
+            (created_at, user_id, stale_before),
+        )
+        active = conn.execute(
+            "SELECT 1 FROM go_ghost_removal_jobs WHERE user_id = ? AND status = 'running' LIMIT 1",
+            (user_id,),
+        ).fetchone()
+        if active:
+            return False
+        conn.execute(
+            """INSERT INTO go_ghost_removal_jobs
+               (id, user_id, email, broker, status, detail, target_url, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (job_id, user_id, account_email, broker, "running", "Automation started.", target_url, created_at, created_at),
+        )
+        if delegated_attestation:
+            # Record the explicit authorization with the job, atomically. The
+            # submitted person's name and address never enter the audit row.
+            conn.execute(
+                """INSERT INTO audit_logs
+                   (id, actor_user_id, action, target_type, target_id, metadata, ip_address, user_agent, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (make_id("audit"), user_id, "go_ghost.delegated_attestation", "go_ghost_job", job_id,
+                 json.dumps({"broker": broker, "authorized": True}), None, None, created_at),
+            )
+    return True
+
+
+def _finish_go_ghost_job(job_id, status, detail, target_url):
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE go_ghost_removal_jobs
+               SET status = ?, detail = ?, target_url = ?, updated_at = ?
+               WHERE id = ? AND status = 'running'""",
+            (status[:40], detail[:500], target_url[:500], now_iso(), job_id),
+        )
+
+
 @qr_app.get("/", response_class=HTMLResponse)
 async def read_index(request: Request):
     user = get_session_user(request)
@@ -136,6 +203,9 @@ async def go_ghost_page(request: Request):
 @qr_app.post("/api/go-ghost/removals/{broker}")
 async def api_go_ghost_removal(request: Request, broker: str, payload: dict = Body(...)):
     user = require_user(request)
+    user_id = str(user.get("google_id") or "")
+    if not user_id:
+        raise SafeScanError("Authentication required.", 401)
     normalized_broker = (broker or "").strip().lower()
 
     from removals.engine import RemovalProfile, run_broker_removal, supported_broker
@@ -143,7 +213,7 @@ async def api_go_ghost_removal(request: Request, broker: str, payload: dict = Bo
     broker_config = supported_broker(normalized_broker)
     if broker_config is None:
         raise SafeScanError("Backend automation is not available for this broker yet.", 400)
-    validate_strict_payload(payload, {"name", "address", "cityState", "phone", "email"})
+    validate_strict_payload(payload, {"name", "address", "cityState", "phone", "email", "delegateAttestation"})
 
     profile_payload = {
         "name": bounded_text(payload.get("name"), "name", 160, required=True, strip=True),
@@ -152,97 +222,167 @@ async def api_go_ghost_removal(request: Request, broker: str, payload: dict = Bo
         "phone": bounded_text(payload.get("phone"), "phone", 80, strip=True),
         "email": bounded_text(payload.get("email"), "email", 254, required=True, strip=True),
     }
-    rate_limited = enforce_rate_limit(request, "go_ghost", 3, 24 * 60 * 60, user_key=user.get("google_id"))
-    if rate_limited:
-        return rate_limited
-    job_id = make_id("ghostjob")
-    account_email = (user.get("email") or "").strip().lower()
-    created_at = now_iso()
-    with get_conn() as conn:
-        conn.execute(
-            """INSERT INTO go_ghost_removal_jobs
-               (id, user_id, email, broker, status, detail, target_url, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                job_id,
-                user.get("google_id"),
-                account_email,
-                normalized_broker,
-                "running",
-                "Automation started.",
-                broker_config.optout_url,
-                created_at,
-                created_at,
-            ),
-        )
-
+    attestation = payload.get("delegateAttestation", False)
+    if not isinstance(attestation, bool):
+        raise SafeScanError("Invalid delegation attestation.", 400)
+    account_email = (user.get("email") or "").strip().casefold()
+    delegated = profile_payload["email"].casefold() != account_email
+    if delegated and not attestation:
+        raise SafeScanError("Confirm you are authorized to request removal for this person.", 403)
+    if GO_GHOST_GLOBAL_SLOT.locked():
+        return _go_ghost_busy_response()
+    await GO_GHOST_GLOBAL_SLOT.acquire()
     try:
-        result = await run_broker_removal(normalized_broker, RemovalProfile(**profile_payload))
-    except RuntimeError as exc:
-        result = {
-            "status": "unavailable",
-            "detail": str(exc),
-            "targetUrl": broker_config.optout_url,
-        }
-    except Exception as exc:
-        result = {
-            "status": "failed",
-            "detail": f"{broker_config.name} automation failed before submission: {type(exc).__name__}: {str(exc)[:320]}",
-            "targetUrl": broker_config.optout_url,
-        }
+        # The global slot avoids launching a second Chromium process on this
+        # worker. The SQLite reservation also blocks same-user jobs if more
+        # than one worker is ever configured.
+        job_id = make_id("ghostjob")
+        account_email = (user.get("email") or "").strip().lower()
+        stale_before = (datetime.utcnow() - timedelta(seconds=GO_GHOST_STALE_JOB_SECONDS)).isoformat() + "Z"
+        with get_conn() as conn:
+            active = conn.execute(
+                """SELECT 1 FROM go_ghost_removal_jobs
+                   WHERE user_id = ? AND status = 'running' AND updated_at >= ? LIMIT 1""",
+                (user_id, stale_before),
+            ).fetchone()
+        if active:
+            return _go_ghost_busy_response()
+        rate_limited = enforce_rate_limit(request, "go_ghost", 3, 24 * 60 * 60, user_key=user_id)
+        if rate_limited:
+            return rate_limited
+        if not _reserve_go_ghost_job(
+            user_id, account_email, normalized_broker, broker_config.optout_url, job_id,
+            delegated_attestation=delegated,
+        ):
+            return _go_ghost_busy_response()
 
-    status = str(result.get("status") or "failed")[:40]
-    detail = str(result.get("detail") or "")[:500]
-    target_url = str(result.get("targetUrl") or broker_config.optout_url)[:500]
-    with get_conn() as conn:
-        conn.execute(
-            """UPDATE go_ghost_removal_jobs
-               SET status = ?, detail = ?, target_url = ?, updated_at = ?
-               WHERE id = ?""",
-            (status, detail, target_url, now_iso(), job_id),
+        result = {"status": "failed", "detail": "Automation was interrupted.", "targetUrl": broker_config.optout_url}
+        try:
+            result = await asyncio.wait_for(
+                run_broker_removal(normalized_broker, RemovalProfile(**profile_payload)),
+                timeout=GO_GHOST_RUN_TIMEOUT_SECONDS,
+            )
+        except TimeoutError:
+            result = {"status": "failed", "detail": "Automation timed out. Please retry later.", "targetUrl": broker_config.optout_url}
+        except RuntimeError:
+            result = {"status": "unavailable", "detail": "Automation is unavailable right now.", "targetUrl": broker_config.optout_url}
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            result = {
+                "status": "failed",
+                "detail": f"{broker_config.name} automation failed before submission: {type(exc).__name__}",
+                "targetUrl": broker_config.optout_url,
+            }
+        finally:
+            if not isinstance(result, dict):
+                result = {"status": "failed", "detail": "Automation returned an invalid result.", "targetUrl": broker_config.optout_url}
+            status = str(result.get("status") or "failed")[:40]
+            if status not in {"submitted", "email_required", "captcha_required", "needs_profile_url", "filled", "opened", "cancelled", "unavailable", "failed"}:
+                status = "failed"
+            detail = str(result.get("detail") or "")[:500]
+            target_url = str(result.get("targetUrl") or broker_config.optout_url)[:500]
+            _finish_go_ghost_job(job_id, status, detail, target_url)
+
+        audit_log(
+            "go_ghost.removal_attempted",
+            request=request,
+            actor_user_id=user_id,
+            target_type="broker",
+            target_id=normalized_broker,
+            metadata={"jobId": job_id, "status": status},
         )
-
-    audit_log(
-        "go_ghost.removal_attempted",
-        request=request,
-        actor_user_id=user.get("google_id"),
-        target_type="broker",
-        target_id=normalized_broker,
-        metadata={"jobId": job_id, "status": status},
-    )
-    return {"jobId": job_id, "broker": normalized_broker, "status": status, "detail": detail, "targetUrl": target_url}
+        return {"jobId": job_id, "broker": normalized_broker, "status": status, "detail": detail, "targetUrl": target_url}
+    finally:
+        GO_GHOST_GLOBAL_SLOT.release()
 
 @qr_app.get("/legal/privacy-policy", response_class=HTMLResponse)
 async def privacy_policy(request: Request):
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Privacy Policy", Markup(PRIVACY_POLICY_HTML)))
 
 @qr_app.post("/waitlist", response_class=HTMLResponse, dependencies=[Depends(require_csrf_form)])
-async def waitlist_signup(request: Request, email: str = Form(...)):
+async def waitlist_signup(
+    request: Request,
+    email: str = Form(...),
+    cf_turnstile_response: str | None = Form(None, alias="cf-turnstile-response"),
+):
     normalized_email = bounded_text(email, "email", 254, required=True, strip=True).lower()
+    if not re.fullmatch(r"[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+", normalized_email):
+        raise SafeScanError("Invalid email address.", 400)
+    if not email_sending_configured():
+        return _waitlist_page(request, "unavailable", 503)
     ip_rate_limit = enforce_rate_limit(request, "waitlist_ip", 3, 60 * 60)
     if ip_rate_limit:
         return html_rate_limit_response(request, ip_rate_limit)
+    # A failed challenge may be retried without spending the one-per-day
+    # address budget, while the short IP budget still bounds verification calls.
+    await verify_turnstile(request, cf_turnstile_response, action="waitlist")
     # The per-address budget uses a separate 24-hour window. Its extra
     # generous IP cap in enforce_rate_limit does not narrow the 3/hour cap.
     address_key = hashlib.sha256(normalized_email.encode("utf-8")).hexdigest()
     address_rate_limit = enforce_rate_limit(request, "waitlist_address", 1, 24 * 60 * 60, user_key=address_key)
     if address_rate_limit:
         return html_rate_limit_response(request, address_rate_limit)
-    with get_conn() as conn:
-        conn.execute(
-            "INSERT OR REPLACE INTO waitlist_signups VALUES (?, ?, ?)",
-            (normalized_email, "footer", datetime.utcnow().isoformat() + "Z")
-        )
-    # Best-effort welcome email; a no-op unless SMTP_* env vars are configured.
-    if email_sending_configured():
-        await asyncio.to_thread(
+    token = issue_confirmation(normalized_email)
+    if token is not None:
+        confirm_url = APP_URL.rstrip("/") + "/waitlist/confirm?token=" + quote(token)
+        sent = await asyncio.to_thread(
             send_email,
             normalized_email,
-            "You're on the SafeScan QR list",
-            templates.env.get_template("email/waitlist_welcome.html").render(app_url=APP_URL),
+            "Confirm your SafeScan QR waitlist request",
+            templates.env.get_template("email/waitlist_confirm.html").render(confirm_url=confirm_url),
+            f"Confirm your SafeScan QR waitlist request within 30 minutes: {confirm_url}\n"
+            "If you did not request this, ignore this email.",
         )
-    body = "<h2>You're on the list</h2><p>Thanks for joining the SafeScan QR waitlist. We'll send only major product updates.</p><p><a href='/'>Return to SafeScan QR</a></p>"
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Waitlist", Markup(body)))
+        if not sent:
+            revoke_unsent_confirmation(normalized_email, token)
+            return _waitlist_page(request, "unavailable", 503)
+    # The same response for confirmed and unconfirmed addresses avoids an
+    # account-existence signal. Only confirmation adds a deliverable signup.
+    return _waitlist_page(request, "pending")
+
+
+def _waitlist_page(request: Request, state: str, status_code: int = 200):
+    response = templates.TemplateResponse(
+        "legal_page.html",
+        legal_context(request, "Waitlist", content_template="legal/waitlist_status_body.html", waitlist_state=state),
+        status_code=status_code,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Robots-Tag"] = "noindex"
+    return response
+
+
+@qr_app.get("/waitlist/confirm", response_class=HTMLResponse)
+async def waitlist_confirm_page(request: Request, token: str | None = Query(None, max_length=128)):
+    if token is not None:
+        response = RedirectResponse("/waitlist/confirm", status_code=303)
+        if valid_token(token):
+            response.set_cookie(
+                CONFIRM_COOKIE, token, max_age=CONFIRM_SECONDS,
+                secure=True, httponly=True, samesite="lax", path="/",
+            )
+        else:
+            response.delete_cookie(CONFIRM_COOKIE, path="/", httponly=True, secure=True, samesite="lax")
+        response.headers["Cache-Control"] = "private, no-store"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+    if not valid_token(request.cookies.get(CONFIRM_COOKIE)):
+        return _waitlist_page(request, "expired", 400)
+    return _waitlist_page(request, "confirm")
+
+
+@qr_app.post("/waitlist/confirm", response_class=HTMLResponse, dependencies=[Depends(require_csrf_form)])
+async def waitlist_confirm_submit(request: Request):
+    rate_limited = enforce_rate_limit(request, "waitlist_confirm", 20, 60)
+    if rate_limited:
+        return html_rate_limit_response(request, rate_limited)
+    token = request.cookies.get(CONFIRM_COOKIE)
+    confirmed = confirm_waitlist(token)
+    response = _waitlist_page(request, "confirmed" if confirmed else "expired", 200 if confirmed else 400)
+    response.delete_cookie(CONFIRM_COOKIE, path="/", httponly=True, secure=True, samesite="lax")
+    return response
 
 @qr_app.get("/legal/terms-of-use", response_class=HTMLResponse)
 async def terms_of_use(request: Request):
@@ -566,13 +706,15 @@ async def tokenomics_page(request: Request):
 async def do_not_sell(request: Request):
     return templates.TemplateResponse("legal_page.html", legal_context(
         request, "Do Not Sell or Share", content_template="legal/do_not_sell_body.html",
+        turnstile_required=not bool(get_session_user(request)),
     ))
 
 @qr_app.get("/legal/data-request", response_class=HTMLResponse)
 async def data_request_page(request: Request, email: str = Query("", max_length=254)):
     return templates.TemplateResponse("data_request.html", {
         "request": request, "email": email, "message": "", "export_data": "",
-        "version": LEGAL_VERSION, "last_updated": LEGAL_LAST_UPDATED
+        "version": LEGAL_VERSION, "last_updated": LEGAL_LAST_UPDATED,
+        "turnstile_required": not bool(get_session_user(request)),
     })
 
 @qr_app.post("/legal/data-request", response_class=HTMLResponse, dependencies=[Depends(require_csrf_form)])
@@ -581,8 +723,20 @@ async def submit_data_request(
     email: str = Form(...),
     region: str = Form(""),
     request_type: str = Form(...),
-    details: str = Form("")
+    details: str = Form(""),
+    cf_turnstile_response: str | None = Form(None, alias="cf-turnstile-response"),
 ):
+    ip_rate_limit = enforce_rate_limit(request, "data_request_ip", 10, 60 * 60)
+    if ip_rate_limit:
+        return html_rate_limit_response(request, ip_rate_limit)
+    session_user = get_session_user(request)
+    account_rate_limit = enforce_rate_limit(
+        request, "data_request_account" if session_user else "data_request_guest",
+        5 if session_user else 3, 60 * 60,
+        user_key=session_user.get("google_id") if session_user else None,
+    )
+    if account_rate_limit:
+        return html_rate_limit_response(request, account_rate_limit)
     email = bounded_text(email, "email", 254, required=True, strip=True)
     region = bounded_text(region, "region", 120)
     request_type = bounded_text(request_type, "request type", 40, required=True)
@@ -592,11 +746,19 @@ async def submit_data_request(
         "object", "do_not_sell", "limit_sensitive", "revoke_consent",
     }:
         raise SafeScanError("Invalid request type.", 400)
+    if not session_user:
+        try:
+            await verify_turnstile(request, cf_turnstile_response, action="data_request")
+        except SafeScanError as exc:
+            return templates.TemplateResponse("data_request.html", {
+                "request": request, "email": email, "message": str(exc), "export_data": "",
+                "version": LEGAL_VERSION, "last_updated": LEGAL_LAST_UPDATED,
+                "turnstile_required": True,
+            }, status_code=exc.status_code)
     request_id = make_id("dsr")
     now = datetime.utcnow().isoformat() + "Z"
     export_data = ""
     status = "submitted"
-    session_user = get_session_user(request)
     session_email = (session_user or {}).get("email") or ""
     verified_self_request = bool(session_email and session_email.casefold() == email.strip().casefold())
     if request_type == "revoke_consent" and verified_self_request:
@@ -631,6 +793,7 @@ async def submit_data_request(
     return templates.TemplateResponse("data_request.html", {
         "request": request, "email": email, "message": message, "export_data": export_data,
         "version": LEGAL_VERSION, "last_updated": LEGAL_LAST_UPDATED,
+        "turnstile_required": not bool(session_user),
         "consent_revoked": request_type == "revoke_consent" and bool(verified_self_request),
     })
 

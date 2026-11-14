@@ -20,6 +20,8 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 import requests
 
 from db import database_path
+from .provider_budget import ProviderUnavailable
+from .provider_budget import outbound_provider
 from .scoring import signal
 
 
@@ -129,11 +131,14 @@ def phishtank_signal(target_url):
 def _download_feed(key):
     url = f"https://data.phishtank.com/data/{key}/online-valid.csv.gz"
     headers = {"User-Agent": "SafeScanQR/1.0 (PhishTank feed client)", "Accept": "application/gzip"}
+    started = time.monotonic()
     with requests.Session() as session:
         # The application key is in the request path; never send it through an
         # ambient HTTP(S)_PROXY from the process environment.
         session.trust_env = False
         for _ in range(3):
+            if time.monotonic() - started > 60:
+                raise TimeoutError("PhishTank feed exceeded its refresh deadline")
             parsed = urlsplit(url)
             if parsed.scheme != "https" or parsed.hostname not in _ALLOWED_DOWNLOAD_HOSTS:
                 raise ValueError("PhishTank feed redirected outside its approved hosts")
@@ -153,6 +158,8 @@ def _download_feed(key):
                     raise ValueError("PhishTank feed exceeds compressed size limit")
                 compressed = bytearray()
                 for chunk in response.iter_content(chunk_size=64 * 1024):
+                    if time.monotonic() - started > 60:
+                        raise TimeoutError("PhishTank feed exceeded its refresh deadline")
                     compressed.extend(chunk)
                     if len(compressed) > MAX_COMPRESSED_BYTES:
                         raise ValueError("PhishTank feed exceeds compressed size limit")
@@ -221,8 +228,13 @@ def refresh_feed(force=False):
         state = feed_status()
         if not force and state["state"] == "fresh" and state["ageSeconds"] < REFRESH_INTERVAL_SECONDS:
             return {"state": "fresh"}
-        csv_bytes = _download_feed(_app_key())
-        count = _write_snapshot(csv_bytes, path, time.time())
+        try:
+            with outbound_provider("phishtank_feed"):
+                csv_bytes = _download_feed(_app_key())
+                count = _write_snapshot(csv_bytes, path, time.time())
+        except ProviderUnavailable:
+            # Existing snapshots remain usable until their freshness expires.
+            return {"state": feed_status()["state"], "refresh": "unavailable"}
         return {"state": "fresh", "entries": count}
     finally:
         fcntl.flock(lock_fd, fcntl.LOCK_UN)

@@ -1,0 +1,16 @@
+{% if waitlist_state == "pending" %}
+  <p>If this address can join the waitlist, check its inbox for a confirmation link. The link expires in 30 minutes.</p>
+{% elif waitlist_state == "confirm" %}
+  <p>Confirm that you want occasional SafeScan QR updates.</p>
+  <form action="/waitlist/confirm" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+    <button class="primary-button" type="submit">Confirm my email</button>
+  </form>
+{% elif waitlist_state == "confirmed" %}
+  <p>Your email is confirmed. You're on the SafeScan QR waitlist.</p>
+{% elif waitlist_state == "unavailable" %}
+  <p>Email confirmation is temporarily unavailable. Please try again later; your address was not added.</p>
+{% else %}
+  <p>This confirmation link is invalid, expired, or already used. Return to SafeScan QR to request a new link.</p>
+{% endif %}
+<p><a href="/">Return to SafeScan QR</a></p>

@@ -31,12 +31,12 @@
     },
     {
       "filename": "hackabull/admin_data.py",
-      "line_number": 357,
+      "line_number": 360,
       "test_id": "B608",
       "issue_severity": "MEDIUM",
       "issue_confidence": "MEDIUM",
       "issue_text": "Possible SQL injection vector through string-based query construction.",
-      "code_sha256": "6b36a5dd3e38fdaa1d97a88205ef348a32e1b5a2606ea301a4296dcb18bb9dc6"
+      "code_sha256": "78cce44a0a80950fa02bf00315c90c50b8223a05be3336aff5ff4953a88dc2e8"
     },
     {
       "filename": "hackabull/malicious_db.py",
@@ -67,111 +67,21 @@
     },
     {
       "filename": "hackabull/routes_pages.py",
-      "line_number": 217,
+      "line_number": 301,
       "test_id": "B704",
       "issue_severity": "MEDIUM",
       "issue_confidence": "HIGH",
       "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
-      "code_sha256": "215e8ce33f5a27d32ce1b1f75eed076de369ee44d7d783a4e0c72954a113d308"
+      "code_sha256": "9927596870ddf0e653115a9c657474cac78c1a52f33bc2d7fa8275e938627db9"
     },
     {
       "filename": "hackabull/routes_pages.py",
-      "line_number": 245,
+      "line_number": 389,
       "test_id": "B704",
       "issue_severity": "MEDIUM",
       "issue_confidence": "HIGH",
       "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
-      "code_sha256": "f9689e7221f2c74313b79c91147f9bee8ed0c2afa5c25bd6e7ddca48f3d27fdf"
-    },
-    {
-      "filename": "hackabull/routes_pages.py",
-      "line_number": 249,
-      "test_id": "B704",
-      "issue_severity": "MEDIUM",
-      "issue_confidence": "HIGH",
-      "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
-      "code_sha256": "43d4bdcddf0f44f905ef8dbee30f4d0a4b5da55b499f702c73310916ebc2e344"
-    },
-    {
-      "filename": "hackabull/routes_pages.py",
-      "line_number": 253,
-      "test_id": "B704",
-      "issue_severity": "MEDIUM",
-      "issue_confidence": "HIGH",
-      "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
-      "code_sha256": "b60f585080ec4ed9ca781a57f63c58bb94350c016bff445b290b543ad3a7d62b"
-    },
-    {
-      "filename": "hackabull/routes_pages.py",
-      "line_number": 257,
-      "test_id": "B704",
-      "issue_severity": "MEDIUM",
-      "issue_confidence": "HIGH",
-      "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
-      "code_sha256": "7808657d0a5a5eec8619321b79d1292ca0ddbe4fb7e3a8736083b4ff087f37c5"
-    },
-    {
-      "filename": "hackabull/routes_pages.py",
-      "line_number": 261,
-      "test_id": "B704",
-      "issue_severity": "MEDIUM",
-      "issue_confidence": "HIGH",
-      "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
-      "code_sha256": "eed074bf6c84c605605b474a0653499d0a3a8e5610205409b9d9b7cdb2e1714d"
-    },
-    {
-      "filename": "hackabull/routes_pages.py",
-      "line_number": 266,
-      "test_id": "B704",
-      "issue_severity": "MEDIUM",
-      "issue_confidence": "HIGH",
-      "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
-      "code_sha256": "d575bbe5cbf9d9f6df320e354b20d55f7290f9da45a90c69ad3176cdc113787d"
-    },
-    {
-      "filename": "hackabull/routes_pages.py",
-      "line_number": 271,
-      "test_id": "B704",
-      "issue_severity": "MEDIUM",
-      "issue_confidence": "HIGH",
-      "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
-      "code_sha256": "fdb7f62f2f4f7e30db1d390cd38c18a3718fe15b7029404eab2d2c60d0830f36"
-    },
-    {
-      "filename": "hackabull/routes_pages.py",
-      "line_number": 280,
-      "test_id": "B704",
-      "issue_severity": "MEDIUM",
-      "issue_confidence": "HIGH",
-      "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
-      "code_sha256": "aacfd62d59c82bfd8f9b4ab58349300d188eba29a82ad35a31bd236849e36a07"
-    },
-    {
-      "filename": "hackabull/routes_pages.py",
-      "line_number": 298,
-      "test_id": "B704",
-      "issue_severity": "MEDIUM",
-      "issue_confidence": "HIGH",
-      "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
-      "code_sha256": "ecaaef0bf33f16d0d0c5814764329fea6a5850a2f44c2ab2c2a3615078c96a85"
-    },
-    {
-      "filename": "hackabull/routes_pages.py",
-      "line_number": 303,
-      "test_id": "B704",
-      "issue_severity": "MEDIUM",
-      "issue_confidence": "HIGH",
-      "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
-      "code_sha256": "2d805cc79a9c7d3a1c4ad475e75dd65b41f1b6a2506468bb7512fecc1c3eb6b2"
-    },
-    {
-      "filename": "hackabull/routes_pages.py",
-      "line_number": 388,
-      "test_id": "B704",
-      "issue_severity": "MEDIUM",
-      "issue_confidence": "HIGH",
-      "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
-      "code_sha256": "0d5d65751eb7ccc92fdb88a7cfa53d5d5948c8919c18342cb00537487be9d899"
+      "code_sha256": "acc27482cd26d2539eff84403d91de00ee8058cf989f83a61f297115b67d2e01"
     },
     {
       "filename": "hackabull/routes_pages.py",
@@ -180,61 +90,142 @@
       "issue_severity": "MEDIUM",
       "issue_confidence": "HIGH",
       "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
-      "code_sha256": "dd290d069a26108bab242be8ff485e8380a29f51d7fa96edcf79111ff7b07ae7"
+      "code_sha256": "ab83ee620a108c0c0e5459082b7f5064c2552ac2344ee20f205ca1b2e98b1dfd"
     },
     {
       "filename": "hackabull/routes_pages.py",
-      "line_number": 398,
+      "line_number": 397,
       "test_id": "B704",
       "issue_severity": "MEDIUM",
       "issue_confidence": "HIGH",
       "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
-      "code_sha256": "be0bf6b0e9a55ddb7bd0ca1606f3812652c39b87bfb5c748e736e301742ce27a"
+      "code_sha256": "bd1447f5e515c969739a0b3226b580ba8d4ff0b50a8d11eb1768691a69953495"
     },
     {
       "filename": "hackabull/routes_pages.py",
-      "line_number": 459,
+      "line_number": 401,
       "test_id": "B704",
       "issue_severity": "MEDIUM",
       "issue_confidence": "HIGH",
       "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
-      "code_sha256": "ac43941a8ed92e36deecbd897e5faea359f98a467128ac44d0c8c8979388d0bc"
+      "code_sha256": "ff69b2ddd4961f97d06fab7478e3dfb4388c179524767d99c707bc08b3091481"
     },
     {
       "filename": "hackabull/routes_pages.py",
-      "line_number": 464,
+      "line_number": 406,
       "test_id": "B704",
       "issue_severity": "MEDIUM",
       "issue_confidence": "HIGH",
       "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
-      "code_sha256": "ffb9c57582843c2497e372106cdb0a0f9e47de4154847fbc64bfea01867c96d6"
+      "code_sha256": "29b4cf0e5961fee19f9c0d6bfeb89da5db3cc3b5c5a628f5129509d9c20e07ba"
     },
     {
       "filename": "hackabull/routes_pages.py",
-      "line_number": 469,
+      "line_number": 411,
       "test_id": "B704",
       "issue_severity": "MEDIUM",
       "issue_confidence": "HIGH",
       "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
-      "code_sha256": "ece43515e96c7b1e1d267d32dbb1144380bb2ace1f771c226c6da335d234ce28"
+      "code_sha256": "75b59e31232e1eff7122ecb455e1b03ff424a94deae080fd5531b146d96afbce"
     },
     {
       "filename": "hackabull/routes_pages.py",
-      "line_number": 563,
+      "line_number": 420,
       "test_id": "B704",
       "issue_severity": "MEDIUM",
       "issue_confidence": "HIGH",
       "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
-      "code_sha256": "9ec7cb0db365eb9e1f62349e7daf60a8d752cd20e365ef113d5083a6eb57d37b"
+      "code_sha256": "33642ddbc7a57bc0f8c2773cd3f0e13125653465374ef3538c63667c77157695"
+    },
+    {
+      "filename": "hackabull/routes_pages.py",
+      "line_number": 438,
+      "test_id": "B704",
+      "issue_severity": "MEDIUM",
+      "issue_confidence": "HIGH",
+      "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
+      "code_sha256": "26c65d9cd31fe88d3cc076c304cdd050ec4ffed18650143bd61d6d740ae51197"
+    },
+    {
+      "filename": "hackabull/routes_pages.py",
+      "line_number": 443,
+      "test_id": "B704",
+      "issue_severity": "MEDIUM",
+      "issue_confidence": "HIGH",
+      "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
+      "code_sha256": "d6d27869cf16091320fef432af949e8f9168accbbb1e68ce7cc4a9b5b9856c62"
+    },
+    {
+      "filename": "hackabull/routes_pages.py",
+      "line_number": 528,
+      "test_id": "B704",
+      "issue_severity": "MEDIUM",
+      "issue_confidence": "HIGH",
+      "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
+      "code_sha256": "628c5a118872ee635c6abde60926eaacf71c0ae69b9bff89ff3f16a3ab8a26ee"
+    },
+    {
+      "filename": "hackabull/routes_pages.py",
+      "line_number": 533,
+      "test_id": "B704",
+      "issue_severity": "MEDIUM",
+      "issue_confidence": "HIGH",
+      "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
+      "code_sha256": "a9ee9374c1ea876b9b3bb733334b67b9863be40a3efbd8595160d7510decabe5"
+    },
+    {
+      "filename": "hackabull/routes_pages.py",
+      "line_number": 538,
+      "test_id": "B704",
+      "issue_severity": "MEDIUM",
+      "issue_confidence": "HIGH",
+      "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
+      "code_sha256": "e7a8e26e86049fec3f7ce2aabf7fcd6712b08fab7b68c8817045bd3a08313bed"
+    },
+    {
+      "filename": "hackabull/routes_pages.py",
+      "line_number": 599,
+      "test_id": "B704",
+      "issue_severity": "MEDIUM",
+      "issue_confidence": "HIGH",
+      "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
+      "code_sha256": "092d9f371ab3d2000284890a75fe6c601ec4769eff46fac9f314a4e461f72ff3"
+    },
+    {
+      "filename": "hackabull/routes_pages.py",
+      "line_number": 604,
+      "test_id": "B704",
+      "issue_severity": "MEDIUM",
+      "issue_confidence": "HIGH",
+      "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
+      "code_sha256": "99b28d9c8bee937a28f6622601d4396a2367cbad1e4b5f12f3427cfd059d57b8"
+    },
+    {
+      "filename": "hackabull/routes_pages.py",
+      "line_number": 609,
+      "test_id": "B704",
+      "issue_severity": "MEDIUM",
+      "issue_confidence": "HIGH",
+      "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
+      "code_sha256": "98fa36308e9133b23d425c31064142ca67d6298dca96f58a03a1738ceed30759"
+    },
+    {
+      "filename": "hackabull/routes_pages.py",
+      "line_number": 703,
+      "test_id": "B704",
+      "issue_severity": "MEDIUM",
+      "issue_confidence": "HIGH",
+      "issue_text": "Potential XSS with ``markupsafe.Markup`` detected. Do not use ``Markup`` on untrusted data.",
+      "code_sha256": "1a988bd13e806d45719f5d3e3c580aa20422e6943ac5a43da884a8494dad5f6b"
     },
     {
       "filename": "hackabull/schema.py",
-      "line_number": 336,
+      "line_number": 346,
       "test_id": "B608",
       "issue_severity": "MEDIUM",
       "issue_confidence": "MEDIUM",
       "issue_text": "Possible SQL injection vector through string-based query construction.",
-      "code_sha256": "65f1b1357cea5a8786917ca102c5a9ab983b7bd67d133a72009c235ca24cfc4e"
+      "code_sha256": "7994772a66c80017106cd90723cb411981a70da3b03a96722e95588d373ec103"
     }
   ]
 }

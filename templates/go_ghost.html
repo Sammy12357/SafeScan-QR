@@ -47,15 +47,15 @@
       <section class="go-ghost-card automation-scope-card">
         <div class="panel-header">
           <div>
-            <p class="eyebrow">Local automation</p>
+            <p class="eyebrow">Assisted automation</p>
             <h2>Automation scope and search kit</h2>
           </div>
-          <span class="privacy-local-badge">Local only</span>
+          <span class="privacy-local-badge">Runs on request</span>
         </div>
-        <p class="go-ghost-copy">Go Ghost can prepare searches and submissions for supported opt-outs using the minimum local details you choose. Email confirmation, CAPTCHA, and exact profile matching still need user-approved checkpoints.</p>
+        <p class="go-ghost-copy">Your details stay in this browser until you start an assisted removal. SafeScan then sends them to its server to fill a broker form. Some forms submit immediately; others need your CAPTCHA, email confirmation, or profile match.</p>
         <p id="goGhostDeviceNotice" class="go-ghost-device-notice" role="status" aria-live="polite">Desktop layout active.</p>
 
-        <form id="goGhostProfileForm" class="go-ghost-form go-ghost-keyword-form">
+        <form id="goGhostProfileForm" class="go-ghost-form go-ghost-keyword-form" data-account-email="{{ email }}">
           <label>Full name
             <input id="ghostNameInput" type="text" maxlength="160" autocomplete="name">
           </label>
@@ -71,6 +71,12 @@
           <label>Email
             <input id="ghostEmailInput" type="email" maxlength="254" autocomplete="email">
           </label>
+          <div id="ghostDelegateAttestationWrap" class="ghost-delegate-attestation" hidden>
+            <label for="ghostDelegateAttestationInput">
+              <input id="ghostDelegateAttestationInput" type="checkbox">
+              <span>I confirm I have this person's permission to submit their details and request removal on their behalf.</span>
+            </label>
+          </div>
           <div class="go-ghost-actions">
             <button class="primary-button" type="submit">Update automation scope</button>
             <button class="secondary-button" id="clearGhostDataButton" type="button">Clear info</button>
@@ -101,7 +107,7 @@
     <div class="ghost-consent-card">
       <p class="eyebrow">Confirm intent</p>
       <h2 id="goGhostConsentTitle">Do you want your personal data taken off the internet?</h2>
-      <p>Go Ghost helps you find broker profiles and submit removals. You will still confirm each request yourself, because many brokers require email verification or CAPTCHA.</p>
+      <p>Go Ghost helps you find broker profiles and submit removals. An assisted run sends the details you enter to SafeScan and the broker; some requests submit immediately, while others need your confirmation.</p>
       <div class="ghost-safety-list">
         <span>Use minimum info only</span>
         <span>Never provide SSN</span>

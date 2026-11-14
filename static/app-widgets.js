@@ -122,13 +122,20 @@ blockReportButton?.addEventListener("click", async () => {
     return;
   }
 
+  const turnstileRequired = Boolean(riskModal?.querySelector('.safescan-turnstile-widget[data-action="url_report"]'));
+  const turnstileToken = turnstileRequired ? window.safeScanTurnstile?.token("url_report") || "" : "";
+  if (turnstileRequired && !turnstileToken) {
+    if (reportStatus) reportStatus.textContent = "Complete the security verification before reporting this URL.";
+    return;
+  }
+
   blockReportButton.disabled = true;
   if (reportStatus) reportStatus.textContent = "Submitting report...";
   try {
     const response = await fetch("/api/report", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content || "" },
-      body: JSON.stringify({ url: payload, reason: "other" })
+      body: JSON.stringify({ url: payload, reason: "other", ...(turnstileRequired ? { turnstileToken } : {}) })
     });
     if (!response.ok) throw new Error(`Report request failed: ${response.status}`);
     const result = await response.json();
@@ -137,6 +144,7 @@ blockReportButton?.addEventListener("click", async () => {
   } catch (_err) {
     if (reportStatus) reportStatus.textContent = "We could not confirm this report was received. Please try again.";
   } finally {
+    if (turnstileRequired) window.safeScanTurnstile?.reset("url_report");
     blockReportButton.disabled = false;
   }
 });

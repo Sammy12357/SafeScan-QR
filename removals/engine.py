@@ -373,13 +373,19 @@ async def run_broker_removal(
             headless=headless,
             args=["--no-sandbox", "--disable-dev-shm-usage"],
         )
-        page = await browser.new_page(
-            viewport={"width": 1440, "height": 1200},
-            user_agent=(
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
-            ),
-        )
+        try:
+            page = await browser.new_page(
+                viewport={"width": 1440, "height": 1200},
+                user_agent=(
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+                ),
+            )
+        except BaseException:
+            # A timeout may cancel page creation before the normal cleanup
+            # block below starts. Never leave its Chromium process running.
+            await browser.close()
+            raise
         page.set_default_timeout(timeout_ms)
         try:
             await page.goto(config.optout_url, wait_until="domcontentloaded")

@@ -53,6 +53,9 @@ from .config import DOMAIN_AGE_CACHE_TTL_DAYS
 from .config import SECURITYTRAILS_API_KEY
 from .config import WHOISXML_API_KEY
 from .lowlevel import normalize_url
+from .provider_budget import ProviderUnavailable
+from .provider_budget import enabled as provider_budgets_enabled
+from .provider_budget import outbound_provider
 
 # =============================================================================
 # DOMAIN AGE (WHOIS / RDAP / WHOISXML / SecurityTrails / Wayback)
@@ -244,6 +247,11 @@ def domain_age_cache_save(domain, result):
         )
 
 def fetch_domain_age_whois(domain):
+    # python-whois performs blocking socket I/O without a dependable per-call
+    # deadline. Budgeted mode skips it and falls through to bounded HTTP
+    # sources instead of allowing a hung lookup to accumulate worker threads.
+    if provider_budgets_enabled():
+        return None
     import whois as pywhois
     record = pywhois.whois(domain)
     def record_value(key):
@@ -267,10 +275,13 @@ def fetch_domain_age_whois(domain):
 
 def fetch_domain_age_rdap(domain):
     try:
-        response = requests.get(f"https://rdap.org/domain/{domain}", timeout=6)
-        response.raise_for_status()
-        rdap = response.json()
-    except (requests.RequestException, ValueError):
+        with outbound_provider("rdap"):
+            response = requests.get(f"https://rdap.org/domain/{domain}", timeout=6)
+            response.raise_for_status()
+            rdap = response.json()
+            if not isinstance(rdap, dict):
+                raise ValueError("Invalid RDAP response")
+    except (ProviderUnavailable, requests.RequestException, ValueError):
         return None
 
     events = rdap.get("events", [])
@@ -292,13 +303,16 @@ def fetch_domain_age_rdap(domain):
 def fetch_domain_age_whoisxml(domain):
     if not WHOISXML_API_KEY:
         return None
-    response = requests.get(
-        "https://www.whoisxmlapi.com/whoisserver/WhoisService",
-        params={"apiKey": WHOISXML_API_KEY, "domainName": domain, "outputFormat": "JSON"},
-        timeout=6,
-    )
-    response.raise_for_status()
-    data = response.json()
+    with outbound_provider("whoisxml"):
+        response = requests.get(
+            "https://www.whoisxmlapi.com/whoisserver/WhoisService",
+            params={"apiKey": WHOISXML_API_KEY, "domainName": domain, "outputFormat": "JSON"},
+            timeout=6,
+        )
+        response.raise_for_status()
+        data = response.json()
+        if not isinstance(data, dict):
+            raise ValueError("Invalid WhoisXML response")
     record = data.get("WhoisRecord", {}) if isinstance(data, dict) else {}
     registry = record.get("registryData") or {}
     created = parse_domain_datetime(registry.get("createdDate") or record.get("createdDate"))
@@ -317,13 +331,16 @@ def fetch_domain_age_whoisxml(domain):
 def fetch_domain_age_securitytrails(domain):
     if not SECURITYTRAILS_API_KEY:
         return None
-    response = requests.get(
-        f"https://api.securitytrails.com/v1/domain/{domain}",
-        headers={"APIKEY": SECURITYTRAILS_API_KEY},
-        timeout=6,
-    )
-    response.raise_for_status()
-    data = response.json()
+    with outbound_provider("securitytrails"):
+        response = requests.get(
+            f"https://api.securitytrails.com/v1/domain/{domain}",
+            headers={"APIKEY": SECURITYTRAILS_API_KEY},
+            timeout=6,
+        )
+        response.raise_for_status()
+        data = response.json()
+        if not isinstance(data, dict):
+            raise ValueError("Invalid SecurityTrails response")
     created = parse_domain_datetime(data.get("created_date") or data.get("createdDate"))
     if not created:
         return None
@@ -338,13 +355,16 @@ def fetch_domain_age_securitytrails(domain):
     }
 
 def fetch_domain_age_wayback(domain):
-    response = requests.get(
-        "https://archive.org/wayback/available",
-        params={"url": domain},
-        timeout=6,
-    )
-    response.raise_for_status()
-    data = response.json()
+    with outbound_provider("wayback"):
+        response = requests.get(
+            "https://archive.org/wayback/available",
+            params={"url": domain},
+            timeout=6,
+        )
+        response.raise_for_status()
+        data = response.json()
+        if not isinstance(data, dict):
+            raise ValueError("Invalid Wayback response")
     timestamp = ((data.get("archived_snapshots", {}) or {}).get("closest") or {}).get("timestamp")
     created = parse_domain_datetime(timestamp)
     if not created:
@@ -414,7 +434,10 @@ def get_domain_age_days(domain):
     if cached:
         return domain_age_lookup_to_ui(domain, cached)
     result = fetch_domain_age(domain)
-    domain_age_cache_save(domain, result)
+    # A temporary budget or circuit denial must not suppress checks for the
+    # full domain-age cache TTL after capacity returns.
+    if result.get("source") != "unavailable":
+        domain_age_cache_save(domain, result)
     return domain_age_lookup_to_ui(domain, result)
 
 async def get_domain_age_days_async(domain):

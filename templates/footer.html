@@ -3,9 +3,10 @@
 <footer class="site-footer">
   <section class="footer-newsletter" aria-labelledby="footerNewsletterTitle">
     <h2 id="footerNewsletterTitle">Stay in the loop</h2>
-    <p>One tight email when SafeScan ships mobile beta, Solana dApp Store updates, and new risk-engine releases. No sales spam.</p>
+    <p>Confirm your email to get occasional SafeScan mobile, Solana dApp Store, and risk-engine updates. No sales spam.</p>
     <form class="footer-newsletter-form" action="/waitlist" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
       <input type="email" name="email" placeholder="you@example.com" aria-label="Email address" maxlength="254" required>
+      {% if turnstile_enabled %}<div class="safescan-turnstile-widget" data-sitekey="{{ turnstile_site_key }}" data-action="waitlist"></div>{% endif %}
       <button type="submit">Notify me</button>
     </form>
     <p class="footer-newsletter-note">One email per major release; privacy &middot; terms &middot; unsubscribe in one click any time.</p>
@@ -68,6 +69,10 @@
     <span>Terms v1.0 &middot; Updated May 2026</span>
   </div>
 </footer>
+{% if turnstile_enabled %}
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" defer></script>
+<script src="/static/turnstile-widgets.js?v=phase7" defer></script>
+{% endif %}
 
 <div id="cookieConsentBanner" class="consent-banner hidden" data-version="consent-v1">
   <div>

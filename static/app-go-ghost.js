@@ -28,6 +28,8 @@ const ghostLocationInput = document.getElementById("ghostLocationInput");
 const ghostAddressInput = document.getElementById("ghostAddressInput");
 const ghostPhoneInput = document.getElementById("ghostPhoneInput");
 const ghostEmailInput = document.getElementById("ghostEmailInput");
+const ghostDelegateAttestationWrap = document.getElementById("ghostDelegateAttestationWrap");
+const ghostDelegateAttestationInput = document.getElementById("ghostDelegateAttestationInput");
 const goGhostDeviceNotice = document.getElementById("goGhostDeviceNotice");
 const GO_GHOST_PROFILE_KEY = "safeScanGoGhostProfile";
 const GO_GHOST_PROGRESS_KEY = "safeScanGoGhostProgress";
@@ -285,6 +287,31 @@ function getGhostProfile() {
   return currentProfile;
 }
 
+function ghostDelegationNeeded(profileEmail) {
+  const accountEmail = goGhostProfileForm?.dataset.accountEmail?.trim().toLowerCase() || "";
+  return Boolean(profileEmail?.trim()) && profileEmail.trim().toLowerCase() !== accountEmail;
+}
+
+function refreshGhostDelegationAttestation() {
+  const needed = ghostDelegationNeeded(ghostEmailInput?.value || "");
+  if (ghostDelegateAttestationWrap) ghostDelegateAttestationWrap.hidden = !needed;
+  if (ghostDelegateAttestationInput) {
+    ghostDelegateAttestationInput.required = needed;
+    if (!needed) ghostDelegateAttestationInput.checked = false;
+  }
+  return needed;
+}
+
+function confirmGhostDelegation(profile) {
+  if (!ghostDelegationNeeded(profile.email)) return true;
+  refreshGhostDelegationAttestation();
+  if (ghostDelegateAttestationInput?.checked === true) return true;
+  scrollToGhostProfile();
+  ghostDelegateAttestationInput?.focus({ preventScroll: true });
+  showCopyToast("Confirm you have permission to request removal for this person");
+  return false;
+}
+
 function getGhostProgress() {
   return readJsonStorage(GO_GHOST_PROGRESS_KEY, {});
 }
@@ -530,6 +557,7 @@ async function startGhostAssistedQueue() {
     showCopyToast("Stopping after current broker");
     return;
   }
+  if (!confirmGhostDelegation(profile)) return;
 
   const progress = getGhostProgress();
   const queue = goGhostBrokers.filter(

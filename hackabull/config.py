@@ -139,6 +139,14 @@ VALID_ROLES = ("user", "admin", "owner")
 VALID_STATUSES = ("active", "suspended", "deleted")
 RATE_LIMITS = RateLimitStore(max_buckets=4096)
 CSP_REPORT_ONLY_ENABLED = os.getenv("CSP_REPORT_ONLY_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")
+TURNSTILE_ENABLED = os.getenv("TURNSTILE_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")
+TURNSTILE_SITE_KEY = os.getenv("TURNSTILE_SITE_KEY", "").strip()
+TURNSTILE_SECRET_KEY = os.getenv("TURNSTILE_SECRET_KEY", "").strip()
+TURNSTILE_HOSTNAMES = frozenset(
+    host.strip().lower().rstrip(".")
+    for host in os.getenv("TURNSTILE_HOSTNAMES", "").split(",")
+    if host.strip()
+)
 AIRDROP_BASE_ALLOCATION = int(os.getenv("SQR_BASE_ALLOCATION", "100"))
 WHOISXML_API_KEY = os.getenv("WHOISXML_API_KEY")
 SECURITYTRAILS_API_KEY = os.getenv("SECURITYTRAILS_API_KEY")
@@ -273,6 +281,8 @@ MALICIOUS_CONTRACT_BLOCKLIST = {
 templates = Jinja2Templates(directory="templates")
 SCANNER_V3 = os.getenv("SCANNER_V3", "false").lower() in ("1", "true", "yes", "on")
 templates.env.globals["scanner_v3"] = SCANNER_V3
+templates.env.globals["turnstile_enabled"] = TURNSTILE_ENABLED
+templates.env.globals["turnstile_site_key"] = TURNSTILE_SITE_KEY
 _template_response = templates.TemplateResponse
 
 
