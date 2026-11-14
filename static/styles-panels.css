@@ -51,9 +51,9 @@
   gap: 10px;
   margin-top: 12px;
   padding: 14px;
-  border: 1px solid rgba(103, 242, 200, 0.22);
+  border: 1px solid rgba(var(--accent-rgb), 0.22);
   border-radius: 12px;
-  background: rgba(103, 242, 200, 0.04);
+  background: rgba(var(--accent-rgb), 0.04);
 }
 .generated-qr-image {
   width: 192px;

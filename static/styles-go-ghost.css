@@ -12,18 +12,18 @@
 .ghost-scope-guidance-done { border-color: rgba(80, 227, 164, 0.34); background: rgba(80, 227, 164, 0.08); }
 .ghost-scope-guidance-action span, .ghost-scope-guidance-done span { color: var(--accent); }
 .ghost-automation-site-row { cursor: pointer; transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease; }
-.ghost-automation-site-row:hover, .ghost-automation-site-row:focus-visible { border-color: rgba(103, 242, 200, 0.42); background: rgba(103, 242, 200, 0.08); outline: none; transform: translateY(-1px); }
-.go-ghost-keyword-form { margin-top: 16px; padding: 14px; border: 1px solid rgba(132, 217, 255, 0.18); border-radius: 8px; background: rgba(132, 217, 255, 0.045); }
+.ghost-automation-site-row:hover, .ghost-automation-site-row:focus-visible { border-color: rgba(var(--accent-rgb), 0.42); background: rgba(var(--accent-rgb), 0.08); outline: none; transform: translateY(-1px); }
+.go-ghost-keyword-form { margin-top: 16px; padding: 14px; border: 1px solid rgba(var(--accent-rgb), 0.18); border-radius: 8px; background: rgba(var(--accent-rgb), 0.045); }
 .maintenance-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
 .maintenance-grid a { display: grid; place-items: center; min-height: 62px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.04); color: var(--text); text-align: center; text-decoration: none; font-weight: 900; }
-.maintenance-grid a:hover { border-color: rgba(103, 242, 200, 0.42); background: rgba(103, 242, 200, 0.08); }
+.maintenance-grid a:hover { border-color: rgba(var(--accent-rgb), 0.42); background: rgba(var(--accent-rgb), 0.08); }
 .ghost-consent-modal { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 18px; background: rgba(3, 8, 15, 0.82); backdrop-filter: blur(16px); }
-.ghost-consent-card { width: min(620px, 100%); padding: 26px; border: 1px solid rgba(103, 242, 200, 0.26); border-radius: 8px; background: rgba(8, 16, 29, 0.98); box-shadow: var(--shadow); }
+.ghost-consent-card { width: min(620px, 100%); padding: 26px; border: 1px solid rgba(var(--accent-rgb), 0.26); border-radius: 8px; background: var(--panel-strong); box-shadow: var(--shadow); }
 .ghost-consent-card h2 { margin: 10px 0 12px; font-family: var(--display-font); font-size: clamp(1.8rem, 5vw, 3.2rem); line-height: 1.04; }
 .ghost-safety-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
-.ghost-safety-list span { min-height: 54px; padding: 12px; border: 1px solid rgba(103, 242, 200, 0.18); border-radius: 8px; background: rgba(103, 242, 200, 0.07); color: var(--text); font-weight: 900; text-align: center; }
+.ghost-safety-list span { min-height: 54px; padding: 12px; border: 1px solid rgba(var(--accent-rgb), 0.18); border-radius: 8px; background: rgba(var(--accent-rgb), 0.07); color: var(--text); font-weight: 900; text-align: center; }
 .ghost-scope-modal { position: fixed; inset: 0; z-index: 1001; display: grid; place-items: center; padding: 18px; background: rgba(3, 8, 15, 0.82); backdrop-filter: blur(16px); }
-.ghost-scope-card { position: relative; width: min(720px, 100%); max-height: min(90vh, 780px); overflow: auto; padding: 26px; border: 1px solid rgba(103, 242, 200, 0.26); border-radius: 8px; background: rgba(8, 16, 29, 0.98); box-shadow: var(--shadow); }
+.ghost-scope-card { position: relative; width: min(720px, 100%); max-height: min(90vh, 780px); overflow: auto; padding: 26px; border: 1px solid rgba(var(--accent-rgb), 0.26); border-radius: 8px; background: var(--panel-strong); box-shadow: var(--shadow); }
 .ghost-scope-close { position: absolute; top: 12px; right: 12px; display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid rgba(255, 110, 127, 0.54); border-radius: 8px; background: rgba(255, 110, 127, 0.12); color: var(--danger); font-family: var(--display-font); font-size: 1rem; font-weight: 900; line-height: 1; cursor: pointer; }
 .ghost-scope-close:hover, .ghost-scope-close:focus-visible { border-color: var(--danger); background: rgba(255, 110, 127, 0.22); outline: none; }
 .ghost-scope-card h2 { margin: 10px 44px 12px 0; font-family: var(--display-font); font-size: clamp(1.7rem, 4vw, 2.6rem); line-height: 1.08; }
@@ -54,12 +54,12 @@
 }
 
 :root[data-theme="light"] .test-site-page .hero {
-  background: linear-gradient(135deg, rgba(230, 237, 244, 0.98), rgba(216, 226, 236, 0.98));
+  background: var(--panel);
 }
 
 :root[data-theme="light"] .hero::before,
 :root[data-theme="light"] .test-site-page .hero::before {
-  background: linear-gradient(110deg, rgba(31, 214, 163, 0.16), transparent 36%), linear-gradient(260deg, rgba(90, 140, 255, 0.11), transparent 42%);
+  background: linear-gradient(110deg, rgba(var(--accent-rgb), 0.06), transparent 38%);
 }
 
 :root[data-theme="light"] .hero-card,
@@ -78,7 +78,7 @@
 :root[data-theme="light"] .payment-panel > div,
 :root[data-theme="light"] .scanner-subcard {
   background: var(--panel-strong);
-  border-color: rgba(16, 24, 39, 0.13);
+  border-color: var(--line);
 }
 
 :root[data-theme="light"] .hero-metrics div,
@@ -93,7 +93,7 @@
 :root[data-theme="light"] .ghost-scope-keyword,
 :root[data-theme="light"] .ghost-scope-detail {
   background: rgba(255, 255, 255, 0.62);
-  border-color: rgba(16, 24, 39, 0.12);
+  border-color: var(--line);
 }
 
 :root[data-theme="light"] .test-proof-card:hover,
@@ -101,19 +101,19 @@
 :root[data-theme="light"] .maintenance-grid a:hover,
 :root[data-theme="light"] .test-faq-list details:hover {
   background: #ffffff;
-  border-color: rgba(31, 214, 163, 0.34);
+  border-color: rgba(var(--accent-rgb), 0.34);
 }
 
 :root[data-theme="light"] .spline-showcase {
-  background: #dce5ee;
+  background: var(--bg);
 }
 
 :root[data-theme="light"] .model-caption,
 :root[data-theme="light"] .footer-newsletter,
 :root[data-theme="light"] .ghost-consent-card,
 :root[data-theme="light"] .ghost-scope-card {
-  background: rgba(247, 249, 252, 0.96);
-  border-color: rgba(16, 24, 39, 0.14);
+  background: var(--panel-strong);
+  border-color: var(--line);
   color: var(--text);
 }
 
@@ -130,7 +130,7 @@
 }
 
 :root[data-theme="light"] .footer-col-header {
-  color: #667789;
+  color: var(--muted);
 }
 
 :root[data-theme="light"] .site-footer {
@@ -150,8 +150,8 @@
 }
 
 :root[data-theme="light"] .footer-newsletter-form button {
-  background: #101827;
-  color: #f8fafc;
+  background: var(--button-bg);
+  color: var(--button-text);
 }
 
 @media (max-width: 900px) {
@@ -209,6 +209,8 @@
 }
 
 @media (max-width: 520px) {
+  /* Account links remain available in the drawer without clipping the header. */
+  .top-nav-actions .top-auth-link { display: none; }
   .top-brand-name { font-size: 0.98rem; }
   .top-nav-actions { gap: 8px; }
   .top-auth-link { min-height: 38px; padding: 0 12px; font-size: 0.78rem; }

@@ -7,7 +7,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ title }} | SafeScan Admin</title>
-  <link rel="stylesheet" href="/static/admin.css?v=admin-build-v1">
+  <script src="/static/theme-init.js?v=rose-theme-v1"></script>
+  <link rel="stylesheet" href="/static/admin.css?v=rose-theme-v1">
 </head>
 <body class="admin-body">
   {% set owner_pages = ['/admin/api-keys', '/admin/settings'] %}
@@ -52,7 +53,10 @@
       <form class="global-search" action="/admin/users" method="get">
         <input name="search" placeholder="Search users by email or ID">
       </form>
-      <div class="bell">● <span>{{ data.get('stats', [])|length if page == 'dashboard' else 0 }}</span></div>
+      <div class="admin-topbar-actions">
+        <button class="admin-theme-toggle" type="button" aria-label="Switch to light mode" aria-pressed="false" data-theme-toggle>Theme: <span data-theme-toggle-text>Dark</span></button>
+        <div class="bell">● <span>{{ data.get('stats', [])|length if page == 'dashboard' else 0 }}</span></div>
+      </div>
     </header>
 
     <section class="admin-content">
@@ -173,6 +177,6 @@
       {% endif %}
     </section>
   </main>
-  <script src="/static/admin.js?v=admin-build-v2"></script>
+  <script src="/static/admin.js?v=rose-theme-v1"></script>
 </body>
 </html>

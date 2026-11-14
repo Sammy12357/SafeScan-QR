@@ -5,17 +5,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <title>Leaderboard | SafeScan QR</title>
-  <link rel="stylesheet" href="/static/styles.css?v=native-scroll-v3">
+  <link rel="stylesheet" href="/static/styles.css?v=rose-theme-v1">
   <style>
-    :root {
-      --bg: #09111f;
-      --text: #edf4ff;
-      --muted: #98a9c2;
-      --accent: #67f2c8;
-      --line: rgba(255,255,255,0.09);
-    }
-    body { background: linear-gradient(145deg,#060b12 0%,#0a1420 46%,#111827 100%); color: var(--text); font-family: "Space Grotesk","Aptos","Segoe UI",sans-serif; margin: 0; }
+    body { background: var(--bg); color: var(--text); font-family: var(--body-font); margin: 0; }
     .lb-shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 80px; }
     .lb-back { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 28px; font-size: 0.85rem; color: var(--muted); text-decoration: none; }
     .lb-back:hover { color: var(--text); }
@@ -32,8 +26,8 @@
       border-bottom: 1px solid var(--line);
       transition: background 0.15s;
     }
-    .lb-table tbody tr:hover { background: rgba(255,255,255,0.03); }
-    .lb-table tbody tr.current-user { background: rgba(103,242,200,0.06); }
+    .lb-table tbody tr:hover { background: color-mix(in srgb, var(--accent) 4%, transparent); }
+    .lb-table tbody tr.current-user { background: color-mix(in srgb, var(--accent) 8%, transparent); }
     .lb-table td { padding: 14px 16px; font-size: 0.9rem; }
     .lb-rank { color: var(--muted); font-weight: 700; width: 48px; }
     .lb-rank-top { color: var(--accent); }

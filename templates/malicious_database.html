@@ -5,17 +5,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <title>Malicious QR Database | SafeScan QR</title>
   <meta name="description" content="A public database of QR codes scanned and flagged as malicious by SafeScan. Browse known-dangerous codes so you can avoid them.">
-  <link rel="icon" href="/static/safescan-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=native-scroll-v3">
+  <link rel="icon" href="/static/safescan-logo.svg?v=rose-theme-v1" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css?v=rose-theme-v1">
   <style>
-    :root {
-      --bg: #09111f; --text: #edf4ff; --muted: #98a9c2;
-      --accent: #67f2c8; --line: rgba(255,255,255,0.09);
-      --danger: #ff6e7f; --danger-strong: #dc2626; --warn: #f59e0b;
-    }
-    body { background: linear-gradient(145deg,#060b12 0%,#0a1420 46%,#111827 100%); color: var(--text); font-family: "Space Grotesk","Aptos","Segoe UI",sans-serif; margin: 0; }
+    :root { --danger-strong: #dc2626; --warn: #f59e0b; }
+    body { background: var(--bg); color: var(--text); font-family: var(--body-font); margin: 0; }
     .mq-shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 80px; }
     .mq-back { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 28px; font-size: 0.85rem; color: var(--muted); text-decoration: none; }
     .mq-back:hover { color: var(--text); }
@@ -25,12 +22,12 @@
     .mq-warning {
       display: flex; gap: 10px; align-items: flex-start;
       background: rgba(220,38,38,0.10); border: 1px solid rgba(220,38,38,0.35);
-      border-radius: 12px; padding: 12px 16px; margin: 0 0 24px; font-size: 0.85rem; color: #ffd9dd;
+      border-radius: 12px; padding: 12px 16px; margin: 0 0 24px; font-size: 0.85rem; color: var(--text);
     }
-    .mq-warning strong { color: #fff; }
+    .mq-warning strong { color: var(--text); }
     .mq-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 0 0 22px; }
     .mq-stat-card {
-      background: rgba(13,24,43,0.9); border: 1px solid var(--line); border-radius: 12px;
+      background: var(--panel-strong); border: 1px solid var(--line); border-radius: 12px;
       padding: 14px 16px;
     }
     .mq-stat-value { font-size: 1.5rem; font-weight: 800; line-height: 1.2; }
@@ -41,14 +38,14 @@
     .mq-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 0 0 22px; }
     .mq-search {
       flex: 1 1 280px; min-width: 200px; padding: 11px 14px; border-radius: 10px;
-      border: 1px solid var(--line); background: rgba(13,24,43,0.9); color: var(--text);
+      border: 1px solid var(--line); background: var(--panel-strong); color: var(--text);
       font: inherit; font-size: 0.9rem;
     }
     .mq-search:focus { outline: none; border-color: var(--accent); }
     .mq-count { color: var(--muted); font-size: 0.82rem; white-space: nowrap; }
     .mq-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
     .mq-card {
-      background: rgba(13,24,43,0.9); border: 1px solid var(--line); border-radius: 14px;
+      background: var(--panel-strong); border: 1px solid var(--line); border-radius: 14px;
       padding: 16px; display: grid; grid-template-columns: 104px 1fr; gap: 14px; align-items: start;
     }
     .mq-qr {
@@ -64,7 +61,7 @@
     .cat-malicious { background: rgba(255,110,127,0.12); color: var(--danger); border: 1px solid rgba(255,110,127,0.3); }
     .cat-suspicious { background: rgba(245,158,11,0.12); color: var(--warn); border: 1px solid rgba(245,158,11,0.3); }
     .mq-url {
-      color: #ffdfe2; word-break: break-all; font-size: 0.85rem; font-family: "SFMono-Regular",Consolas,monospace;
+      color: var(--text); word-break: break-all; font-size: 0.85rem; font-family: "SFMono-Regular",Consolas,monospace;
       line-height: 1.4; margin: 0 0 10px; user-select: all;
     }
     .mq-meta { color: var(--muted); font-size: 0.76rem; line-height: 1.6; }
@@ -74,8 +71,10 @@
     .mq-pager { display: flex; justify-content: center; align-items: center; gap: 14px; margin-top: 28px; }
     .mq-pager button {
       min-width: 96px; min-height: 40px; padding: 0 16px; border-radius: 9px; border: 1px solid var(--line);
-      background: rgba(255,255,255,0.04); color: var(--text); font: inherit; font-weight: 700; cursor: pointer;
+      background: var(--panel); color: var(--text); font: inherit; font-weight: 700; cursor: pointer;
     }
+    :root[data-theme="light"] .mq-stat-card.is-critical .mq-stat-value,
+    :root[data-theme="light"] .cat-critical { color: var(--danger-strong); }
     .mq-pager button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
     .mq-pager button:disabled { opacity: 0.4; cursor: not-allowed; }
     .mq-pageinfo { color: var(--muted); font-size: 0.82rem; min-width: 120px; text-align: center; }

@@ -1,6 +1,7 @@
 /* styles-theme-light.css — light-theme surface cleanup overrides (kept last).
    Part of styles.css, imported by it in cascade order. */
-/* light-theme-v2 surface cleanup */
+/* White and rose surfaces for light mode. This file is imported last so
+   overlays and nested cards do not retain the dark palette. */
 :root[data-theme="light"] .hero,
 :root[data-theme="light"] .test-site-page .hero,
 :root[data-theme="light"] .test-section,
@@ -12,11 +13,21 @@
 :root[data-theme="light"] .go-ghost-card,
 :root[data-theme="light"] .legal-document,
 :root[data-theme="light"] .profile-card,
-:root[data-theme="light"] .account-card,
-:root[data-theme="light"] .sidenav {
-  background: rgba(226, 234, 242, 0.94);
-  border-color: rgba(16, 24, 39, 0.13);
+:root[data-theme="light"] .account-card {
+  background: #f7f8fa;
+  border-color: var(--line);
   color: var(--text);
+}
+
+:root[data-theme="light"] .sidenav {
+  background: #ffffff;
+  border-color: var(--line);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .hero::before,
+:root[data-theme="light"] .test-site-page .hero::before {
+  background: linear-gradient(110deg, rgba(var(--accent-rgb), 0.045), transparent 38%);
 }
 
 :root[data-theme="light"] .hero-card,
@@ -36,12 +47,15 @@
 :root[data-theme="light"] .scanner-subcard,
 :root[data-theme="light"] .footer-newsletter,
 :root[data-theme="light"] .model-caption,
+:root[data-theme="light"] .risk-modal-card,
 :root[data-theme="light"] .wallet-modal-card,
 :root[data-theme="light"] .qr-camera-card,
 :root[data-theme="light"] .ghost-consent-card,
-:root[data-theme="light"] .ghost-scope-card {
-  background: rgba(247, 249, 252, 0.97);
-  border-color: rgba(16, 24, 39, 0.14);
+:root[data-theme="light"] .ghost-scope-card,
+:root[data-theme="light"] .consent-banner,
+:root[data-theme="light"] .copy-toast {
+  background: #ffffff;
+  border-color: var(--line);
   color: var(--text);
 }
 
@@ -60,8 +74,8 @@
 :root[data-theme="light"] .ghost-scope-detail,
 :root[data-theme="light"] .contact-hero,
 :root[data-theme="light"] .ml-panel {
-  background: rgba(255, 255, 255, 0.66);
-  border-color: rgba(16, 24, 39, 0.12);
+  background: #ffffff;
+  border-color: var(--line);
   color: var(--text);
 }
 
@@ -71,18 +85,18 @@
 :root[data-theme="light"] .contact-card:hover,
 :root[data-theme="light"] .test-faq-list details:hover {
   background: #ffffff;
-  border-color: rgba(31, 214, 163, 0.34);
+  border-color: rgba(var(--accent-rgb), 0.34);
 }
 
 :root[data-theme="light"] .spline-showcase {
-  background: #dce5ee;
+  background: #f2f3f5;
 }
 
 :root[data-theme="light"] .screen-grid,
 :root[data-theme="light"] .scanner-video-frame,
 :root[data-theme="light"] .qr-frame,
 :root[data-theme="light"] .qr-camera-stage {
-  background: #f4f7fa;
+  background: #f4f5f7;
 }
 
 :root[data-theme="light"] .footer-newsletter h2,
@@ -106,13 +120,15 @@
 }
 
 :root[data-theme="light"] .go-ghost-device-notice {
-  background: rgba(255, 255, 255, 0.62);
-  border-color: rgba(16, 24, 39, 0.12);
+  background: #fff7f9;
+  border-color: rgba(var(--accent-rgb), 0.18);
   color: var(--text);
 }
 
 :root[data-theme="light"] .admin-dashboard-button {
-  color: #31215f;
+  background: #fff0f3;
+  border-color: rgba(var(--accent-rgb), 0.32);
+  color: var(--accent);
 }
 
 :root[data-theme="light"] .footer-newsletter-form input,
@@ -123,12 +139,84 @@
 :root[data-theme="light"] .go-ghost-form input,
 :root[data-theme="light"] .scanner-subcard-url textarea,
 :root[data-theme="light"] .generate-qr-form-row input[type="url"] {
-  background: rgba(255, 255, 255, 0.82);
-  border-color: rgba(16, 24, 39, 0.16);
+  background: #ffffff;
+  border-color: rgba(23, 27, 35, 0.19);
   color: var(--text);
 }
 
 :root[data-theme="light"] .footer-newsletter-form button {
-  background: #101827;
-  color: #f8fafc;
+  background: var(--button-bg);
+  color: var(--button-text);
+}
+
+:root[data-theme="light"] .footer-newsletter-form input::placeholder {
+  color: var(--muted);
+}
+
+:root[data-theme="light"] .copy-toast {
+  color: var(--accent);
+}
+
+/* Scan result details need their own light surfaces: the default modal is
+   charcoal and several nested rows carry translucent dark backgrounds. */
+:root[data-theme="light"] .score-gauge::after {
+  background: #ffffff;
+  border-color: var(--line);
+}
+
+:root[data-theme="light"] .decoded-box,
+:root[data-theme="light"] .confidence-panel,
+:root[data-theme="light"] .reputation-row,
+:root[data-theme="light"] .domain-age-card,
+:root[data-theme="light"] .domain-age-grid div,
+:root[data-theme="light"] .reason-row {
+  background: #f7f8fa;
+  border-color: var(--line);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .reputation-row {
+  color: var(--muted);
+}
+
+:root[data-theme="light"] .reason-row:hover,
+:root[data-theme="light"] .reason-row[open] {
+  background: #fff7f9;
+  border-color: rgba(var(--accent-rgb), 0.34);
+}
+
+:root[data-theme="light"] .risk-warning-banner,
+:root[data-theme="light"] .risk-action-note {
+  background: #fff0f3;
+  border-color: #efb3c1;
+  color: #8d1937;
+}
+
+:root[data-theme="light"] .verification-incomplete,
+:root[data-theme="light"] .caution-open-control {
+  background: #fff9ec;
+  border-color: #e6c98d;
+  color: var(--text);
+}
+
+:root[data-theme="light"] .ml-panel {
+  background: #f5f8fa;
+  border-color: #d8e1e7;
+}
+
+:root[data-theme="light"] .ml-model-pill {
+  background: #eaf3f6;
+  border-color: #c3d9e2;
+  color: #205d72;
+}
+
+:root[data-theme="light"] .risk-indicator,
+:root[data-theme="light"] .qr-camera-capture {
+  color: #ffffff;
+}
+
+:root[data-theme="light"] .legal-document .primary-button.payment-button,
+:root[data-theme="light"] .legal-document .primary-button.stripe-payment-button,
+:root[data-theme="light"] .legal-document .primary-button.stripe-payment-button:visited {
+  color: var(--button-text) !important;
 }
