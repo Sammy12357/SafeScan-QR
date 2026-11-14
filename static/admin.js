@@ -2,6 +2,24 @@
 // On the admin "activity" page, resolves the short actor labels shown in the
 // audit feed into full email addresses (looked up via the admin API and cached
 // in sessionStorage to avoid repeat requests).
+const themeToggle = document.querySelector("[data-theme-toggle]");
+if (themeToggle) {
+  const themeText = themeToggle.querySelector("[data-theme-toggle-text]");
+  const setTheme = (theme) => {
+    const isLight = theme === "light";
+    document.documentElement.setAttribute("data-theme", isLight ? "light" : "dark");
+    themeToggle.setAttribute("aria-pressed", String(isLight));
+    themeToggle.setAttribute("aria-label", isLight ? "Switch to dark mode" : "Switch to light mode");
+    if (themeText) themeText.textContent = isLight ? "Light" : "Dark";
+    try { window.localStorage.setItem("safescan_theme", isLight ? "light" : "dark"); } catch { /* Storage can be disabled. */ }
+  };
+
+  setTheme(document.documentElement.getAttribute("data-theme"));
+  themeToggle.addEventListener("click", () => {
+    setTheme(document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light");
+  });
+}
+
 const feed = document.querySelector(".activity-feed");
 if (feed) {
   const resolveActorEmail = async (actorLabel) => {

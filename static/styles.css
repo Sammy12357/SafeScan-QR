@@ -1,9 +1,9 @@
 /* styles.css — manifest. Imports the modular stylesheets below in cascade
    order. Rules live in the styles-*.css files; edit those, not this list. */
 @import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap");
-@import url("/static/styles-base.css?v=native-scroll-v3");
-@import url("/static/styles-layout.css?v=scan-story-v2");
-@import url("/static/styles-scanner.css?v=ghost-assist-v1");
-@import url("/static/styles-go-ghost.css?v=no-vt-v1");
-@import url("/static/styles-panels.css?v=qr-defense-v1");
-@import url("/static/styles-theme-light.css?v=no-vt-v1");
+@import url("/static/styles-base.css?v=rose-theme-v1");
+@import url("/static/styles-layout.css?v=rose-theme-v1");
+@import url("/static/styles-scanner.css?v=rose-theme-v1");
+@import url("/static/styles-go-ghost.css?v=rose-theme-v1");
+@import url("/static/styles-panels.css?v=rose-theme-v1");
+@import url("/static/styles-theme-light.css?v=rose-theme-v1");

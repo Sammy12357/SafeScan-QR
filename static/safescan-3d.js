@@ -129,15 +129,15 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim() && !showc
     const ctx = textureCanvas.getContext("2d");
 
     const bg = ctx.createLinearGradient(0, 0, 640, 1120);
-    bg.addColorStop(0, "#176c70");
-    bg.addColorStop(0.42, "#0b3444");
+    bg.addColorStop(0, "#5d243a");
+    bg.addColorStop(0.42, "#25131f");
     bg.addColorStop(1, "#050506");
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, 640, 1120);
 
     const edgeGlow = ctx.createLinearGradient(0, 0, 640, 1120);
-    edgeGlow.addColorStop(0, "rgba(106, 255, 224, 0.32)");
-    edgeGlow.addColorStop(0.48, "rgba(21, 97, 107, 0.04)");
+    edgeGlow.addColorStop(0, "rgba(255, 99, 141, 0.3)");
+    edgeGlow.addColorStop(0.48, "rgba(129, 35, 67, 0.04)");
     edgeGlow.addColorStop(1, "rgba(0, 0, 0, 0.58)");
     ctx.fillStyle = edgeGlow;
     ctx.fillRect(0, 0, 640, 1120);
@@ -295,19 +295,19 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim() && !showc
 
   const materials = {
     phone: new THREE.MeshPhysicalMaterial({
-      color: 0x111927,
+      color: 0x15171d,
       metalness: 0.62,
       roughness: 0.22,
       clearcoat: 0.82,
       clearcoatRoughness: 0.18
     }),
     bevel: new THREE.MeshPhysicalMaterial({
-      color: 0x1c2a3f,
+      color: 0x292c34,
       metalness: 0.78,
       roughness: 0.2
     }),
     glass: new THREE.MeshPhysicalMaterial({
-      color: 0x0b1422,
+      color: 0x0f1118,
       metalness: 0.1,
       roughness: 0.08,
       transmission: 0.22,
@@ -322,20 +322,20 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim() && !showc
       map: createSolanaBackTexture()
     }),
     qrLight: new THREE.MeshStandardMaterial({
-      color: 0xf2fbff,
-      emissive: 0x9ed9ff,
+      color: 0xfff8fa,
+      emissive: 0xffcfdb,
       emissiveIntensity: 0.1,
       roughness: 0.38
     }),
     qrAccent: new THREE.MeshStandardMaterial({
-      color: 0x67f2c8,
-      emissive: 0x28dca6,
+      color: 0xff668e,
+      emissive: 0xe7295b,
       emissiveIntensity: 0.45,
       roughness: 0.22
     }),
     shield: new THREE.MeshPhysicalMaterial({
-      color: 0x83ffe0,
-      emissive: 0x1fd6a3,
+      color: 0xff86a5,
+      emissive: 0xdf285a,
       emissiveIntensity: 0.24,
       metalness: 0,
       roughness: 0.04,
@@ -345,7 +345,7 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim() && !showc
       clearcoat: 1,
       side: THREE.DoubleSide
     }),
-    scanGlass: new THREE.MeshBasicMaterial({ color: 0x67f2c8, transparent: true, opacity: 0 })
+    scanGlass: new THREE.MeshBasicMaterial({ color: 0xff668e, transparent: true, opacity: 0 })
   };
 
   const logoBarMaterials = [
@@ -375,15 +375,15 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim() && !showc
   phone.add(backGlass);
 
   const backFeatureMaterial = new THREE.MeshPhysicalMaterial({
-    color: 0x07171d,
+    color: 0x111318,
     metalness: 0.45,
     roughness: 0.18,
     clearcoat: 0.8
   });
 
   const lensGlassMaterial = new THREE.MeshPhysicalMaterial({
-    color: 0x03080d,
-    emissive: 0x02090d,
+    color: 0x050608,
+    emissive: 0x030305,
     emissiveIntensity: 0.08,
     metalness: 0.12,
     roughness: 0.28,
@@ -393,7 +393,7 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim() && !showc
   });
 
   const cameraMetalMaterial = new THREE.MeshPhysicalMaterial({
-    color: 0x124b58,
+    color: 0x343039,
     metalness: 0.82,
     roughness: 0.14,
     clearcoat: 0.92,
@@ -427,7 +427,7 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim() && !showc
     const highlight = new THREE.Mesh(
       new THREE.CircleGeometry(radius * 0.16, 18),
       new THREE.MeshBasicMaterial({
-        color: 0x6ef8ff,
+        color: 0xfff2f5,
         transparent: true,
         opacity: 0.34,
         depthWrite: false,
@@ -462,7 +462,7 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim() && !showc
 
   const flash = new THREE.Mesh(
     new THREE.CylinderGeometry(0.055, 0.055, 0.014, 28),
-    new THREE.MeshBasicMaterial({ color: 0xb7f7e6, transparent: true, opacity: 0.68 })
+    new THREE.MeshBasicMaterial({ color: 0xfff7fa, transparent: true, opacity: 0.68 })
   );
   flash.position.set(0.25, 1.29, -0.186);
   flash.rotation.x = Math.PI / 2;
@@ -521,15 +521,15 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim() && !showc
   ];
 
   const qrDarkMaterial = new THREE.MeshStandardMaterial({
-    color: 0x071011,
-    emissive: 0x0c3f37,
+    color: 0x0c0d11,
+    emissive: 0x3e0c20,
     emissiveIntensity: 0.08,
     roughness: 0.18,
     metalness: 0.28
   });
-  const qrTealMaterial = new THREE.MeshStandardMaterial({
-    color: 0x67f2c8,
-    emissive: 0x17b987,
+  const qrRoseMaterial = new THREE.MeshStandardMaterial({
+    color: 0xff668e,
+    emissive: 0xe7295b,
     emissiveIntensity: 0.62,
     roughness: 0.12,
     metalness: 0.18
@@ -538,7 +538,7 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim() && !showc
   const tileGeometry = new THREE.BoxGeometry(0.11, 0.11, 0.014);
   qrPattern.forEach((active, index) => {
     if (!active) return;
-    const activeMaterial = qrTealMaterial.clone();
+    const activeMaterial = qrRoseMaterial.clone();
     activeMaterial.emissiveIntensity = index % 7 === 0 ? 0.62 : 0.12;
     activeMaterial.opacity = index % 7 === 0 ? 1 : 0.72;
     activeMaterial.transparent = index % 7 !== 0;
@@ -553,7 +553,7 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim() && !showc
   const beam = new THREE.Mesh(
     new THREE.PlaneGeometry(1.5, 0.032),
     new THREE.MeshBasicMaterial({
-      color: 0x67f2c8,
+      color: 0xff668e,
       transparent: true,
       opacity: 0.5,
       blending: THREE.AdditiveBlending,
@@ -579,7 +579,7 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim() && !showc
     positions[i * 3 + 1] = randomStarY(i);
     positions[i * 3 + 2] = -2.3 - Math.random() * 1.2;
     const brightness = 0.5;
-    starColor.setRGB(0.78 * brightness, 0.9 * brightness, brightness);
+    starColor.setRGB(brightness, 0.82 * brightness, 0.88 * brightness);
     particleColors[i * 3] = starColor.r;
     particleColors[i * 3 + 1] = starColor.g;
     particleColors[i * 3 + 2] = starColor.b;
@@ -626,9 +626,9 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim() && !showc
   const keyLight = new THREE.DirectionalLight(0xffffff, 3.05);
   keyLight.position.set(2.8, 3.4, 4);
   scene.add(keyLight);
-  scene.add(new THREE.AmbientLight(0x8bb8ff, 1.05));
+  scene.add(new THREE.AmbientLight(0xdcc6d2, 1.05));
 
-  const accentLight = new THREE.PointLight(0x67f2c8, 9.6, 8.6);
+  const accentLight = new THREE.PointLight(0xff668e, 9.6, 8.6);
   accentLight.position.set(1.9, 0.5, 2.4);
   scene.add(accentLight);
 
