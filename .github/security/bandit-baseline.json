@@ -66,33 +66,6 @@
       "code_sha256": "150cb1e94b1a9a87983f1fb880482680696ae4ee6908989257a78718334c2673"
     },
     {
-      "filename": "hackabull/qr_decode.py",
-      "line_number": 431,
-      "test_id": "B314",
-      "issue_severity": "MEDIUM",
-      "issue_confidence": "HIGH",
-      "issue_text": "Using xml.etree.ElementTree.fromstring to parse untrusted XML data is known to be vulnerable to XML attacks. Replace xml.etree.ElementTree.fromstring with its defusedxml equivalent function or make sure defusedxml.defuse_stdlib() is called",
-      "code_sha256": "d2b05634e9fccb9fbf2c6e2fa186a61c1b9511dde332f7109d4a0a584e31926f"
-    },
-    {
-      "filename": "hackabull/qr_decode.py",
-      "line_number": 463,
-      "test_id": "B314",
-      "issue_severity": "MEDIUM",
-      "issue_confidence": "HIGH",
-      "issue_text": "Using xml.etree.ElementTree.fromstring to parse untrusted XML data is known to be vulnerable to XML attacks. Replace xml.etree.ElementTree.fromstring with its defusedxml equivalent function or make sure defusedxml.defuse_stdlib() is called",
-      "code_sha256": "7b03ce86ff00bcf9f711896934c3d19a7d76f179a7079552db30c31ca14ee87b"
-    },
-    {
-      "filename": "hackabull/qr_image.py",
-      "line_number": 94,
-      "test_id": "B314",
-      "issue_severity": "MEDIUM",
-      "issue_confidence": "HIGH",
-      "issue_text": "Using xml.etree.ElementTree.parse to parse untrusted XML data is known to be vulnerable to XML attacks. Replace xml.etree.ElementTree.parse with its defusedxml equivalent function or make sure defusedxml.defuse_stdlib() is called",
-      "code_sha256": "7dbab9616c5faee9d6716e563df20198222087d03e2d878a8392851be7c568d6"
-    },
-    {
       "filename": "hackabull/routes_pages.py",
       "line_number": 221,
       "test_id": "B704",

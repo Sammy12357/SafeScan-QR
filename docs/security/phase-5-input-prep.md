@@ -21,8 +21,23 @@ PBKDF2 too. `make_id()` now uses a 128-bit `secrets.token_urlsafe(16)` suffix
 for new scan, report, data-request, and other generated IDs. Existing IDs
 remain valid; this changes no database schema.
 
-This is a **preparation branch**, not the complete Phase 5 release. Parser
-hardening for SVG/PDF/images, email canonicalization and uniqueness migration,
-free-text field schemas, regex audit, and frontend prototype-pollution review
-remain. Integrate after the Phase 2 identity and Phase 3 ingress/rate-limit
-gates, and resolve any overlapping auth and middleware edits before release.
+The parser pass adds `defusedxml` for SVG parsing and rejects DTDs, entities,
+external references, excessive nesting, and oversized regex-consumed SVG
+attributes. SVG path data is allowed to exceed 4,096 characters because the
+basic renderer does not parse it with a regex and normal QR generators produce
+long paths. Raster uploads are limited by detected format to single-frame
+PNG, JPEG, or WebP; TIFF, EPS, and animated images are rejected before pixel
+decode. Pillow decompression warnings are treated as errors. PDF pages are
+preflighted at 2.5× against a 12-megapixel render ceiling, then converted from
+the bounded RGB pixmap directly to a Pillow image without PNG re-encoding.
+The existing five-page limit and killable decode worker still apply.
+
+This is a **preparation branch**, not the complete Phase 5 release. Email
+canonicalization and uniqueness migration, free-text field schemas, and the
+remaining regex/frontend audit are separate work. Integrate after the Phase 2
+identity and Phase 3 ingress/rate-limit gates, and resolve overlapping auth
+and middleware edits before release.
+
+Parser references: [defusedxml usage](https://github.com/tiran/defusedxml#readme),
+[Pillow security guidance](https://pillow.readthedocs.io/en/stable/handbook/security.html),
+and [PyMuPDF pixmap memory notes](https://pymupdf.readthedocs.io/en/latest/pixmap.html).

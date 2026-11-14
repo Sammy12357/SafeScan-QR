@@ -19,7 +19,7 @@ from decimal import Decimal, InvalidOperation
 from html import escape as escape_html
 from urllib.parse import quote, urlencode, urljoin, urlparse, parse_qsl
 from datetime import datetime, timedelta, timezone
-from xml.etree import ElementTree
+from defusedxml import ElementTree as SafeElementTree
 
 from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -91,7 +91,8 @@ def _safescan_logo_geometry():
             "static",
             "safescan-logo.svg",
         )
-        root = ElementTree.parse(svg_path).getroot()
+        root = SafeElementTree.parse(svg_path, forbid_dtd=True,
+                                     forbid_entities=True, forbid_external=True).getroot()
         bg_fill, bg_radius, tiles = "#000307", 82.0, []
         for el in root.iter():
             if not el.tag.endswith("rect"):
