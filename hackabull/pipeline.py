@@ -49,6 +49,7 @@ from storage import upload_bytes as storage_upload_bytes
 
 from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party, safety_screen
 import safescan_model_calibration as sm_calibration
+from .audit import SafeScanError
 from .config import ANTHROPIC_API_KEY
 from .config import ML_SIGNAL_VISIBLE
 from .config import MOCK_MODE
@@ -322,6 +323,10 @@ def check_reputation_signals(target_url):
     return [google_reputation_signal(target_url), phishtank_signal(target_url)]
 
 def is_url_like(value):
+    if not isinstance(value, str):
+        return False
+    if len(value) > 4096:
+        raise SafeScanError("QR payload is too large.", 400)
     return bool(re.match(r"^https?://", value, re.IGNORECASE) or re.match(r"^[a-z0-9.-]+\.[a-z]{2,}(/|$)", value, re.IGNORECASE))
 
 

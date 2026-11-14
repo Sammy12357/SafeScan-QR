@@ -113,7 +113,7 @@ jobs:
         run: |
           python -m pip install semgrep==1.185.0
           base=$(bash scripts/security_diff_base.sh)
-          semgrep scan --error --severity ERROR --config p/python --config p/fastapi --config p/secrets --baseline-commit "$base" .
+          semgrep scan --error --severity ERROR --config p/python --config p/fastapi --config p/secrets --config .github/security/semgrep-redos.yml --baseline-commit "$base" .
 
   gitleaks:
     runs-on: ubuntu-latest

@@ -187,6 +187,9 @@ def check_domain_intelligence(target_url):
     return [base] + extra_signals
 
 def check_crypto_pattern_signals(target_url):
+    if len(target_url) > 4096:
+        return [signal("Oversized URL", "URL inspection limit exceeded", "high",
+                       "The URL exceeds the local inspection limit and cannot be cleared.", False)]
     parsed = urlparse(target_url)
     haystack_parts = [target_url, parsed.query, parsed.fragment]
     for _, value in parse_qsl(parsed.query, keep_blank_values=True):
@@ -211,7 +214,9 @@ def check_crypto_pattern_signals(target_url):
     for pattern in permit_patterns:
         if pattern in lower:
             found.append(signal("Token Permit Pattern", pattern, "high", f"Found {pattern}, an off-chain token permit/transfer signature commonly used by wallet-drainer kits.", False))
-    if re.search(r"\bpermit\b", lower):
+    # Each source component is bounded by the URL limit. The combined
+    # haystack can be larger, so do not pass it to the regex engine.
+    if any(re.search(r"\bpermit\b", part.lower()) for part in haystack_parts):
         found.append(signal("Token Permit Pattern", "permit", "high", "Found a 'permit' signature request, a gasless token-approval pattern commonly used by wallet-drainer kits.", False))
 
     # NFT-collection drains: granting an operator blanket control of every
@@ -225,7 +230,7 @@ def check_crypto_pattern_signals(target_url):
         found.append(signal("WalletConnect Pairing URI", "wc: URI detected", "medium", "The payload is a WalletConnect pairing URI. Verify the requesting site before approving the session.", False))
 
     base58_pattern = r"(?<![A-Za-z0-9])[1-9A-HJ-NP-Za-km-z]{32,44}(?![A-Za-z0-9])"
-    base58_hits = re.findall(base58_pattern, parsed.query + " " + parsed.fragment)
+    base58_hits = re.findall(base58_pattern, parsed.query) + re.findall(base58_pattern, parsed.fragment)
     if base58_hits:
         found.append(signal("Solana Address Placement", f"{len(base58_hits)} address-like value(s)", "high", "Base58 wallet addresses appear inside query parameters or hash fragments.", False))
 

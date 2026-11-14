@@ -52,7 +52,7 @@ import safescan_model_calibration as sm_calibration
 
 def normalize_url(target_url):
     trimmed = target_url.strip()
-    if not re.match(r"^https?://", trimmed, re.IGNORECASE):
+    if not trimmed[:8].lower().startswith(("http://", "https://")):
         return f"https://{trimmed}"
     return trimmed
 

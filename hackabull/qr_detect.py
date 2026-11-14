@@ -72,6 +72,7 @@ from .audit import SafeScanError
 # routes it to the right analyzer.
 # =============================================================================
 MAX_EMBEDDED_URLS = 16
+MAX_QR_REGEX_INPUT_CHARS = 4096
 
 
 def extract_urls(text):
@@ -84,6 +85,8 @@ def extract_urls(text):
     found = []
     seen = set()
     candidate = text or ""
+    if len(candidate) > MAX_QR_REGEX_INPUT_CHARS:
+        raise SafeScanError("QR payload is too large.", 400)
     for _ in range(3):
         for match in re.finditer(r"https?://[^\s<>'\"\\\[\]{};]+", candidate, flags=re.IGNORECASE):
             url = match.group(0).rstrip(".,;)")
@@ -103,6 +106,8 @@ def _truncate_description(value, limit=90):
     return value[: limit - 1].rstrip() + "..."
 
 def _qr_field_value(payload, field):
+    if len(payload) > MAX_QR_REGEX_INPUT_CHARS:
+        raise SafeScanError("QR payload is too large.", 400)
     searchable = payload[5:] if payload.upper().startswith("WIFI:") else payload
     match = re.search(rf"(?:^|[;\r\n]){re.escape(field)}:([^;\r\n]*)", searchable, flags=re.IGNORECASE)
     if not match:
@@ -182,6 +187,8 @@ def describe_qr_action(payload_type, normalized):
     return "Display the decoded text payload without launching a standard browser, wallet, or message flow."
 
 def detect_payload(raw_payload):
+    if len(raw_payload) > MAX_QR_REGEX_INPUT_CHARS:
+        raise SafeScanError("QR payload is too large.", 400)
     payload = raw_payload.strip()
     upper = payload.upper()
 

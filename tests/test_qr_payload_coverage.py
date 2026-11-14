@@ -8,6 +8,8 @@ import qrcode
 from PIL import Image
 
 from hackabull import qr_decode, qr_detect
+from hackabull.audit import SafeScanError
+from hackabull.heuristics import check_crypto_pattern_signals
 
 
 @pytest.mark.parametrize(
@@ -42,6 +44,30 @@ def test_extract_all_distinct_embedded_urls_including_encoded():
     assert "https://first.example/go" in urls
     assert "https://second.example/path" in urls
     assert len(urls) == 2
+
+
+def test_oversized_qr_text_is_rejected_before_classification_or_url_extraction():
+    # A late link must not be silently skipped and the prefix called SAFE.
+    oversized = "WIFI:T:WPA;S:Cafe;P:" + "x" * 4096 + ";https://evil.example/drain"
+    for inspect in (qr_detect.detect_payload, qr_detect.extract_urls, qr_detect.analyze_qr_payload):
+        with pytest.raises(SafeScanError, match="too large") as error:
+            inspect(oversized)
+        assert error.value.status_code == 400
+
+
+def test_crypto_permit_near_end_of_bounded_url_is_still_found():
+    url = "https://example.com/?note=" + "a" * 4030 + "&action=permit"
+    assert len(url) <= 4096
+    signals = check_crypto_pattern_signals(url)
+    assert any(item["check"] == "Token Permit Pattern" and item["result"] == "permit" for item in signals)
+
+
+def test_oversized_crypto_url_cannot_receive_clear_signal():
+    signals = check_crypto_pattern_signals("https://example.com/?note=" + "a" * 4096)
+    assert len(signals) == 1
+    assert signals[0]["check"] == "Oversized URL"
+    assert signals[0]["severity"] == "high"
+    assert signals[0]["passed"] is False
 
 
 def test_embedded_url_entrypoint_never_fetches_private_payload_fields(monkeypatch):

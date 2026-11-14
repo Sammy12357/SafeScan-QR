@@ -154,7 +154,7 @@ def classify_qr_with_ml(payload, image=None, input_source="generated_qr"):
 
     # The ML cache stores its key in SQLite. Never put a non-URL QR payload
     # (for example an otpauth seed or Wi-Fi password) into that cache.
-    cacheable = bool(payload and re.match(r"^https?://", payload, re.IGNORECASE))
+    cacheable = bool(payload and payload[:8].lower().startswith(("http://", "https://")))
     cached = sm_calibration.cache_get(payload) if cacheable else None
     if cached is not None:
         cached["cacheHit"] = True
