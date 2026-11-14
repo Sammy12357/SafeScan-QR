@@ -1,10 +1,11 @@
 // SafeScan web camera scanner. QR decoding starts only after "Take picture".
 // The native detector is a fast first pass; the self-hosted ZXing worker checks
-// the full-resolution frame and protects the multi-code refusal on every browser.
+// the whole frame and protects the multi-code refusal on every browser.
 (function () {
-  const WORKER_URL = "/static/qr-worker.js?v=scanner-phase-2b";
+  const WORKER_URL = "/static/qr-worker.js?v=scanner-phase-4";
   const WORKER_START_TIMEOUT_MS = 8000;
   const DECODE_TIMEOUT_MS = 6000;
+  const MAX_BURST_PIXELS = 3_000_000;
   const CAMERA_DEVICE_KEY = "safescan-qr-camera-device:" + window.location.origin;
 
   function savedDeviceId() {
@@ -68,24 +69,44 @@
     }
   }
 
-  async function captureFrame(video, canvas, ctx) {
+  async function captureFrame(video, canvas, ctx, allowBitmap) {
     if (!video.videoWidth || !video.videoHeight) throw new Error("No camera frame is ready.");
-    // Transferring a bitmap avoids a large readback on browsers with worker
-    // OffscreenCanvas. ImageData is the compatibility path for other browsers.
-    if (typeof createImageBitmap === "function" && typeof OffscreenCanvas === "function") {
+    const scale = Math.min(1, Math.sqrt(MAX_BURST_PIXELS / (video.videoWidth * video.videoHeight)));
+    const width = Math.max(1, Math.round(video.videoWidth * scale));
+    const height = Math.max(1, Math.round(video.videoHeight * scale));
+    // Cap six-frame memory on cameras that exceed the 1920x1080 request.
+    // Bitmap transfer avoids readback when the worker supports OffscreenCanvas;
+    // ImageData is the compatibility path for other browsers.
+    if (allowBitmap && typeof createImageBitmap === "function") {
       try {
-        const bitmap = await createImageBitmap(video);
-        return { bitmap, transfer: [bitmap] };
+        const bitmap = scale < 1
+          ? await createImageBitmap(video, { resizeWidth: width, resizeHeight: height, resizeQuality: "high" })
+          : await createImageBitmap(video);
+        if (bitmap.width * bitmap.height <= MAX_BURST_PIXELS) return { bitmap, transfer: [bitmap] };
+        bitmap.close?.();
       } catch (_err) {
         // Safari and some camera drivers cannot snapshot video to ImageBitmap.
       }
     }
     if (!ctx) throw new Error("Canvas is unavailable in this browser.");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    canvas.width = width;
+    canvas.height = height;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     return { imageData, transfer: [imageData.data.buffer] };
+  }
+
+  function captureSample(video, canvas, ctx, maxDimension) {
+    const scale = Math.min(1, maxDimension / Math.max(video.videoWidth, video.videoHeight));
+    canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+    canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    return { imageData, transfer: [imageData.data.buffer] };
+  }
+
+  function disposeFrame(frame) {
+    try { frame?.bitmap?.close?.(); } catch (_err) { /* It may have transferred. */ }
   }
 
   function createWorkerBridge() {
@@ -120,9 +141,8 @@
         if (!ready) reject(error);
       }
 
-      async function decode(video, canvas, ctx) {
+      async function request(mode, frame) {
         if (closed) throw new Error("QR decoder is unavailable.");
-        const frame = await captureFrame(video, canvas, ctx);
         const id = ++nextId;
         return new Promise((resolveResult, rejectResult) => {
           const timer = setTimeout(() => {
@@ -132,7 +152,7 @@
           pending.set(id, { resolve: resolveResult, reject: rejectResult, timer });
           try {
             worker.postMessage({
-              type: "decode", id, mode: "capture",
+              type: "decode", id, mode,
               ...(frame.bitmap ? { bitmap: frame.bitmap } : { imageData: frame.imageData }),
             }, frame.transfer);
           } catch (error) {
@@ -149,19 +169,20 @@
           if (closed || ready) return;
           ready = true;
           clearTimeout(startupTimer);
-          resolve({ decode, close: () => fail(new Error("QR scanner closed.")) });
+          resolve({ request, supportsBitmap: result.offscreenCanvas === true,
+            close: () => fail(new Error("QR scanner closed.")) });
           return;
         }
         if (result.type === "init-error") {
           fail(new Error("Local QR decoder failed to start."));
           return;
         }
-        const request = pending.get(result.id);
-        if (!request) return;
-        clearTimeout(request.timer);
+        const pendingRequest = pending.get(result.id);
+        if (!pendingRequest) return;
+        clearTimeout(pendingRequest.timer);
         pending.delete(result.id);
-        if (result.error) request.reject(new Error("Local QR decoder failed."));
-        else request.resolve(result);
+        if (result.error) pendingRequest.reject(new Error("Local QR decoder failed."));
+        else pendingRequest.resolve(result);
       };
       worker.onerror = () => fail(new Error("Local QR decoder stopped."));
     });
@@ -176,12 +197,16 @@
     }
     return {
       kind: nativeDetector ? "BarcodeDetector + local ZXing" : "local ZXing",
+      supportsBitmap: workerBridge.supportsBitmap,
       close: () => workerBridge?.close(),
-      decode: async (video, canvas, ctx) => {
+      score: (frame) => workerBridge.request("score", frame),
+      locate: (frame) => workerBridge.request("locate", frame),
+      decode: async (frame) => {
         let nativeValues = [];
         if (nativeDetector) {
           try {
-            const codes = await nativeDetector.detect(video);
+            const codes = await nativeDetector.detect(frame.bitmap || frame.imageData);
+            if ((codes || []).length > 1) return { ambiguous: true };
             nativeValues = validPayloads((codes || []).map((code) => code.rawValue));
           } catch (_err) {
             // Worker decode remains available if native detection fails.
@@ -190,7 +215,7 @@
         if (nativeValues.length > 1) return { ambiguous: true };
         // A native-only result cannot establish that the complete frame has
         // been checked for a competing code. Fail closed if the worker fails.
-        const result = await workerBridge.decode(video, canvas, ctx);
+        const result = await workerBridge.request("capture", frame);
         if (result.multipleCodes === true) return { ambiguous: true };
         if (result.structuredAppend === true) return { ambiguous: true, structuredAppend: true };
         const workerValues = validPayloads((result.symbols || [])
@@ -201,6 +226,72 @@
         return values[0] || null;
       },
     };
+  }
+
+  function quadPoints(quad) {
+    return quad && [quad.topLeft, quad.topRight, quad.bottomRight, quad.bottomLeft].every(
+      (point) => point && Number.isFinite(point.x) && Number.isFinite(point.y)
+    ) ? [quad.topLeft, quad.topRight, quad.bottomRight, quad.bottomLeft] : null;
+  }
+
+  function quadBox(quad) {
+    const points = quadPoints(quad);
+    if (!points) return null;
+    const xs = points.map((point) => point.x);
+    const ys = points.map((point) => point.y);
+    const x = Math.min(...xs);
+    const y = Math.min(...ys);
+    return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
+  }
+
+  function physicalSymbols(symbols) {
+    const found = [];
+    for (const symbol of symbols || []) {
+      const box = quadBox(symbol.quad);
+      if (!box) continue;
+      const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      const same = found.some(({ box: other }) =>
+        Math.hypot(center.x - other.x - other.width / 2, center.y - other.y - other.height / 2) <
+        Math.max(12, Math.min(box.width, box.height, other.width, other.height) * 0.2));
+      if (!same) found.push({ symbol, box });
+    }
+    return found;
+  }
+
+  function boxesOverlap(first, second) {
+    const width = Math.max(0, Math.min(first.x + first.width, second.x + second.width) - Math.max(first.x, second.x));
+    const height = Math.max(0, Math.min(first.y + first.height, second.y + second.height) - Math.max(first.y, second.y));
+    return width * height > 0.02 * Math.min(first.width * first.height, second.width * second.height);
+  }
+
+  function guidanceFor(result, visible, now, noCodeSince, blurSince, canZoom) {
+    if (visible.length > 1) {
+      return visible.some((item, index) => visible.slice(index + 1).some((other) => boxesOverlap(item.box, other.box)))
+        ? "One code is stuck on top of another. This can be a QR sticker scam. Aim at one code."
+        : "Two codes in view. Aim at just one.";
+    }
+    const item = visible[0];
+    if (!item) return now - noCodeSince >= 4000 ? "Can't see a code. Try more light or upload a photo instead." : "Aim at one QR code.";
+    const { box, symbol } = item;
+    const width = result.width || 1;
+    const height = result.height || 1;
+    if (box.x <= width * 0.02) return "Move the code right so it is fully visible.";
+    if (box.x + box.width >= width * 0.98) return "Move the code left so it is fully visible.";
+    if (box.y <= height * 0.02) return "Move the code down so it is fully visible.";
+    if (box.y + box.height >= height * 0.98) return "Move the code up so it is fully visible.";
+    if (Math.min(box.width, box.height) < Math.min(width, height) * 0.15) {
+      return canZoom ? "The code is small. Move closer or tap zoom." : "The code is small. Move closer.";
+    }
+    if (blurSince && now - blurSince >= 1000) return "Hold steady. Tap the code to focus.";
+    if ((symbol.stats?.meanLuma ?? result.stats?.meanLuma ?? 255) < 50) return "Too dark. Add light or use the flashlight.";
+    if (symbol.stats?.brightFraction > 0.7 && symbol.stats?.darkFraction < 0.08) return "Glare may hide the code. Tilt the phone a little.";
+    const points = quadPoints(symbol.quad);
+    if (points) {
+      const top = Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y);
+      const bottom = Math.hypot(points[2].x - points[3].x, points[2].y - points[3].y);
+      if (Math.max(top, bottom) / Math.max(1, Math.min(top, bottom)) > 1.6) return "Face the code more straight on.";
+    }
+    return symbol.valid ? "Code found. Take a picture to check it." : "Almost. Hold still and take the picture.";
   }
 
   function buildModal() {
@@ -217,6 +308,7 @@
         '</div>' +
         '<div class="qr-camera-stage">' +
           '<video class="qr-camera-video" autoplay playsinline muted></video>' +
+          '<canvas class="qr-camera-overlay" aria-hidden="true"></canvas>' +
           '<div class="qr-camera-frame" aria-hidden="true"></div>' +
         '</div>' +
         '<p class="qr-camera-status" aria-live="polite">Starting camera…</p>' +
@@ -224,10 +316,15 @@
           '<button class="qr-camera-switch" type="button" hidden>Switch camera</button>' +
           '<button class="qr-camera-zoom" type="button" hidden>2× zoom</button>' +
           '<button class="qr-camera-torch" type="button" aria-pressed="false" hidden>Flashlight off</button>' +
+          '<button class="qr-camera-auto" type="button" aria-pressed="false">Auto-capture off</button>' +
         '</div>' +
         '<div class="qr-camera-actions">' +
           '<button class="qr-camera-capture" type="button" disabled>Take picture</button>' +
           '<button class="qr-camera-retry" type="button" hidden>Retry camera</button>' +
+        '</div>' +
+        '<div class="qr-camera-server-offer" hidden>' +
+          '<p>Couldn\'t read it here. Send the clearest photo to SafeScan for another try? The image is processed in memory and is not saved.</p>' +
+          '<button class="qr-camera-server-send" type="button">Send photo to SafeScan</button>' +
         '</div>' +
       '</div>';
     return modal;
@@ -248,9 +345,20 @@
     const switchBtn = modal.querySelector(".qr-camera-switch");
     const zoomBtn = modal.querySelector(".qr-camera-zoom");
     const torchBtn = modal.querySelector(".qr-camera-torch");
+    const autoBtn = modal.querySelector(".qr-camera-auto");
     const retryBtn = modal.querySelector(".qr-camera-retry");
+    const serverOffer = modal.querySelector(".qr-camera-server-offer");
+    const serverSendBtn = modal.querySelector(".qr-camera-server-send");
+    const overlay = modal.querySelector(".qr-camera-overlay");
+    const overlayContext = overlay.getContext("2d");
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const locateCanvas = document.createElement("canvas");
+    const locateContext = locateCanvas.getContext("2d", { willReadFrequently: true });
+    const scoreCanvas = document.createElement("canvas");
+    const scoreContext = scoreCanvas.getContext("2d", { willReadFrequently: true });
+    const fallbackCanvas = document.createElement("canvas");
+    const fallbackContext = fallbackCanvas.getContext("2d", { willReadFrequently: true });
 
     let stream = null;
     let track = null;
@@ -269,15 +377,148 @@
     let focusTimer = null;
     let beginPromise = null;
     let beginTarget = null;
+    let locateTimer = null;
+    let videoFrameHandle = null;
+    let autoArmed = false;
+    let autoCandidate = null;
+    let lastHapticText = null;
+    let noCodeSince = Date.now();
+    let blurSince = null;
+    let lastGuidanceAt = 0;
+    let lastGuidanceText = "";
+    let fallbackBlob = null;
+
+    function clearOverlay() {
+      if (overlayContext) overlayContext.clearRect(0, 0, overlay.width, overlay.height);
+    }
+
+    function drawOutlines(result, visible) {
+      if (!overlayContext || !result.width || !result.height) return;
+      const stage = modal.querySelector(".qr-camera-stage");
+      const rect = stage.getBoundingClientRect();
+      const ratio = Math.min(2, window.devicePixelRatio || 1);
+      overlay.width = Math.max(1, Math.round(rect.width * ratio));
+      overlay.height = Math.max(1, Math.round(rect.height * ratio));
+      overlayContext.setTransform(ratio, 0, 0, ratio, 0, 0);
+      overlayContext.clearRect(0, 0, rect.width, rect.height);
+      const scale = Math.max(rect.width / result.width, rect.height / result.height);
+      const cropX = (result.width * scale - rect.width) / 2;
+      const cropY = (result.height * scale - rect.height) / 2;
+      overlayContext.lineWidth = 3;
+      const accent = typeof window.getComputedStyle === "function"
+        ? window.getComputedStyle(stage).getPropertyValue("--accent").trim() : "";
+      overlayContext.strokeStyle = visible.length > 1 ? "#ff4c7f" : accent || "#ff4c7f";
+      for (const { symbol } of visible) {
+        const points = quadPoints(symbol.quad);
+        if (!points) continue;
+        overlayContext.beginPath();
+        points.forEach((point, index) => {
+          let x = point.x * scale - cropX;
+          if (video.classList.contains("is-mirrored")) x = rect.width - x;
+          const y = point.y * scale - cropY;
+          if (index === 0) overlayContext.moveTo(x, y);
+          else overlayContext.lineTo(x, y);
+        });
+        overlayContext.closePath();
+        overlayContext.stroke();
+      }
+    }
+
+    function cancelLocate() {
+      if (locateTimer) clearTimeout(locateTimer);
+      locateTimer = null;
+      if (videoFrameHandle !== null && typeof video.cancelVideoFrameCallback === "function") {
+        video.cancelVideoFrameCallback(videoFrameHandle);
+      }
+      videoFrameHandle = null;
+      autoCandidate = null;
+      clearOverlay();
+    }
+
+    function setAutoArmed(enabled) {
+      autoArmed = enabled;
+      autoCandidate = null;
+      autoBtn.textContent = enabled ? "Auto-capture on" : "Auto-capture off";
+      autoBtn.setAttribute("aria-pressed", String(enabled));
+    }
+
+    function updateGuidance(result) {
+      const now = Date.now();
+      const visible = physicalSymbols(result.symbols);
+      drawOutlines(result, visible);
+      if (visible.length) noCodeSince = now;
+      const soft = result.stats?.sharpness;
+      if (Number.isFinite(soft) && soft < 20) blurSince ||= now;
+      else blurSince = null;
+
+      if (visible.length === 1 && visible[0].symbol.valid) {
+        if (lastHapticText !== visible[0].symbol.text) {
+          try { navigator.vibrate?.(30); } catch (_err) { /* Optional haptic. */ }
+          lastHapticText = visible[0].symbol.text;
+        }
+      } else lastHapticText = null;
+
+      if (autoArmed && visible.length === 1 && visible[0].symbol.valid &&
+          Number.isFinite(soft) && soft >= 20) {
+        const { box, symbol } = visible[0];
+        const centerX = box.x + box.width / 2;
+        const centerY = box.y + box.height / 2;
+        const edge = box.x <= result.width * 0.02 || box.y <= result.height * 0.02 ||
+          box.x + box.width >= result.width * 0.98 || box.y + box.height >= result.height * 0.98;
+        if (!edge && autoCandidate?.text === symbol.text &&
+            Math.hypot(centerX - autoCandidate.x, centerY - autoCandidate.y) < Math.min(result.width, result.height) * 0.08) {
+          autoCandidate.count += 1;
+          autoCandidate.x = centerX;
+          autoCandidate.y = centerY;
+        } else autoCandidate = edge ? null : { text: symbol.text, x: centerX, y: centerY, count: 1, firstAt: now };
+        if (autoCandidate?.count >= 3 && now - autoCandidate.firstAt >= 800) {
+          setAutoArmed(false);
+          void capture();
+          return;
+        }
+      } else autoCandidate = null;
+
+      const guidance = guidanceFor(result, visible, now, noCodeSince, blurSince, !zoomBtn.hidden);
+      if (guidance !== lastGuidanceText && now - lastGuidanceAt >= 1500) {
+        status.textContent = guidance;
+        lastGuidanceText = guidance;
+        lastGuidanceAt = now;
+      }
+    }
+
+    function scheduleLocate(generation) {
+      if (!active || scanning || generation !== cameraGeneration || !track || document.hidden) return;
+      locateTimer = setTimeout(() => {
+        locateTimer = null;
+        if (!active || scanning || generation !== cameraGeneration || !track) return;
+        if (typeof video.requestVideoFrameCallback === "function") {
+          videoFrameHandle = video.requestVideoFrameCallback(() => {
+            videoFrameHandle = null;
+            void locateOnce(generation);
+          });
+        } else void locateOnce(generation);
+      }, 200);
+    }
+
+    async function locateOnce(generation) {
+      if (!active || scanning || generation !== cameraGeneration || !decoder || !locateContext ||
+          !video.videoWidth || !video.videoHeight) return;
+      try {
+        const result = await decoder.locate(captureSample(video, locateCanvas, locateContext, 960));
+        if (active && !scanning && generation === cameraGeneration) updateGuidance(result);
+      } catch (_err) { /* A busy guidance frame is disposable. */ }
+      scheduleLocate(generation);
+    }
 
     function updateControlsVisibility() {
-      controls.hidden = switchBtn.hidden && zoomBtn.hidden && torchBtn.hidden;
+      controls.hidden = switchBtn.hidden && zoomBtn.hidden && torchBtn.hidden && autoBtn.hidden;
     }
 
     function hideControls() {
       switchBtn.hidden = true;
       zoomBtn.hidden = true;
       torchBtn.hidden = true;
+      autoBtn.hidden = true;
       updateControlsVisibility();
     }
 
@@ -287,6 +528,7 @@
     }
 
     function stopStream() {
+      cancelLocate();
       clearFocusTimer();
       const oldStream = stream;
       stream = null;
@@ -375,6 +617,7 @@
       zoomBtn.hidden = !(zoomTarget > zoomBase + 0.05 && typeof currentTrack.applyConstraints === "function");
       zoomBtn.textContent = `${Number((zoomTarget / zoomBase).toFixed(1))}× zoom`;
       zoomBtn.setAttribute("aria-pressed", "false");
+      autoBtn.hidden = false;
       updateControlsVisibility();
     }
 
@@ -392,6 +635,9 @@
       }
       const generation = ++cameraGeneration;
       scanning = false;
+      fallbackBlob = null;
+      serverOffer.hidden = true;
+      setAutoArmed(false);
       captureBtn.disabled = true;
       retryBtn.hidden = true;
       hideControls();
@@ -481,6 +727,11 @@
         (fixedFocusHint ? " Hold the code 20–30 cm from the camera." : "");
       captureBtn.disabled = false;
       retryBtn.hidden = true;
+      noCodeSince = Date.now();
+      blurSince = null;
+      lastGuidanceAt = 0;
+      lastGuidanceText = "";
+      scheduleLocate(generation);
       return true;
     }
 
@@ -502,6 +753,7 @@
       beginPromise = null;
       beginTarget = null;
       scanning = false;
+      setAutoArmed(false);
       captureBtn.disabled = true;
       hideControls();
       stopStream();
@@ -515,6 +767,7 @@
       beginPromise = null;
       beginTarget = null;
       clearFocusTimer();
+      cancelLocate();
       if (decoder) decoder.close();
       else decoderPromise?.then((pendingDecoder) => pendingDecoder.close()).catch(() => {});
       stopStream();
@@ -636,11 +889,90 @@
     });
 
     retryBtn.addEventListener("click", () => { if (active) beginCamera(selectedDeviceId); });
+    autoBtn.addEventListener("click", () => {
+      if (!active || scanning || !track || autoBtn.hidden) return;
+      setAutoArmed(!autoArmed);
+      status.textContent = autoArmed
+        ? "Auto-capture will scan one steady code. It will never open the destination."
+        : "Auto-capture off. Take a picture when ready.";
+    });
     beginCamera(selectedDeviceId);
 
-    // Capture handler: grab the current frame and decode it once. Nothing
-    // happens until the user clicks, so this is a deliberate "take a photo of
-    // the QR code" action rather than continuous auto-scanning.
+    function waitForVideoFrame() {
+      return new Promise((resolve) => {
+        let done = false;
+        let callbackId = null;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          clearTimeout(timeout);
+          if (callbackId !== null && typeof video.cancelVideoFrameCallback === "function") {
+            video.cancelVideoFrameCallback(callbackId);
+          }
+          resolve();
+        };
+        const timeout = setTimeout(finish, 110);
+        if (typeof video.requestVideoFrameCallback === "function") callbackId = video.requestVideoFrameCallback(finish);
+      });
+    }
+
+    async function collectBurst(generation) {
+      const frames = [];
+      try {
+        for (let index = 0; index < 6; index += 1) {
+          if (index) {
+            await new Promise((resolve) => setTimeout(resolve, 80));
+            await waitForVideoFrame();
+          }
+          if (!active || generation !== cameraGeneration || !track || track.readyState !== "live") break;
+          const frame = await captureFrame(video, canvas, ctx, decoder.supportsBitmap);
+          const sample = scoreContext ? captureSample(video, scoreCanvas, scoreContext, 320) : null;
+          frames.push({ frame, sample, index, sharpness: 0 });
+        }
+        return frames;
+      } catch (error) {
+        frames.forEach(({ frame }) => disposeFrame(frame));
+        throw error;
+      }
+    }
+
+    async function jpegFromFrame(frame) {
+      if (!fallbackContext || typeof fallbackCanvas.toBlob !== "function") return null;
+      const source = frame.bitmap || frame.imageData;
+      if (!source) return null;
+      const scale = Math.min(1, 1920 / Math.max(source.width, source.height));
+      fallbackCanvas.width = Math.max(1, Math.round(source.width * scale));
+      fallbackCanvas.height = Math.max(1, Math.round(source.height * scale));
+      if (frame.bitmap) fallbackContext.drawImage(frame.bitmap, 0, 0, fallbackCanvas.width, fallbackCanvas.height);
+      else {
+        // The Safari compatibility path keeps ImageData on the main thread.
+        // Draw it once for a possible consented upload; no network request yet.
+        const original = document.createElement("canvas");
+        original.width = source.width;
+        original.height = source.height;
+        original.getContext("2d").putImageData(source, 0, 0);
+        fallbackContext.drawImage(original, 0, 0, fallbackCanvas.width, fallbackCanvas.height);
+      }
+      return new Promise((resolve) => fallbackCanvas.toBlob(resolve, "image/jpeg", 0.92));
+    }
+
+    serverSendBtn.addEventListener("click", async () => {
+      if (!active || !fallbackBlob || typeof opts.onServerFallback !== "function") return;
+      serverSendBtn.disabled = true;
+      status.textContent = "Sending this photo to SafeScan for another read…";
+      try {
+        const accepted = await opts.onServerFallback(fallbackBlob);
+        if (accepted === false) throw new Error("Upload is unavailable in this browser.");
+        cleanup();
+      } catch (_error) {
+        if (!active) return;
+        status.textContent = "Could not send the photo. Use Upload QR file/photo instead.";
+        serverSendBtn.disabled = false;
+      }
+    });
+
+    // Only this function may forward a decoded payload for risk analysis.
+    // Locate mode and auto-capture both feed this same bounded burst path.
     async function capture() {
       if (!active || scanning || !decoder || !track || track.readyState !== "live") return;
       if (video.readyState < 2 /* HAVE_CURRENT_DATA */) {
@@ -649,15 +981,70 @@
       }
       scanning = true;
       const captureGeneration = cameraGeneration;
+      cancelLocate();
+      serverOffer.hidden = true;
+      fallbackBlob = null;
       captureBtn.disabled = true;
-      status.textContent = "Reading the QR code…";
+      status.textContent = "Taking several pictures to find the clearest QR…";
 
+      let frames = [];
+      let scanError = false;
+      let ambiguous = false;
+      let structuredAppend = false;
       let value = null;
-      let scanError = null;
       try {
-        value = await decoder.decode(video, canvas, ctx);
-      } catch (error) {
-        scanError = error;
+        frames = await collectBurst(captureGeneration);
+        if (!frames.length) throw new Error("No camera frames were captured.");
+        for (const item of frames) {
+          if (!item.sample) continue;
+          try {
+            const score = await decoder.score(item.sample);
+            item.sharpness = score.stats?.sharpness || 0;
+          } catch (_error) { scanError = true; }
+        }
+        frames.sort((first, second) => second.sharpness - first.sharpness);
+        if (active && captureGeneration === cameraGeneration && typeof opts.onServerFallback === "function") {
+          fallbackBlob = await jpegFromFrame(frames[0].frame);
+        }
+        status.textContent = "Checking the clearest pictures for QR codes…";
+        for (const item of frames) {
+          if (!active || captureGeneration !== cameraGeneration) break;
+          try {
+            const decoded = await decoder.decode(item.frame);
+            if (decoded?.ambiguous) {
+              ambiguous = true;
+              structuredAppend ||= decoded.structuredAppend === true;
+              break;
+            }
+            if (decoded) {
+              if (value && decoded !== value) {
+                ambiguous = true;
+                break;
+              }
+              value = decoded;
+            }
+          } catch (_error) { scanError = true; }
+          finally { disposeFrame(item.frame); }
+        }
+        if (!value && !ambiguous && active && captureGeneration === cameraGeneration &&
+            decoder.supportsBitmap && typeof ImageCapture === "function" && typeof createImageBitmap === "function") {
+          // Chrome Android can expose a sharper full-sensor still after the
+          // video burst. This is a local last attempt, never an upload.
+          let still = null;
+          try {
+            still = await createImageBitmap(await new ImageCapture(track).takePhoto());
+            const decoded = await decoder.decode({ bitmap: still, transfer: [still] });
+            if (decoded?.ambiguous) {
+              ambiguous = true;
+              structuredAppend ||= decoded.structuredAppend === true;
+            } else if (decoded) value = decoded;
+          } catch (_error) { /* ImageCapture is optional on supporting browsers. */ }
+          finally { disposeFrame({ bitmap: still }); }
+        }
+      } catch (_error) {
+        scanError = true;
+      } finally {
+        frames.forEach(({ frame }) => disposeFrame(frame));
       }
 
       if (!active) return;
@@ -666,27 +1053,34 @@
         return;
       }
 
-      if (value && value.ambiguous) {
-        status.textContent = value.structuredAppend
+      if (ambiguous) {
+        fallbackBlob = null;
+        status.textContent = structuredAppend
           ? "This code is split across multiple QR codes. Scan a complete code instead."
-          : "Multiple QR codes found. Aim at one code or crop the picture, then try again.";
+          : "The camera saw two QR codes. Aim at one code and try again.";
         captureBtn.disabled = false;
         scanning = false;
+        scheduleLocate(cameraGeneration);
         return;
       }
 
-      if (value) {
+      if (value && !scanError) {
         status.textContent = "QR detected — analysing…";
         cleanup();
         if (typeof opts.onResult === "function") opts.onResult(value);
         return;
       }
 
-      status.textContent = scanError
-        ? 'The local QR decoder could not read this picture. Go back and use "Upload QR file/photo".'
-        : "No QR code found in that picture. Line it up and take another.";
+      if (value && scanError) fallbackBlob = null;
+      serverOffer.hidden = !(fallbackBlob && !value && typeof opts.onServerFallback === "function");
+      status.textContent = value && scanError
+        ? "One frame was unclear after a QR was found. Aim at one code and retry."
+        : serverOffer.hidden
+          ? "No complete QR found. Try again or upload a photo instead."
+          : "No QR read locally. You can retry or choose to send the photo to SafeScan.";
       captureBtn.disabled = false;
       scanning = false;
+      scheduleLocate(cameraGeneration);
     }
 
     captureBtn.addEventListener("click", capture);

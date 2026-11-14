@@ -604,7 +604,7 @@ qrImageInput?.addEventListener("change", () => {
 });
 
 // Live camera scan. The scanner module (qr-camera.js) handles camera
-// access, frame decoding, and cooldown; we just feed the decoded payload
+// access, local burst decoding, guidance, and optional server retry. We feed a decoded payload
 // into the manual payload form so the same /search_qr_api pipeline
 // runs on the result.
 const scanCameraButton = document.getElementById("scanCameraButton");
@@ -628,6 +628,22 @@ function openCameraScanner() {
     },
     onError: (message) => {
       if (message) window.alert(message);
+    },
+    onServerFallback: (blob) => {
+      const input = document.getElementById("qrImageInput");
+      const form = document.getElementById("qrForm");
+      const source = document.getElementById("cameraCaptureSource");
+      if (!blob || !input || !form || !source || typeof DataTransfer !== "function" || typeof File !== "function") return false;
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([blob], "safescan-camera-frame.jpg", { type: "image/jpeg" }));
+      input.files = transfer.files;
+      source.value = "camera_frame";
+      if (analysisLoadingState) {
+        analysisLoadingState.textContent = "Sending the selected photo to SafeScan…";
+        analysisLoadingState.classList.remove("hidden");
+      }
+      form.requestSubmit ? form.requestSubmit() : form.submit();
+      return true;
     }
   });
 }

@@ -124,6 +124,17 @@ const located = await decode(await imageData(sameTextFrame), "locate");
 if (located.error || located.symbols.filter((symbol) => symbol.valid && symbol.quad).length < 2) {
   throw new Error("Locate mode dropped a separate same-text QR outline");
 }
+if (!Number.isFinite(located.stats?.sharpness)) throw new Error("Locate guidance lacks sharpness statistics");
+
+const cleanPatch = await sharp(path.join(corpus, "01_clean_centered.png"))
+  .extract({ left: 480, top: 200, width: 320, height: 320 }).png().toBuffer();
+const blurredPatch = await sharp(path.join(corpus, "11_motion_blur.png"))
+  .extract({ left: 480, top: 200, width: 320, height: 320 }).png().toBuffer();
+const cleanScore = await decode(await imageData(cleanPatch), "score");
+const blurredScore = await decode(await imageData(blurredPatch), "score");
+if (!(cleanScore.stats?.sharpness > blurredScore.stats?.sharpness)) {
+  throw new Error("Worker sharpness score did not rank the clean QR above motion blur");
+}
 
 // A split QR can contain a URL-shaped first fragment. It must not be sent to
 // risk analysis as though it were a complete destination.
@@ -147,4 +158,5 @@ console.log(`Worker exact: ${coreCorrect}/18 core; ${allCorrect}/24 all; p95 ${p
 console.log("Same-text two-code refusal: pass");
 console.log("Separate locate outlines: pass");
 console.log("Structured append fragments: refused");
+console.log("Sharpness ranking: pass");
 if (coreCorrect < minimumCore) process.exitCode = 1;

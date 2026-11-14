@@ -35,7 +35,7 @@ const ready = (async () => {
       },
       fireImmediately: true
     });
-    self.postMessage({ type: "ready" });
+    self.postMessage({ type: "ready", offscreenCanvas: typeof OffscreenCanvas === "function" });
   } catch (_error) {
     startupError = "decoder_unavailable";
     self.postMessage({ type: "init-error", error: startupError });
@@ -281,6 +281,49 @@ function outputSymbols(collection) {
   return [...visible, ...collection.invalid.slice(0, 4)];
 }
 
+// Score a bounded gray copy so burst frames can be ranked without decoding
+// six full frames on the UI thread. The same stats support conservative hints.
+function frameStats(image, box = null) {
+  const area = box || { x: 0, y: 0, width: image.width, height: image.height };
+  const width = Math.max(1, Math.min(320, Math.round(area.width)));
+  const height = Math.max(1, Math.round(area.height * width / Math.max(1, area.width)));
+  const gray = new Uint8Array(width * height);
+  let sum = 0;
+  let bright = 0;
+  let dark = 0;
+  for (let y = 0; y < height; y += 1) {
+    const sourceY = Math.min(image.height - 1, Math.floor(area.y + (y + 0.5) * area.height / height));
+    for (let x = 0; x < width; x += 1) {
+      const sourceX = Math.min(image.width - 1, Math.floor(area.x + (x + 0.5) * area.width / width));
+      const offset = (sourceY * image.width + sourceX) * 4;
+      const light = Math.round(image.data[offset] * 0.299 + image.data[offset + 1] * 0.587 + image.data[offset + 2] * 0.114);
+      gray[y * width + x] = light;
+      sum += light;
+      if (light > 247) bright += 1;
+      if (light < 65) dark += 1;
+    }
+  }
+  let laplaceSum = 0;
+  let laplaceSquared = 0;
+  let count = 0;
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      const index = y * width + x;
+      const value = 4 * gray[index] - gray[index - 1] - gray[index + 1] - gray[index - width] - gray[index + width];
+      laplaceSum += value;
+      laplaceSquared += value * value;
+      count += 1;
+    }
+  }
+  const mean = count ? laplaceSum / count : 0;
+  return {
+    sharpness: Math.max(0, Math.round((count ? laplaceSquared / count - mean * mean : 0) * 10) / 10),
+    meanLuma: Math.round(sum / gray.length),
+    brightFraction: bright / gray.length,
+    darkFraction: dark / gray.length
+  };
+}
+
 function hasMultipleCodes(collection) {
   return collection.valid.size > 1 || collection.validLocations.length > 1;
 }
@@ -387,8 +430,14 @@ async function decodeLocate(image) {
   // the same text. Guidance needs to show both outlines; capture's distinct
   // payload map is intentionally different.
   const results = await read(image, decodeOptions.locate);
+  const symbols = (results || []).map((result) => normalizeSymbol(result, { x: 0, y: 0, scale: 1 })).slice(0, 4);
+  for (const symbol of symbols) {
+    const box = boundingBox(symbol.quad, image.width, image.height);
+    if (box) symbol.stats = frameStats(image, box);
+  }
   return {
-    symbols: (results || []).map((result) => normalizeSymbol(result, { x: 0, y: 0, scale: 1 })).slice(0, 4),
+    symbols,
+    stats: frameStats(image),
     stage: "locate"
   };
 }
@@ -403,7 +452,9 @@ async function processMessage(message) {
     const image = imageDataFromMessage(message);
     width = image.width;
     height = image.height;
-    const result = message.mode === "locate" ? await decodeLocate(image) : await decodeCapture(image, message.roi);
+    const result = message.mode === "score"
+      ? { symbols: [], stats: frameStats(image), stage: "score" }
+      : message.mode === "locate" ? await decodeLocate(image) : await decodeCapture(image, message.roi);
     self.postMessage({ id: message.id, ...result, width, height, ms: Math.round(clockNow() - started) });
   } catch (error) {
     const code = error && /^(image_|crop_|canvas_|offscreen_|decoder_)/.test(error.message) ? error.message : "decode_failed";
@@ -424,7 +475,7 @@ function runNext() {
 self.onmessage = (event) => {
   const message = event.data;
   if (!message || message.type !== "decode" || !Number.isSafeInteger(message.id)) return;
-  if (message.mode !== "capture" && message.mode !== "locate") return;
+  if (message.mode !== "capture" && message.mode !== "locate" && message.mode !== "score") return;
   // Guidance frames are disposable. Never queue old locate work behind a
   // capture, which would delay the user's deliberate scan and grow memory.
   if (message.mode === "locate" && (running || pending.length)) {
