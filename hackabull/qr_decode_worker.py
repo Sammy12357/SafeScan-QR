@@ -11,6 +11,7 @@ import io
 import json
 import sys
 from pathlib import Path
+from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -45,9 +46,19 @@ def main() -> None:
             _looks_like_pdf(contents, filename, content_type)
             or _looks_like_svg(contents, filename, content_type)
         ):
-            output = io.BytesIO()
-            image.save(output, format="PNG")
-            result["image"] = base64.b64encode(output.getvalue()).decode("ascii")
+            preview = image.copy()
+            try:
+                # The analysis pipeline uses this image only to mark the
+                # upload source today. Keep a useful rendered preview while
+                # bounding the PNG carried back over the worker pipe.
+                preview.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+                output = io.BytesIO()
+                preview.save(output, format="PNG")
+                if output.tell() > 4 * 1024 * 1024:
+                    raise QRDecodeSafetyError("Rendered QR preview exceeds the size limit.")
+                result["image"] = base64.b64encode(output.getvalue()).decode("ascii")
+            finally:
+                preview.close()
     except QRDecodeAmbiguityError as exc:
         result.update(error="ambiguity", message=str(exc))
     except QRDecodeSafetyError as exc:

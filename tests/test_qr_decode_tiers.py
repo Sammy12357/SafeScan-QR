@@ -116,6 +116,28 @@ def test_same_payload_on_two_pdf_pages_is_refused(decoder):
         decoder.decode_qr_upload(contents, "two-pages.pdf", "application/pdf")
 
 
+def test_pdf_worker_returns_the_selected_rendered_page(decoder):
+    fitz = pytest.importorskip("fitz")
+    qr = qrcode.make("https://page.example/").convert("RGB")
+    png = io.BytesIO()
+    qr.save(png, format="PNG")
+    document = fitz.open()
+    try:
+        page = document.new_page(width=300, height=300)
+        page.insert_image(fitz.Rect(20, 20, 280, 280), stream=png.getvalue())
+        contents = document.tobytes()
+    finally:
+        document.close()
+    payload, preview = decoder.decode_qr_upload(contents, "one-page.pdf", "application/pdf")
+    try:
+        assert payload == "https://page.example/"
+        assert preview is not None and preview.size == (750, 750)
+        assert preview.mode == "RGB"
+    finally:
+        if preview is not None:
+            preview.close()
+
+
 def test_repeated_read_of_one_physical_code_is_not_ambiguous(decoder):
     first = decoder.DecodedBarcode("https://same.example/", quad=((0, 0), (100, 0), (100, 100), (0, 100)))
     second = decoder.DecodedBarcode("https://same.example/", quad=((4, 3), (104, 3), (104, 103), (4, 103)))

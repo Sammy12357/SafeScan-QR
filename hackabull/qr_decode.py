@@ -637,6 +637,9 @@ def decode_qr_upload(contents, filename="", content_type=""):
     if process.returncode != 0:
         _record_qr_tier("worker", "error")
         raise QRDecodeSafetyError("QR decoder could not inspect this file.")
+    if len(process.stdout) > 8 * 1024 * 1024:
+        _record_qr_tier("worker", "error")
+        raise QRDecodeSafetyError("QR decoder response exceeded the size limit.")
     try:
         result = json.loads(process.stdout)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
