@@ -19,6 +19,7 @@ def security_app(tmp_path, monkeypatch):
     [sys.modules.pop(_m, None) for _m in list(sys.modules) if _m == "hackabull" or _m.startswith("hackabull.")]
     sys.modules.pop("db", None)
     module = importlib.import_module("hackabull")
+    monkeypatch.setattr(importlib.import_module("hackabull.routes_scan_auth"), "LOCAL_AUTH_ENABLED", True)
     module.RATE_LIMITS.clear()
     module.run_fraud_checks = lambda *args, **kwargs: []
 
