@@ -125,7 +125,7 @@ def test_go_ghost_accepts_fields_at_existing_caps(field_app):
 
     monkeypatch.setattr(engine, "run_broker_removal", done)
     email = "E" * (254 - len("@example.com")) + "@example.com"
-    profile = {"name": "N" * 160, "address": "A" * 220, "cityState": "C" * 140, "phone": "P" * 80, "email": email}
+    profile = {"name": "N" * 160, "address": "A" * 220, "cityState": "C" * 140, "phone": "P" * 80, "email": email, "delegateAttestation": True}
 
     response = client.post("/api/go-ghost/removals/example", json=profile)
 

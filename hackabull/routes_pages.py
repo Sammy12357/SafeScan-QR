@@ -109,7 +109,7 @@ def _go_ghost_busy_response():
     )
 
 
-def _reserve_go_ghost_job(user_id, account_email, broker, target_url, job_id):
+def _reserve_go_ghost_job(user_id, account_email, broker, target_url, job_id, *, delegated_attestation=False):
     """Reserve a single per-user job, including across workers sharing SQLite."""
     created_at = now_iso()
     stale_before = (datetime.utcnow() - timedelta(seconds=GO_GHOST_STALE_JOB_SECONDS)).isoformat() + "Z"
@@ -133,6 +133,16 @@ def _reserve_go_ghost_job(user_id, account_email, broker, target_url, job_id):
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (job_id, user_id, account_email, broker, "running", "Automation started.", target_url, created_at, created_at),
         )
+        if delegated_attestation:
+            # Record the explicit authorization with the job, atomically. The
+            # submitted person's name and address never enter the audit row.
+            conn.execute(
+                """INSERT INTO audit_logs
+                   (id, actor_user_id, action, target_type, target_id, metadata, ip_address, user_agent, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (make_id("audit"), user_id, "go_ghost.delegated_attestation", "go_ghost_job", job_id,
+                 json.dumps({"broker": broker, "authorized": True}), None, None, created_at),
+            )
     return True
 
 
@@ -196,7 +206,7 @@ async def api_go_ghost_removal(request: Request, broker: str, payload: dict = Bo
     broker_config = supported_broker(normalized_broker)
     if broker_config is None:
         raise SafeScanError("Backend automation is not available for this broker yet.", 400)
-    validate_strict_payload(payload, {"name", "address", "cityState", "phone", "email"})
+    validate_strict_payload(payload, {"name", "address", "cityState", "phone", "email", "delegateAttestation"})
 
     profile_payload = {
         "name": bounded_text(payload.get("name"), "name", 160, required=True, strip=True),
@@ -205,6 +215,13 @@ async def api_go_ghost_removal(request: Request, broker: str, payload: dict = Bo
         "phone": bounded_text(payload.get("phone"), "phone", 80, strip=True),
         "email": bounded_text(payload.get("email"), "email", 254, required=True, strip=True),
     }
+    attestation = payload.get("delegateAttestation", False)
+    if not isinstance(attestation, bool):
+        raise SafeScanError("Invalid delegation attestation.", 400)
+    account_email = (user.get("email") or "").strip().casefold()
+    delegated = profile_payload["email"].casefold() != account_email
+    if delegated and not attestation:
+        raise SafeScanError("Confirm you are authorized to request removal for this person.", 403)
     if GO_GHOST_GLOBAL_SLOT.locked():
         return _go_ghost_busy_response()
     await GO_GHOST_GLOBAL_SLOT.acquire()
@@ -226,7 +243,10 @@ async def api_go_ghost_removal(request: Request, broker: str, payload: dict = Bo
         rate_limited = enforce_rate_limit(request, "go_ghost", 3, 24 * 60 * 60, user_key=user_id)
         if rate_limited:
             return rate_limited
-        if not _reserve_go_ghost_job(user_id, account_email, normalized_broker, broker_config.optout_url, job_id):
+        if not _reserve_go_ghost_job(
+            user_id, account_email, normalized_broker, broker_config.optout_url, job_id,
+            delegated_attestation=delegated,
+        ):
             return _go_ghost_busy_response()
 
         result = {"status": "failed", "detail": "Automation was interrupted.", "targetUrl": broker_config.optout_url}

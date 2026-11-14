@@ -55,7 +55,7 @@
         <p class="go-ghost-copy">Go Ghost can prepare searches and submissions for supported opt-outs using the minimum local details you choose. Email confirmation, CAPTCHA, and exact profile matching still need user-approved checkpoints.</p>
         <p id="goGhostDeviceNotice" class="go-ghost-device-notice" role="status" aria-live="polite">Desktop layout active.</p>
 
-        <form id="goGhostProfileForm" class="go-ghost-form go-ghost-keyword-form">
+        <form id="goGhostProfileForm" class="go-ghost-form go-ghost-keyword-form" data-account-email="{{ email }}">
           <label>Full name
             <input id="ghostNameInput" type="text" maxlength="160" autocomplete="name">
           </label>
@@ -71,6 +71,12 @@
           <label>Email
             <input id="ghostEmailInput" type="email" maxlength="254" autocomplete="email">
           </label>
+          <div id="ghostDelegateAttestationWrap" class="ghost-delegate-attestation" hidden>
+            <label for="ghostDelegateAttestationInput">
+              <input id="ghostDelegateAttestationInput" type="checkbox">
+              <span>I confirm I have this person's permission to submit their details and request removal on their behalf.</span>
+            </label>
+          </div>
           <div class="go-ghost-actions">
             <button class="primary-button" type="submit">Update automation scope</button>
             <button class="secondary-button" id="clearGhostDataButton" type="button">Clear info</button>

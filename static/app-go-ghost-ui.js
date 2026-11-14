@@ -49,6 +49,7 @@ async function runGhostBrokerAutomation(broker, triggerButton) {
     showCopyToast("Add an email first");
     return null;
   }
+  if (!confirmGhostDelegation(profile)) return null;
 
   const originalText = triggerButton?.textContent || "";
   const controller = new AbortController();
@@ -76,7 +77,8 @@ async function runGhostBrokerAutomation(broker, triggerButton) {
         address: profile.address,
         cityState: profile.location,
         phone: profile.phone,
-        email: profile.email
+        email: profile.email,
+        delegateAttestation: ghostDelegationNeeded(profile.email) && ghostDelegateAttestationInput?.checked === true
       })
     });
     const body = await response.json().catch(() => ({}));
@@ -291,6 +293,7 @@ function hydrateGoGhostProfile() {
   if (ghostAddressInput) ghostAddressInput.value = profile.address || "";
   if (ghostPhoneInput) ghostPhoneInput.value = profile.phone || profile.identifier || "";
   if (ghostEmailInput) ghostEmailInput.value = profile.email || "";
+  refreshGhostDelegationAttestation();
 }
 
 function startGoGhost() {
@@ -324,6 +327,8 @@ if (goGhostWorkspace) {
 
   [ghostNameInput, ghostLocationInput, ghostAddressInput, ghostPhoneInput, ghostEmailInput].forEach((input) => {
     input?.addEventListener("input", () => {
+      if (ghostDelegateAttestationInput) ghostDelegateAttestationInput.checked = false;
+      refreshGhostDelegationAttestation();
       writeJsonStorage(GO_GHOST_PROFILE_KEY, getGhostFormProfile());
       renderGoGhostAutomationScope();
       renderGoGhostProgress();
