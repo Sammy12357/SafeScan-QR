@@ -1,6 +1,6 @@
-// SafeScan web camera scanner. QR decoding starts only after "Take picture".
-// The native detector is a fast first pass; the self-hosted ZXing worker checks
-// the whole frame and protects the multi-code refusal on every browser.
+// SafeScan web camera scanner. Small preview frames provide guidance; a
+// full-resolution burst runs after "Take picture" or opt-in stable auto capture.
+// The self-hosted ZXing worker checks the whole frame for multiple QR codes.
 (function () {
   const WORKER_URL = "/static/qr-worker.js?v=scanner-phase-4";
   const WORKER_START_TIMEOUT_MS = 8000;
