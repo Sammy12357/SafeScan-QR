@@ -127,7 +127,7 @@ async def health_check():
 
 
 PUBLIC_SITEMAP_PATHS = (
-    "/", "/generate-qr", "/learn", "/plans", "/go-ghost",
+    "/", "/generate-qr", "/learn", "/plans", "/contact", "/go-ghost",
     "/malicious-database", "/leaderboard", "/token",
     "/legal/privacy-policy", "/legal/terms-of-use", "/legal/cookie-policy",
     "/legal/security", "/legal/do-not-sell",
