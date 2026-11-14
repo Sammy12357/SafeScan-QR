@@ -15,11 +15,14 @@ import secrets
 import socket
 import time
 import csv
+import threading
 from decimal import Decimal, InvalidOperation
 from html import escape as escape_html
 from urllib.parse import quote, urlencode, urljoin, urlparse, parse_qsl
 from datetime import datetime, timedelta, timezone
 from xml.etree import ElementTree
+
+from PIL import Image as PILImage
 
 from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -50,6 +53,8 @@ from storage import upload_bytes as storage_upload_bytes
 from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party
 import safescan_model_calibration as sm_calibration
 from .config import MAX_QR_PDF_PAGES
+from .config import QR_DECODE_SECONDS
+from .config import QR_DECODE_TOTAL
 from .config import image_libs
 
 # =============================================================================
@@ -59,100 +64,326 @@ class QRDecodeAmbiguityError(ValueError):
     """The upload cannot be safely reduced to one fully inspected QR action."""
 
 
+class QRDecodeSafetyError(ValueError):
+    """The image exceeds a safe decoding limit."""
+
+
+MAX_QR_IMAGE_PIXELS = 40_000_000
+PILImage.MAX_IMAGE_PIXELS = MAX_QR_IMAGE_PIXELS
+
+
+def _positive_env_int(name, default, maximum):
+    try:
+        return max(1, min(int(os.getenv(name, str(default))), maximum))
+    except ValueError:
+        return default
+
+
+QR_DECODE_SEMAPHORE = asyncio.Semaphore(_positive_env_int("QR_DECODE_CONCURRENCY", 2, 8))
+_WECHAT_LOCK = threading.Lock()
+_WECHAT_DECODER = None
+_WECHAT_UNAVAILABLE = False
+
+
+def _decode_budget_seconds():
+    try:
+        return max(0.1, min(float(os.getenv("QR_DECODE_BUDGET_S", "1.5")), 10.0))
+    except ValueError:
+        return 1.5
+
+
 def _qr_image_libs():
     # ZXing can decode QR codes even when the optional native ZBar library is
     # absent. The shared image_libs helper imports ZBar eagerly, so keep the
     # image upload path usable with the installed ZXing decoder alone.
     try:
         return image_libs()
-    except ImportError:
+    except (ImportError, OSError):
         from PIL import Image, ImageEnhance, ImageFilter, ImageOps
         return Image, ImageEnhance, ImageFilter, ImageOps, lambda _image: []
 
 
-def decode_qr_image(image):
-    """Extract the text payload from a PIL image of a QR code.
+def _assert_safe_dimensions(image):
+    if image.width * image.height > MAX_QR_IMAGE_PIXELS:
+        raise QRDecodeSafetyError("QR image dimensions exceed the 40 megapixel limit.")
 
-    Corrects orientation, then tries progressively harder decode strategies
-    (contrast/threshold enhancement, ZXing fallback) since real-world photos are
-    often low-contrast, rotated, or noisy. Returns decoded barcode objects.
-    """
-    Image, ImageEnhance, ImageFilter, ImageOps, decode = _qr_image_libs()
-    image = ImageOps.exif_transpose(image)
 
-    def normalize_candidate(candidate):
-        if candidate.mode not in ("RGB", "L"):
-            candidate = candidate.convert("RGB")
-        return candidate
-
-    def grayscale_candidates(candidate):
-        gray = ImageOps.grayscale(candidate)
-        yield gray
-
-        contrast = ImageOps.autocontrast(gray)
-        yield contrast
-
-        sharpened = contrast.filter(ImageFilter.SHARPEN)
-        yield sharpened
-
-        high_contrast = ImageEnhance.Contrast(sharpened).enhance(1.8)
-        yield high_contrast
-
-        for source in (gray, contrast, high_contrast):
-            for threshold in (55, 70, 85, 95, 115, 135, 155, 185):
-                yield source.point(lambda pixel, limit=threshold: 255 if pixel > limit else 0)
-
-    def candidate_images():
-        yield normalize_candidate(image)
-        yield from grayscale_candidates(image)
-
-        max_side = max(image.size)
-        if max_side < 1400:
-            scale = 1400 / max_side
-            resized = image.resize(
-                (int(image.width * scale), int(image.height * scale)),
-                Image.Resampling.LANCZOS
+def _barcode_from_result(result, scale_x=1.0, scale_y=1.0):
+    text = getattr(result, "text", None)
+    if not text:
+        raw = getattr(result, "data", None)
+        if raw is None:
+            raw = getattr(result, "bytes", b"")
+        text = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else str(raw or "")
+    if not text.strip() or getattr(result, "valid", True) is False:
+        return None
+    position = getattr(result, "position", None)
+    quad = None
+    if position is not None:
+        try:
+            quad = tuple(
+                (round(getattr(position, corner).x * scale_x), round(getattr(position, corner).y * scale_y))
+                for corner in ("top_left", "top_right", "bottom_right", "bottom_left")
             )
-            yield resized
-            yield from grayscale_candidates(resized)
+        except AttributeError:
+            pass
+    elif getattr(result, "polygon", None):
+        quad = tuple((round(point.x * scale_x), round(point.y * scale_y)) for point in result.polygon[:4])
+    return DecodedBarcode(text, str(getattr(result, "format", getattr(result, "type", "Unknown"))), quad=quad)
 
-    for candidate in candidate_images():
-        found = []
-        seen = set()
 
-        def include(results):
-            for result in results:
-                if result.data not in seen:
-                    seen.add(result.data)
-                    found.append(result)
+def _distinct_barcodes(results):
+    found = []
 
-        include(decode_barcodes_with_zxing(candidate, qr_only=True))
+    def same_symbol(first, second):
+        if first.data != second.data:
+            return False
+        if not first.quad or not second.quad:
+            return True
+        ax0 = min(x for x, _ in first.quad)
+        ay0 = min(y for _, y in first.quad)
+        ax1 = max(x for x, _ in first.quad)
+        ay1 = max(y for _, y in first.quad)
+        bx0 = min(x for x, _ in second.quad)
+        by0 = min(y for _, y in second.quad)
+        bx1 = max(x for x, _ in second.quad)
+        by1 = max(y for _, y in second.quad)
+        overlap = max(0, min(ax1, bx1) - max(ax0, bx0)) * max(0, min(ay1, by1) - max(ay0, by0))
+        smaller = min((ax1 - ax0) * (ay1 - ay0), (bx1 - bx0) * (by1 - by0))
+        return smaller <= 0 or overlap / smaller >= 0.5
 
-        for angle in (0, 90, 180, 270):
-            rotated = candidate if angle == 0 else candidate.rotate(angle, expand=True)
-            try:
-                from pyzbar.pyzbar import ZBarSymbol
-                decoded = decode(rotated, symbols=[ZBarSymbol.QRCODE])
-            except Exception:
-                decoded = decode(rotated)
-            include(decoded)
-            if angle != 0:
-                rotated.close()
-            if len(found) > 1:
-                return found
+    for result in results:
+        if result is not None and not any(same_symbol(result, previous) for previous in found):
+            found.append(result)
+    return found
 
-        if not found:
-            include(decode_barcodes_with_zxing(candidate))
+
+def _zxing_barcodes(image, *, qr_only=True, binarizer=None, is_pure=False, scale_x=1.0, scale_y=1.0):
+    try:
+        import zxingcpp
+    except ImportError:
+        return []
+    formats = (
+        [zxingcpp.BarcodeFormat.QRCode, zxingcpp.BarcodeFormat.MicroQRCode, zxingcpp.BarcodeFormat.RMQRCode]
+        if qr_only else zxingcpp.BarcodeFormat.All
+    )
+    options = {
+        "formats": formats,
+        "try_rotate": True,
+        "try_downscale": True,
+        "try_invert": True,
+        "text_mode": zxingcpp.TextMode.Plain,
+        "is_pure": is_pure,
+    }
+    if binarizer is not None:
+        options["binarizer"] = binarizer
+    try:
+        results = zxingcpp.read_barcodes(image, **options)
+    except Exception:
+        return []
+    return _distinct_barcodes(_barcode_from_result(result, scale_x, scale_y) for result in results)
+
+
+def _pyzbar_barcodes(image, decode, *, scale_x=1.0, scale_y=1.0):
+    try:
+        from pyzbar.pyzbar import ZBarSymbol
+        results = decode(image, symbols=[ZBarSymbol.QRCODE])
+    except (ImportError, OSError):
+        return []
+    except Exception:
+        return []
+    return _distinct_barcodes(_barcode_from_result(result, scale_x, scale_y) for result in results)
+
+
+def _enhanced_candidates(gray, Image, ImageEnhance, ImageFilter, ImageOps):
+    """Yield the existing stylized/low-threshold ladder without building it eagerly."""
+    yield gray
+    contrast = ImageOps.autocontrast(gray)
+    yield contrast
+    sharpened = contrast.filter(ImageFilter.SHARPEN)
+    yield sharpened
+    high_contrast = ImageEnhance.Contrast(sharpened).enhance(1.8)
+    yield high_contrast
+    for source in (gray, contrast, high_contrast):
+        for threshold in (55, 70, 85, 95, 115, 135, 155, 185):
+            yield source.point(lambda pixel, limit=threshold: 255 if pixel > limit else 0)
+    if max(gray.size) < 1400:
+        factor = 1400 / max(gray.size)
+        resized = gray.resize((int(gray.width * factor), int(gray.height * factor)), Image.Resampling.LANCZOS)
+        yield resized
+        resized_contrast = ImageOps.autocontrast(resized)
+        yield resized_contrast
+        for threshold in (55, 70, 85, 95, 115, 135, 155, 185):
+            yield resized_contrast.point(lambda pixel, limit=threshold: 255 if pixel > limit else 0)
+
+
+def _get_wechat_decoder():
+    global _WECHAT_DECODER, _WECHAT_UNAVAILABLE
+    if _WECHAT_UNAVAILABLE:
+        return None
+    with _WECHAT_LOCK:
+        if _WECHAT_DECODER is not None:
+            return _WECHAT_DECODER
+        try:
+            import cv2
+            import hashlib
+            from pathlib import Path
+
+            models = Path(__file__).resolve().parents[1] / "models/wechat_qr"
+            for line in (models / "SHA256SUMS").read_text().splitlines():
+                if not line or line.startswith("#"):
+                    continue
+                digest, filename = line.split(maxsplit=1)
+                filename = filename.lstrip("*")
+                if hashlib.sha256((models / filename).read_bytes()).hexdigest() != digest:
+                    raise ValueError("WeChat QR model hash mismatch")
+            cv2.setNumThreads(1)
+            _WECHAT_DECODER = cv2.wechat_qrcode_WeChatQRCode(
+                str(models / "detect.prototxt"), str(models / "detect.caffemodel"),
+                str(models / "sr.prototxt"), str(models / "sr.caffemodel"),
+            )
+        except Exception:
+            _WECHAT_UNAVAILABLE = True
+            return None
+        return _WECHAT_DECODER
+
+
+def _wechat_barcodes(image, *, scale_x=1.0, scale_y=1.0):
+    decoder = _get_wechat_decoder()
+    if decoder is None:
+        return []
+    try:
+        import numpy as np
+        with _WECHAT_LOCK:
+            texts, points = decoder.detectAndDecode(np.asarray(image))
+    except Exception:
+        return []
+    if isinstance(texts, str):
+        texts = [texts]
+    found = []
+    for index, text in enumerate(texts):
+        if not text or not text.strip():
+            continue
+        quad = None
+        if points is not None and index < len(points):
+            quad = tuple((round(x * scale_x), round(y * scale_y)) for x, y in points[index])
+        found.append(DecodedBarcode(text, "QRCode", quad=quad))
+    return _distinct_barcodes(found)
+
+
+def decode_qr_image(image, *, is_pure=False):
+    """Decode QR-family symbols in bounded tiers; return every distinct first-tier payload.
+
+    The deadline is checked between native calls. A single C++ call cannot be
+    interrupted, so it can exceed the budget slightly on a pathological image.
+    """
+    started = time.monotonic()
+    deadline = started + _decode_budget_seconds()
+    Image, ImageEnhance, ImageFilter, ImageOps, decode = _qr_image_libs()
+    _assert_safe_dimensions(image)
+    oriented = ImageOps.exif_transpose(image)
+    _assert_safe_dimensions(oriented)
+    gray = ImageOps.grayscale(oriented)
+    work = gray
+
+    def run_tier(name, operation):
+        if time.monotonic() >= deadline:
+            QR_DECODE_TOTAL.labels(tier=name, outcome="deadline").inc()
+            return []
+        try:
+            results = _distinct_barcodes(operation())
+        except QRDecodeSafetyError:
+            QR_DECODE_TOTAL.labels(tier=name, outcome="error").inc()
+            raise
+        except Exception:
+            QR_DECODE_TOTAL.labels(tier=name, outcome="error").inc()
+            return []
+        outcome = "hit" if results else "deadline" if time.monotonic() >= deadline else "miss"
+        QR_DECODE_TOTAL.labels(tier=name, outcome=outcome).inc()
+        return results
+
+    try:
+        # Tier A: native grayscale, including Micro QR and rMQR.
+        found = run_tier("native", lambda: _zxing_barcodes(gray))
         if found:
             return found
-    return []
 
-def _decode_qr_from_pil_image(image):
-    decoded_qr = decode_qr_image(image)
+        scale_x = scale_y = 1.0
+        if max(gray.size) > 4000:
+            work = gray.resize((max(1, gray.width // 2), max(1, gray.height // 2)), Image.Resampling.BICUBIC)
+            scale_x, scale_y = gray.width / work.width, gray.height / work.height
+
+        # Tier B: 2x upscale for small, distant codes.
+        if max(work.size) < 1600:
+            def upscale():
+                enlarged = work.resize((work.width * 2, work.height * 2), Image.Resampling.BICUBIC)
+                try:
+                    return _zxing_barcodes(enlarged, scale_x=scale_x / 2, scale_y=scale_y / 2)
+                finally:
+                    enlarged.close()
+
+            found = run_tier("upscale", upscale)
+            if found:
+                return found
+
+        # Tier C: ZBar is a cheap independent second opinion.
+        found = run_tier("pyzbar", lambda: _pyzbar_barcodes(work, decode, scale_x=scale_x, scale_y=scale_y))
+        if found:
+            return found
+
+        # Tier D is optional and disabled until its Render resource cost is measured.
+        if os.getenv("QR_WECHAT_ENABLED", "false").lower() in ("1", "true", "yes", "on"):
+            found = run_tier("wechat", lambda: _wechat_barcodes(work, scale_x=scale_x, scale_y=scale_y))
+            if found:
+                return found
+
+        # Tier E: preserve low thresholds for stylized/logo codes. Collect all
+        # distinct results across candidates before returning, so a candidate
+        # that exposes a second QR cannot silently narrow an ambiguous image.
+        def enhanced():
+            all_found = []
+            candidates = _enhanced_candidates(work, Image, ImageEnhance, ImageFilter, ImageOps)
+            try:
+                for candidate in candidates:
+                    if time.monotonic() >= deadline:
+                        break
+                    candidate_scale_x = gray.width / candidate.width
+                    candidate_scale_y = gray.height / candidate.height
+                    all_found.extend(decode_barcodes_with_zxing(
+                        candidate, qr_only=True, deadline=deadline,
+                        scale_x=candidate_scale_x, scale_y=candidate_scale_y,
+                    ))
+                    if is_pure and not all_found and time.monotonic() < deadline:
+                        all_found.extend(decode_barcodes_with_zxing(
+                            candidate, qr_only=True, is_pure=True, deadline=deadline,
+                            scale_x=candidate_scale_x, scale_y=candidate_scale_y,
+                        ))
+                    if time.monotonic() < deadline:
+                        all_found.extend(_pyzbar_barcodes(
+                            candidate, decode, scale_x=candidate_scale_x, scale_y=candidate_scale_y,
+                        ))
+                    if len(_distinct_barcodes(all_found)) > 1:
+                        break
+            finally:
+                candidates.close()
+            return all_found
+
+        return run_tier("enhanced", enhanced)
+    finally:
+        QR_DECODE_SECONDS.observe(time.monotonic() - started)
+        if work is not gray:
+            work.close()
+        gray.close()
+        oriented.close()
+
+def _decode_qr_from_pil_image(image, *, is_pure=False):
+    decoded_qr = decode_qr_image(image, is_pure=is_pure)
     if not decoded_qr:
         return None, None
     if len(decoded_qr) > 1:
-        raise QRDecodeAmbiguityError("Multiple different QR payloads were found. Crop to one QR code and scan it again.")
+        if len({result.data for result in decoded_qr}) > 1:
+            raise QRDecodeAmbiguityError("Multiple different QR payloads were found. Crop to one QR code and scan it again.")
+        raise QRDecodeAmbiguityError("Multiple QR codes were found. Aim at one QR code and scan it again.")
     return decoded_qr[0].data.decode("utf-8", errors="replace"), image.copy()
 
 def _looks_like_svg(contents, filename="", content_type=""):
@@ -308,7 +539,9 @@ def decode_qr_upload(contents, filename="", content_type=""):
             payload, qr_image = _decode_qr_from_pil_image(image)
             if payload:
                 return payload, qr_image
-    except QRDecodeAmbiguityError:
+    except Image.DecompressionBombError as exc:
+        raise QRDecodeSafetyError("QR image dimensions exceed the 40 megapixel limit.") from exc
+    except (QRDecodeAmbiguityError, QRDecodeSafetyError):
         raise
     except Exception:
         pass
@@ -319,7 +552,7 @@ def decode_qr_upload(contents, filename="", content_type=""):
             if image is None:
                 continue
             try:
-                payload, qr_image = _decode_qr_from_pil_image(image)
+                payload, qr_image = _decode_qr_from_pil_image(image, is_pure=True)
                 remember(payload, qr_image)
             finally:
                 image.close()
@@ -337,13 +570,15 @@ def decode_qr_upload(contents, filename="", content_type=""):
                     )
                 for page_index in range(min(document.page_count, MAX_QR_PDF_PAGES)):
                     page = document.load_page(page_index)
+                    if page.rect.width * page.rect.height * 2.5 * 2.5 > MAX_QR_IMAGE_PIXELS:
+                        raise QRDecodeSafetyError("Rendered PDF page exceeds the 40 megapixel QR image limit.")
                     pixmap = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5), alpha=False)
                     with Image.open(io.BytesIO(pixmap.tobytes("png"))) as image:
-                        payload, qr_image = _decode_qr_from_pil_image(image)
+                        payload, qr_image = _decode_qr_from_pil_image(image, is_pure=True)
                         remember(payload, qr_image)
             finally:
                 document.close()
-        except QRDecodeAmbiguityError:
+        except (QRDecodeAmbiguityError, QRDecodeSafetyError):
             raise
         except Exception:
             pass
@@ -354,51 +589,32 @@ def decode_qr_upload(contents, filename="", content_type=""):
     return None, None
 
 class DecodedBarcode:
-    def __init__(self, text, barcode_format="Unknown"):
+    def __init__(self, text, barcode_format="Unknown", *, quad=None):
         self.data = text.encode("utf-8", errors="replace")
         self.type = barcode_format
+        self.quad = quad
 
-def decode_barcodes_with_zxing(image, qr_only=False):
+def decode_barcodes_with_zxing(image, qr_only=False, *, is_pure=False, deadline=None, scale_x=1.0, scale_y=1.0):
+    """Try alternate ZXing binarizers on a difficult candidate, once each."""
     try:
         import zxingcpp
     except ImportError:
         return []
-    results = []
-    formats = zxingcpp.BarcodeFormat.QRCode if qr_only else zxingcpp.BarcodeFormat.All
     binarizers = (
         zxingcpp.Binarizer.LocalAverage,
         zxingcpp.Binarizer.GlobalHistogram,
         zxingcpp.Binarizer.FixedThreshold,
         zxingcpp.Binarizer.BoolCast,
     )
-    text_modes = (zxingcpp.TextMode.Plain, zxingcpp.TextMode.HRI)
+    found = []
     for binarizer in binarizers:
-        for text_mode in text_modes:
-            for is_pure in (False, True):
-                try:
-                    results = zxingcpp.read_barcodes(
-                        image,
-                        formats=formats,
-                        try_rotate=True,
-                        try_downscale=True,
-                        try_invert=True,
-                        text_mode=text_mode,
-                        binarizer=binarizer,
-                        is_pure=is_pure,
-                    )
-                except Exception:
-                    continue
-                if results:
-                    break
-            if results:
-                break
-        if results:
+        if deadline is not None and time.monotonic() >= deadline:
             break
-    decoded = []
-    for result in results:
-        text = getattr(result, "text", "") or ""
-        if not text.strip():
-            continue
-        decoded.append(DecodedBarcode(text, str(getattr(result, "format", "Unknown"))))
-    return decoded
+        found.extend(_zxing_barcodes(
+            image, qr_only=qr_only, binarizer=binarizer, is_pure=is_pure,
+            scale_x=scale_x, scale_y=scale_y,
+        ))
+        if len(_distinct_barcodes(found)) > 1:
+            break
+    return _distinct_barcodes(found)
 
