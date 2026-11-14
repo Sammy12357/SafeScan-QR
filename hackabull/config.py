@@ -207,6 +207,18 @@ REQUEST_LATENCY = build_metric(
 )
 ACTIVE_SCANS = build_metric(Gauge, "safescan_active_scans", "In-flight scan requests")
 QR_UPLOADS = build_metric(Counter, "safescan_qr_uploads_total", "Stored QR upload artifacts", ["backend"])
+QR_DECODE_TOTAL = build_metric(
+    Counter,
+    "safescan_qr_decode_total",
+    "QR decode attempts by tier and outcome; no image or payload labels",
+    ["tier", "outcome"],
+)
+QR_DECODE_SECONDS = build_metric(
+    Histogram,
+    "safescan_qr_decode_seconds",
+    "End-to-end server QR image decode duration in seconds",
+    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 1.5, 2.5, 5.0, 10.0],
+)
 SCANNER_EVENTS = build_metric(Counter, "safescan_scanner_events_total", "Anonymous camera scanner outcomes", ["engine", "stage", "outcome"])
 SCANNER_CAPTURE_SECONDS = build_metric(Histogram, "safescan_scanner_capture_seconds", "Camera scan time reported by the browser", ["stage"], buckets=[0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30])
 SCANNER_GUIDANCE = build_metric(Counter, "safescan_scanner_guidance_total", "Anonymous camera guidance categories shown", ["category"])

@@ -1,0 +1,7 @@
+# Source: https://github.com/WeChatCV/opencv_3rdparty/tree/3487ef7cde71d93c6a01bb0b84aa0f22c6128f6b
+# Verified SHA-256 for vendored WeChat QR models and license.
+e8acfc395caf443a47f15686a9b9207b36cb8f7e6ceb8fbaf6466665e68a9466  detect.prototxt
+cc49b8c9babaf45f3037610fe499df38c8819ebda29e90ca9f2e33270f6ef809  detect.caffemodel
+8ae41acba97e8b4a8e741ee350481e49b8e01d787193f470a4c95ee1c02d5b61  sr.prototxt
+e5d36889d8e6ef2f1c1f515f807cec03979320ac81792cd8fb927c31fd658ae3  sr.caffemodel
+e75a0e19e2d921dbfe2a40fa4eab8eaeb3827894024342ad8424e8e9ebf8b5bd  LICENSE

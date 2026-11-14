@@ -179,11 +179,19 @@ def describe_qr_action(payload_type, normalized):
         return f"Offer to add a calendar event{event}."
     if payload_type == "JSON/custom":
         return "Pass structured data to an app or service that understands this QR format."
+    if payload_type == "Unrecognized data":
+        return "Review QR data whose bytes or text could not be interpreted reliably."
     return "Display the decoded text payload without launching a standard browser, wallet, or message flow."
 
 def detect_payload(raw_payload):
     payload = raw_payload.strip()
     upper = payload.upper()
+
+    # Replacement characters indicate that the decoder could not interpret
+    # all bytes. Embedded controls can hide actions in downstream apps. Do not
+    # call either case safe plain text or try to open a URL from it.
+    if "\ufffd" in payload or any((ord(char) < 32 and char not in "\t\n\r") or ord(char) == 127 for char in payload):
+        return "Unrecognized data", "Review undecodable QR data", payload
 
     if is_url_like(payload):
         return "URL", "Open website", normalize_url(payload)
@@ -276,6 +284,11 @@ def analyze_non_url_payload(raw_payload):
         status = "CAUTION"
         threat_class = "Custom app payload: inspect app-specific action before running"
         reasons.append(risk_reason("Custom app payload", "medium", "The QR contains structured data that another app may interpret."))
+    elif payload_type == "Unrecognized data":
+        score = 65
+        status = "CAUTION"
+        threat_class = "QR data could not be fully interpreted"
+        reasons.append(risk_reason("Undecodable QR bytes", "medium", "Some bytes or control characters cannot be safely interpreted as a standard QR action. Do not open this QR in another app until you verify its source."))
 
     if embedded_urls:
         score = max(score, 45)

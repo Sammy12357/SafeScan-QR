@@ -139,7 +139,8 @@ def test_risk_modal_has_close_button():
 
 def test_stylized_qr_preprocessing_uses_low_threshold_zxing_path():
     assert "55, 70, 85" in SERVER
-    assert "decode_barcodes_with_zxing(candidate, qr_only=True)" in SERVER
+    assert "decode_barcodes_with_zxing(" in SERVER
+    assert "candidate, qr_only=True, deadline=deadline" in SERVER
     assert "zxing-cpp" in REQUIREMENTS
     assert QR_DECODE_OPTIONS["capture"]["tryHarder"] is True
     assert QR_DECODE_OPTIONS["capture"]["tryDenoise"] is True
