@@ -1,5 +1,6 @@
 """Untrusted account and consent data must remain text in HTML pages."""
 
+import ast
 import importlib
 import re
 import sqlite3
@@ -70,6 +71,24 @@ def test_account_settings_email_cannot_break_out_of_attribute(web_app, monkeypat
     assert page.status_code == 200
     assert malicious not in page.text
     assert "&#34; autofocus onfocus=&#34;alert(1)" in page.text
+    assert "readonly" in page.text
+
+
+def test_privacy_policy_escapes_configured_contact_email(web_app, monkeypatch):
+    _, client, _ = web_app
+    config = importlib.import_module("hackabull.config")
+    admin_data = importlib.import_module("hackabull.admin_data")
+    pages = importlib.import_module("hackabull.routes_pages")
+    malicious = 'support@example.com\"><img src=x onerror="alert(1)">'
+    monkeypatch.setattr(config, "ADMIN_EMAIL", malicious)
+    importlib.reload(admin_data)
+    monkeypatch.setattr(pages, "PRIVACY_POLICY_HTML", admin_data.PRIVACY_POLICY_HTML)
+
+    page = client.get("/legal/privacy-policy")
+
+    assert page.status_code == 200
+    assert malicious not in page.text
+    assert "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;" in page.text
 
 
 def test_payment_success_escapes_account_email(web_app, monkeypatch):
@@ -107,6 +126,7 @@ def test_consent_payload_rejects_forged_user_and_invalid_fields(web_app):
     for payload in (
         {"consentType": "all", "bannerVersion": "consent-v1", "userId": "victim"},
         {"consentType": "unknown", "bannerVersion": "consent-v1"},
+        {"consentType": "custom", "bannerVersion": "consent-v1"},
         {"consentType": ["all"], "bannerVersion": "consent-v1"},
         {"consentType": {"value": "all"}, "bannerVersion": "consent-v1"},
         {"consentType": "all", "bannerVersion": "x" * 1000},
@@ -136,8 +156,48 @@ def test_consent_uses_session_identity_and_caps_header_fields(web_app):
     assert len(row[2]) <= 256
 
 
+def test_consent_preferences_offer_only_supported_choices(web_app):
+    _, client, _ = web_app
+    page = client.get("/")
+
+    assert page.status_code == 200
+    assert 'data-consent-choice="custom"' not in page.text
+    assert 'id="manageConsentPreferences"' in page.text
+    assert 'id="consentAnalytics"' in page.text
+
+
+def test_revoke_consent_requires_verified_account_and_updates_browser(web_app):
+    _, client, database = web_app
+    _owner(client, database)
+    request_data = {"request_type": "revoke_consent", "region": "", "details": "stop optional counts"}
+
+    forged = client.post("/legal/data-request", data={**request_data, "email": "victim@example.com"})
+    own = client.post("/legal/data-request", data={**request_data, "email": "OWNER@EXAMPLE.COM"})
+
+    assert forged.status_code == 200
+    assert 'id="consentRevocationApplied"' not in forged.text
+    assert own.status_code == 200
+    assert 'id="consentRevocationApplied"' in own.text
+    with sqlite3.connect(database) as conn:
+        rows = conn.execute("SELECT email FROM privacy_opt_outs WHERE opt_out_type = 'revoke_consent'").fetchall()
+    assert rows == [("owner@example.com",)]
+
+
 def test_no_template_marks_arbitrary_body_html_safe():
     templates = Path(__file__).resolve().parents[1] / "templates"
     unsafe = [str(file) for file in templates.rglob("*.html")
               if re.search(r"\|\s*safe\b", file.read_text())]
     assert unsafe == []
+
+
+def test_routes_do_not_build_dynamic_html_with_fstrings():
+    route_files = (Path(__file__).resolve().parents[1] / "hackabull").glob("routes_*.py")
+    violations = []
+    for file in route_files:
+        for node in ast.walk(ast.parse(file.read_text())):
+            if not isinstance(node, ast.JoinedStr):
+                continue
+            literals = "".join(value.value for value in node.values if isinstance(value, ast.Constant))
+            if re.search(r"<\s*/?[A-Za-z][^>]*>", literals) or literals.lstrip().startswith("<"):
+                violations.append(f"{file.name}:{node.lineno}")
+    assert violations == []

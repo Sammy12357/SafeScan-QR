@@ -592,7 +592,10 @@ async def submit_data_request(
     export_data = ""
     status = "submitted"
     session_user = get_session_user(request)
-    verified_self_request = session_user and session_user.get("email") == email.strip().lower()
+    session_email = (session_user or {}).get("email") or ""
+    verified_self_request = bool(session_email and session_email.casefold() == email.strip().casefold())
+    if request_type == "revoke_consent" and verified_self_request:
+        email = session_email
     if request_type in ("access", "portability"):
         if verified_self_request:
             export_data = json.dumps(get_user_export(email), indent=2)
@@ -603,11 +606,14 @@ async def submit_data_request(
             status = "completed"
             audit_log("account.deleted", request=request, actor_user_id=session_user.get("google_id"), target_type="user", target_id=email)
     elif request_type in ("do_not_sell", "limit_sensitive", "object", "revoke_consent"):
-        with get_conn() as conn:
-            conn.execute(
-                "INSERT INTO privacy_opt_outs VALUES (?, ?, ?, ?, ?)",
-                (make_id("opt"), email, region, request_type, now)
-            )
+        # A submitted address is not proof that the requester owns it. Leave
+        # anonymous or mismatched revocations pending for manual verification.
+        if request_type != "revoke_consent" or verified_self_request:
+            with get_conn() as conn:
+                conn.execute(
+                    "INSERT INTO privacy_opt_outs VALUES (?, ?, ?, ?, ?)",
+                    (make_id("opt"), email, region, request_type, now)
+                )
 
     with get_conn() as conn:
         conn.execute(
@@ -618,7 +624,8 @@ async def submit_data_request(
     message = f"Request {request_id} recorded. Confirmation email hooks are documented; connect an email provider before production."
     return templates.TemplateResponse("data_request.html", {
         "request": request, "email": email, "message": message, "export_data": export_data,
-        "version": LEGAL_VERSION, "last_updated": LEGAL_LAST_UPDATED
+        "version": LEGAL_VERSION, "last_updated": LEGAL_LAST_UPDATED,
+        "consent_revoked": request_type == "revoke_consent" and bool(verified_self_request),
     })
 
 @qr_app.post("/api/consent")

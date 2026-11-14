@@ -18,6 +18,7 @@
       <h1>Data Request</h1>
       <p class="legal-meta">Version {{ version }} - Last updated {{ last_updated }}</p>
       {% if message %}<div class="request-message">{{ message }}</div>{% endif %}
+      {% if consent_revoked %}<div id="consentRevocationApplied" hidden></div>{% endif %}
       <p>Use this portal to submit GDPR, CCPA/CPRA, LGPD, PIPEDA, or general privacy requests. SafeScan logs the request timestamp and targets completion within 30 days.</p>
 
       <div class="rights-grid">
@@ -69,7 +70,7 @@
     {% include "footer.html" %}
   </div>
   <script src="/static/app-core.js?v=native-scroll-v3"></script>
-  <script src="/static/app-widgets.js?v=native-scroll-v3"></script>
+  <script src="/static/app-widgets.js?v=security-consent-v1"></script>
   <script src="/static/app-go-ghost.js?v=native-scroll-v3"></script>
   <script src="/static/app-go-ghost-ui.js?v=native-scroll-v3"></script>
   <script src="/static/app-generate-qr.js?v=native-scroll-v3"></script>

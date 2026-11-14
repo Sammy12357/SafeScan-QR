@@ -73,10 +73,19 @@
   <div>
     <p class="consent-title">Privacy preferences</p>
     <p class="consent-copy">SafeScan uses essential storage for auth and consent, plus optional analytics to improve QR safety. You can reject non-essential tracking.</p>
+    <div id="cookieConsentPreferences" class="hidden">
+      <label class="consent-copy"><input id="consentAnalytics" type="checkbox"> Allow anonymous scanner performance counts</label>
+      <p class="consent-copy">Counts include decoder type, timing, and outcome. They never include QR text or photos.</p>
+      <div class="consent-actions">
+        <button id="saveConsentPreferences" class="primary-button" type="button">Save preferences</button>
+        <button id="cancelConsentPreferences" class="secondary-button" type="button">Back</button>
+      </div>
+    </div>
+    <p id="consentSaveStatus" class="consent-copy" role="status" aria-live="polite"></p>
   </div>
   <div class="consent-actions">
     <button class="secondary-button" type="button" data-consent-choice="essential_only">Reject Non-Essential</button>
-    <button class="secondary-button" type="button" data-consent-choice="custom">Manage Preferences</button>
+    <button id="manageConsentPreferences" class="secondary-button" type="button" aria-controls="cookieConsentPreferences" aria-expanded="false">Manage Preferences</button>
     <button class="primary-button" type="button" data-consent-choice="all">Accept All</button>
   </div>
 </div>
