@@ -75,7 +75,7 @@ def test_metrics_fail_closed_without_token(tmp_path, monkeypatch):
     assert client.get("/metrics", headers={"Authorization": "Bearer short"}).status_code == 403
 
 
-def test_provider_health_reports_configuration_without_secrets(tmp_path, monkeypatch):
+def test_provider_health_reports_status_without_configuration(tmp_path, monkeypatch):
     monkeypatch.delenv("GOOGLE_WEB_RISK_API_KEY", raising=False)
     monkeypatch.setenv("GOOGLE_SAFE_BROWSING_API_KEY", "legacy-secret-value")
     monkeypatch.delenv("SAFESCAN_ENABLE_NONCOMMERCIAL_SAFE_BROWSING", raising=False)
@@ -87,16 +87,7 @@ def test_provider_health_reports_configuration_without_secrets(tmp_path, monkeyp
     ready = client.get("/health/ready")
 
     assert degraded.status_code == 200
-    assert degraded.json() == {
-        "status": "incomplete",
-        "scope": "configuration_and_local_feed_only",
-        "providers": {
-            "google": "legacy_key_disabled",
-            "phishtank": "terms_not_confirmed",
-            "phishtankFeedAgeSeconds": None,
-            "completeChecksConfigured": False,
-        },
-    }
+    assert degraded.json() == {"status": "incomplete"}
     assert ready.status_code == 200
     assert "legacy-secret-value" not in degraded.text
     assert "vt-secret-value" not in degraded.text
@@ -112,12 +103,36 @@ def test_provider_health_reports_configuration_without_secrets(tmp_path, monkeyp
     )
     configured = client.get("/health/providers")
     assert configured.json()["status"] == "configured"
-    assert configured.json()["providers"]["google"] == "web_risk_configured"
-    assert configured.json()["providers"]["phishtank"] == "fresh"
-    assert "virustotal" not in configured.json()["providers"]
-    assert configured.json()["providers"]["completeChecksConfigured"] is True
+    assert configured.json() == {"status": "configured"}
     assert "web-risk-secret-value" not in configured.text
     assert "phish-test-key" not in configured.text
+
+
+def test_production_schema_and_probe_details_are_private(tmp_path, monkeypatch):
+    monkeypatch.setenv("RENDER", "true")
+    _, client, _ = load_app(tmp_path, monkeypatch)
+    for path in ("/docs", "/redoc", "/openapi.json"):
+        assert client.get(path).status_code == 404
+
+    assert client.get("/health/ready").json() == {"status": "ready"}
+    assert client.get("/health/providers").json() == {"status": "incomplete"}
+
+    app_module = importlib.import_module("hackabull.app_module")
+
+    def fail():
+        raise RuntimeError("private database path and credential")
+
+    monkeypatch.setattr(app_module, "database_path", fail)
+    failed_ready = client.get("/health/ready")
+    assert failed_ready.status_code == 503
+    assert failed_ready.json() == {"status": "not_ready"}
+    assert "private" not in failed_ready.text
+
+    monkeypatch.setattr(app_module, "reputation_configuration", fail)
+    failed_providers = client.get("/health/providers")
+    assert failed_providers.status_code == 503
+    assert failed_providers.json() == {"status": "unavailable"}
+    assert "credential" not in failed_providers.text
 
 
 def test_scan_history_persists_classification(tmp_path, monkeypatch):

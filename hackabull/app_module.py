@@ -59,6 +59,7 @@ from .config import ALLOWED_ORIGINS
 from .config import CONTENT_TYPE_LATEST
 from .config import MAX_QR_UPLOAD_BYTES
 from .config import REMEMBER_ME_COOKIE_NAME
+from .config import _PRODUCTION_RUNTIME
 from .config import REQUEST_COUNT
 from .config import REQUEST_LATENCY
 from .config import SESSION_COOKIE_NAME
@@ -80,7 +81,12 @@ from .wallet import expire_alpha_subscriptions
 # (origin checks, RLS context, remember-me, security headers, rate limits) and
 # centralised exception handlers. The route handlers follow.
 # =============================================================================
-qr_app = FastAPI()
+SCHEMA_ROUTE = "/openapi.json"
+qr_app = FastAPI(
+    openapi_url=None if _PRODUCTION_RUNTIME else SCHEMA_ROUTE,
+    docs_url=None if _PRODUCTION_RUNTIME else "/docs",
+    redoc_url=None if _PRODUCTION_RUNTIME else "/redoc",
+)
 app = qr_app
 
 
@@ -100,22 +106,21 @@ async def health_ready():
     try:
         with sqlite3.connect(database_path(), timeout=2) as conn:
             conn.execute("SELECT 1")
-        storage = storage_backend_status()
-        database = database_storage_status()
-        return {"status": "ready", "storage": storage["backend"], "database": database}
-    except Exception as exc:
-        return JSONResponse({"status": "not_ready", "error": str(exc)}, status_code=503)
+        storage_backend_status()
+        database_storage_status()
+        return {"status": "ready"}
+    except Exception:
+        return JSONResponse({"status": "not_ready"}, status_code=503)
 
 
 @qr_app.get("/health/providers", include_in_schema=False)
 async def health_providers():
     """Configuration and local-feed coverage; provider uptime is checked per scan."""
-    configuration = reputation_configuration()
-    return {
-        "status": "configured" if configuration["completeChecksConfigured"] else "incomplete",
-        "scope": "configuration_and_local_feed_only",
-        "providers": configuration,
-    }
+    try:
+        configuration = reputation_configuration()
+    except Exception:
+        return JSONResponse({"status": "unavailable"}, status_code=503)
+    return {"status": "configured" if configuration["completeChecksConfigured"] else "incomplete"}
 
 
 @qr_app.get("/metrics", include_in_schema=False)
