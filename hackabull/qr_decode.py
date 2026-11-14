@@ -72,6 +72,7 @@ class QRDecodeSafetyError(ValueError):
 
 
 MAX_QR_IMAGE_PIXELS = 40_000_000
+MAX_QR_PAYLOAD_LENGTH = 4096
 PILImage.MAX_IMAGE_PIXELS = MAX_QR_IMAGE_PIXELS
 
 
@@ -120,13 +121,20 @@ def _assert_safe_dimensions(image):
 
 
 def _barcode_from_result(result, scale_x=1.0, scale_y=1.0):
-    text = getattr(result, "text", None)
+    if getattr(result, "valid", True) is False:
+        return None
+    # ZXing's Plain text mode still renders binary bytes through Latin-1 in
+    # `.text` (for example b"\xff" becomes "ÿ"). Do not present that as a
+    # correctly decoded Unicode payload. Text-mode QR data can contain Kanji
+    # bytes, however, so retain ZXing's correctly transcoded `.text` there.
+    content_type = str(getattr(result, "content_type", "")).split(".")[-1]
+    text = None if content_type in {"Binary", "Mixed", "UnknownECI"} else getattr(result, "text", None)
     if not text:
         raw = getattr(result, "data", None)
         if raw is None:
             raw = getattr(result, "bytes", b"")
         text = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else str(raw or "")
-    if not text.strip() or getattr(result, "valid", True) is False:
+    if not text.strip() or len(text) > MAX_QR_PAYLOAD_LENGTH:
         return None
     position = getattr(result, "position", None)
     quad = None
