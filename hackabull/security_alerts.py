@@ -31,6 +31,7 @@ DEFAULT_RULES = {
 COOLDOWN_SECONDS = 600
 QUEUE_MAX = 32
 QUEUE_RETRY_SECONDS = 30
+DELIVERY_RETRY_DELAYS = (1.0, 4.0)
 ENABLED = os.getenv("SECURITY_ALERTS_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
 DISCORD_WEBHOOK_URL = os.getenv("SECURITY_ALERT_DISCORD_WEBHOOK_URL", "").strip()
 EMAIL_TO = os.getenv("SECURITY_ALERT_EMAIL_TO", "").strip()
@@ -88,6 +89,16 @@ class SecurityAlertMonitor:
         with self._lock:
             return sum(len(items) for items in self._events.values())
 
+    def delivery_failed(self, code: str) -> None:
+        """Allow another alert after a short pause if delivery exhausted retries."""
+        if code not in self._last_alert:
+            return
+        now = self.clock()
+        with self._lock:
+            self._last_alert[code] = min(
+                self._last_alert[code], now - self.cooldown + QUEUE_RETRY_SECONDS
+            )
+
 
 _QUEUE: queue.Queue[Alert] = queue.Queue(maxsize=QUEUE_MAX)
 _WORKER_LOCK = threading.Lock()
@@ -110,7 +121,7 @@ def _valid_discord_webhook(url: str) -> bool:
 
 
 def validate_alert_configuration() -> None:
-    """Fail startup when an operator turns alerting on without a working sink."""
+    """Fail startup when an enabled destination lacks valid configuration."""
     if not ENABLED:
         return
     if DISCORD_WEBHOOK_URL and not _valid_discord_webhook(DISCORD_WEBHOOK_URL):
@@ -153,13 +164,27 @@ def _deliver(alert: Alert) -> None:
         raise RuntimeError("Security alert destination failed: " + ",".join(failures))
 
 
+def _deliver_with_retries(alert: Alert, *, sleep=time.sleep) -> bool:
+    """Retry transient sink failures off the request path, with a fixed bound."""
+    error_type = "DeliveryError"
+    for delay in (0.0, *DELIVERY_RETRY_DELAYS):
+        if delay:
+            sleep(delay)
+        try:
+            _deliver(alert)
+            return True
+        except Exception as exc:
+            error_type = type(exc).__name__
+    LOG.warning("Security alert delivery failed after retries: %s", error_type)
+    return False
+
+
 def _worker() -> None:
     while True:
         alert = _QUEUE.get()
         try:
-            _deliver(alert)
-        except Exception as exc:
-            LOG.warning("Security alert delivery failed: %s", type(exc).__name__)
+            if not _deliver_with_retries(alert):
+                MONITOR.delivery_failed(alert.code)
         finally:
             _QUEUE.task_done()
 

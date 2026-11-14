@@ -10,12 +10,17 @@ accounts, evidence preserved, decisions, and the next update time.
 
 Phase 10 alerts are **off by default**. With `SECURITY_ALERTS_ENABLED=true`,
 set either `SECURITY_ALERT_DISCORD_WEBHOOK_URL` (a Discord `https://discord.com/api/webhooks/...`
-URL) or `SECURITY_ALERT_EMAIL_TO` with working SMTP. An invalid or missing
-destination prevents startup. Test each destination on staging before enabling
+URL) or `SECURITY_ALERT_EMAIL_TO` with configured SMTP. An invalid or missing
+destination configuration prevents startup; startup does not prove connectivity.
+Test each destination on staging before enabling
 it on Render. The application sends only a fixed event name, count, and window;
 it never sends account IDs, email addresses, IPs, QR payloads, links, tokens,
 Stripe headers, or audit metadata. Delivery uses a bounded in-memory queue,
-five-second read timeout for Discord, and a ten-minute cooldown. Counters and
+five-second read timeout for Discord, and a ten-minute cooldown. Failed delivery
+gets two bounded retries off the request path, then permits a new alert after
+30 seconds of new events. A process restart or persistent sink outage can still
+lose an alert. If both sinks are configured, a retry may duplicate a message at
+the sink that succeeded. Counters and
 cooldowns reset on restart and are per worker, so keep one Render worker or
 move this logic to shared durable monitoring before scaling. A full queue
 logs a generic warning and drops the alert, then permits a retry after 30

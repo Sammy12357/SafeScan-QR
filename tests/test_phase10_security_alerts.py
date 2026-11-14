@@ -88,6 +88,48 @@ def test_enqueue_failure_never_breaks_request_and_retries_after_backoff(alert_ap
     assert attempts == [1000.0, 1030.0]
 
 
+def test_transient_delivery_failure_retries_without_request_data(alert_app, monkeypatch):
+    _, alerts, _ = alert_app
+    attempts = []
+    delays = []
+
+    def flaky(alert):
+        attempts.append(alert)
+        if len(attempts) < 3:
+            raise RuntimeError("private sink response")
+
+    monkeypatch.setattr(alerts, "_deliver", flaky)
+    event = alerts.Alert("auth.failed", 20, 600)
+    assert alerts._deliver_with_retries(event, sleep=delays.append) is True
+    assert attempts == [event, event, event]
+    assert delays == list(alerts.DELIVERY_RETRY_DELAYS)
+
+
+def test_terminal_delivery_failure_shortens_cooldown(alert_app, monkeypatch):
+    _, alerts, _ = alert_app
+    clock = [1000.0]
+    attempts = []
+    emitted = []
+    monitor = alerts.SecurityAlertMonitor(
+        enabled=True, rules={"api_key.created": (1, 600)},
+        cooldown=600, clock=lambda: clock[0], dispatch=emitted.append,
+    )
+    assert monitor.record("api_key.created") == alerts.Alert("api_key.created", 1, 600)
+
+    def unavailable(_alert):
+        attempts.append(1)
+        raise RuntimeError("private sink response")
+
+    monkeypatch.setattr(alerts, "_deliver", unavailable)
+    assert alerts._deliver_with_retries(emitted[0], sleep=lambda _delay: None) is False
+    monitor.delivery_failed("api_key.created")
+    clock[0] += alerts.QUEUE_RETRY_SECONDS - 1
+    assert monitor.record("api_key.created") is None
+    clock[0] += 1
+    assert monitor.record("api_key.created") == alerts.Alert("api_key.created", 1, 600)
+    assert len(attempts) == 1 + len(alerts.DELIVERY_RETRY_DELAYS)
+
+
 def _request(path):
     return Request({
         "type": "http", "method": "GET", "scheme": "https", "path": path,
