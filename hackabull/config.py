@@ -138,6 +138,7 @@ MAX_QR_PDF_PAGES = int(os.getenv("MAX_QR_PDF_PAGES", "5"))
 VALID_ROLES = ("user", "admin", "owner")
 VALID_STATUSES = ("active", "suspended", "deleted")
 RATE_LIMITS = RateLimitStore(max_buckets=4096)
+CSP_REPORT_ONLY_ENABLED = os.getenv("CSP_REPORT_ONLY_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")
 AIRDROP_BASE_ALLOCATION = int(os.getenv("SQR_BASE_ALLOCATION", "100"))
 WHOISXML_API_KEY = os.getenv("WHOISXML_API_KEY")
 SECURITYTRAILS_API_KEY = os.getenv("SECURITYTRAILS_API_KEY")
@@ -218,6 +219,7 @@ QR_DECODE_SECONDS = build_metric(
 SCANNER_EVENTS = build_metric(Counter, "safescan_scanner_events_total", "Anonymous camera scanner outcomes", ["engine", "stage", "outcome"])
 SCANNER_CAPTURE_SECONDS = build_metric(Histogram, "safescan_scanner_capture_seconds", "Camera scan time reported by the browser", ["stage"], buckets=[0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30])
 SCANNER_GUIDANCE = build_metric(Counter, "safescan_scanner_guidance_total", "Anonymous camera guidance categories shown", ["category"])
+CSP_REPORTS = build_metric(Counter, "safescan_csp_reports_total", "Report-only CSP violations by bounded directive category", ["directive"])
 # Single-label TLDs that show up disproportionately in spam/phishing/scam
 # campaigns because they're cheap (often <$2/yr) and effectively unmoderated.
 HIGH_RISK_TLDS = {

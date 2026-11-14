@@ -22,7 +22,7 @@ from .config import SESSION_COOKIE_NAME
 
 CSRF_COOKIE_NAME = "__Host-safescan_csrf"
 CSRF_COOKIE_MAX_AGE = 24 * 60 * 60
-CSRF_EXEMPT_PATHS = {"/auth/google", "/webhooks/stripe", "/api/telemetry/scan"}
+CSRF_EXEMPT_PATHS = {"/auth/google", "/webhooks/stripe", "/api/telemetry/scan", "/api/security/csp-report"}
 
 
 def _cookie_key(request: Request) -> str | None:
