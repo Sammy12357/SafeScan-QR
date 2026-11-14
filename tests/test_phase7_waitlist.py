@@ -120,6 +120,17 @@ def test_expired_token_and_missing_browser_csrf_do_not_confirm(waitlist_app):
     assert _rows(db_path, "SELECT count(*) FROM waitlist_signups") == [(0,)]
 
 
+def test_malformed_link_strips_token_and_clears_old_confirmation_cookie(waitlist_app):
+    _, browser, _, _, _ = waitlist_app
+    browser.get(f"/waitlist/confirm?token={'A' * 43}", follow_redirects=False)
+    assert browser.cookies.get("__Host-safescan_waitlist_confirm") == "A" * 43
+    response = browser.get("/waitlist/confirm?token=malformed", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/waitlist/confirm"
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert browser.cookies.get("__Host-safescan_waitlist_confirm") is None
+
+
 def test_old_waitlist_rows_remain_unconfirmed_after_schema_upgrade(tmp_path, monkeypatch):
     db_path = tmp_path / "legacy.db"
     with sqlite3.connect(db_path) as conn:

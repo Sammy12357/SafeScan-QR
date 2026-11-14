@@ -349,13 +349,14 @@ def _waitlist_page(request: Request, state: str, status_code: int = 200):
 @qr_app.get("/waitlist/confirm", response_class=HTMLResponse)
 async def waitlist_confirm_page(request: Request, token: str | None = Query(None, max_length=128)):
     if token is not None:
-        if not valid_token(token):
-            return _waitlist_page(request, "expired", 400)
         response = RedirectResponse("/waitlist/confirm", status_code=303)
-        response.set_cookie(
-            CONFIRM_COOKIE, token, max_age=CONFIRM_SECONDS,
-            secure=True, httponly=True, samesite="lax", path="/",
-        )
+        if valid_token(token):
+            response.set_cookie(
+                CONFIRM_COOKIE, token, max_age=CONFIRM_SECONDS,
+                secure=True, httponly=True, samesite="lax", path="/",
+            )
+        else:
+            response.delete_cookie(CONFIRM_COOKIE, path="/", httponly=True, secure=True, samesite="lax")
         response.headers["Cache-Control"] = "private, no-store"
         response.headers["Referrer-Policy"] = "no-referrer"
         return response
