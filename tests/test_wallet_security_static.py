@@ -1,3 +1,5 @@
+import json
+import re
 from pathlib import Path
 
 
@@ -14,6 +16,8 @@ CLIENT = "\n".join(
 LOGIN = (ROOT / "templates" / "login.html").read_text(encoding="utf-8")
 INDEX = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
 QR_CAMERA = (ROOT / "static" / "qr-camera.js").read_text(encoding="utf-8")
+QR_WORKER = (ROOT / "static" / "qr-worker.js").read_text(encoding="utf-8")
+QR_DECODE_OPTIONS = json.loads((ROOT / "static" / "qr-decode-options.json").read_text(encoding="utf-8"))
 QR_IMAGE = (ROOT / "hackabull" / "qr_image.py").read_text(encoding="utf-8")
 AUTH = (ROOT / "static" / "auth.js").read_text(encoding="utf-8")
 REQUIREMENTS = (ROOT / "requirements.txt").read_text(encoding="utf-8")
@@ -117,6 +121,15 @@ def test_camera_scanner_requires_deliberate_capture():
     assert '>Take picture</button>' in QR_CAMERA
     assert 'captureBtn.addEventListener("click", capture)' in QR_CAMERA
     assert "requestAnimationFrame(tick)" not in QR_CAMERA
+    assert QR_CAMERA.count("opts.onResult(value)") == 1
+    assert "opts.onResult(value)" in QR_CAMERA[QR_CAMERA.index("async function capture()"):]
+
+
+def test_camera_decoder_is_self_hosted_and_full_resolution():
+    assert "new Worker(WORKER_URL)" in QR_CAMERA
+    assert "FALLBACK_MAX_DIM" not in QR_CAMERA
+    assert not re.search(r"['\"]https?://", QR_CAMERA + QR_WORKER)
+    assert "cdn.jsdelivr.net" not in QR_CAMERA + QR_WORKER
 
 
 def test_risk_modal_has_close_button():
@@ -128,9 +141,10 @@ def test_stylized_qr_preprocessing_uses_low_threshold_zxing_path():
     assert "55, 70, 85" in SERVER
     assert "decode_barcodes_with_zxing(candidate, qr_only=True)" in SERVER
     assert "zxing-cpp" in REQUIREMENTS
-    assert "STYLIZED_THRESHOLDS" in QR_CAMERA
-    assert "ENHANCED_SCAN_EVERY_N_FRAMES" in QR_CAMERA
-    assert "decodeWithJsQRPasses" in QR_CAMERA
+    assert QR_DECODE_OPTIONS["capture"]["tryHarder"] is True
+    assert QR_DECODE_OPTIONS["capture"]["tryDenoise"] is True
+    assert "MicroQRCode" in QR_DECODE_OPTIONS["capture"]["formats"]
+    assert "threshold" in QR_WORKER
 
 
 def test_disconnect_is_server_side_and_idor_safe():
