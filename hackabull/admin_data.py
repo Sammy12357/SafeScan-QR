@@ -80,6 +80,9 @@ def admin_context(request, title, page, data=None, owner_only=False):
         return RedirectResponse("/", status_code=303)
     if owner_only and not has_role(admin_user, "owner"):
         return RedirectResponse("/", status_code=303)
+    # Page loaders may query private tables. Run them only after the role check.
+    if callable(data):
+        data = data()
     context = {
         "request": request,
         "title": title,

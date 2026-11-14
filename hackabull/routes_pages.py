@@ -607,9 +607,10 @@ async def submit_data_request(
             status = "completed"
     elif request_type == "erasure":
         if verified_self_request:
-            delete_user_data(email)
-            status = "completed"
-            audit_log("account.deleted", request=request, actor_user_id=session_user.get("google_id"), target_type="user", target_id=email)
+            email = session_email
+            if delete_user_data(email, session_user["google_id"]):
+                status = "completed"
+                audit_log("account.deleted", request=request, actor_user_id=session_user.get("google_id"), target_type="user", target_id=session_user["google_id"])
     elif request_type in ("do_not_sell", "limit_sensitive", "object", "revoke_consent"):
         # A submitted address is not proof that the requester owns it. Leave
         # anonymous or mismatched revocations pending for manual verification.

@@ -1,9 +1,12 @@
 """Federated identities must never inherit another account's privileges by email."""
 
 import importlib
+import csv
+import io
 import re
 import sqlite3
 import sys
+from urllib.parse import quote
 
 import pytest
 from fastapi.testclient import TestClient
@@ -59,6 +62,18 @@ def _auth0_client(app, routes, monkeypatch, *, subject, email, verified):
         lambda token: {"sub": subject, "email": email, "email_verified": verified},
     )
     return TestClient(app.qr_app, base_url="https://testserver")
+
+
+def _staff_client(app, database, email, role):
+    client = TestClient(app.qr_app, base_url="https://testserver")
+    app.RATE_LIMITS.clear()
+    assert _browser_form_post(client, "/auth/register", {
+        "email": email, "password": "password123",
+    }).status_code == 303
+    with sqlite3.connect(database) as conn:
+        user_id = conn.execute("SELECT google_id FROM users WHERE email = ?", (email,)).fetchone()[0]
+        conn.execute("UPDATE users SET role = ? WHERE google_id = ?", (role, user_id))
+    return client, user_id
 
 
 def test_google_unverified_email_cannot_sign_in(identity_app, monkeypatch):
@@ -199,6 +214,202 @@ def test_role_change_refuses_ambiguous_email(identity_app):
     assert _rows(database, "SELECT role FROM users WHERE email = 'shared@example.com'") == [
         {"role": "user"}, {"role": "user"}
     ]
+
+
+@pytest.mark.parametrize("path, helper", [
+    ("/admin", "dashboard_data"),
+    ("/admin/activity", "fetch_audit_logs"),
+    ("/admin/users", "fetch_admin_users"),
+    ("/admin/scans", "fetch_scans"),
+    ("/admin/waitlist", "fetch_waitlist"),
+    ("/admin/reports", "fetch_reports"),
+    ("/admin/risk-logs", "fetch_scans"),
+    ("/admin/airdrop", "fetch_airdrop_data"),
+    ("/admin/airdrop/fraud", "fetch_fraud_data"),
+    ("/admin/airdrop/wallets", "fetch_airdrop_data"),
+    ("/admin/logs", "fetch_audit_logs"),
+])
+def test_admin_read_authorizes_before_fetch(identity_app, monkeypatch, path, helper):
+    app, _, database = identity_app
+    routes_admin = importlib.import_module("hackabull.routes_admin")
+    client, _ = _staff_client(app, database, "reader@example.com", "user")
+
+    def forbidden_fetch(*args, **kwargs):
+        raise AssertionError("Admin data was read before authorization")
+
+    monkeypatch.setattr(routes_admin, helper, forbidden_fetch)
+    response = client.get(path, follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"
+
+
+@pytest.mark.parametrize("path", ["/admin/api-keys", "/admin/settings"])
+def test_owner_page_authorizes_before_database_read(identity_app, monkeypatch, path):
+    app, _, database = identity_app
+    routes_admin = importlib.import_module("hackabull.routes_admin")
+    admin, _ = _staff_client(app, database, "admin@example.com", "admin")
+
+    def forbidden_connection(*args, **kwargs):
+        raise AssertionError("Owner data was read before authorization")
+
+    monkeypatch.setattr(routes_admin, "get_conn", forbidden_connection)
+    response = admin.get(path, follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"
+
+
+def test_audit_export_authorizes_owner_before_fetch(identity_app, monkeypatch):
+    app, _, database = identity_app
+    routes_admin = importlib.import_module("hackabull.routes_admin")
+    admin, _ = _staff_client(app, database, "admin@example.com", "admin")
+
+    def forbidden_fetch(*args, **kwargs):
+        raise AssertionError("Audit rows were read before owner authorization")
+
+    monkeypatch.setattr(routes_admin, "fetch_audit_logs", forbidden_fetch)
+    assert admin.get("/admin/logs?export=csv").status_code == 403
+
+
+def test_admin_actions_respect_role_hierarchy_and_exact_account(identity_app):
+    app, _, database = identity_app
+    owner, owner_id = _staff_client(app, database, "owner1@example.com", "owner")
+    admin, admin_id = _staff_client(app, database, "admin1@example.com", "admin")
+    _, second_admin_id = _staff_client(app, database, "admin2@example.com", "admin")
+    _, user_id = _staff_client(app, database, "user@example.com", "user")
+
+    users_page = owner.get("/admin/users")
+    assert users_page.status_code == 200
+    assert f"/admin/users/{user_id}/suspend" in users_page.text
+    assert f"/admin/users/{owner_id}/suspend" not in users_page.text
+    assert f"/admin/users/{owner_id}/delete" not in users_page.text
+
+    assert _browser_form_post(admin, f"/admin/users/{quote(owner_id, safe='')}/suspend").status_code == 403
+    assert _browser_form_post(admin, f"/admin/users/{quote(second_admin_id, safe='')}/suspend").status_code == 403
+    assert _browser_form_post(admin, f"/admin/users/{quote(user_id, safe='')}/role", {"role": "owner"}).status_code == 403
+    assert _browser_form_post(admin, f"/admin/users/{quote(user_id, safe='')}/delete", {"confirm": "DELETE"}).status_code == 403
+    assert _browser_form_post(owner, f"/admin/users/{quote(owner_id, safe='')}/suspend").status_code == 403
+    assert _browser_form_post(owner, f"/admin/users/{quote(owner_id, safe='')}/delete", {"confirm": "DELETE"}).status_code == 403
+    assert _browser_form_post(admin, f"/admin/users/{quote(user_id, safe='')}/suspend").status_code == 303
+    assert _browser_form_post(owner, f"/admin/users/{quote(admin_id, safe='')}/suspend").status_code == 303
+    assert _rows(database, "SELECT google_id, status FROM users WHERE google_id IN (?, ?, ?, ?) ORDER BY google_id", (owner_id, admin_id, second_admin_id, user_id)) == sorted([
+        {"google_id": owner_id, "status": "active"},
+        {"google_id": admin_id, "status": "suspended"},
+        {"google_id": second_admin_id, "status": "active"},
+        {"google_id": user_id, "status": "suspended"},
+    ], key=lambda row: row["google_id"])
+    assert _browser_form_post(owner, f"/admin/users/{quote(user_id, safe='')}/delete", {"confirm": "DELETE"}).status_code == 303
+    assert _rows(database, "SELECT status FROM users WHERE google_id = ?", (user_id,)) == [{"status": "deleted"}]
+
+
+def test_last_owner_cannot_be_demoted_and_owner_cannot_demote_peer(identity_app):
+    app, _, database = identity_app
+    owner, owner_id = _staff_client(app, database, "owner1@example.com", "owner")
+    _, user_id = _staff_client(app, database, "user@example.com", "user")
+
+    assert _browser_form_post(owner, f"/admin/users/{quote(owner_id, safe='')}/role", {"role": "admin"}).status_code == 409
+    assert _rows(database, "SELECT role FROM users WHERE google_id = ?", (owner_id,)) == [{"role": "owner"}]
+
+    assert _browser_form_post(owner, f"/admin/users/{quote(user_id, safe='')}/role", {"role": "owner"}).status_code == 303
+    assert _browser_form_post(owner, f"/admin/users/{quote(user_id, safe='')}/role", {"role": "user"}).status_code == 403
+    assert _browser_form_post(owner, f"/admin/users/{quote(user_id, safe='')}/suspend").status_code == 403
+    assert _browser_form_post(owner, f"/admin/users/{quote(user_id, safe='')}/delete", {"confirm": "DELETE"}).status_code == 403
+    assert _browser_form_post(owner, f"/admin/users/{quote(owner_id, safe='')}/role", {"role": "admin"}).status_code == 303
+    assert _rows(database, "SELECT role, status FROM users WHERE role = 'owner' AND status = 'active'") == [{"role": "owner", "status": "active"}]
+
+
+def test_suspend_and_delete_refuse_ambiguous_email(identity_app):
+    app, _, database = identity_app
+    owner, _ = _staff_client(app, database, "owner1@example.com", "owner")
+    with sqlite3.connect(database) as conn:
+        conn.execute("INSERT INTO users (google_id, email) VALUES (?, ?)", ("account-a", "shared@example.com"))
+        conn.execute("INSERT INTO users (google_id, email) VALUES (?, ?)", ("account-b", "shared@example.com"))
+
+    assert _browser_form_post(owner, "/admin/users/shared@example.com/suspend").status_code == 409
+    assert _browser_form_post(owner, "/admin/users/shared@example.com/delete", {"confirm": "DELETE"}).status_code == 409
+    assert _rows(database, "SELECT google_id, status FROM users WHERE email = ? ORDER BY google_id", ("shared@example.com",)) == [
+        {"google_id": "account-a", "status": "active"},
+        {"google_id": "account-b", "status": "active"},
+    ]
+
+
+def test_self_service_erasure_preserves_last_owner(identity_app):
+    app, _, database = identity_app
+    owner, owner_id = _staff_client(app, database, "owner1@example.com", "owner")
+
+    response = _browser_form_post(owner, "/legal/data-request", {
+        "email": "OWNER1@EXAMPLE.COM", "request_type": "erasure",
+    })
+
+    assert response.status_code == 200
+    assert _rows(database, "SELECT google_id FROM users WHERE google_id = ?", (owner_id,)) == [{"google_id": owner_id}]
+    assert _rows(database, "SELECT status FROM data_requests WHERE request_type = 'erasure'") == [{"status": "submitted"}]
+
+
+def test_self_service_erasure_requires_unique_exact_identity(identity_app):
+    app, _, database = identity_app
+    owner, owner_id = _staff_client(app, database, "owner1@example.com", "owner")
+    with sqlite3.connect(database) as conn:
+        conn.execute("INSERT INTO users (google_id, email) VALUES (?, ?)", ("collision", "OWNER1@example.com"))
+
+    response = _browser_form_post(owner, "/legal/data-request", {
+        "email": "owner1@example.com", "request_type": "erasure",
+    })
+
+    assert response.status_code == 200
+    assert _rows(database, "SELECT google_id FROM users WHERE lower(email) = ? ORDER BY google_id", ("owner1@example.com",)) == [
+        {"google_id": "collision"}, {"google_id": owner_id},
+    ]
+    assert _rows(database, "SELECT status FROM data_requests WHERE request_type = 'erasure'") == [{"status": "submitted"}]
+
+
+def test_erasure_helper_rejects_mismatched_account_id(identity_app):
+    app, _, database = identity_app
+    _, first_id = _staff_client(app, database, "first@example.com", "user")
+    _, second_id = _staff_client(app, database, "second@example.com", "user")
+    legal = importlib.import_module("hackabull.legal")
+
+    assert legal.delete_user_data("first@example.com", second_id) is False
+    assert _rows(database, "SELECT google_id FROM users ORDER BY email") == [
+        {"google_id": first_id}, {"google_id": second_id},
+    ]
+
+
+def test_self_service_erasure_can_remove_owner_after_transfer(identity_app):
+    app, _, database = identity_app
+    owner, owner_id = _staff_client(app, database, "owner1@example.com", "owner")
+    _, second_owner_id = _staff_client(app, database, "owner2@example.com", "owner")
+
+    response = _browser_form_post(owner, "/legal/data-request", {
+        "email": "owner1@example.com", "request_type": "erasure",
+    })
+
+    assert response.status_code == 200
+    assert _rows(database, "SELECT google_id FROM users WHERE role = 'owner'") == [{"google_id": second_owner_id}]
+    assert _rows(database, "SELECT status FROM data_requests WHERE request_type = 'erasure'") == [{"status": "completed"}]
+
+
+@pytest.mark.parametrize("path, helper, field", [
+    ("/admin/export/users", "fetch_admin_users", "email"),
+    ("/admin/export/waitlist", "fetch_waitlist", "source"),
+    ("/admin/logs?export=csv", "fetch_audit_logs", "metadata"),
+])
+def test_admin_csv_exports_escape_formula_cells(identity_app, monkeypatch, path, helper, field):
+    app, _, database = identity_app
+    routes_admin = importlib.import_module("hackabull.routes_admin")
+    owner, _ = _staff_client(app, database, "owner1@example.com", "owner")
+    payload = " \t=HYPERLINK(\"https://attacker.example\")"
+    monkeypatch.setattr(routes_admin, helper, lambda *args, **kwargs: {"rows": [{field: payload}]})
+
+    response = owner.get(path)
+    assert response.status_code == 200
+    assert next(csv.DictReader(io.StringIO(response.text)))[field] == "'" + payload
+
+
+@pytest.mark.parametrize("value", ["=1+1", "+cmd", "-1+2", "@SUM(A1)", "\t=1", "\r=1", "\n=1", "   =1"])
+def test_admin_csv_cell_sanitizer_handles_spreadsheet_prefixes(identity_app, value):
+    routes_admin = importlib.import_module("hackabull.routes_admin")
+    assert routes_admin._safe_csv_cell(value) == "'" + value
+    assert routes_admin._safe_csv_cell("ordinary@example.com") == "ordinary@example.com"
 
 
 def test_airdrop_secret_never_appears_in_state_changing_get(identity_app, monkeypatch):
