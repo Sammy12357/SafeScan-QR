@@ -61,6 +61,7 @@ from .config import ALLOWED_ORIGINS
 from .config import APP_ORIGIN
 from .config import CLIENT_ID
 from .config import CONTENT_TYPE_LATEST
+from .config import CSP_REPORT_ONLY_ENABLED
 from .config import MAX_QR_UPLOAD_BYTES
 from .config import REMEMBER_ME_COOKIE_NAME
 from .config import REQUEST_COUNT
@@ -223,8 +224,8 @@ async def rls_context_middleware(request: Request, call_next):
     # Start fail-closed even if a request task inherited an outer context.
     token = set_rls_context(None, "guest")
     try:
-        # The counts endpoint never needs an account lookup, even with a cookie.
-        if request.url.path != "/api/telemetry/scan":
+        # Count-only endpoints never need an account lookup, even with a cookie.
+        if request.url.path not in {"/api/telemetry/scan", "/api/security/csp-report"}:
             user = get_session_user(request)
             if user:
                 set_rls_context(
@@ -239,7 +240,7 @@ async def rls_context_middleware(request: Request, call_next):
 @qr_app.middleware("http")
 async def remember_me_middleware(request: Request, call_next):
     path = request.url.path
-    if path.startswith("/static/") or path == "/api/telemetry/scan" or request.cookies.get(SESSION_COOKIE_NAME):
+    if path.startswith("/static/") or path in {"/api/telemetry/scan", "/api/security/csp-report"} or request.cookies.get(SESSION_COOKIE_NAME):
         return await call_next(request)
 
     if getattr(request.state, "remembered_user", None):
@@ -287,6 +288,15 @@ CSP_POLICY = "; ".join([
     "upgrade-insecure-requests",
 ])
 
+# Probe the removal of inline styles without changing the enforced policy.
+# The Reporting-Endpoints header maps the report-to name to a same-origin URL;
+# report-uri covers browsers that do not implement the Reporting API.
+CSP_REPORT_PATH = "/api/security/csp-report"
+CSP_REPORT_ONLY_POLICY = (
+    "style-src 'self' https://fonts.googleapis.com; "
+    f"report-uri {CSP_REPORT_PATH}; report-to safescan-csp"
+)
+
 PERMISSIONS_POLICY = ", ".join([
     "camera=(self)",
     "microphone=()",
@@ -310,6 +320,9 @@ def apply_security_headers(request: Request, response):
     elif request.url.path.startswith("/static/"):
         response.headers["Cache-Control"] = "no-store"
     elif "text/html" in response.headers.get("Content-Type", "").lower():
+        if CSP_REPORT_ONLY_ENABLED and response.status_code == 200:
+            response.headers["Content-Security-Policy-Report-Only"] = CSP_REPORT_ONLY_POLICY
+            response.headers["Reporting-Endpoints"] = f'safescan-csp="{CSP_REPORT_PATH}"'
         # Login pages and scan results can include user-specific content or a
         # browser challenge. Dynamic HTML must never enter a shared cache.
         response.headers["Cache-Control"] = "private, no-store"
@@ -360,8 +373,8 @@ async def start_wallet_nonce_cleanup():
 @qr_app.middleware("http")
 async def security_headers_and_rate_limits(request: Request, call_next):
     path = request.url.path
-    if path == "/api/telemetry/scan":
-        # The telemetry endpoint has its own in-memory count-only budget.
+    if path in {"/api/telemetry/scan", "/api/security/csp-report"}:
+        # These count-only endpoints have separate bounded global budgets.
         # Generic rate-limit failures write IP-linked audit rows.
         return await call_next(request)
     if request.method == "POST" and path in ("/search_qr_api", "/api/scan/file"):
