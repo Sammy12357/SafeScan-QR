@@ -16,7 +16,7 @@ def load_app(tmp_path, monkeypatch):
     monkeypatch.setenv("MOCK_MODE", "true")
     monkeypatch.setenv("SAFESCAN_ML_ENABLED", "false")
     monkeypatch.setenv("STORAGE_BACKEND", "local")
-    monkeypatch.setenv("METRICS_ALLOWED_IPS", "testclient,127.0.0.1,::1")
+    monkeypatch.setenv("METRICS_TOKEN", "test-metrics-bearer-secret-32-characters")
     [sys.modules.pop(_m, None) for _m in list(sys.modules) if _m == "hackabull" or _m.startswith("hackabull.")]
     sys.modules.pop("db", None)
     sys.modules.pop("storage", None)
@@ -51,12 +51,28 @@ def test_readiness_and_metrics_endpoints(tmp_path, monkeypatch):
     _, client, _ = load_app(tmp_path, monkeypatch)
 
     ready = client.get("/health/ready")
-    metrics = client.get("/metrics")
+    unauthenticated = client.get("/metrics")
+    spoofed = client.get("/metrics", headers={"X-Forwarded-For": "127.0.0.1"})
+    metrics = client.get("/metrics", headers={"Authorization": "Bearer test-metrics-bearer-secret-32-characters"})
 
     assert ready.status_code == 200
     assert ready.json()["status"] == "ready"
+    assert unauthenticated.status_code == 403
+    assert spoofed.status_code == 403
+    assert client.get("/metrics", headers={"Authorization": "Bearer wrong-token"}).status_code == 403
+    assert client.get("/metrics", headers={"Authorization": "Basic test-metrics-bearer-secret-32-characters"}).status_code == 403
     assert metrics.status_code == 200
+    assert metrics.headers["cache-control"] == "no-store"
     assert b"safescan_requests_total" in metrics.content or b"prometheus-client is not installed" in metrics.content
+
+
+def test_metrics_fail_closed_without_token(tmp_path, monkeypatch):
+    _, client, _ = load_app(tmp_path, monkeypatch)
+    monkeypatch.delenv("METRICS_TOKEN", raising=False)
+    assert client.get("/metrics", headers={"X-Forwarded-For": "127.0.0.1"}).status_code == 403
+    assert client.get("/metrics", headers={"Authorization": "Bearer test-metrics-bearer-secret-32-characters"}).status_code == 403
+    monkeypatch.setenv("METRICS_TOKEN", "short")
+    assert client.get("/metrics", headers={"Authorization": "Bearer short"}).status_code == 403
 
 
 def test_provider_health_reports_configuration_without_secrets(tmp_path, monkeypatch):

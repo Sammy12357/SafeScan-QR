@@ -13,7 +13,7 @@ services:
       - MOCK_MODE=true
       - SAFESCAN_ML_ENABLED=false
       - STORAGE_BACKEND=local
-      - METRICS_ALLOWED_IPS=127.0.0.1,::1
+      - METRICS_TOKEN=${METRICS_TOKEN:-}
       - AIRDROP_ENABLED=false
       - SOLANA_MAINNET_ENABLED=false
     volumes:
@@ -37,7 +37,7 @@ services:
       - MOCK_MODE=false
       - SAFESCAN_ML_ENABLED=true
       - STORAGE_BACKEND=local
-      - METRICS_ALLOWED_IPS=127.0.0.1,::1
+      - METRICS_TOKEN=${METRICS_TOKEN:-}
       - AIRDROP_ENABLED=false
       - SOLANA_MAINNET_ENABLED=false
     volumes:
