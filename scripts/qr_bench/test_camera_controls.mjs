@@ -271,6 +271,8 @@ assert.equal(elements[".qr-camera-auto"].hidden, true, "auto-capture needs a loc
 await elements[".qr-camera-capture"].dispatch("click");
 assert.equal(sentAfterWorkerFailure, null, "failed worker must not auto-send a frame");
 assert.equal(elements[".qr-camera-server-offer"].hidden, false);
+assert.ok(telemetryEvents.some((event) => event.engine === "unavailable" &&
+  event.stage === "capture" && event.outcome === "offered" && event.frames_tried === 1));
 await elements[".qr-camera-server-send"].dispatch("click");
 assert.equal(sentAfterWorkerFailure.type, "image/jpeg");
 assert.ok(telemetryEvents.some((event) => event.stage === "capture" && event.outcome === "success"));

@@ -1053,12 +1053,14 @@
         let frame = null;
         try {
           frame = await captureFrame(video, canvas, ctx, false);
+          framesTried = 1;
           const blob = await jpegFromFrame(frame);
           if (active && captureGeneration === cameraGeneration) fallbackBlob = blob;
         } catch (_error) { /* The upload button remains available below. */ }
         finally { disposeFrame(frame); }
         if (!active || captureGeneration !== cameraGeneration) return;
         serverOffer.hidden = !fallbackBlob;
+        sendCount("capture", fallbackBlob ? "offered" : "decoder_error", framesTried, startedAt);
         status.textContent = fallbackBlob
           ? "Photo captured. Choose Send photo to SafeScan for a server retry."
           : "Could not capture a photo. Try again or use Upload QR file/photo.";
