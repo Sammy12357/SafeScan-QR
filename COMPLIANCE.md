@@ -32,6 +32,7 @@ This checklist documents compliance-oriented controls implemented for audit, inv
 
 ### General
 - [x] Privacy Policy versioned and dated - `/legal/privacy-policy`
+- [x] Browser scanner decoder served from SafeScan's own origin; no QR decoder CDN is required - `static/qr-worker.js`, `static/vendor/zxing-wasm/3.1.6/`
 - [x] Terms of Use with arbitration clause - `/legal/terms-of-use`
 - [x] Cookie Policy with cookie table - `/legal/cookie-policy`
 - [x] Footer links on every page - `templates/footer.html`
@@ -42,6 +43,8 @@ This checklist documents compliance-oriented controls implemented for audit, inv
 - [x] Airdrop fraud flags and review queue - `/admin/airdrop/fraud`
 
 ### Production Follow-Ups
+- [ ] Before releasing consented camera-frame server retry, update the public Privacy Policy and in-app camera text to distinguish local preview, decoded-payload analysis, optional JPEG transfer, and account scan-history retention.
+- [ ] Record the camera device/browser matrix and server Structured Append limitation in the release review - `docs/qr-scanning.md`.
 - [ ] Attorney review before public launch or token distribution.
 - [ ] Connect transactional email for privacy request confirmations and completion notices.
 - [x] Keep signed-in user scan history and leaderboard counters as long-term records unless the user requests deletion or an owner removes the account.
