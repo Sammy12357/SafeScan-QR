@@ -72,6 +72,14 @@ def login(client, email="person@example.com", password="password123"):
     return client.post("/auth/login", data={"email": email, "password": password})
 
 
+def google_nonce_for_test(client):
+    page = client.get("/login")
+    nonce = re.search(r'data-nonce="([A-Za-z0-9_-]+)"', page.text)
+    assert nonce
+    client.cookies.set("g_csrf_token", "test-google-csrf")
+    return nonce.group(1)
+
+
 def stripe_signature(payload, secret="whsec_test_secret"):
     timestamp = str(int(time.time()))
     signature = hmac.new(secret.encode("utf-8"), f"{timestamp}.{payload}".encode("utf-8"), hashlib.sha256).hexdigest()
@@ -320,6 +328,9 @@ def test_invalid_credentials_do_not_create_session(auth_app):
 
 def test_google_login_persists_provider_user_and_session(auth_app, monkeypatch):
     module, client, db_path = auth_app
+    routes = importlib.import_module("hackabull.routes_scan_auth")
+    monkeypatch.setattr(routes, "LOCAL_AUTH_ENABLED", False)
+    nonce = google_nonce_for_test(client)
 
     monkeypatch.setattr(
         module.id_token,
@@ -330,9 +341,10 @@ def test_google_login_persists_provider_user_and_session(auth_app, monkeypatch):
             "email_verified": True,
             "name": "Google User",
             "picture": "https://example.com/avatar.png",
+            "nonce": nonce,
         },
     )
-    response = client.post("/auth/google", data={"credential": "valid-token"})
+    response = client.post("/auth/google", data={"credential": "valid-token", "g_csrf_token": "test-google-csrf"})
 
     assert response.status_code == 200
     assert module.SESSION_COOKIE_NAME in client.cookies
@@ -346,6 +358,9 @@ def test_google_login_persists_provider_user_and_session(auth_app, monkeypatch):
 
 def test_google_then_local_registration_blocks_duplicate_email(auth_app, monkeypatch):
     module, client, db_path = auth_app
+    routes = importlib.import_module("hackabull.routes_scan_auth")
+    monkeypatch.setattr(routes, "LOCAL_AUTH_ENABLED", False)
+    nonce = google_nonce_for_test(client)
     monkeypatch.setattr(
         module.id_token,
         "verify_oauth2_token",
@@ -353,10 +368,12 @@ def test_google_then_local_registration_blocks_duplicate_email(auth_app, monkeyp
             "sub": "google-sub-2",
             "email": "shared@example.com",
             "email_verified": True,
+            "nonce": nonce,
         },
     )
 
-    google_response = client.post("/auth/google", data={"credential": "valid-token"})
+    google_response = client.post("/auth/google", data={"credential": "valid-token", "g_csrf_token": "test-google-csrf"})
+    monkeypatch.setattr(routes, "LOCAL_AUTH_ENABLED", True)
     local_response = register(TestClient(module.qr_app, base_url="https://testserver"), "shared@example.com")
 
     assert google_response.status_code == 200

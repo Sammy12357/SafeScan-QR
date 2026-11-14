@@ -51,13 +51,16 @@ def _auth0_client(app, routes, monkeypatch, *, subject, email, verified):
 
 def test_google_unverified_email_cannot_sign_in(identity_app, monkeypatch):
     app, routes, database = identity_app
+    client = TestClient(app.qr_app, base_url="https://testserver")
+    assert client.get("/login").status_code == 200
+    client.cookies.set("g_csrf_token", "test-gis-csrf")
     monkeypatch.setattr(
         routes.id_token,
         "verify_oauth2_token",
         lambda *args: {"sub": "google-attacker", "email": "owner@example.com", "email_verified": False},
     )
-    response = TestClient(app.qr_app, base_url="https://testserver").post(
-        "/auth/google", data={"credential": "valid-token"}
+    response = client.post(
+        "/auth/google", data={"credential": "valid-token", "g_csrf_token": "test-gis-csrf"}
     )
     assert response.status_code == 401
     assert _rows(database, "SELECT * FROM users") == []

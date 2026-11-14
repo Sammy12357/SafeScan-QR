@@ -56,6 +56,7 @@ from .auth import create_session
 from .auth import get_session_user
 from .config import ACTIVE_SCANS
 from .config import ALLOWED_ORIGINS
+from .config import CLIENT_ID
 from .config import CONTENT_TYPE_LATEST
 from .config import MAX_QR_UPLOAD_BYTES
 from .config import REMEMBER_ME_COOKIE_NAME
@@ -63,6 +64,8 @@ from .config import REQUEST_COUNT
 from .config import REQUEST_LATENCY
 from .config import SESSION_COOKIE_NAME
 from .config import generate_latest
+from .google_login import issue_google_login_challenge
+from .google_login import set_google_login_cookie
 from .provider_policy import reputation_configuration
 from .phish_feed import refresh_feed_loop
 from .security import enforce_rate_limit
@@ -168,6 +171,16 @@ qr_app.add_middleware(
     expose_headers=["X-Request-Id"],
     max_age=600,
 )
+
+@qr_app.middleware("http")
+async def google_login_challenge_middleware(request: Request, call_next):
+    if (CLIENT_ID and request.method == "GET" and
+            request.scope.get("path") in {"/", "/test-site", "/login", "/auth/google"} and
+            get_session_user(request) is None):
+        issue_google_login_challenge(request)
+    response = await call_next(request)
+    set_google_login_cookie(response, request)
+    return response
 
 @qr_app.middleware("http")
 async def enforce_origin(request: Request, call_next):

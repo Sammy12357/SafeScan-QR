@@ -109,8 +109,8 @@ CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID") or os.getenv("googe_client_id")
 AUTH0_DOMAIN = (os.getenv("AUTH0_DOMAIN") or "dev-vnllaqnkkegs4xni.us.auth0.com").strip().rstrip("/")
 AUTH0_AUDIENCES = {audience.strip() for audience in (os.getenv("AUTH0_CLIENT_IDS") or os.getenv("AUTH0_CLIENT_ID") or "1XfWxWOtDtN18JCCztRehzcJ1jOSBBic").split(",") if audience.strip()}
 AUTH0_ISSUER = f"https://{AUTH0_DOMAIN}/"
-_AUTH0_JWKS_CACHE = {"keys": None, "fetched_at": 0.0}
-_AUTH0_JWKS_TTL_SECONDS = 60 * 60
+_AUTH0_JWKS_CACHE = {"keys": None, "fetched_at": 0.0, "last_attempt_at": 0.0}
+_AUTH0_JWKS_TTL_SECONDS = 5 * 60
 AIRDROP_ADMIN_SECRET = os.getenv("AIRDROP_ADMIN_SECRET")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "safescanqr@gmail.com")
 ADMIN_EMAIL_GMAIL_COMPOSE_URL = f"https://mail.google.com/mail/?view=cm&fs=1&to={quote(ADMIN_EMAIL)}"

@@ -100,6 +100,12 @@ def init_db():
                         FOREIGN KEY(user_id) REFERENCES users(google_id)
                     )''')
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_identities_user_id ON user_identities(user_id)")
+    cursor.execute('''CREATE TABLE IF NOT EXISTS google_login_challenges (
+                        nonce_hash TEXT PRIMARY KEY,
+                        browser_hash TEXT NOT NULL,
+                        created_at INTEGER NOT NULL
+                    )''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_google_login_challenges_created ON google_login_challenges(created_at)")
     cursor.execute('''CREATE TABLE IF NOT EXISTS scans (email TEXT PRIMARY KEY, url_found TEXT, scan_count INTEGER DEFAULT 0, wallet_address TEXT, tokens_sent INTEGER DEFAULT 0)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS scan_events
                         (email TEXT NOT NULL, payload_hash TEXT NOT NULL, url_found TEXT NOT NULL,

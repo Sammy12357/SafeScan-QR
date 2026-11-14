@@ -36,13 +36,15 @@
 
     var clientId = googleConfig.dataset.client_id || googleConfig.dataset.clientId || "";
     var loginUri = googleConfig.dataset.login_uri || googleConfig.dataset.loginUri || "";
+    var nonce = googleConfig.dataset.nonce || "";
     var state = googleConfig.dataset.state || "";
-    if (!clientId || !loginUri) return false;
+    if (!clientId || !loginUri || !nonce) return false;
 
     try {
       window.google.accounts.id.initialize({
         client_id: clientId,
         login_uri: loginUri,
+        nonce: nonce,
         state: state,
         ux_mode: "redirect",
         // Automatically sign returning visitors back in without making them

@@ -1,0 +1,9 @@
+# Phase 2 authentication protocol notes
+
+Checked 2026-11-14 against [Google's ID token verification guide](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token), [Google's HTML API reference](https://developers.google.com/identity/gsi/web/reference/html-reference), [Google's JavaScript API reference](https://developers.google.com/identity/gsi/web/reference/js-reference), and the [PyJWT API reference](https://pyjwt.readthedocs.io/en/stable/api.html).
+
+- Google Identity Services posts `g_csrf_token` in a cookie and form field. The server compares both before verifying the token. A server-issued random nonce is embedded in each Google button/One Tap configuration, stored only as a hash in SQLite, bound to an `HttpOnly`, `Secure`, `SameSite=None`, `__Host-` cookie, and consumed with one atomic `DELETE` after signature verification. The cookie uses `SameSite=None` because Google's redirect callback is a cross-site POST. Challenges expire after ten minutes; an old open login page must be refreshed.
+- Auth0 ID tokens use PyJWT 2.15.1 for RS256 signature and `iss`, `aud`, `exp`, `iat`, optional `nbf`, and required `sub` checks. The code accepts only a JWT type header and the configured Auth0 issuer/client IDs. The tenant JWKS is fetched at most once per five minutes, including for unknown `kid` values, and the verifier fails closed if a fetch is unavailable. A newly rotated signing key can therefore take up to five minutes to become accepted.
+- The mobile `/auth/verify` response shape is unchanged. This branch does not alter provider-account mapping; the separate identity migration phase handles that.
+
+The Google callback's `g_csrf_token` and browser nonce checks must be verified on `sqafe.com` in a real browser before deployment. The domain used to render the login page must match the domain of the configured `data-login_uri` so its nonce cookie reaches the callback.

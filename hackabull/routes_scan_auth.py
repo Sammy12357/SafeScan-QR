@@ -93,6 +93,9 @@ from .discord_link import discord_state_for_user
 from .discord_link import get_discord_link
 from .discord_link import verify_discord_state
 from .fraud import run_fraud_checks
+from .google_login import clear_google_login_cookie
+from .google_login import consume_google_login_challenge
+from .google_login import validate_google_csrf
 from .history import index_user_context
 from .payload_privacy import scan_storage_reference
 from .history import save_scan_history
@@ -266,6 +269,7 @@ async def scan_qr(
 async def auth_google(
     request: Request,
     credential: str = Form(None),
+    g_csrf_token: str = Form(None),
     remember_me: str = Form("1"),
     next_url: str = Form("", alias="next"),
     next_query: str = Query("", alias="next"),
@@ -283,11 +287,18 @@ async def auth_google(
             **index_user_context(None)
         })
     try:
+        validate_google_csrf(request, g_csrf_token)
+        if len(credential) > 16_384:
+            raise ValueError("Google ID token too large.")
         idinfo = id_token.verify_oauth2_token(credential, google_requests.Request(), CLIENT_ID)
         if not verified_email_claim(idinfo.get("email_verified")):
             raise ValueError("Google email is not verified.")
-        google_id = idinfo["sub"]
-        user_email = idinfo["email"].strip().lower()
+        google_id = idinfo.get("sub")
+        email = idinfo.get("email")
+        if not isinstance(google_id, str) or not google_id or not isinstance(email, str) or not email.strip():
+            raise ValueError("Google ID token missing identity claims.")
+        user_email = email.strip().lower()
+        consume_google_login_challenge(request, idinfo.get("nonce"), g_csrf_token)
     except ValueError:
         audit_log("auth.failed", request=request, metadata={"provider": "google"})
         raise HTTPException(status_code=401, detail="Authentication required.")
@@ -304,6 +315,7 @@ async def auth_google(
     if return_to != "/":
         response = RedirectResponse(return_to, status_code=303)
         set_session_cookie(response, session_id)
+        clear_google_login_cookie(response)
         if wants_remember_me(remember_me):
             issue_remember_me_cookie(response, google_id, request)
         return response
@@ -316,6 +328,7 @@ async def auth_google(
         **index_user_context(user)
     })
     set_session_cookie(response, session_id)
+    clear_google_login_cookie(response)
     if wants_remember_me(remember_me):
         issue_remember_me_cookie(response, google_id, request)
     return response
