@@ -46,7 +46,10 @@ def _public_domain(value: str) -> str:
         extracted = _EXTRACT_DOMAIN(host)
         if not extracted.domain or not extracted.suffix or extracted.is_private:
             return ""  # Unknown/internal suffixes and shared hosting are not public indicators.
-        return f"{extracted.domain}.{extracted.suffix}"
+        domain = f"{extracted.domain}.{extracted.suffix}"
+        if host != domain:
+            return ""  # A bad tenant/subdomain does not implicate the parent domain.
+        return domain
     except (UnicodeError, ValueError):
         return ""
 

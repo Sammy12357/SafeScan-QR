@@ -666,7 +666,7 @@ def test_public_threat_feed_does_not_expose_scan_urls_or_regenerate_qrs(auth_app
         )
         conn.execute(
             "INSERT INTO url_blocklist (id, url, reason, added_by, created_at) VALUES (?, ?, ?, ?, ?)",
-            ("curated", "https://user:password@alerts.bad.com/secret?token=CURATED_TOKEN#fragment", "Admin confirmed", "admin@example.com", "2026-06-02T00:00:00Z"),
+            ("curated", "https://user:password@bad.com/secret?token=CURATED_TOKEN#fragment", "Admin confirmed", "admin@example.com", "2026-06-02T00:00:00Z"),
         )
 
     feed = client.get("/api/malicious-qr")
@@ -686,6 +686,27 @@ def test_public_threat_feed_does_not_expose_scan_urls_or_regenerate_qrs(auth_app
     assert image.status_code == 410
     assert image.headers["content-type"].startswith("application/json")
     assert image.headers["cache-control"] == "no-store"
+
+
+def test_public_threat_feed_never_labels_parent_of_confirmed_subdomain(auth_app):
+    _, client, db_path = auth_app
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            "INSERT INTO url_blocklist (id, url, reason, added_by, created_at) VALUES (?, ?, ?, ?, ?)",
+            [
+                ("site", "https://foo.squarespace.com/steal", "Admin confirmed", "admin@example.com", "2026-06-01T00:00:00Z"),
+                ("docs", "https://docs.google.com/steal", "Admin confirmed", "admin@example.com", "2026-06-02T00:00:00Z"),
+                ("blog", "https://foo.medium.com/steal", "Admin confirmed", "admin@example.com", "2026-06-03T00:00:00Z"),
+                ("subdomain", "https://bad.customer.com/steal", "Admin confirmed", "admin@example.com", "2026-06-04T00:00:00Z"),
+                ("root", "https://confirmed.com/steal", "Admin confirmed", "admin@example.com", "2026-06-05T00:00:00Z"),
+            ],
+        )
+
+    response = client.get("/api/malicious-qr")
+    assert response.status_code == 200
+    assert [entry["domain"] for entry in response.json()["entries"]] == ["confirmed.com"]
+    assert response.json()["total"] == 1
+    assert response.json()["stats"]["totalReports"] == 1
 
 
 def test_time_only_formatter_removes_iso_date(auth_app):
