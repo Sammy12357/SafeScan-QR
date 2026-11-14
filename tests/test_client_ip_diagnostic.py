@@ -1,11 +1,30 @@
 """The temporary ingress probe is gated and never returns raw IP values."""
 
+import importlib
+import sys
+
+import pytest
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 
-from hackabull.app_module import qr_app
-from hackabull.ip_diagnostic import diagnostic_snapshot
-from hackabull import routes_admin
+
+@pytest.fixture()
+def diagnostic_app(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'client-ip-diag.db'}")
+    monkeypatch.setenv("APP_URL", "https://testserver")
+    monkeypatch.setenv("MOCK_MODE", "true")
+    for name in list(sys.modules):
+        if name in {"hackabull", "db", "storage"} or name.startswith("hackabull."):
+            sys.modules.pop(name, None)
+    app = importlib.import_module("hackabull")
+    routes_admin = importlib.import_module("hackabull.routes_admin")
+    diagnostic = importlib.import_module("hackabull.ip_diagnostic")
+    app.RATE_LIMITS.clear()
+    yield app, routes_admin, diagnostic
+    app.RATE_LIMITS.clear()
+    for name in list(sys.modules):
+        if name in {"hackabull", "db", "storage"} or name.startswith("hackabull."):
+            sys.modules.pop(name, None)
 
 
 def make_request(headers=()):
@@ -23,12 +42,12 @@ def make_request(headers=()):
     })
 
 
-def test_probe_requires_render_opt_in_and_strong_key(monkeypatch, tmp_path):
-    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'diag.db'}")
+def test_probe_requires_render_opt_in_and_strong_key(monkeypatch, diagnostic_app):
+    app, _, _ = diagnostic_app
     monkeypatch.setenv("RENDER", "true")
     monkeypatch.delenv("CLIENT_IP_DIAGNOSTIC_ENABLED", raising=False)
     monkeypatch.delenv("CLIENT_IP_DIAGNOSTIC_HMAC_KEY", raising=False)
-    client = TestClient(qr_app, base_url="https://testserver")
+    client = TestClient(app.qr_app, base_url="https://testserver")
     assert client.get("/admin/debug/client-ip").status_code == 404
 
     monkeypatch.setenv("CLIENT_IP_DIAGNOSTIC_ENABLED", "true")
@@ -42,8 +61,8 @@ def test_probe_requires_render_opt_in_and_strong_key(monkeypatch, tmp_path):
     assert client.get("/admin/debug/client-ip").status_code == 401
 
 
-def test_owner_probe_returns_only_stable_fingerprints(monkeypatch, tmp_path):
-    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'diag.db'}")
+def test_owner_probe_returns_only_stable_fingerprints(monkeypatch, diagnostic_app):
+    app, routes_admin, _ = diagnostic_app
     monkeypatch.setenv("RENDER", "true")
     monkeypatch.setenv("CLIENT_IP_DIAGNOSTIC_ENABLED", "true")
     monkeypatch.setenv("CLIENT_IP_DIAGNOSTIC_HMAC_KEY", "b" * 32)
@@ -52,7 +71,7 @@ def test_owner_probe_returns_only_stable_fingerprints(monkeypatch, tmp_path):
         return {"role": "owner"}
 
     monkeypatch.setattr(routes_admin, "require_role_user", allow_owner)
-    client = TestClient(qr_app, base_url="https://testserver", client=("198.51.100.9", 50000))
+    client = TestClient(app.qr_app, base_url="https://testserver", client=("198.51.100.9", 50000))
 
     first = client.get("/admin/debug/client-ip", headers={
         "CF-Connecting-IP": "203.0.113.10",
@@ -78,19 +97,20 @@ def test_owner_probe_returns_only_stable_fingerprints(monkeypatch, tmp_path):
         assert raw_value not in second.text
 
 
-def test_probe_marks_duplicate_or_invalid_edge_headers_without_hashing_them():
+def test_probe_marks_duplicate_or_invalid_edge_headers_without_hashing_them(diagnostic_app):
+    _, _, diagnostic = diagnostic_app
     request = make_request([
         ("CF-Connecting-IP", "203.0.113.10"),
         ("CF-Connecting-IP", "192.0.2.2"),
     ])
-    snapshot = diagnostic_snapshot(request, "127.0.0.1", "c" * 32)
+    snapshot = diagnostic.diagnostic_snapshot(request, "127.0.0.1", "c" * 32)
     assert snapshot["edgeHeaderPresent"] is True
     assert snapshot["edgeHeaderSingle"] is False
     assert snapshot["edgeHeaderValid"] is False
     assert snapshot["edgeFingerprint"] is None
     assert snapshot["resolvedIpValid"] is True
 
-    invalid = diagnostic_snapshot(
+    invalid = diagnostic.diagnostic_snapshot(
         make_request([("CF-Connecting-IP", "203.0.113.10, 192.0.2.2")]),
         "127.0.0.1", "c" * 32,
     )

@@ -45,5 +45,4 @@ Immediately after collecting the comparison, set
 `CLIENT_IP_DIAGNOSTIC_ENABLED=false` and delete
 `CLIENT_IP_DIAGNOSTIC_HMAC_KEY` from Render. Then submit a removal PR deleting
 `hackabull/ip_diagnostic.py`, its `/admin/debug/client-ip` route, the tests,
-this document, and the CI test-list entry. Merge that removal before treating
-F3 as complete.
+and this document. Merge that removal before treating F3 as complete.
