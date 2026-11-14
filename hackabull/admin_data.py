@@ -377,6 +377,7 @@ PRIVACY_POLICY_HTML = f"""
   <li>IP address hash, approximate region, browser type, device type, and session signals for fraud prevention and analytics.</li>
   <li>Cookies and local storage values for authentication state, consent state, referral state, wallet state, and local report queues.</li>
 </ul>
+<p>Live camera preview frames are checked in your browser. If the local reader fails, SafeScan sends a captured photo to its server only after you choose “Send photo to SafeScan.” The server processes that photo in memory to read the QR code and does not store the image. The decoded payload follows the scan-history rules described here; signed-in scans may be saved.</p>
 <h2>2. Why We Collect It and Legal Basis</h2>
 <ul>
   <li>Authentication: contractual necessity.</li>

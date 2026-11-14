@@ -37,7 +37,7 @@ def test_tile_search_checks_for_a_second_distinct_code():
     end = WORKER.index("if (collection.valid.size === 0)", start)
     tile_search = WORKER[start:end]
     assert "collectSymbols(collection" in tile_search
-    assert "if (hasMultipleCodes(collection)) return" in tile_search
+    assert "if (await secondCodeFound()) return" in tile_search
     assert "if (collection.valid.size === 1) return" not in tile_search
     assert "checkSecondWithMask(image, collection)" in WORKER[:start]
     assert "collection.validLocations.length > 1" in WORKER
