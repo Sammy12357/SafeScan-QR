@@ -46,8 +46,9 @@ the normal upload form and from the authenticated `/api/scan/file` route.
 
 `static/qr-camera.js` manages camera permission, stream lifecycle, capture,
 guidance, and user consent. It requests 1920×1080 when possible, retries with
-less demanding constraints, and exposes camera switching, zoom, focus, and
-torch only when the browser and device report support. Tracks stop when the
+less demanding constraints, prefers the rear camera, and exposes focus and
+torch only when the browser and device report support. The zoom and camera
+switch controls were removed after iPhone field feedback. Tracks stop when the
 page is hidden or closed. `static/qr-worker.js` runs the pinned, self-hosted
 ZXing reader and WebAssembly under `static/vendor/zxing-wasm/3.1.6/`.
 `BarcodeDetector` is a fast first pass where it supports QR; the worker still
@@ -184,7 +185,7 @@ python3 -m pytest tests/test_qr_corpus_regression.py -q
 ## Known limits and release checks
 
 - Strong curvature and motion blur still defeat decoders. Burst selection,
-  zoom, focus, lighting, and guidance improve the capture opportunity but do
+  focus, lighting, and guidance improve the capture opportunity but do
   not guarantee a read.
 - The browser worker can identify Structured Append metadata and refuse split
   QR fragments. The pinned Python `zxing-cpp` binding does not expose the same
