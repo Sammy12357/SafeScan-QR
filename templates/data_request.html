@@ -59,6 +59,7 @@
         <label>Details
           <textarea name="details" rows="5" maxlength="4000" placeholder="Tell us what you want SafeScan to review or change."></textarea>
         </label>
+        {% if turnstile_enabled and turnstile_required %}<div class="safescan-turnstile-widget" data-sitekey="{{ turnstile_site_key }}" data-action="data_request"></div>{% endif %}
         <button class="primary-button" type="submit">Submit request</button>
       </form>
 

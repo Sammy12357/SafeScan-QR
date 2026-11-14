@@ -69,6 +69,10 @@
     <span>Terms v1.0 &middot; Updated May 2026</span>
   </div>
 </footer>
+{% if turnstile_enabled %}
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" defer></script>
+<script src="/static/turnstile-widgets.js?v=phase7" defer></script>
+{% endif %}
 
 <div id="cookieConsentBanner" class="consent-banner hidden" data-version="consent-v1">
   <div>

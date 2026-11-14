@@ -244,6 +244,7 @@
             <a href="{{ '/test-site' if test_site_path else '/' }}" class="secondary-button">&#8592; Back</a>
             {% set has_web_url = payload_type == 'URL' and url_found and (url_found.startswith('http://') or url_found.startswith('https://')) %}
             {% if has_web_url %}
+            {% if turnstile_enabled and not email %}<div class="safescan-turnstile-widget" data-sitekey="{{ turnstile_site_key }}" data-action="url_report"></div>{% endif %}
             <button id="blockReportButton" class="danger-button" type="button" data-report-url="{{ url_found }}">Report this URL</button>
             {% endif %}
             {% if status in ('MALICIOUS', 'DANGEROUS') or overall_risk == 'high' %}

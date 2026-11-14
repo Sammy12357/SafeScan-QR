@@ -97,6 +97,7 @@ from .waitlist import revoke_unsent_confirmation
 from .waitlist import valid_token
 from .security import html_rate_limit_response
 from .security import validate_strict_payload
+from .turnstile import verify_turnstile
 from .wallet import expire_alpha_subscriptions
 
 # =============================================================================
@@ -698,13 +699,15 @@ async def tokenomics_page(request: Request):
 async def do_not_sell(request: Request):
     return templates.TemplateResponse("legal_page.html", legal_context(
         request, "Do Not Sell or Share", content_template="legal/do_not_sell_body.html",
+        turnstile_required=not bool(get_session_user(request)),
     ))
 
 @qr_app.get("/legal/data-request", response_class=HTMLResponse)
 async def data_request_page(request: Request, email: str = Query("", max_length=254)):
     return templates.TemplateResponse("data_request.html", {
         "request": request, "email": email, "message": "", "export_data": "",
-        "version": LEGAL_VERSION, "last_updated": LEGAL_LAST_UPDATED
+        "version": LEGAL_VERSION, "last_updated": LEGAL_LAST_UPDATED,
+        "turnstile_required": not bool(get_session_user(request)),
     })
 
 @qr_app.post("/legal/data-request", response_class=HTMLResponse, dependencies=[Depends(require_csrf_form)])
@@ -713,8 +716,20 @@ async def submit_data_request(
     email: str = Form(...),
     region: str = Form(""),
     request_type: str = Form(...),
-    details: str = Form("")
+    details: str = Form(""),
+    cf_turnstile_response: str | None = Form(None, alias="cf-turnstile-response"),
 ):
+    ip_rate_limit = enforce_rate_limit(request, "data_request_ip", 10, 60 * 60)
+    if ip_rate_limit:
+        return html_rate_limit_response(request, ip_rate_limit)
+    session_user = get_session_user(request)
+    account_rate_limit = enforce_rate_limit(
+        request, "data_request_account" if session_user else "data_request_guest",
+        5 if session_user else 3, 60 * 60,
+        user_key=session_user.get("google_id") if session_user else None,
+    )
+    if account_rate_limit:
+        return html_rate_limit_response(request, account_rate_limit)
     email = bounded_text(email, "email", 254, required=True, strip=True)
     region = bounded_text(region, "region", 120)
     request_type = bounded_text(request_type, "request type", 40, required=True)
@@ -724,11 +739,19 @@ async def submit_data_request(
         "object", "do_not_sell", "limit_sensitive", "revoke_consent",
     }:
         raise SafeScanError("Invalid request type.", 400)
+    if not session_user:
+        try:
+            await verify_turnstile(request, cf_turnstile_response, action="data_request")
+        except SafeScanError as exc:
+            return templates.TemplateResponse("data_request.html", {
+                "request": request, "email": email, "message": str(exc), "export_data": "",
+                "version": LEGAL_VERSION, "last_updated": LEGAL_LAST_UPDATED,
+                "turnstile_required": True,
+            }, status_code=exc.status_code)
     request_id = make_id("dsr")
     now = datetime.utcnow().isoformat() + "Z"
     export_data = ""
     status = "submitted"
-    session_user = get_session_user(request)
     session_email = (session_user or {}).get("email") or ""
     verified_self_request = bool(session_email and session_email.casefold() == email.strip().casefold())
     if request_type == "revoke_consent" and verified_self_request:
@@ -763,6 +786,7 @@ async def submit_data_request(
     return templates.TemplateResponse("data_request.html", {
         "request": request, "email": email, "message": message, "export_data": export_data,
         "version": LEGAL_VERSION, "last_updated": LEGAL_LAST_UPDATED,
+        "turnstile_required": not bool(session_user),
         "consent_revoked": request_type == "revoke_consent" and bool(verified_self_request),
     })
 

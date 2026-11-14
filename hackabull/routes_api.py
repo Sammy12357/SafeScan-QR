@@ -95,6 +95,7 @@ from .scoring import signal
 from .security import enforce_rate_limit
 from .security import validate_public_url
 from .security import validate_strict_payload
+from .turnstile import verify_turnstile
 from .wallet import cleanup_wallet_nonces
 from .wallet import get_verified_wallet
 from .wallet import is_valid_solana_address
@@ -402,10 +403,12 @@ async def api_report_url(request: Request, payload: dict = Body(...)):
     )
     if rate_limit:
         return rate_limit
-    validate_strict_payload(payload, {"url", "reason"})
+    validate_strict_payload(payload, {"url", "reason", "turnstileToken"})
     reason = payload.get("reason")
     if not isinstance(reason, str) or reason not in ("phishing", "wallet_drain", "malware", "spam", "other"):
         raise SafeScanError("Invalid report reason.", 400)
+    if not user:
+        await verify_turnstile(request, payload.get("turnstileToken"), action="url_report")
     target_url = validate_public_url(payload.get("url", ""))
     analysis = await analyze_full_pipeline(target_url)
     report_id = make_id("report")
