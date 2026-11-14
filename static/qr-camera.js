@@ -192,6 +192,7 @@
         // been checked for a competing code. Fail closed if the worker fails.
         const result = await workerBridge.decode(video, canvas, ctx);
         if (result.multipleCodes === true) return { ambiguous: true };
+        if (result.structuredAppend === true) return { ambiguous: true, structuredAppend: true };
         const workerValues = validPayloads((result.symbols || [])
           .filter((symbol) => symbol.valid === true)
           .map((symbol) => symbol.text));
@@ -666,7 +667,9 @@
       }
 
       if (value && value.ambiguous) {
-        status.textContent = "Multiple QR codes found. Aim at one code or crop the picture, then try again.";
+        status.textContent = value.structuredAppend
+          ? "This code is split across multiple QR codes. Scan a complete code instead."
+          : "Multiple QR codes found. Aim at one code or crop the picture, then try again.";
         captureBtn.disabled = false;
         scanning = false;
         return;

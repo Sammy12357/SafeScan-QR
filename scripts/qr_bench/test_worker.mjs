@@ -125,9 +125,26 @@ if (located.error || located.symbols.filter((symbol) => symbol.valid && symbol.q
   throw new Error("Locate mode dropped a separate same-text QR outline");
 }
 
+// A split QR can contain a URL-shaped first fragment. It must not be sent to
+// risk analysis as though it were a complete destination.
+for (const index of [1, 2, 3]) {
+  const name = `structured-${String(index).padStart(2, "0")}.png`;
+  const fragment = await decode(await imageData(path.join(root, "tests/qr_corpus/structured_append", name)));
+  if (fragment.error || fragment.structuredAppend !== true ||
+      !fragment.symbols.some((symbol) => symbol.sequenceSize === 3 && symbol.sequenceIndex === index - 1)) {
+    throw new Error(`${name}: structured append metadata was lost`);
+  }
+}
+if (!vm.runInContext(`captureResult({ validLocations: [], valid: new Map([["partial", {
+  text: "partial", valid: true, quad: null, sequenceSize: 0, sequenceIndex: 0
+}]]), invalid: [] }, "full").structuredAppend`, worker)) {
+  throw new Error("Unknown-count structured append fragment was accepted");
+}
+
 timings.sort((a, b) => a - b);
 const p95 = timings[Math.ceil(timings.length * 0.95) - 1];
 console.log(`Worker exact: ${coreCorrect}/18 core; ${allCorrect}/24 all; p95 ${p95}ms`);
 console.log("Same-text two-code refusal: pass");
 console.log("Separate locate outlines: pass");
+console.log("Structured append fragments: refused");
 if (coreCorrect < minimumCore) process.exitCode = 1;
