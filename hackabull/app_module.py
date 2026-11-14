@@ -36,10 +36,10 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 from db import (
     assert_owns_row,
-    clear_rls_context,
     database_path,
     database_storage_status,
     get_conn,
+    reset_rls_context,
     rls_user_id,
     set_rls_context,
     user_scoped_select,
@@ -180,28 +180,21 @@ async def enforce_origin(request: Request, call_next):
 
 @qr_app.middleware("http")
 async def rls_context_middleware(request: Request, call_next):
-    if request.url.path == "/api/telemetry/scan":
-        # This endpoint accepts counts from guests and never needs an account
-        # lookup or row-level user context, even if a caller supplies cookies.
-        set_rls_context(None, "guest")
-        try:
-            return await call_next(request)
-        finally:
-            clear_rls_context()
+    # Start fail-closed even if a request task inherited an outer context.
+    token = set_rls_context(None, "guest")
     try:
-        user = get_session_user(request)
-        if user:
-            set_rls_context(
-                user_id=user.get("google_id") or user.get("email"),
-                role=user.get("role", "user"),
-                email=user.get("email"),
-            )
-        else:
-            set_rls_context(None, "guest")
-        response = await call_next(request)
-        return response
+        # The counts endpoint never needs an account lookup, even with a cookie.
+        if request.url.path != "/api/telemetry/scan":
+            user = get_session_user(request)
+            if user:
+                set_rls_context(
+                    user_id=user.get("google_id") or user.get("email"),
+                    role=user.get("role", "user"),
+                    email=user.get("email"),
+                )
+        return await call_next(request)
     finally:
-        clear_rls_context()
+        reset_rls_context(token)
 
 @qr_app.middleware("http")
 async def remember_me_middleware(request: Request, call_next):
