@@ -102,6 +102,9 @@
           <form class="sign-out-form" action="/auth/logout" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
             <button class="sign-out-button" type="submit">Sign out</button>
           </form>
+          <form class="sign-out-form" action="/profile/sign-out-all" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+            <button class="sign-out-button" type="submit">Sign out of all devices</button>
+          </form>
         </div>
       </aside>
     </div>

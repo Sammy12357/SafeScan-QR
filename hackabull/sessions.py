@@ -204,6 +204,22 @@ def revoke_all_remember_me(user_id):
             (now_iso(), user_id),
         )
 
+
+def revoke_all_user_sessions(user_id):
+    """Invalidate browser and bearer sessions together with remembered devices."""
+    if not user_id:
+        return
+    revoked_at = now_iso()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE sessions SET revoked_at = COALESCE(revoked_at, ?) WHERE google_id = ?",
+            (revoked_at, user_id),
+        )
+        conn.execute(
+            "UPDATE persistent_sessions SET revoked_at = COALESCE(revoked_at, ?) WHERE user_id = ?",
+            (revoked_at, user_id),
+        )
+
 def cleanup_persistent_sessions():
     cutoff = now_iso()
     with get_conn() as conn:

@@ -122,6 +122,7 @@ from .sessions import clear_remember_me_cookie
 from .sessions import clear_session_cookie
 from .sessions import issue_remember_me_cookie
 from .sessions import revoke_all_remember_me
+from .sessions import revoke_all_user_sessions
 from .sessions import set_session_cookie
 from .sessions import wants_remember_me
 from .wallet import get_verified_wallet
@@ -448,6 +449,17 @@ async def _do_logout(request: Request):
 @qr_app.post("/auth/logout", dependencies=[Depends(require_csrf_form)])
 async def logout_post(request: Request):
     return await _do_logout(request)
+
+
+@qr_app.post("/profile/sign-out-all", dependencies=[Depends(require_csrf_form)])
+async def sign_out_all_devices(request: Request):
+    user = require_user(request)
+    revoke_all_user_sessions(user["google_id"])
+    audit_log("user.logout_all", request=request, actor_user_id=user["google_id"])
+    response = RedirectResponse("/login", status_code=303)
+    clear_session_cookie(response)
+    clear_remember_me_cookie(response)
+    return response
 
 @qr_app.get("/auth/logout")
 async def logout_get(request: Request):
