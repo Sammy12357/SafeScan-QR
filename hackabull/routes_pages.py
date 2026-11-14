@@ -71,6 +71,7 @@ from .config import templates
 from .email_util import email_sending_configured
 from .email_util import send_email
 from .history import index_user_context
+from .input_validation import bounded_text
 from .legal import delete_user_data
 from .legal import get_user_export
 from .legal import legal_context
@@ -145,17 +146,12 @@ async def api_go_ghost_removal(request: Request, broker: str, payload: dict = Bo
     validate_strict_payload(payload, {"name", "address", "cityState", "phone", "email"})
 
     profile_payload = {
-        "name": str(payload.get("name") or "").strip()[:160],
-        "address": str(payload.get("address") or "").strip()[:220],
-        "city_state": str(payload.get("cityState") or "").strip()[:140],
-        "phone": str(payload.get("phone") or "").strip()[:80],
-        "email": str(payload.get("email") or "").strip()[:180],
+        "name": bounded_text(payload.get("name"), "name", 160, required=True, strip=True),
+        "address": bounded_text(payload.get("address"), "address", 220, strip=True),
+        "city_state": bounded_text(payload.get("cityState"), "city and state", 140, strip=True),
+        "phone": bounded_text(payload.get("phone"), "phone", 80, strip=True),
+        "email": bounded_text(payload.get("email"), "email", 254, required=True, strip=True),
     }
-    if not profile_payload["name"]:
-        raise SafeScanError("Add a full name before running automation.", 400)
-    if not profile_payload["email"]:
-        raise SafeScanError("Add an email before running automation.", 400)
-
     rate_limited = enforce_rate_limit(request, "go_ghost", 3, 24 * 60 * 60, user_key=user.get("google_id"))
     if rate_limited:
         return rate_limited
@@ -222,7 +218,7 @@ async def privacy_policy(request: Request):
 
 @qr_app.post("/waitlist", response_class=HTMLResponse, dependencies=[Depends(require_csrf_form)])
 async def waitlist_signup(request: Request, email: str = Form(...)):
-    normalized_email = email.strip().lower()
+    normalized_email = bounded_text(email, "email", 254, required=True, strip=True).lower()
     ip_rate_limit = enforce_rate_limit(request, "waitlist_ip", 3, 60 * 60)
     if ip_rate_limit:
         return html_rate_limit_response(request, ip_rate_limit)
@@ -573,7 +569,7 @@ async def do_not_sell(request: Request):
     ))
 
 @qr_app.get("/legal/data-request", response_class=HTMLResponse)
-async def data_request_page(request: Request, email: str = Query("")):
+async def data_request_page(request: Request, email: str = Query("", max_length=254)):
     return templates.TemplateResponse("data_request.html", {
         "request": request, "email": email, "message": "", "export_data": "",
         "version": LEGAL_VERSION, "last_updated": LEGAL_LAST_UPDATED
@@ -587,6 +583,15 @@ async def submit_data_request(
     request_type: str = Form(...),
     details: str = Form("")
 ):
+    email = bounded_text(email, "email", 254, required=True, strip=True)
+    region = bounded_text(region, "region", 120)
+    request_type = bounded_text(request_type, "request type", 40, required=True)
+    details = bounded_text(details, "details", 4000)
+    if request_type not in {
+        "access", "erasure", "rectification", "restriction", "portability",
+        "object", "do_not_sell", "limit_sensitive", "revoke_consent",
+    }:
+        raise SafeScanError("Invalid request type.", 400)
     request_id = make_id("dsr")
     now = datetime.utcnow().isoformat() + "Z"
     export_data = ""

@@ -5,6 +5,6 @@
   <input type="hidden" name="request_type" value="revoke_consent">
   <input type="hidden" name="region" value="">
   <input type="hidden" name="details" value="One-click consent revocation from account settings.">
-  <label>Email <input type="email" name="email" required readonly value="{{ email }}" placeholder="you@example.com"></label>
+  <label>Email <input type="email" name="email" required readonly maxlength="254" value="{{ email }}" placeholder="you@example.com"></label>
   <button class="danger-button" type="submit">Revoke Consent</button>
 </form>

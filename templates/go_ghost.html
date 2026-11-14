@@ -57,19 +57,19 @@
 
         <form id="goGhostProfileForm" class="go-ghost-form go-ghost-keyword-form">
           <label>Full name
-            <input id="ghostNameInput" type="text" autocomplete="name">
+            <input id="ghostNameInput" type="text" maxlength="160" autocomplete="name">
           </label>
           <label>City and state
-            <input id="ghostLocationInput" type="text" autocomplete="address-level2">
+            <input id="ghostLocationInput" type="text" maxlength="140" autocomplete="address-level2">
           </label>
           <label>Street address
-            <input id="ghostAddressInput" type="text" autocomplete="street-address">
+            <input id="ghostAddressInput" type="text" maxlength="220" autocomplete="street-address">
           </label>
           <label>Phone number
-            <input id="ghostPhoneInput" type="tel" autocomplete="tel">
+            <input id="ghostPhoneInput" type="tel" maxlength="80" autocomplete="tel">
           </label>
           <label>Email
-            <input id="ghostEmailInput" type="email" autocomplete="email">
+            <input id="ghostEmailInput" type="email" maxlength="254" autocomplete="email">
           </label>
           <div class="go-ghost-actions">
             <button class="primary-button" type="submit">Update automation scope</button>
