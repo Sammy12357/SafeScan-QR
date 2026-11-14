@@ -591,6 +591,14 @@ def test_malicious_qr_database_is_public_and_filters_scans(auth_app):
                 ("verdict-only", "c@example.com", "https://phish.example/wallet", 20, "MALICIOUS", "{}", 0, "2026-06-04T00:00:00Z", "user-c"),
             ],
         )
+        conn.executemany(
+            "INSERT INTO url_blocklist (id, url, reason, added_by, created_at) VALUES (?, ?, ?, ?, ?)",
+            [
+                ("confirmed-old", "https://evil.com/login", "Admin confirmed", "admin@example.com", "2026-06-02T00:00:00Z"),
+                ("confirmed-new", "https://evil.com/reset?token=PRIVATE", "Admin confirmed", "admin@example.com", "2026-06-03T00:00:00Z"),
+                ("confirmed-other", "https://phish.com/wallet", "Admin confirmed", "admin@example.com", "2026-06-04T00:00:00Z"),
+            ],
+        )
 
     page = client.get("/malicious-database")
     response = client.get("/api/malicious-qr")
@@ -598,20 +606,18 @@ def test_malicious_qr_database_is_public_and_filters_scans(auth_app):
     assert page.status_code == 200
     assert "Malicious QR Database" in page.text
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
     data = response.json()
     assert data["total"] == 2
-    assert [entry["url"] for entry in data["entries"]] == [
-        "https://phish.example/wallet",
-        "https://evil.example/login",
-    ]
+    assert [entry["domain"] for entry in data["entries"]] == ["phish.com", "evil.com"]
     evil = data["entries"][1]
-    assert evil["riskScore"] == 91
-    assert evil["timesSeen"] == 2
-    assert evil["lastScannedAt"] == "2026-06-03T00:00:00Z"
-    assert data["stats"]["totalUrls"] == 2
-    assert data["stats"]["totalSightings"] == 3
-    assert data["stats"]["criticalCount"] == 1
-    assert data["stats"]["suspiciousCount"] == 1
+    assert evil["reports"] == 2
+    assert evil["lastReportedAt"] == "2026-06-03T00:00:00Z"
+    assert data["stats"]["totalDomains"] == 2
+    assert data["stats"]["totalReports"] == 3
+    assert "PRIVATE" not in response.text
+    assert "login" not in response.text
+    assert "wallet" not in response.text
 
 
 def test_malicious_qr_database_search_pagination_and_compat_endpoint(auth_app):
@@ -619,13 +625,13 @@ def test_malicious_qr_database_search_pagination_and_compat_endpoint(auth_app):
     with sqlite3.connect(db_path) as conn:
         conn.executemany(
             """
-            INSERT INTO scan_history (id, email, url, risk_score, verdict, signals, reported, created_at, user_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO url_blocklist (id, url, reason, added_by, created_at)
+            VALUES (?, ?, ?, ?, ?)
             """,
             [
-                ("one", "a@example.com", "https://first-bad.example", 99, "MALICIOUS", "{}", 0, "2026-06-01T00:00:00Z", "user-a"),
-                ("two", "b@example.com", "https://second-bad.example", 88, "HIGH", "{}", 0, "2026-06-02T00:00:00Z", "user-b"),
-                ("three", "c@example.com", "https://needle-bad.example", 82, "HIGH", "{}", 0, "2026-06-03T00:00:00Z", "user-c"),
+                ("one", "https://first-bad.com", "Admin confirmed", "admin@example.com", "2026-06-01T00:00:00Z"),
+                ("two", "https://second-bad.com", "Admin confirmed", "admin@example.com", "2026-06-02T00:00:00Z"),
+                ("three", "https://needle-bad.com", "Admin confirmed", "admin@example.com", "2026-06-03T00:00:00Z"),
             ],
         )
 
@@ -636,18 +642,15 @@ def test_malicious_qr_database_search_pagination_and_compat_endpoint(auth_app):
 
     assert first_page["total"] == 3
     assert first_page["totalPages"] == 2
-    assert [entry["url"] for entry in first_page["entries"]] == [
-        "https://needle-bad.example",
-        "https://second-bad.example",
-    ]
-    assert [entry["url"] for entry in second_page["entries"]] == ["https://first-bad.example"]
+    assert [entry["domain"] for entry in first_page["entries"]] == ["needle-bad.com", "second-bad.com"]
+    assert [entry["domain"] for entry in second_page["entries"]] == ["first-bad.com"]
     assert searched["total"] == 1
-    assert searched["entries"][0]["url"] == "https://needle-bad.example"
-    assert searched["stats"]["totalUrls"] == 3
+    assert searched["entries"][0]["domain"] == "needle-bad.com"
+    assert searched["stats"]["totalDomains"] == 3
     assert unsupported.status_code == 400
 
 
-def test_malicious_qr_image_only_renders_known_malicious_payloads(auth_app):
+def test_public_threat_feed_does_not_expose_scan_urls_or_regenerate_qrs(auth_app):
     _, client, db_path = auth_app
     with sqlite3.connect(db_path) as conn:
         conn.executemany(
@@ -657,19 +660,53 @@ def test_malicious_qr_image_only_renders_known_malicious_payloads(auth_app):
             """,
             [
                 ("safe", "safe@example.com", "https://safe.example", 10, "SAFE", "{}", 0, "2026-06-01T00:00:00Z", "safe-user"),
-                ("bad", "bad@example.com", "https://bad.example", 95, "MALICIOUS", "{}", 0, "2026-06-02T00:00:00Z", "bad-user"),
+                ("bad", "bad@example.com", "https://unreviewed.com/reset?token=PRIVATE_SCAN_TOKEN#fragment", 95, "MALICIOUS", "{}", 0, "2026-06-02T00:00:00Z", "bad-user"),
+                ("local", "bad@example.com", "http://127.0.0.1/reset?token=LOCAL_SCAN_TOKEN", 95, "MALICIOUS", "{}", 0, "2026-06-02T00:00:00Z", "bad-user"),
+            ],
+        )
+        conn.execute(
+            "INSERT INTO url_blocklist (id, url, reason, added_by, created_at) VALUES (?, ?, ?, ?, ?)",
+            ("curated", "https://user:password@bad.com/secret?token=CURATED_TOKEN#fragment", "Admin confirmed", "admin@example.com", "2026-06-02T00:00:00Z"),
+        )
+
+    feed = client.get("/api/malicious-qr")
+    compat = client.get("/api/qr-codes?malicious=true")
+    search = client.get("/api/malicious-qr", params={"q": "PRIVATE_SCAN_TOKEN"})
+    curated_search = client.get("/api/malicious-qr", params={"q": "CURATED_TOKEN"})
+    image = client.get("/api/malicious-qr/image", params={"u": "https://unreviewed.com/reset?token=PRIVATE_SCAN_TOKEN#fragment"})
+
+    for response in (feed, compat):
+        assert response.status_code == 200
+        assert response.json()["entries"][0]["domain"] == "bad.com"
+        assert response.json()["total"] == 1
+        assert not any(token in response.text for token in ("PRIVATE_SCAN_TOKEN", "LOCAL_SCAN_TOKEN", "CURATED_TOKEN", "user:password", "reset", "fragment"))
+        assert "unreviewed.com" not in response.text
+    assert search.json()["total"] == 0
+    assert curated_search.json()["total"] == 0
+    assert image.status_code == 410
+    assert image.headers["content-type"].startswith("application/json")
+    assert image.headers["cache-control"] == "no-store"
+
+
+def test_public_threat_feed_never_labels_parent_of_confirmed_subdomain(auth_app):
+    _, client, db_path = auth_app
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            "INSERT INTO url_blocklist (id, url, reason, added_by, created_at) VALUES (?, ?, ?, ?, ?)",
+            [
+                ("site", "https://foo.squarespace.com/steal", "Admin confirmed", "admin@example.com", "2026-06-01T00:00:00Z"),
+                ("docs", "https://docs.google.com/steal", "Admin confirmed", "admin@example.com", "2026-06-02T00:00:00Z"),
+                ("blog", "https://foo.medium.com/steal", "Admin confirmed", "admin@example.com", "2026-06-03T00:00:00Z"),
+                ("subdomain", "https://bad.customer.com/steal", "Admin confirmed", "admin@example.com", "2026-06-04T00:00:00Z"),
+                ("root", "https://confirmed.com/steal", "Admin confirmed", "admin@example.com", "2026-06-05T00:00:00Z"),
             ],
         )
 
-    bad_image = client.get("/api/malicious-qr/image", params={"u": "https://bad.example"})
-    safe_image = client.get("/api/malicious-qr/image", params={"u": "https://safe.example"})
-    unknown_image = client.get("/api/malicious-qr/image", params={"u": "https://unknown.example"})
-
-    assert bad_image.status_code == 200
-    assert bad_image.headers["content-type"] == "image/png"
-    assert bad_image.content.startswith(b"\x89PNG")
-    assert safe_image.status_code == 404
-    assert unknown_image.status_code == 404
+    response = client.get("/api/malicious-qr")
+    assert response.status_code == 200
+    assert [entry["domain"] for entry in response.json()["entries"]] == ["confirmed.com"]
+    assert response.json()["total"] == 1
+    assert response.json()["stats"]["totalReports"] == 1
 
 
 def test_time_only_formatter_removes_iso_date(auth_app):
