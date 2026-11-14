@@ -51,7 +51,6 @@ from safescan_allowlist import should_short_circuit, registrable_domain as allow
 import safescan_model_calibration as sm_calibration
 from .audit import SafeScanError
 from .audit import now_iso
-from .audit import role_for_email
 from .auth import require_user_from_google_id
 from .config import APP_URL
 from .config import CLIENT_ID
@@ -148,23 +147,12 @@ def safe_next_url(request: Request, raw="", fallback="/"):
     return fallback
 
 def save_user_to_db(google_id, email, request=None, display_name="", picture=""):
+    """Create a development/local account by its ID, without email-based linking."""
     normalized_email = email.strip().lower()
     normalized_display_name = (display_name or "").strip()[:120]
     normalized_picture = (picture or "").strip()[:500]
-    role = role_for_email(normalized_email)
     referral_code = hashlib.sha256(f"{normalized_email}:{APP_URL}".encode("utf-8")).hexdigest()[:10]
     with get_conn() as conn:
-        existing = conn.execute(
-            """
-            SELECT google_id
-            FROM users
-            WHERE lower(email) = ? AND status != 'deleted'
-            ORDER BY CASE WHEN google_id = ? THEN 0 ELSE 1 END, created_at
-            LIMIT 1
-            """,
-            (normalized_email, google_id),
-        ).fetchone()
-        resolved_google_id = existing["google_id"] if existing else google_id
         google_sub = google_id if not google_id.startswith("user_") and not google_id.startswith("local_") else None
         conn.execute("""
             INSERT INTO users (google_id, email, display_name, picture, last_login, role, status, last_login_at, login_ip, created_at, referral_code, google_sub)
@@ -177,11 +165,78 @@ def save_user_to_db(google_id, email, request=None, display_name="", picture="")
                 last_login_at=excluded.last_login_at,
                 login_ip=excluded.login_ip,
                 referral_code=COALESCE(users.referral_code, excluded.referral_code),
-                google_sub=COALESCE(users.google_sub, excluded.google_sub),
-                role=CASE
-                    WHEN users.role IN ('owner', 'admin') THEN users.role
-                    ELSE excluded.role
-                END
-        """, (resolved_google_id, normalized_email, normalized_display_name, normalized_picture, datetime.now().isoformat(), role, now_iso(), request_ip(request) if request else None, now_iso(), referral_code, google_sub))
-    return resolved_google_id
+                google_sub=COALESCE(users.google_sub, excluded.google_sub)
+        """, (google_id, normalized_email, normalized_display_name, normalized_picture, datetime.now().isoformat(), "user", now_iso(), request_ip(request) if request else None, now_iso(), referral_code, google_sub))
+    return google_id
+
+
+def verified_email_claim(value):
+    """Accept only an explicit true claim, including the legacy string form."""
+    return value is True or (isinstance(value, str) and value.strip().lower() == "true")
+
+
+def save_federated_user_to_db(provider, issuer, subject, email, request=None, display_name="", picture=""):
+    """Resolve an OAuth identity by issuer and full subject, never by email.
+
+    Existing accounts without an approved identity mapping require migration
+    review. An email collision cannot be used to claim their history or role.
+    """
+    if provider not in {"google", "auth0"} or not issuer.startswith("https://") or not subject:
+        raise ValueError("Invalid identity provider or subject.")
+    normalized_email = (email or "").strip().lower()
+    if not normalized_email:
+        raise ValueError("Identity is missing email.")
+    normalized_display_name = (display_name or "").strip()[:120]
+    normalized_picture = (picture or "").strip()[:500]
+    referral_code = hashlib.sha256(f"{normalized_email}:{APP_URL}".encode("utf-8")).hexdigest()[:10]
+    now = now_iso()
+    with get_conn() as conn:
+        # Serialize lookup and insert across concurrent sign-ins. The identity
+        # key is unique even if different connections use the same suffix.
+        conn.execute("BEGIN IMMEDIATE")
+        identity = conn.execute(
+            "SELECT user_id, provider, email_at_link FROM user_identities WHERE issuer = ? AND subject = ?",
+            (issuer, subject),
+        ).fetchone()
+        if identity:
+            if identity["provider"] != provider or identity["email_at_link"] != normalized_email:
+                raise SafeScanError("This sign-in needs account review.", 409)
+            user_id = identity["user_id"]
+            user = conn.execute("SELECT status FROM users WHERE google_id = ?", (user_id,)).fetchone()
+            if not user or user["status"] != "active":
+                raise SafeScanError("Authentication required.", 401)
+            conn.execute(
+                """UPDATE users SET last_login = ?, last_login_at = ?, login_ip = ?,
+                   display_name = COALESCE(NULLIF(display_name, ''), ?),
+                   picture = COALESCE(NULLIF(picture, ''), ?)
+                   WHERE google_id = ?""",
+                (now, now, request_ip(request) if request else None,
+                 normalized_display_name, normalized_picture, user_id),
+            )
+            return user_id
+
+        # The migration tool must attach existing accounts after private owner
+        # review. A matching email is never proof that this provider owns them.
+        existing_email = conn.execute(
+            "SELECT 1 FROM users WHERE lower(email) = ? LIMIT 1", (normalized_email,)
+        ).fetchone()
+        if existing_email:
+            raise SafeScanError("This sign-in needs account review.", 409)
+        user_id = "user_" + secrets.token_urlsafe(24)
+        conn.execute(
+            """INSERT INTO users
+               (google_id, email, display_name, picture, last_login, role, status,
+                last_login_at, login_ip, created_at, referral_code, google_sub)
+               VALUES (?, ?, ?, ?, ?, 'user', 'active', ?, ?, ?, ?, ?)""",
+            (user_id, normalized_email, normalized_display_name, normalized_picture,
+             now, now, request_ip(request) if request else None, now,
+             referral_code, subject if provider == "google" else None),
+        )
+        conn.execute(
+            """INSERT INTO user_identities
+               (provider, issuer, subject, user_id, email_at_link, email_verified, linked_at)
+               VALUES (?, ?, ?, ?, ?, 1, ?)""",
+            (provider, issuer, subject, user_id, normalized_email, now),
+        )
+        return user_id
 

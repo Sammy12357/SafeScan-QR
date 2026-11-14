@@ -33,6 +33,11 @@ def register(client, email, password="password123"):
     return client.post("/auth/register", data={"email": email, "password": password}, follow_redirects=False)
 
 
+def grant_test_role(db_path, email, role):
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("UPDATE users SET role = ? WHERE email = ?", (role, email))
+
+
 def add_scan(db_path, email, url):
     with sqlite3.connect(db_path) as conn:
         conn.execute(
@@ -143,6 +148,7 @@ def test_scan_history_rls_isolates_regular_users(security_app):
 def test_scan_history_rls_allows_admin_to_see_all_rows(security_app):
     _, client, db_path = security_app
     register(client, "admin@example.com")
+    grant_test_role(db_path, "admin@example.com", "admin")
     add_scan(db_path, "user-a@example.com", "https://a.example")
     add_scan(db_path, "user-b@example.com", "https://b.example")
 
@@ -179,6 +185,7 @@ def test_waitlist_admin_page_requires_admin(security_app):
 def test_admin_can_view_waitlist_signups(security_app):
     _, client, db_path = security_app
     register(client, "admin@example.com")
+    grant_test_role(db_path, "admin@example.com", "admin")
     with sqlite3.connect(db_path) as conn:
         conn.execute(
             "INSERT INTO waitlist_signups VALUES (?, ?, ?)",
@@ -207,6 +214,7 @@ def test_go_ghost_page_prompts_before_workflow(security_app):
 def test_waitlist_export_requires_owner(security_app):
     _, admin_client, db_path = security_app
     register(admin_client, "admin@example.com")
+    grant_test_role(db_path, "admin@example.com", "admin")
     with sqlite3.connect(db_path) as conn:
         conn.execute(
             "INSERT INTO waitlist_signups VALUES (?, ?, ?)",
@@ -217,6 +225,7 @@ def test_waitlist_export_requires_owner(security_app):
 
     owner_client = TestClient(sys.modules["hackabull"].qr_app, base_url="https://testserver")
     register(owner_client, "owner@example.com")
+    grant_test_role(db_path, "owner@example.com", "owner")
     allowed = owner_client.get("/admin/export/waitlist")
 
     assert denied.status_code == 403
@@ -237,10 +246,6 @@ def test_admin_access_denylist_removes_contact_email_access(tmp_path, monkeypatc
     [sys.modules.pop(_m, None) for _m in list(sys.modules) if _m == "hackabull" or _m.startswith("hackabull.")]
     sys.modules.pop("db", None)
     module = importlib.import_module("hackabull")
-
-    assert module.role_for_email("safescanqr@gmail.com") == "user"
-    assert module.role_for_email("admin@example.com") == "admin"
-    assert module.role_for_email("owner@example.com") == "owner"
 
     with sqlite3.connect(db_path) as conn:
         conn.execute(

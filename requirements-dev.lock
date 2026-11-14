@@ -1503,6 +1503,10 @@ pygments==2.21.0 \
     # via
     #   pytest
     #   rich
+pyjwt==2.15.1 \
+    --hash=sha256:42d59d631f7768a1028a64c7ff581a9bf7519804daf91fc5b6c56e30eec5e193 \
+    --hash=sha256:4f259e80cdfb6b3fc18a7de51fd1ef9ec79652f25019bae68975ca2468a34df8
+    # via -r requirements.txt
 pymupdf==1.26.7 \
     --hash=sha256:07085718dfdae5ab83b05eb5eb397f863bcc538fe05135318a01ea353e7a1353 \
     --hash=sha256:1d5106f46e1ca0d64d46bd51892372a4f82076bdc14a9678d33d630702abca36 \

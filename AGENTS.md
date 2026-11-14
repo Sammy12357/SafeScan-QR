@@ -71,7 +71,7 @@ The Stripe Payment Link success redirect should point to:
 https://safescan-qr.onrender.com/pay/alpha/success
 ```
 
-The app records signed-in Alpha Premium success-page visits in the long-term database table `alpha_subscriptions`. A Stripe webhook is still the preferred follow-up for fully verified automatic activation.
+The Alpha Premium success page is informational and must not create or activate a subscription. Only verified Stripe webhook events or finalized Solana payments may activate access. Stripe activation also requires `ALPHA_STRIPE_PAYMENT_LINK_ID` to match the signed Checkout Session's Payment Link object ID; see `docs/security/payments-preflight.md` before a payment release.
 
 ## Test Commands
 
@@ -80,7 +80,7 @@ Use the bundled or local Python runtime available in the environment.
 Focused payment persistence test:
 
 ```text
-python -m pytest tests/test_auth_persistence.py::test_alpha_payment_uses_stripe_link_and_records_purchase_date -q
+python -m pytest tests/test_auth_persistence.py::test_alpha_payment_uses_stripe_link_and_waits_for_verified_payment -q
 ```
 
 Broader auth persistence suite:

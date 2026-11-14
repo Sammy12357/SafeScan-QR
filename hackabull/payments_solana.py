@@ -209,18 +209,18 @@ def alpha_solana_quote_for_user(user):
     return quote_row
 
 def alpha_solana_pay_url(request: Request | None = None):
-    if not ALPHA_SOLANA_RECIPIENT:
+    if not ALPHA_SOLANA_RECIPIENT or request is None:
         return ""
 
+    user = get_session_user(request)
+    if not user:
+        return ""
+    quote_row = alpha_solana_quote_for_user(user)
+    if not quote_row:
+        return ""
     params = []
-    quote_row = None
-    if request:
-        quote_row = alpha_solana_quote_for_user(get_session_user(request))
-    if quote_row:
-        params.append(("amount", str(quote_row["amountSol"])))
-        params.append(("reference", str(quote_row["reference"])))
-    elif ALPHA_SOLANA_AMOUNT_SOL:
-        params.append(("amount", ALPHA_SOLANA_AMOUNT_SOL))
+    params.append(("amount", str(quote_row["amountSol"])))
+    params.append(("reference", str(quote_row["reference"])))
     if ALPHA_SOLANA_LABEL:
         params.append(("label", ALPHA_SOLANA_LABEL))
     if ALPHA_SOLANA_MESSAGE:
@@ -284,14 +284,14 @@ def verify_alpha_solana_payment(reference):
         raise SafeScanError("Solana payment is not configured.", 400)
     if quote_row["quote_expires_at"] and quote_row["quote_expires_at"] <= now_iso():
         raise SafeScanError("This Solana payment quote expired. Open the payment page to generate a fresh quote.", 400)
-    signatures = solana_rpc("getSignaturesForAddress", [reference, {"limit": 12, "commitment": "confirmed"}]) or []
+    signatures = solana_rpc("getSignaturesForAddress", [reference, {"limit": 12, "commitment": "finalized"}]) or []
     for item in signatures:
         signature = item.get("signature")
-        if not signature or item.get("err"):
+        if not signature or item.get("err") or item.get("confirmationStatus") not in (None, "finalized"):
             continue
         tx = solana_rpc(
             "getTransaction",
-            [signature, {"encoding": "jsonParsed", "commitment": "confirmed", "maxSupportedTransactionVersion": 0}],
+            [signature, {"encoding": "jsonParsed", "commitment": "finalized", "maxSupportedTransactionVersion": 0}],
         )
         keys = transaction_account_keys(tx)
         if reference not in keys or ALPHA_SOLANA_RECIPIENT not in keys:
@@ -310,24 +310,31 @@ def record_alpha_solana_subscription(user, reference, signature):
         "recipient": ALPHA_SOLANA_RECIPIENT,
     }
     with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         quote_row = conn.execute(
-            "SELECT * FROM alpha_solana_payment_references WHERE user_id = ? AND reference = ?",
+            "SELECT * FROM alpha_solana_payment_references WHERE user_id = ? AND reference = ? AND status = 'pending'",
             (user["google_id"], reference),
         ).fetchone()
-        if quote_row:
-            metadata.update({
-                "amountUsd": quote_row["amount_usd"],
-                "solUsdPrice": quote_row["sol_usd_price"],
-                "amountSol": quote_row["amount_sol"],
-                "amountLamports": quote_row["amount_lamports"],
-                "quoteExpiresAt": quote_row["quote_expires_at"],
-            })
-        conn.execute(
-            """UPDATE alpha_solana_payment_references
+        if not quote_row or not signature:
+            raise SafeScanError("No pending Solana payment quote was found.", 409)
+        metadata.update({
+            "amountUsd": quote_row["amount_usd"],
+            "solUsdPrice": quote_row["sol_usd_price"],
+            "amountSol": quote_row["amount_sol"],
+            "amountLamports": quote_row["amount_lamports"],
+            "quoteExpiresAt": quote_row["quote_expires_at"],
+        })
+        try:
+            updated = conn.execute(
+                """UPDATE alpha_solana_payment_references
                SET status = 'verified_' || substr(reference, -8), signature = ?, updated_at = ?, expires_at = ?
-               WHERE user_id = ? AND reference = ?""",
-            (signature, purchased_at, expires_at, user["google_id"], reference),
-        )
+               WHERE user_id = ? AND reference = ? AND status = 'pending'""",
+                (signature, purchased_at, expires_at, user["google_id"], reference),
+            )
+        except sqlite3.IntegrityError as exc:
+            raise SafeScanError("This Solana payment was already used.", 409) from exc
+        if updated.rowcount != 1:
+            raise SafeScanError("No pending Solana payment quote was found.", 409)
         conn.execute(
             """
             INSERT INTO alpha_subscriptions

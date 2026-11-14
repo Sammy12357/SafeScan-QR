@@ -20,6 +20,7 @@
   <div id="g_id_onload"
        data-client_id="{{ google_client_id }}"
        data-login_uri="{{ auth_google_url }}"
+       data-nonce="{{ request.state.google_login_nonce }}"
        data-auto_prompt="true"
        data-auto_select="true"
        data-cancel_on_tap_outside="false"

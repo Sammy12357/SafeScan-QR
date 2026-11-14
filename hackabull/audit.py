@@ -49,8 +49,6 @@ from storage import upload_bytes as storage_upload_bytes
 
 from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party
 import safescan_model_calibration as sm_calibration
-from .config import ADMIN_EMAILS
-from .config import OWNER_EMAILS
 from .request_helpers import make_id
 from .request_helpers import request_ip
 
@@ -72,14 +70,6 @@ def iso_from_unix_timestamp(value):
         return datetime.utcfromtimestamp(int(value)).isoformat() + "Z"
     except (TypeError, ValueError, OSError):
         return None
-
-def role_for_email(email):
-    normalized = (email or "").strip().lower()
-    if normalized in OWNER_EMAILS:
-        return "owner"
-    if normalized in ADMIN_EMAILS:
-        return "admin"
-    return "user"
 
 def sanitize_metadata(value):
     blocked = ("password", "token", "secret", "key", "hash", "credential")

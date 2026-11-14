@@ -57,6 +57,7 @@ from .auth import require_role_user
 from .auth import require_user
 from .config import AIRDROP_ADMIN_SECRET
 from .config import APP_STARTED_AT
+from .csrf import require_same_origin_action
 from .config import CLIENT_ID
 from .config import LEGAL_VERSION
 from .config import templates
@@ -312,17 +313,19 @@ async def account_settings(request: Request, email: str = Query("")):
     """
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Account Settings", body))
 
-@qr_app.get("/trigger-airdrop-secret")
+@qr_app.post("/trigger-airdrop-secret")
 async def trigger_airdrop(
     request: Request,
-    secret: str = Query(None),
     x_airdrop_secret: str = Header(None)
 ):
     admin_user = get_session_user(request)
-    provided_secret = x_airdrop_secret or secret
     if admin_user:
         require_role_user(request, "admin")
-    elif not (AIRDROP_ADMIN_SECRET and provided_secret == AIRDROP_ADMIN_SECRET):
+        require_same_origin_action(request)
+    elif not (
+        AIRDROP_ADMIN_SECRET and len(AIRDROP_ADMIN_SECRET) >= 32 and
+        x_airdrop_secret and hmac.compare_digest(x_airdrop_secret, AIRDROP_ADMIN_SECRET)
+    ):
         audit_log("auth.permission_denied", request=request, target_type="airdrop")
         raise HTTPException(status_code=403, detail="You do not have permission to do this.")
 
