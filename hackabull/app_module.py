@@ -52,6 +52,8 @@ from safescan_allowlist import should_short_circuit, registrable_domain as allow
 import safescan_model_calibration as sm_calibration
 from .audit import SafeScanError
 from .client_ip import rate_limit_identity
+from .body_limits import BodySizeLimitMiddleware
+from .body_limits import UPLOAD_BODY_LIMIT
 from .auth import create_session
 from .auth import get_session_user
 from .config import ACTIVE_SCANS
@@ -146,7 +148,7 @@ qr_app.mount("/static", StaticFiles(directory="static"), name="static")
 # Keep bounded QR uploads in memory instead of Starlette's default 1 MiB
 # disk-backed spool. These are the site's only UploadFile routes.
 QR_MULTIPART_OVERHEAD_BYTES = 64 * 1024
-QR_REQUEST_BODY_LIMIT = MAX_QR_UPLOAD_BYTES + QR_MULTIPART_OVERHEAD_BYTES
+QR_REQUEST_BODY_LIMIT = min(MAX_QR_UPLOAD_BYTES + QR_MULTIPART_OVERHEAD_BYTES, UPLOAD_BODY_LIMIT)
 MultiPartParser.spool_max_size = QR_REQUEST_BODY_LIMIT + 1
 QR_REQUEST_SLOTS = asyncio.Semaphore(3)
 QR_REQUEST_ACTIVE_BY_CLIENT = {}
@@ -325,6 +327,11 @@ def apply_security_headers(request: Request, response):
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
     return apply_security_headers(request, response)
+
+# Register this before the scanner's admission middleware below. Starlette
+# places the later-registered admission guard outside this pure-ASGI limiter,
+# so upload rate and concurrency checks still happen before reading a body.
+qr_app.add_middleware(BodySizeLimitMiddleware, decorate_error=apply_security_headers)
 
 async def wallet_nonce_cleanup_loop():
     while True:
