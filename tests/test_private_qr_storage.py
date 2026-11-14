@@ -175,6 +175,13 @@ def test_camera_source_requires_a_file(tmp_path, monkeypatch):
     assert response.status_code == 400
 
 
+def test_manual_qr_payload_is_bounded_like_api_scans(tmp_path, monkeypatch):
+    _, client, _ = load_app(tmp_path, monkeypatch)
+    response = client.post("/search_qr_api", data={"manual_url": "A" * 4097})
+    assert response.status_code == 400
+    assert "too large" in response.text.lower()
+
+
 def test_ml_cache_rejects_private_qr_keys(tmp_path, monkeypatch):
     _, _, _ = load_app(tmp_path, monkeypatch)
     cache = importlib.import_module("safescan_model_calibration.cache")

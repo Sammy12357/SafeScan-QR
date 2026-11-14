@@ -133,6 +133,8 @@ async def scan_qr(
         raise SafeScanError("Invalid scan source.", 400)
     if capture_source == "camera_frame" and (not file or not file.filename or manual_url):
         raise SafeScanError("A camera frame must be sent as an image file.", 400)
+    if manual_url is not None and len(manual_url) > 4096:
+        raise SafeScanError("QR payload is too large.", 400)
     user = get_session_user(request)
     user_email = user["email"] if user else ""
     test_site = template_variant in ("main_site", "test_site")
