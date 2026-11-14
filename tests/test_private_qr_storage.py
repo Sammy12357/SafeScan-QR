@@ -58,7 +58,7 @@ def test_guest_uploaded_authenticator_secret_is_not_retained(tmp_path, monkeypat
 
     assert response.status_code == 200
     assert secret in response.text  # The scanner still shows this user their decoded QR.
-    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["cache-control"] == "private, no-store"
     assert rows(db_path, "upload_artifacts") == []
     assert rows(db_path, "scan_history") == []
     assert_secret_absent_from_disk(tmp_path, secret)
@@ -77,7 +77,7 @@ def test_guest_camera_frame_is_decoded_without_retaining_image(tmp_path, monkeyp
 
     assert response.status_code == 200
     assert secret in response.text
-    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["cache-control"] == "private, no-store"
     assert rows(db_path, "upload_artifacts") == []
     assert rows(db_path, "scan_history") == []
     assert_secret_absent_from_disk(tmp_path, secret)
@@ -230,7 +230,7 @@ def test_authenticated_wifi_upload_keeps_counts_but_not_password_or_image(tmp_pa
 
     assert response.status_code == 200
     assert password in response.text
-    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["cache-control"] == "private, no-store"
     assert "Embedded links not fetched" in response.text
     assert module.get_scan_count("alice@example.com") == 1
     assert rows(db_path, "upload_artifacts") == []
@@ -269,7 +269,8 @@ def test_manual_and_api_private_scans_dedupe_without_exposing_payload(tmp_path, 
     api_second = client.post("/api/scan", json={"payload": second})
 
     assert html.status_code == api_first.status_code == api_second.status_code == 200
-    assert html.headers["cache-control"] == api_first.headers["cache-control"] == "no-store"
+    assert html.headers["cache-control"] == "private, no-store"
+    assert api_first.headers["cache-control"] == "no-store"
     assert escape(first) in html.text
     assert api_first.json()["rawPayload"] == first
     assert module.get_scan_count("alice@example.com") == 2

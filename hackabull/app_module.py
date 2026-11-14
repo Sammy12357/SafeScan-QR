@@ -252,13 +252,22 @@ def apply_security_headers(request: Request, response):
         del response.headers["Server"]
     if "X-Powered-By" in response.headers:
         del response.headers["X-Powered-By"]
-    if request.url.path.startswith("/api/") or request.url.path == "/search_qr_api":
-        response.headers["Cache-Control"] = "no-store"
-        response.headers["Pragma"] = "no-cache"
-    elif request.url.path.startswith("/static/") and response.status_code == 200:
+    if request.url.path.startswith("/static/") and response.status_code == 200:
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     elif request.url.path.startswith("/static/"):
         response.headers["Cache-Control"] = "no-store"
+    elif "text/html" in response.headers.get("Content-Type", "").lower():
+        # Login pages and scan results can include user-specific content or a
+        # browser challenge. Dynamic HTML must never enter a shared cache.
+        response.headers["Cache-Control"] = "private, no-store"
+        response.headers["Pragma"] = "no-cache"
+        existing_vary = [value.strip() for value in response.headers.get("Vary", "").split(",") if value.strip()]
+        if not any(value.lower() == "cookie" for value in existing_vary) and "*" not in existing_vary:
+            existing_vary.append("Cookie")
+            response.headers["Vary"] = ", ".join(existing_vary)
+    elif request.url.path.startswith("/api/") or request.url.path == "/search_qr_api":
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
     return response
 
 @qr_app.middleware("http")
