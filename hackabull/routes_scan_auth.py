@@ -26,6 +26,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 import os
@@ -94,7 +95,9 @@ from .history import index_user_context
 from .payload_privacy import scan_storage_reference
 from .history import save_scan_history
 from .pipeline import analyze_full_pipeline
+from .qr_decode import QR_DECODE_SEMAPHORE
 from .qr_decode import QRDecodeAmbiguityError
+from .qr_decode import QRDecodeSafetyError
 from .qr_decode import decode_qr_upload
 from .qr_detect import analyze_qr_payload
 from .qr_detect import detect_payload
@@ -141,7 +144,7 @@ async def scan_qr(
     if manual_url and manual_url.strip():
         url_qr = manual_url
     elif file and file.filename:
-        contents = await file.read()
+        contents = await file.read(MAX_QR_UPLOAD_BYTES + 1)
         if len(contents) > MAX_QR_UPLOAD_BYTES:
             return templates.TemplateResponse("index.html", {
                 "request": request, "logged_in": True, "results_visible": True,
@@ -160,8 +163,11 @@ async def scan_qr(
                 **index_user_context(user)
             })
         try:
-            url_qr, qr_image_for_ml = decode_qr_upload(contents, file.filename, file.content_type)
-        except QRDecodeAmbiguityError as exc:
+            async with QR_DECODE_SEMAPHORE:
+                url_qr, qr_image_for_ml = await run_in_threadpool(
+                    decode_qr_upload, contents, file.filename, file.content_type
+                )
+        except (QRDecodeAmbiguityError, QRDecodeSafetyError) as exc:
             decode_error = str(exc)
 
     if not url_qr:

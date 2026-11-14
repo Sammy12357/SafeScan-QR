@@ -27,7 +27,7 @@ from PIL import Image, ImageOps
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from hackabull.qr_decode import decode_qr_image  # noqa: E402
+from hackabull.qr_decode import decode_qr_upload  # noqa: E402
 
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
@@ -57,7 +57,7 @@ def _payloads(results: object) -> set[str]:
 
 
 def _stage_functions():
-    stages = {"server_full": decode_qr_image}
+    stages = {"server_full": decode_qr_upload}
     unavailable = []
     try:
         import zxingcpp
@@ -174,13 +174,19 @@ def benchmark(corpus: str, limit: int | None = None) -> dict:
             error = None
             found = set()
             try:
-                with Image.open(path) as source:
-                    image = ImageOps.exif_transpose(source)
-                    try:
-                        found = _payloads(decoder(image))
-                    finally:
-                        if image is not source:
-                            image.close()
+                if stage == "server_full":
+                    payload, inspected_image = decoder(path.read_bytes(), path.name, f"image/{path.suffix.lstrip('.')}")
+                    found = {payload} if payload else set()
+                    if inspected_image is not None:
+                        inspected_image.close()
+                else:
+                    with Image.open(path) as source:
+                        image = ImageOps.exif_transpose(source)
+                        try:
+                            found = _payloads(decoder(image))
+                        finally:
+                            if image is not source:
+                                image.close()
             except Exception as exc:
                 error = type(exc).__name__
             cases[stage].append({

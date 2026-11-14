@@ -207,6 +207,18 @@ REQUEST_LATENCY = build_metric(
 )
 ACTIVE_SCANS = build_metric(Gauge, "safescan_active_scans", "In-flight scan requests")
 QR_UPLOADS = build_metric(Counter, "safescan_qr_uploads_total", "Stored QR upload artifacts", ["backend"])
+QR_DECODE_TOTAL = build_metric(
+    Counter,
+    "safescan_qr_decode_total",
+    "QR decode attempts by tier and outcome; no image or payload labels",
+    ["tier", "outcome"],
+)
+QR_DECODE_SECONDS = build_metric(
+    Histogram,
+    "safescan_qr_decode_seconds",
+    "End-to-end server QR image decode duration in seconds",
+    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 1.5, 2.5, 5.0, 10.0],
+)
 # Single-label TLDs that show up disproportionately in spam/phishing/scam
 # campaigns because they're cheap (often <$2/yr) and effectively unmoderated.
 HIGH_RISK_TLDS = {

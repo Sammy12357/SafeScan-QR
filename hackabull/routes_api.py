@@ -26,6 +26,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 import os
@@ -73,7 +74,9 @@ from .history import serialize_scan_history_row
 from .pipeline import analyze_full_pipeline
 from .pipeline import verification_coverage
 from .phish_feed import phishtank_signal
+from .qr_decode import QR_DECODE_SEMAPHORE
 from .qr_decode import QRDecodeAmbiguityError
+from .qr_decode import QRDecodeSafetyError
 from .qr_decode import decode_qr_upload
 from .qr_detect import analyze_qr_payload
 from .qr_detect import describe_qr_action
@@ -135,15 +138,18 @@ async def api_scan_file(request: Request, response: Response, file: UploadFile =
     rate_limit = enforce_rate_limit(request, "scan_file", 30, 60 * 60, user_key=user.get("google_id"))
     if rate_limit:
         return rate_limit
-    contents = await file.read()
+    contents = await file.read(MAX_QR_UPLOAD_BYTES + 1)
     if len(contents) > MAX_QR_UPLOAD_BYTES:
         raise SafeScanError(f"Uploaded file is too large. Use a file under {MAX_QR_UPLOAD_BYTES // (1024 * 1024)} MB.", 400)
 
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
     try:
-        raw_payload, qr_image_for_ml = decode_qr_upload(contents, file.filename, file.content_type)
-    except QRDecodeAmbiguityError as exc:
+        async with QR_DECODE_SEMAPHORE:
+            raw_payload, qr_image_for_ml = await run_in_threadpool(
+                decode_qr_upload, contents, file.filename, file.content_type
+            )
+    except (QRDecodeAmbiguityError, QRDecodeSafetyError) as exc:
         raise SafeScanError(str(exc), 400) from exc
     if not raw_payload:
         raise SafeScanError("No QR code or valid payload detected in this file.", 400)
