@@ -113,6 +113,7 @@ from .request_helpers import make_id
 from .scoring import risk_reason
 from .scoring import signal
 from .security import enforce_rate_limit
+from .security import html_rate_limit_response
 from .security import validate_public_url
 from .security import validate_strict_payload
 from .sessions import clear_remember_me_cookie
@@ -144,6 +145,12 @@ async def scan_qr(
     if manual_url is not None and len(manual_url) > 4096:
         raise SafeScanError("QR payload is too large.", 400)
     user = get_session_user(request)
+    rate_limited = (
+        enforce_rate_limit(request, "scan", 30, 60 * 60, user_key=user.get("google_id"))
+        if user else enforce_rate_limit(request, "anonymous_scan", 10, 60 * 60)
+    )
+    if rate_limited:
+        return html_rate_limit_response(request, rate_limited)
     user_email = user["email"] if user else ""
     test_site = template_variant in ("main_site", "test_site")
     test_site_path = template_variant == "test_site"
@@ -286,6 +293,9 @@ async def auth_google(
             "version": LEGAL_VERSION,
             **index_user_context(None)
         })
+    ip_rate_limit = enforce_rate_limit(request, "login_ip", 5, 60)
+    if ip_rate_limit:
+        return html_rate_limit_response(request, ip_rate_limit)
     try:
         validate_google_csrf(request, g_csrf_token)
         if len(credential) > 16_384:
@@ -303,6 +313,12 @@ async def auth_google(
         audit_log("auth.failed", request=request, metadata={"provider": "google"})
         raise HTTPException(status_code=401, detail="Authentication required.")
 
+    account_rate_limit = enforce_rate_limit(
+        request, "login_account", 10, 15 * 60,
+        user_key=json.dumps(["https://accounts.google.com", google_id], separators=(",", ":")),
+    )
+    if account_rate_limit:
+        return html_rate_limit_response(request, account_rate_limit)
     google_id = save_federated_user_to_db("google", "https://accounts.google.com", google_id,
                                           user_email, request, idinfo.get("name") or "",
                                           idinfo.get("picture") or "")
@@ -335,13 +351,14 @@ async def auth_google(
 
 @qr_app.post("/auth/verify")
 async def auth_verify(request: Request, payload: dict = Body(...)):
-    # Per-IP throttle BEFORE any token validation work. Without this, an
-    # attacker can hammer the JWKS verifier with garbage tokens and burn
-    # CPU + Auth0 JWKS fetches. 20 attempts per 15 min from a single IP is
-    # generous for real users (re-login retries, etc.) but kills brute force.
-    ip_rate_limit = enforce_rate_limit(request, "auth_verify_ip", 20, 15 * 60)
+    # Bound invalid tokens before either provider verifier does any work.
+    ip_rate_limit = enforce_rate_limit(request, "login_ip", 5, 60)
     if ip_rate_limit:
         return ip_rate_limit
+    # Keep a second, longer cap on expensive mobile token verification.
+    verifier_rate_limit = enforce_rate_limit(request, "auth_verify_ip", 20, 15 * 60)
+    if verifier_rate_limit:
+        return verifier_rate_limit
 
     validate_strict_payload(payload, {"token"})
     credential = (payload.get("token") or "").strip()
@@ -385,6 +402,12 @@ async def auth_verify(request: Request, payload: dict = Body(...)):
         audit_log("auth.failed", request=request, metadata={"provider": provider})
         raise HTTPException(status_code=401, detail="Authentication required.")
 
+    account_rate_limit = enforce_rate_limit(
+        request, "login_account", 10, 15 * 60,
+        user_key=json.dumps([identity_issuer, subject], separators=(",", ":")),
+    )
+    if account_rate_limit:
+        return account_rate_limit
     google_id = save_federated_user_to_db(identity_provider, identity_issuer, subject,
                                           user_email, request, idinfo.get("name") or "",
                                           idinfo.get("picture") or "")
@@ -520,9 +543,11 @@ def require_local_auth_enabled():
 
 @qr_app.post("/auth/register", response_class=HTMLResponse, dependencies=[Depends(require_local_auth_enabled)])
 async def auth_register(request: Request, email: str = Form(...), password: str = Form(...), remember_me: str = Form("1"), next_url: str = Form("/", alias="next")):
-    rate_limited = enforce_rate_limit(request, "register", 5, 3600)
+    # Local credentials are disabled in production; retain a bounded budget
+    # for developer and test runtimes where these routes remain available.
+    rate_limited = enforce_rate_limit(request, "register", 3, 3600)
     if rate_limited:
-        return rate_limited
+        return html_rate_limit_response(request, rate_limited)
     if get_session_user(request):
         return duplicate_account_response(request, "You are already signed in. Sign out before creating a new account.")
     email = email.strip().lower()
@@ -552,10 +577,14 @@ async def auth_register(request: Request, email: str = Form(...), password: str 
 
 @qr_app.post("/auth/login", response_class=HTMLResponse, dependencies=[Depends(require_local_auth_enabled)])
 async def auth_login_local(request: Request, email: str = Form(...), password: str = Form(...), remember_me: str = Form("1"), next_url: str = Form("/", alias="next")):
-    rate_limited = enforce_rate_limit(request, "login_local", 10, 600)
+    rate_limited = enforce_rate_limit(request, "login_ip", 5, 60)
     if rate_limited:
-        return rate_limited
+        return html_rate_limit_response(request, rate_limited)
     email = email.strip().lower()
+    account_key = "local:" + hashlib.sha256(email.encode("utf-8")).hexdigest()
+    account_rate_limit = enforce_rate_limit(request, "login_account", 10, 15 * 60, user_key=account_key)
+    if account_rate_limit:
+        return html_rate_limit_response(request, account_rate_limit)
     with get_conn() as conn:
         row = conn.execute("SELECT password_hash, user_id FROM local_credentials WHERE email = ?", (email,)).fetchone()
     if not row or not verify_password(password, row[0]):

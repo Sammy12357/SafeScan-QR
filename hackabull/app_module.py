@@ -11,7 +11,6 @@ import mimetypes
 import re
 import asyncio
 import base64
-import ipaddress
 import secrets
 import socket
 import time
@@ -52,6 +51,7 @@ from storage import upload_bytes as storage_upload_bytes
 from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party
 import safescan_model_calibration as sm_calibration
 from .audit import SafeScanError
+from .client_ip import rate_limit_identity
 from .auth import create_session
 from .auth import get_session_user
 from .config import ACTIVE_SCANS
@@ -147,20 +147,8 @@ QR_REQUEST_READ_TIMEOUT_SECONDS = 15
 
 
 def qr_request_client_identity(request: Request):
-    """Use Render's edge-authored client IP, never caller-supplied XFF.
-
-    On Render, Cloudflare overwrites CF-Connecting-IP before the request
-    reaches the app. Outside Render, the ASGI peer is the only trusted source.
-    A missing/invalid edge header disables the per-client bucket rather than
-    grouping every visitor behind one Render load-balancer address.
-    """
-    if os.getenv("RENDER", "").lower() == "true":
-        candidate = request.headers.get("cf-connecting-ip", "")
-        try:
-            return str(ipaddress.ip_address(candidate))
-        except ValueError:
-            return None
-    return request.client.host if request.client else None
+    """Apply QR upload limits even when Render's edge identity is missing."""
+    return rate_limit_identity(request)
 
 qr_app.add_middleware(
     CORSMiddleware,
@@ -285,13 +273,22 @@ def apply_security_headers(request: Request, response):
         del response.headers["Server"]
     if "X-Powered-By" in response.headers:
         del response.headers["X-Powered-By"]
-    if request.url.path.startswith("/api/") or request.url.path == "/search_qr_api":
-        response.headers["Cache-Control"] = "no-store"
-        response.headers["Pragma"] = "no-cache"
-    elif request.url.path.startswith("/static/") and response.status_code == 200:
+    if request.url.path.startswith("/static/") and response.status_code == 200:
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     elif request.url.path.startswith("/static/"):
         response.headers["Cache-Control"] = "no-store"
+    elif "text/html" in response.headers.get("Content-Type", "").lower():
+        # Login pages and scan results can include user-specific content or a
+        # browser challenge. Dynamic HTML must never enter a shared cache.
+        response.headers["Cache-Control"] = "private, no-store"
+        response.headers["Pragma"] = "no-cache"
+        existing_vary = [value.strip() for value in response.headers.get("Vary", "").split(",") if value.strip()]
+        if not any(value.lower() == "cookie" for value in existing_vary) and "*" not in existing_vary:
+            existing_vary.append("Cookie")
+            response.headers["Vary"] = ", ".join(existing_vary)
+    elif request.url.path.startswith("/api/") or request.url.path == "/search_qr_api":
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
     return response
 
 @qr_app.middleware("http")
@@ -341,7 +338,9 @@ async def security_headers_and_rate_limits(request: Request, call_next):
                 return apply_security_headers(request, JSONResponse({"error": "QR scan request is too large."}, status_code=413))
         client_identity = qr_request_client_identity(request)
         if client_identity:
-            scan_limit = enforce_rate_limit(request, "qr_upload_client", 90, 15 * 60, user_key=client_identity)
+            # This budget is already keyed by the ingress client identity.
+            # Passing it as a signed-in user would raise its IP cap to 900.
+            scan_limit = enforce_rate_limit(request, "qr_upload_client", 90, 15 * 60)
             if scan_limit:
                 return apply_security_headers(request, scan_limit)
             # One visitor may use two tabs, but cannot occupy every upload
@@ -402,8 +401,15 @@ async def metrics_middleware(request: Request, call_next):
     finally:
         duration = time.monotonic() - start
         status = getattr(locals().get("response", None), "status_code", 500)
-        REQUEST_COUNT.labels(method=request.method, path=request.url.path, status=str(status)).inc()
-        REQUEST_LATENCY.labels(path=request.url.path).observe(duration)
+        matched_route = request.scope.get("route")
+        route_path = getattr(matched_route, "path", None)
+        metric_path = route_path if isinstance(route_path, str) and route_path.startswith("/") else "unmatched"
+        method = request.method
+        metric_method = method.upper() if isinstance(method, str) and len(method) <= 16 else "OTHER"
+        if metric_method not in {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}:
+            metric_method = "OTHER"
+        REQUEST_COUNT.labels(method=metric_method, path=metric_path, status=str(status)).inc()
+        REQUEST_LATENCY.labels(path=metric_path).observe(duration)
         if request.url.path in ("/api/scan", "/api/scan/file", "/search_qr_api"):
             ACTIVE_SCANS.dec()
 

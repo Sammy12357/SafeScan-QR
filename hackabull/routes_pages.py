@@ -86,6 +86,8 @@ from .request_helpers import hash_ip
 from .request_helpers import locale_from_request
 from .request_helpers import make_id
 from .request_helpers import request_ip
+from .security import enforce_rate_limit
+from .security import html_rate_limit_response
 from .security import validate_strict_payload
 from .wallet import expire_alpha_subscriptions
 
@@ -153,6 +155,9 @@ async def api_go_ghost_removal(request: Request, broker: str, payload: dict = Bo
     if not profile_payload["email"]:
         raise SafeScanError("Add an email before running automation.", 400)
 
+    rate_limited = enforce_rate_limit(request, "go_ghost", 3, 24 * 60 * 60, user_key=user.get("google_id"))
+    if rate_limited:
+        return rate_limited
     job_id = make_id("ghostjob")
     account_email = (user.get("email") or "").strip().lower()
     created_at = now_iso()
@@ -217,6 +222,15 @@ async def privacy_policy(request: Request):
 @qr_app.post("/waitlist", response_class=HTMLResponse)
 async def waitlist_signup(request: Request, email: str = Form(...)):
     normalized_email = email.strip().lower()
+    ip_rate_limit = enforce_rate_limit(request, "waitlist_ip", 3, 60 * 60)
+    if ip_rate_limit:
+        return html_rate_limit_response(request, ip_rate_limit)
+    # The per-address budget uses a separate 24-hour window. Its extra
+    # generous IP cap in enforce_rate_limit does not narrow the 3/hour cap.
+    address_key = hashlib.sha256(normalized_email.encode("utf-8")).hexdigest()
+    address_rate_limit = enforce_rate_limit(request, "waitlist_address", 1, 24 * 60 * 60, user_key=address_key)
+    if address_rate_limit:
+        return html_rate_limit_response(request, address_rate_limit)
     with get_conn() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO waitlist_signups VALUES (?, ?, ?)",
@@ -719,6 +733,9 @@ async def submit_data_request(
 
 @qr_app.post("/api/consent")
 async def log_consent(request: Request, payload: dict = Body(...)):
+    rate_limited = enforce_rate_limit(request, "consent", 10, 60 * 60)
+    if rate_limited:
+        return rate_limited
     consent_type = payload.get("consentType", "essential_only")
     consent_given = consent_type != "essential_only"
     now = datetime.utcnow()
