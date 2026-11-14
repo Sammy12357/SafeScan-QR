@@ -56,9 +56,8 @@ from .config import ALPHA_STRIPE_PAYMENT_LINK
 from .config import ALPHA_STRIPE_PAYMENT_LINK_ID
 from .config import STRIPE_WEBHOOK_SECRET
 from .request_helpers import make_id
-import logging
+from .observability import log_event
 
-_log = logging.getLogger(__name__)
 STRIPE_WEBHOOK_TOLERANCE_SECONDS = 300
 
 # =============================================================================
@@ -378,7 +377,7 @@ def process_stripe_webhook_event(event):
         outcome = "unmatched" if result.get("unmatched") else "ignored" if result.get("ignored") else "processed"
         conn.execute("UPDATE stripe_events SET outcome = ? WHERE event_id = ?", (outcome, event_id))
         if outcome == "unmatched":
-            _log.warning("Stripe payment event needs manual account review: type=%s, event=%s", event_type, event_id)
+            log_event("stripe.manual_account_review", level="warning")
         return result
 
 

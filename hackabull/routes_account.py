@@ -350,12 +350,3 @@ async def trigger_airdrop(
         }
 
 
-
-
-# print("Testing URL bad:")
-# print(check_url("http://testsafebrowsing.appspot.com/s/malware.html"))
-
-# print("Testing URL good:")
-# print(check_url("https://google.com"))
-
-

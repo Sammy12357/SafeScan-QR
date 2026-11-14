@@ -57,6 +57,7 @@ from .config import ML_MODEL_ENABLED
 from .config import ML_MODEL_OBJECT_KEY
 from .config import ML_MODEL_PATH
 from .config import QR_UPLOADS
+from .observability import log_event
 from .fraud import SCAN_CLASSIFICATIONS
 from .fraud import SCAN_CLASSIFICATION_LABELS
 from .fraud import SCAN_HISTORY_MAX_SIGNALS
@@ -307,7 +308,7 @@ def ensure_ml_model_available():
     try:
         storage_download_file(ML_MODEL_OBJECT_KEY, ML_MODEL_PATH)
     except Exception as exc:
-        print({"warning": "ML model download failed", "error": str(exc)})
+        log_event("ml.model_download_failed", level="warning", error_type=type(exc).__name__)
 
 
 def plain_action(action):

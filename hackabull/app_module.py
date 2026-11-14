@@ -15,6 +15,7 @@ import secrets
 import socket
 import time
 import csv
+from pathlib import Path
 from decimal import Decimal, InvalidOperation
 from html import escape as escape_html
 from urllib.parse import quote, urlencode, urljoin, urlparse, parse_qsl
@@ -22,7 +23,7 @@ from datetime import datetime, timedelta, timezone
 from xml.etree import ElementTree
 
 from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -63,6 +64,7 @@ from .config import CLIENT_ID
 from .config import CONTENT_TYPE_LATEST
 from .config import CSP_REPORT_ONLY_ENABLED
 from .config import TURNSTILE_ENABLED
+from .config import _PRODUCTION_RUNTIME
 from .config import MAX_QR_UPLOAD_BYTES
 from .config import REMEMBER_ME_COOKIE_NAME
 from .config import REQUEST_COUNT
@@ -81,6 +83,9 @@ from .google_login import issue_google_login_challenge
 from .google_login import set_google_login_cookie
 from .provider_policy import reputation_configuration
 from .phish_feed import refresh_feed_loop
+from .observability import RequestIdLoggingMiddleware
+from .observability import log_event
+from .observability import request_id_from_scope
 from .security import enforce_rate_limit
 from .sessions import cleanup_persistent_sessions
 from .sessions import clear_remember_me_cookie
@@ -96,8 +101,18 @@ from .wallet import expire_alpha_subscriptions
 # (origin checks, RLS context, remember-me, security headers, rate limits) and
 # centralised exception handlers. The route handlers follow.
 # =============================================================================
-qr_app = FastAPI()
+SCHEMA_ROUTE = "/openapi.json"
+qr_app = FastAPI(
+    openapi_url=None if _PRODUCTION_RUNTIME else SCHEMA_ROUTE,
+    docs_url=None if _PRODUCTION_RUNTIME else "/docs",
+    redoc_url=None if _PRODUCTION_RUNTIME else "/redoc",
+)
 app = qr_app
+PUBLIC_PROBE_PATHS = frozenset({
+    "/health", "/health/live", "/health/ready", "/health/providers",
+    "/api/health", "/.well-known/security.txt", "/metrics",
+})
+SECURITY_TXT_PATH = Path(__file__).resolve().parents[1] / "well-known" / "security.txt"
 
 
 @qr_app.get("/health", include_in_schema=False)
@@ -116,22 +131,30 @@ async def health_ready():
     try:
         with sqlite3.connect(database_path(), timeout=2) as conn:
             conn.execute("SELECT 1")
-        storage = storage_backend_status()
-        database = database_storage_status()
-        return {"status": "ready", "storage": storage["backend"], "database": database}
-    except Exception as exc:
-        return JSONResponse({"status": "not_ready", "error": str(exc)}, status_code=503)
+        storage_backend_status()
+        database_storage_status()
+        return {"status": "ready"}
+    except Exception:
+        return JSONResponse({"status": "not_ready"}, status_code=503)
 
 
 @qr_app.get("/health/providers", include_in_schema=False)
 async def health_providers():
-    """Configuration and local-feed coverage; provider uptime is checked per scan."""
-    configuration = reputation_configuration()
-    return {
-        "status": "configured" if configuration["completeChecksConfigured"] else "incomplete",
-        "scope": "configuration_and_local_feed_only",
-        "providers": configuration,
-    }
+    """Expose provider availability without revealing names or configuration."""
+    try:
+        configured = reputation_configuration()["completeChecksConfigured"]
+    except Exception:
+        return JSONResponse({"status": "unavailable"}, status_code=503)
+    return {"status": "configured" if configured else "incomplete"}
+
+
+@qr_app.get("/.well-known/security.txt", include_in_schema=False)
+async def security_txt():
+    return FileResponse(
+        SECURITY_TXT_PATH,
+        media_type="text/plain; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @qr_app.get("/metrics", include_in_schema=False)
@@ -178,6 +201,8 @@ templates.env.globals["csrf_token"] = csrf_token
 
 @qr_app.middleware("http")
 async def csrf_middleware(request: Request, call_next):
+    if request.method in {"GET", "HEAD"} and request.url.path in PUBLIC_PROBE_PATHS:
+        return await call_next(request)
     if request.method in {"GET", "HEAD"}:
         if not request.url.path.startswith("/static/"):
             prepare_csrf_token(request)
@@ -227,7 +252,7 @@ async def rls_context_middleware(request: Request, call_next):
     token = set_rls_context(None, "guest")
     try:
         # Count-only endpoints never need an account lookup, even with a cookie.
-        if request.url.path not in {"/api/telemetry/scan", "/api/security/csp-report"}:
+        if request.url.path not in PUBLIC_PROBE_PATHS | {"/api/telemetry/scan", "/api/security/csp-report"}:
             user = get_session_user(request)
             if user:
                 set_rls_context(
@@ -242,7 +267,11 @@ async def rls_context_middleware(request: Request, call_next):
 @qr_app.middleware("http")
 async def remember_me_middleware(request: Request, call_next):
     path = request.url.path
-    if path.startswith("/static/") or path in {"/api/telemetry/scan", "/api/security/csp-report"} or request.cookies.get(SESSION_COOKIE_NAME):
+    if (
+        path.startswith("/static/")
+        or path in PUBLIC_PROBE_PATHS | {"/api/telemetry/scan", "/api/security/csp-report"}
+        or request.cookies.get(SESSION_COOKIE_NAME)
+    ):
         return await call_next(request)
 
     if getattr(request.state, "remembered_user", None):
@@ -302,9 +331,21 @@ CSP_REPORT_ONLY_POLICY = (
 
 PERMISSIONS_POLICY = ", ".join([
     "camera=(self)",
+    "clipboard-write=(self)",
+    "clipboard-read=()",
     "microphone=()",
     "geolocation=()",
     "payment=()",
+    "accelerometer=()",
+    "bluetooth=()",
+    "browsing-topics=()",
+    "display-capture=()",
+    "gyroscope=()",
+    "hid=()",
+    "magnetometer=()",
+    "midi=()",
+    "serial=()",
+    "usb=()",
 ])
 
 def apply_security_headers(request: Request, response):
@@ -315,6 +356,14 @@ def apply_security_headers(request: Request, response):
     if "referrer-policy" not in response.headers:
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = PERMISSIONS_POLICY
+    # Google Identity Services is loaded on these pages. Its fallback flow may
+    # need a popup when browser FedCM is unavailable.
+    response.headers["Cross-Origin-Opener-Policy"] = (
+        "same-origin-allow-popups" if request.url.path in {"/", "/test-site", "/login"}
+        else "same-origin"
+    )
+    response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+    response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
     if "Server" in response.headers:
         del response.headers["Server"]
     if "X-Powered-By" in response.headers:
@@ -364,12 +413,7 @@ async def start_wallet_nonce_cleanup():
     # wipe". This makes a misconfigured deploy obvious in the logs.
     storage_status = database_storage_status()
     if not storage_status.get("persistent"):
-        print({
-            "warning": "non_persistent_database",
-            "message": storage_status.get("warning"),
-            "path": storage_status.get("path"),
-            "hint": "Mount a Render disk at /var/data (or set DATA_DIR to a durable path) so the leaderboard and scan history survive deploys.",
-        })
+        log_event("startup.database_not_persistent", level="warning")
     cleanup_persistent_sessions()
     expire_alpha_subscriptions()
     asyncio.create_task(wallet_nonce_cleanup_loop())
@@ -489,6 +533,19 @@ async def permission_error_handler(request: Request, exc: PermissionError):
 
 @qr_app.exception_handler(Exception)
 async def unhandled_error_handler(request: Request, exc: Exception):
-    print({"error": str(exc), "path": request.url.path})
-    return JSONResponse({"error": "Something went wrong on our end."}, status_code=500)
+    request_id = request_id_from_scope(request.scope)
+    log_event(
+        "request.exception", level="error", request_id=request_id,
+        method=request.method, route=getattr(request.scope.get("route"), "path", None),
+        status_code=500, error_type=type(exc).__name__,
+    )
+    response = JSONResponse({"error": "Something went wrong on our end."}, status_code=500)
+    if request_id:
+        response.headers["X-Request-Id"] = request_id
+    return apply_security_headers(request, response)
+
+
+# Last user middleware is outermost, so early rejects and handled failures
+# receive the same server request ID and safe JSON event as successful routes.
+qr_app.add_middleware(RequestIdLoggingMiddleware, decorate_error=apply_security_headers)
 

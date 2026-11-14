@@ -22,6 +22,7 @@ import requests
 from db import database_path
 from .provider_budget import ProviderUnavailable
 from .provider_budget import outbound_provider
+from .observability import log_event
 from .scoring import signal
 
 
@@ -248,6 +249,6 @@ async def refresh_feed_loop():
             await asyncio.to_thread(refresh_feed)
         except Exception as exc:
             # Never log the feed URL: its path contains the application key.
-            print({"warning": "phishtank_refresh_failed", "error": type(exc).__name__})
+            log_event("phishtank.refresh_failed", level="warning", error_type=type(exc).__name__)
             retry_after = 15 * 60
         await asyncio.sleep(retry_after)

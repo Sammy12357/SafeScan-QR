@@ -1,5 +1,19 @@
 # Security research log
 
+## 2026-11-14 — Phase 9: browser policy and application logging
+
+This pass checked the plan's header and public-exposure requirements against the
+current FastAPI app and QR camera, Google sign-in, and operator logging flows.
+It introduced no new backlog item beyond the planned Phase 9 controls.
+
+| Topic and primary sources | Applies to SafeScan? | Action |
+| --- | --- | --- |
+| [FastAPI OpenAPI configuration](https://fastapi.tiangolo.com/tutorial/metadata/) | Yes. Default documentation and schema routes expose the API shape in production. | Set `openapi_url=None` in production; development retains the default schema and docs routes. |
+| [Google Identity Services popup guidance](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid), [Chrome security guidance](https://developer.chrome.com/docs/modern-web-guidance/guides/security/security) | Yes. Google login can use a popup fallback. | Use `Cross-Origin-Opener-Policy: same-origin-allow-popups` only on sign-in pages and `same-origin` elsewhere; verify in a real browser before release. |
+| [Chrome Permissions Policy](https://developer.chrome.com/docs/privacy-security/permissions-policy), [OWASP secure headers](https://secure-headers-project.owasp.org/best-practices/) | Yes. SafeScan needs same-origin camera and clipboard write for scanning and copying results. | Allow those two capabilities on self, block unused device APIs, and add CORP and legacy cross-domain headers. |
+| [RFC 9116 security.txt](https://www.rfc-editor.org/rfc/rfc9116.html) | Yes. SafeScan has a public vulnerability contact. | Serve `/.well-known/security.txt` with contact and expiry from both hostnames; monitor the mailbox and renew the file before expiry. |
+| [OWASP Logging Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet), [Uvicorn logging documentation](https://github.com/kludex/uvicorn/blob/main/docs/concepts/logging.md) | Yes. Default access logs can contain raw URLs and client addresses. | Generate correlation IDs, emit only bounded route templates/status/durations/exception classes, and disable Uvicorn access logs in the Docker command. Review Render ingress retention separately. |
+
 ## 2026-11-14 — Phase 1: dependencies and CI
 
 This entry records the supply-chain research used for the Phase 1 PR. The remaining security-plan phases need their own research and review before implementation.

@@ -75,7 +75,7 @@ def test_metrics_fail_closed_without_token(tmp_path, monkeypatch):
     assert client.get("/metrics", headers={"Authorization": "Bearer short"}).status_code == 403
 
 
-def test_provider_health_reports_configuration_without_secrets(tmp_path, monkeypatch):
+def test_provider_health_reports_only_status_without_secrets(tmp_path, monkeypatch):
     monkeypatch.delenv("GOOGLE_WEB_RISK_API_KEY", raising=False)
     monkeypatch.setenv("GOOGLE_SAFE_BROWSING_API_KEY", "legacy-secret-value")
     monkeypatch.delenv("SAFESCAN_ENABLE_NONCOMMERCIAL_SAFE_BROWSING", raising=False)
@@ -87,17 +87,9 @@ def test_provider_health_reports_configuration_without_secrets(tmp_path, monkeyp
     ready = client.get("/health/ready")
 
     assert degraded.status_code == 200
-    assert degraded.json() == {
-        "status": "incomplete",
-        "scope": "configuration_and_local_feed_only",
-        "providers": {
-            "google": "legacy_key_disabled",
-            "phishtank": "terms_not_confirmed",
-            "phishtankFeedAgeSeconds": None,
-            "completeChecksConfigured": False,
-        },
-    }
+    assert degraded.json() == {"status": "incomplete"}
     assert ready.status_code == 200
+    assert ready.json() == {"status": "ready"}
     assert "legacy-secret-value" not in degraded.text
     assert "vt-secret-value" not in degraded.text
 
@@ -111,11 +103,7 @@ def test_provider_health_reports_configuration_without_secrets(tmp_path, monkeyp
         time.time(),
     )
     configured = client.get("/health/providers")
-    assert configured.json()["status"] == "configured"
-    assert configured.json()["providers"]["google"] == "web_risk_configured"
-    assert configured.json()["providers"]["phishtank"] == "fresh"
-    assert "virustotal" not in configured.json()["providers"]
-    assert configured.json()["providers"]["completeChecksConfigured"] is True
+    assert configured.json() == {"status": "configured"}
     assert "web-risk-secret-value" not in configured.text
     assert "phish-test-key" not in configured.text
 

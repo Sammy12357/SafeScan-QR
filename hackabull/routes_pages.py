@@ -891,7 +891,7 @@ async def api_health():
     a fallback POST /api/analyze, but the noise made it hard to spot
     real 404s in the log stream.
     """
-    return {"ok": True, "service": "safescan-qr", "time": now_iso()}
+    return {"status": "ok"}
 
 
 @qr_app.get("/search_qr_api")
