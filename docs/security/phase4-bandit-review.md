@@ -16,3 +16,9 @@ route modules and arbitrary template `|safe` filters.
 
 This baseline records the current narrow exception; new dynamic HTML should
 use Jinja templates, not `Markup`.
+
+Phase 5 (2026-11-14): input validation edits moved these calls in
+`routes_pages.py`. All 18 `Markup(...)` call lines were compared with the
+previous Phase 5 commit and are identical. The exact baseline was refreshed
+for their new line numbers and surrounding-code digests; the other eight
+Bandit findings are unchanged.
