@@ -26,7 +26,9 @@ const ids = [
   'goGhostScopeDescription', 'goGhostScopeKeywords', 'goGhostScopeDetails',
   'goGhostScopeSearchButton', 'goGhostScopeOptOutButton',
   'goGhostScopeFinishButton', 'goGhostScopeNoMatchButton',
-  'goGhostScopeCopyButton', 'openNextGhostBrokerButton',
+  'goGhostScopeSubmittedButton', 'goGhostScopeRemovedButton',
+  'goGhostScopeResetButton', 'goGhostScopeCopyButton',
+  'openNextGhostBrokerButton',
   'ghostProgressCount', 'ghostNameInput', 'ghostLocationInput',
   'ghostAddressInput', 'ghostPhoneInput', 'ghostEmailInput',
   'goGhostDeviceNotice'
@@ -35,6 +37,9 @@ const elements = Object.fromEntries(ids.map(id => [id, makeElement()]));
 elements.goGhostWorkspace.hidden = true;
 elements.goGhostWorkspace.dataset.browserAutomationAvailable = 'false';
 elements.goGhostScopeModal.classList.add('hidden');
+let closeFocusCount = 0;
+elements.goGhostScopeModal.querySelector = selector => selector === '.ghost-scope-close'
+  ? {focus() { closeFocusCount += 1; }} : null;
 const saved = new Map();
 const opened = [];
 const copied = [];
@@ -92,6 +97,7 @@ async function main() {
       ? {dataset: {ghostScope: lastId}} : null}
   });
   assert.equal(elements.goGhostScopeModal.classList.contains('hidden'), false);
+  assert.equal(closeFocusCount, 1, 'opening a broker should focus the close button');
   assert.equal(elements.goGhostScopeTitle.textContent, 'CyberBackgroundChecks');
   assert.match(elements.goGhostScopeKeywords.innerHTML, /Example Person/);
   assert.match(elements.goGhostScopeDetails.innerHTML, /Find your matching listing/);
@@ -108,12 +114,34 @@ async function main() {
   assert.equal(copied.length, copiesBeforeClick + 1);
   assert.match(copied.at(-1), /Name: Example Person/);
 
-  vm.runInContext(`setGhostProgress('${lastId}', 'submitted', true)`, context);
+  vm.runInContext(`updateGhostAutomationState('${lastId}', {status: 'failed'})`, context);
+  await elements.goGhostScopeSubmittedButton.handlers.click();
+  assert.equal(closeFocusCount, 1, 'updating status should not move keyboard focus');
+  assert.equal(vm.runInContext(`getGhostProgress()['${lastId}'].automation`, context), null);
+  assert.equal(elements.ghostProgressCount.textContent, '0 / 18');
   const finalRow = elements.goGhostAutomationRows.innerHTML.match(
     /<button[^>]+data-ghost-scope="cyberbackgroundchecks"[\s\S]*?<\/button>/
   );
   assert.ok(finalRow, 'last broker should remain visible after progress changes');
   assert.match(finalRow[0], /Submitted/);
+
+  await elements.goGhostScopeRemovedButton.handlers.click();
+  assert.equal(elements.ghostProgressCount.textContent, '1 / 18');
+  assert.match(elements.goGhostAutomationRows.innerHTML, /data-ghost-scope="cyberbackgroundchecks"[\s\S]*?Removed/);
+  await elements.goGhostScopeResetButton.handlers.click();
+  assert.equal(elements.ghostProgressCount.textContent, '0 / 18');
+  assert.match(elements.goGhostAutomationRows.innerHTML, /data-ghost-scope="cyberbackgroundchecks"[\s\S]*?Pending/);
+
+  await elements.goGhostScopeNoMatchButton.handlers.click();
+  assert.equal(elements.ghostProgressCount.textContent, '0 / 18', 'no match is not a removal');
+  assert.match(elements.goGhostAutomationRows.innerHTML, /data-ghost-scope="cyberbackgroundchecks"[\s\S]*?No match/);
+  assert.equal(vm.runInContext("nextPendingGhostBroker().id", context), 'fastpeoplesearch');
+
+  vm.runInContext(`writeJsonStorage(GO_GHOST_PROGRESS_KEY, {
+    '${lastId}': {submitted: true, removed: true, finishReason: 'No matching profile found.'}
+  }); renderGoGhostAutomationScope(); renderGoGhostProgress();`, context);
+  assert.equal(elements.ghostProgressCount.textContent, '0 / 18', 'legacy no-match is not a removal');
+  assert.match(elements.goGhostAutomationRows.innerHTML, /data-ghost-scope="cyberbackgroundchecks"[\s\S]*?No match/);
   assert.equal(opened.some(url => url.includes('safescan_prefill')), false);
 }
 

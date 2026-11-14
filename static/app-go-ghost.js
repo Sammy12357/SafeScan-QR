@@ -20,6 +20,9 @@ const goGhostScopeOptOutButton = document.getElementById("goGhostScopeOptOutButt
 const goGhostScopeAutoFillButton = document.getElementById("goGhostScopeAutoFillButton");
 const goGhostScopeFinishButton = document.getElementById("goGhostScopeFinishButton");
 const goGhostScopeNoMatchButton = document.getElementById("goGhostScopeNoMatchButton");
+const goGhostScopeSubmittedButton = document.getElementById("goGhostScopeSubmittedButton");
+const goGhostScopeRemovedButton = document.getElementById("goGhostScopeRemovedButton");
+const goGhostScopeResetButton = document.getElementById("goGhostScopeResetButton");
 const goGhostScopeCopyButton = document.getElementById("goGhostScopeCopyButton");
 const startGhostQueueButton = document.getElementById("startGhostQueueButton");
 const openNextGhostBrokerButton = document.getElementById("openNextGhostBrokerButton");
@@ -292,7 +295,34 @@ function getGhostProgress() {
 
 function setGhostProgress(siteId, field, checked) {
   const progress = getGhostProgress();
-  progress[siteId] = { ...(progress[siteId] || {}), [field]: checked, updatedAt: new Date().toISOString() };
+  progress[siteId] = {
+    ...(progress[siteId] || {}),
+    [field]: checked,
+    ...(checked && (field === "submitted" || field === "removed") ? { noMatch: false, finishReason: "" } : {}),
+    updatedAt: new Date().toISOString()
+  };
+  writeJsonStorage(GO_GHOST_PROGRESS_KEY, progress);
+  renderGoGhostAutomationScope();
+  renderGoGhostProgress();
+}
+
+function ghostHasNoMatch(state) {
+  // Older clients saved no-match as `removed: true` with a finish reason.
+  return Boolean(state?.noMatch || state?.finishReason);
+}
+
+function setGhostManualStatus(siteId, status) {
+  if (!goGhostBrokers.some((broker) => broker.id === siteId)) return;
+  const progress = getGhostProgress();
+  progress[siteId] = {
+    ...(progress[siteId] || {}),
+    submitted: status === "submitted" || status === "removed",
+    removed: status === "removed",
+    noMatch: status === "no_match",
+    finishReason: status === "no_match" ? "No matching profile found in search results." : "",
+    automation: null,
+    updatedAt: new Date().toISOString()
+  };
   writeJsonStorage(GO_GHOST_PROGRESS_KEY, progress);
   renderGoGhostAutomationScope();
   renderGoGhostProgress();
@@ -302,9 +332,11 @@ function finishGhostBroker(siteId, detail = "No matching profile found.") {
   const progress = getGhostProgress();
   progress[siteId] = {
     ...(progress[siteId] || {}),
-    submitted: true,
-    removed: true,
+    submitted: false,
+    removed: false,
+    noMatch: true,
     finishReason: detail,
+    automation: null,
     updatedAt: new Date().toISOString()
   };
   writeJsonStorage(GO_GHOST_PROGRESS_KEY, progress);
@@ -474,7 +506,10 @@ function hasGhostSearchProfile(profile) {
 
 function nextPendingGhostBroker() {
   const progress = getGhostProgress();
-  return goGhostBrokers.find((broker) => !progress[broker.id]?.submitted && !progress[broker.id]?.removed) || null;
+  return goGhostBrokers.find((broker) => {
+    const state = progress[broker.id];
+    return !state?.submitted && !state?.removed && !ghostHasNoMatch(state);
+  }) || null;
 }
 
 function scrollToGhostProfile() {

@@ -24,8 +24,7 @@ async function finishGhostBrokerAndOpenNext(broker) {
   if (!broker) return;
   finishGhostBroker(broker.id, "No matching profile found in search results.");
   closeGoGhostScopeModal();
-  renderGoGhostAutomationScope();
-  showCopyToast(`${broker.name} marked finished`);
+  showCopyToast(`${broker.name}: no matching profile recorded`);
   await openNextGhostBroker();
 }
 
@@ -133,8 +132,18 @@ async function runGhostBrokerAutomation(broker, triggerButton) {
 function renderGoGhostProgress() {
   if (!ghostProgressCount) return;
   const progress = getGhostProgress();
-  const removed = goGhostBrokers.filter((broker) => progress[broker.id]?.removed).length;
+  const removed = goGhostBrokers.filter((broker) => {
+    const state = progress[broker.id];
+    return state?.removed && !ghostHasNoMatch(state);
+  }).length;
   ghostProgressCount.textContent = `${removed} / ${goGhostBrokers.length}`;
+}
+
+function ghostManualStatusLabel(state) {
+  if (ghostHasNoMatch(state)) return "No match";
+  if (state?.removed) return "Removed";
+  if (state?.submitted) return "Submitted";
+  return "Pending";
 }
 
 function renderGoGhostAutomationScope() {
@@ -145,8 +154,8 @@ function renderGoGhostAutomationScope() {
     const state = progress[broker.id] || {};
     const automation = GO_GHOST_BROWSER_AUTOMATION_AVAILABLE ? state.automation : null;
     const statusLabel = GO_GHOST_BROWSER_AUTOMATION_AVAILABLE
-      ? (automation ? formatGhostAutomationStatus(automation.status) : "Not run")
-      : (state.removed ? "Removed" : state.submitted ? "Submitted" : "Pending");
+      ? (automation ? formatGhostAutomationStatus(automation.status) : ghostManualStatusLabel(state))
+      : ghostManualStatusLabel(state);
     return `
       <button class="ghost-automation-row ghost-automation-site-row" type="button" data-ghost-scope="${broker.id}" aria-label="Open ${escapeHtml(broker.name)} opt-out details">
         <span>${escapeHtml(broker.name)}</span>
@@ -212,7 +221,7 @@ function renderGhostScopeKeywords(profile) {
   `).join("");
 }
 
-function openGoGhostScopeModal(siteId) {
+function openGoGhostScopeModal(siteId, focusClose = true) {
   const broker = goGhostBrokers.find((item) => item.id === siteId);
   if (!broker || !goGhostScopeModal) return;
   const profile = getGhostProfile();
@@ -249,8 +258,10 @@ function openGoGhostScopeModal(siteId) {
   if (goGhostScopeFinishButton) {
     goGhostScopeFinishButton.hidden = !(guidance && guidance.action);
   }
+  goGhostScopeSubmittedButton?.setAttribute("aria-pressed", String(state.submitted && !state.removed && !ghostHasNoMatch(state)));
+  goGhostScopeRemovedButton?.setAttribute("aria-pressed", String(state.removed && !ghostHasNoMatch(state)));
   goGhostScopeModal.classList.remove("hidden");
-  goGhostScopeModal.querySelector(".ghost-scope-close")?.focus();
+  if (focusClose) goGhostScopeModal.querySelector(".ghost-scope-close")?.focus();
 }
 
 async function runGhostScopeAction(action) {
@@ -278,6 +289,13 @@ async function runGhostScopeAction(action) {
   if (action === "copy") {
     const copied = await copyTextToClipboard(goGhostCopyPacket(broker, profile, searchUrl)).catch(() => false);
     showCopyToast(copied ? `${broker.name} details copied` : "Copy failed");
+    return;
+  }
+  if (action === "submitted" || action === "removed" || action === "reset") {
+    setGhostManualStatus(broker.id, action === "reset" ? "pending" : action);
+    openGoGhostScopeModal(broker.id, false);
+    showCopyToast(action === "submitted" ? `${broker.name}: request submitted` :
+      action === "removed" ? `${broker.name}: removal confirmed` : `${broker.name}: status reset`);
     return;
   }
   if (action === "nomatch") {
@@ -360,6 +378,9 @@ if (goGhostWorkspace) {
   goGhostScopeFinishButton?.addEventListener("click", () => runGhostScopeAction("finish"));
   goGhostScopeAutoFillButton?.addEventListener("click", () => runGhostScopeAction("auto"));
   goGhostScopeNoMatchButton?.addEventListener("click", () => runGhostScopeAction("nomatch"));
+  goGhostScopeSubmittedButton?.addEventListener("click", () => runGhostScopeAction("submitted"));
+  goGhostScopeRemovedButton?.addEventListener("click", () => runGhostScopeAction("removed"));
+  goGhostScopeResetButton?.addEventListener("click", () => runGhostScopeAction("reset"));
   goGhostScopeCopyButton?.addEventListener("click", () => runGhostScopeAction("copy"));
 
   goGhostBrokerList?.addEventListener("change", (event) => {
