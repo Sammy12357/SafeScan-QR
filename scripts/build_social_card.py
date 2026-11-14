@@ -7,8 +7,7 @@ brand colors. This is a build-time asset; the deployed app serves the PNG.
 from __future__ import annotations
 
 from pathlib import Path
-from xml.etree import ElementTree
-
+from defusedxml import ElementTree
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 
