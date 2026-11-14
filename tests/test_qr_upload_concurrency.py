@@ -53,16 +53,19 @@ def test_both_upload_routes_share_the_decode_concurrency_limit(scan_app, monkeyp
         semaphore = asyncio.Semaphore(2)
         monkeypatch.setattr(homepage, "QR_DECODE_SEMAPHORE", semaphore)
         monkeypatch.setattr(api, "QR_DECODE_SEMAPHORE", semaphore)
-        transport = httpx.ASGITransport(app=scan_app.qr_app)
-        async with httpx.AsyncClient(transport=transport, base_url="https://testserver") as client:
-            account = await client.post("/auth/register", data={"email": "scanner@example.com", "password": "password123"})
-            assert account.status_code in (200, 303)
+        first_transport = httpx.ASGITransport(app=scan_app.qr_app, client=("198.51.100.10", 50000))
+        second_transport = httpx.ASGITransport(app=scan_app.qr_app, client=("198.51.100.11", 50000))
+        async with httpx.AsyncClient(transport=first_transport, base_url="https://testserver") as first, \
+                httpx.AsyncClient(transport=second_transport, base_url="https://testserver") as second:
+            for client, email in ((first, "first@example.com"), (second, "second@example.com")):
+                account = await client.post("/auth/register", data={"email": email, "password": "password123"})
+                assert account.status_code in (200, 303)
             requests = [
                 client.post("/search_qr_api", files={"file": ("frame.png", b"x", "image/png")})
-                for _ in range(2)
+                for client in (first, second)
             ] + [
                 client.post("/api/scan/file", files={"file": ("frame.png", b"x", "image/png")})
-                for _ in range(2)
+                for client in (first, second)
             ]
             return await asyncio.gather(*requests)
 
