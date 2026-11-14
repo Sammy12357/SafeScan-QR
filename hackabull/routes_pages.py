@@ -80,7 +80,7 @@ from .payments_solana import record_alpha_solana_subscription
 from .payments_solana import verify_alpha_solana_payment
 from .payments_stripe import alpha_stripe_checkout_url
 from .payments_stripe import process_stripe_webhook_event
-from .payments_stripe import verify_stripe_webhook_signature
+from .payments_stripe import verify_stripe_webhook_signature_with_alert
 from .referrals import get_scan_count
 from .request_helpers import hash_ip
 from .request_helpers import locale_from_request
@@ -575,7 +575,7 @@ async def alpha_solana_payment_verify(request: Request):
 @qr_app.post("/webhooks/stripe")
 async def stripe_webhook(request: Request):
     payload = await request.body()
-    verify_stripe_webhook_signature(payload, request.headers.get("stripe-signature", ""))
+    verify_stripe_webhook_signature_with_alert(payload, request.headers.get("stripe-signature", ""))
     try:
         event = json.loads(payload.decode("utf-8"))
     except json.JSONDecodeError as exc:

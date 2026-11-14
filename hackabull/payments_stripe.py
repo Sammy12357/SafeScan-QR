@@ -51,6 +51,7 @@ from safescan_allowlist import should_short_circuit, registrable_domain as allow
 import safescan_model_calibration as sm_calibration
 from .audit import iso_from_unix_timestamp
 from .audit import now_iso
+from .audit import audit_log
 from .auth import get_session_user
 from .config import ALPHA_STRIPE_PAYMENT_LINK
 from .config import ALPHA_STRIPE_PAYMENT_LINK_ID
@@ -122,6 +123,16 @@ def verify_stripe_webhook_signature(payload: bytes, signature_header: str):
         raise HTTPException(status_code=400, detail="Invalid Stripe signature.") from exc
     if not any(hmac.compare_digest(expected, signature) for signature in signatures):
         raise HTTPException(status_code=400, detail="Invalid Stripe signature.")
+
+
+def verify_stripe_webhook_signature_with_alert(payload: bytes, signature_header: str):
+    """Count invalid signatures without passing their contents to audit or alerts."""
+    try:
+        verify_stripe_webhook_signature(payload, signature_header)
+    except HTTPException as exc:
+        if exc.status_code == 400:
+            audit_log("stripe.signature_failed")
+        raise
 
 def stripe_user_identity(conn, client_reference_id, checkout_session_id):
     """Resolve a signed checkout reference to an existing user, never by email."""

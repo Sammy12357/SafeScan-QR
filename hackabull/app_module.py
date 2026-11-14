@@ -76,6 +76,8 @@ from .config import validate_production_secrets
 from .csrf import browser_csrf_required
 from .csrf import check_browser_origin
 from .csrf import csrf_token
+from .security_alerts import record_security_event
+from .security_alerts import validate_alert_configuration
 from .csrf import prepare_csrf_token
 from .csrf import require_csrf_header
 from .csrf import set_guest_csrf_cookie
@@ -407,6 +409,7 @@ async def wallet_nonce_cleanup_loop():
 @qr_app.on_event("startup")
 async def start_wallet_nonce_cleanup():
     validate_production_secrets()
+    validate_alert_configuration()
     # Loudly flag non-persistent storage at boot. The leaderboard, sessions and
     # scan history all live in SQLite; if the DB isn't on a persistent disk it
     # is rebuilt on every deploy/restart and the board appears to "randomly
@@ -543,6 +546,18 @@ async def unhandled_error_handler(request: Request, exc: Exception):
     if request_id:
         response.headers["X-Request-Id"] = request_id
     return apply_security_headers(request, response)
+
+
+@qr_app.middleware("http")
+async def monitor_server_errors(request: Request, call_next):
+    try:
+        response = await call_next(request)
+    except Exception:
+        record_security_event("http.5xx")
+        raise
+    if response.status_code >= 500:
+        record_security_event("http.5xx")
+    return response
 
 
 # Last user middleware is outermost, so early rejects and handled failures
