@@ -70,6 +70,7 @@ from .config import REQUEST_LATENCY
 from .config import SESSION_COOKIE_NAME
 from .config import generate_latest
 from .config import templates
+from .config import validate_production_secrets
 from .csrf import browser_csrf_required
 from .csrf import check_browser_origin
 from .csrf import csrf_token
@@ -356,6 +357,7 @@ async def wallet_nonce_cleanup_loop():
 
 @qr_app.on_event("startup")
 async def start_wallet_nonce_cleanup():
+    validate_production_secrets()
     # Loudly flag non-persistent storage at boot. The leaderboard, sessions and
     # scan history all live in SQLite; if the DB isn't on a persistent disk it
     # is rebuilt on every deploy/restart and the board appears to "randomly

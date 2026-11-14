@@ -42,6 +42,7 @@ from db import (
     rls_user_id,
     set_rls_context,
     user_scoped_select,
+    unique_email_owner,
 )
 from storage import backend_status as storage_backend_status
 from storage import download_file as storage_download_file
@@ -426,7 +427,10 @@ async def api_user_profile(request: Request):
     email = user["email"]
     scan_count = get_scan_count(email)
     with get_conn() as conn:
-        referral_count = conn.execute("SELECT COUNT(*) FROM referrals WHERE referrer_email = ? AND counted = 1", (email,)).fetchone()[0]
+        referral_count = (
+            conn.execute("SELECT COUNT(*) FROM referrals WHERE referrer_email = ? AND counted = 1", (email,)).fetchone()[0]
+            if unique_email_owner(conn, email, user["google_id"]) else 0
+        )
     wallet = get_verified_wallet(email)
     return {
         "id": user.get("google_id"),
@@ -473,6 +477,7 @@ async def api_scans(request: Request):
 @qr_app.get("/api/referral")
 async def api_referral_status(request: Request):
     user = require_user(request)
+    _require_unique_email_account(user)
     email = user["email"]
     code = referral_code_for_user(email)
     with get_conn() as conn:
@@ -486,10 +491,11 @@ async def api_referral_status(request: Request):
 @qr_app.get("/api/airdrop/status")
 async def api_airdrop_status(request: Request):
     user = require_user(request)
+    _require_unique_email_account(user)
     email = user["email"]
     scan_count = get_scan_count(email)
     with get_conn() as conn:
-        row = conn.execute("SELECT airdrop_status, COALESCE(fraud_score, 0), referral_code FROM users WHERE email = ?", (email,)).fetchone()
+        row = conn.execute("SELECT airdrop_status, COALESCE(fraud_score, 0), referral_code FROM users WHERE google_id = ?", (user["google_id"],)).fetchone()
         referrals = conn.execute("SELECT COUNT(*) FROM referrals WHERE referrer_email = ? AND counted = 1", (email,)).fetchone()[0]
     referral_code = row[2] if row and row[2] else referral_code_for_user(email)
     wallet = get_verified_wallet(email)
@@ -507,9 +513,17 @@ async def api_airdrop_status(request: Request):
         "nextMilestone": next_airdrop_milestone(scan_count, referrals),
     }
 
+def _require_unique_email_account(user):
+    with get_conn() as conn:
+        if unique_email_owner(conn, user.get("email"), user.get("google_id")):
+            return
+    raise HTTPException(status_code=409, detail="Account ownership needs review before using email-linked rewards.")
+
+
 @qr_app.get("/api/wallet")
 async def api_wallet_status(request: Request):
     user = require_user(request)
+    _require_unique_email_account(user)
     wallet = get_verified_wallet(user["email"])
     if not wallet:
         return {"connected": False}
@@ -529,6 +543,7 @@ async def api_wallet_status(request: Request):
 @qr_app.post("/api/wallet/nonce")
 async def api_wallet_nonce(request: Request, payload: dict = Body(...)):
     user = require_user(request)
+    _require_unique_email_account(user)
     cleanup_wallet_nonces()
     validate_strict_payload(payload, {"walletAddress"})
     wallet_address = (payload.get("walletAddress") or "").strip()
@@ -590,6 +605,7 @@ async def api_wallet_nonce(request: Request, payload: dict = Body(...)):
 @qr_app.post("/api/wallet/verify")
 async def api_wallet_verify(request: Request, payload: dict = Body(...)):
     user = require_user(request)
+    _require_unique_email_account(user)
     cleanup_wallet_nonces()
     validate_strict_payload(payload, {"walletAddress", "signature"})
     wallet_address = (payload.get("walletAddress") or "").strip()
@@ -673,6 +689,7 @@ async def api_wallet_verify(request: Request, payload: dict = Body(...)):
 @qr_app.delete("/api/wallet")
 async def api_wallet_disconnect(request: Request):
     user = require_user(request)
+    _require_unique_email_account(user)
     wallet = get_verified_wallet(user["email"])
     if not wallet:
         raise HTTPException(status_code=404, detail="No connected wallet found.")

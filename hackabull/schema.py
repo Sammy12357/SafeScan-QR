@@ -46,10 +46,12 @@ from storage import backend_status as storage_backend_status
 from storage import download_file as storage_download_file
 from storage import object_key as storage_object_key
 from storage import upload_bytes as storage_upload_bytes
+from private_files import secure_sqlite_path
 
 from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party
 import safescan_model_calibration as sm_calibration
 from .config import ADMIN_ACCESS_DENYLIST
+from .request_helpers import validate_privacy_hash_salt
 
 # =============================================================================
 # DATABASE SCHEMA & INITIALIZATION
@@ -64,7 +66,8 @@ def init_db():
     truth (users, sessions, scans, scan_history, wallets, fraud tables,
     subscriptions, audit logs, etc.).
     """
-    conn = sqlite3.connect(database_path())
+    validate_privacy_hash_salt()
+    conn = sqlite3.connect(secure_sqlite_path(database_path()))
     cursor = conn.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS scan_results (url TEXT PRIMARY KEY, status TEXT, timestamp TEXT)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS domain_age_cache (
@@ -183,6 +186,10 @@ def init_db():
     cursor.execute('''CREATE TABLE IF NOT EXISTS ip_registry
                         (id TEXT PRIMARY KEY, ip_address TEXT NOT NULL, user_id TEXT NOT NULL,
                          event_type TEXT NOT NULL, created_at TEXT NOT NULL)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS ip_registry_accounts
+                        (ip_hash TEXT NOT NULL, user_id TEXT NOT NULL,
+                         first_seen TEXT NOT NULL, last_seen TEXT NOT NULL,
+                         PRIMARY KEY(ip_hash, user_id))''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS scan_velocity
                         (user_id TEXT PRIMARY KEY, scans_last_hour INTEGER DEFAULT 0,
                          scans_last_day INTEGER DEFAULT 0, last_scan_at TEXT,
@@ -259,6 +266,7 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_persistent_sessions_user_id ON persistent_sessions(user_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_logs(created_at)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_raw_ip_created_at ON audit_logs(created_at) WHERE ip_address IS NOT NULL")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_abuse_email ON abuse_flags(email)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_scan_history_email ON scan_history(email)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_scan_history_created ON scan_history(created_at)")
@@ -267,6 +275,7 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_blocklist_url ON url_blocklist(url)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_ip_registry_ip ON ip_registry(ip_address)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_ip_registry_user ON ip_registry(user_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_ip_registry_created ON ip_registry(created_at)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_fraud_user ON fraud_flags(user_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_fraud_reviewed ON fraud_flags(reviewed)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_device_fingerprint ON device_fingerprints(fingerprint)")
@@ -297,6 +306,10 @@ def init_db():
     for column, ddl in user_migrations.items():
         if column not in user_columns:
             cursor.execute(ddl)
+    # This legacy column had no current fraud or account-security reader and
+    # retained the last raw login IP indefinitely. New logins no longer write
+    # it; clear existing values during the schema upgrade.
+    cursor.execute("UPDATE users SET login_ip = NULL WHERE login_ip IS NOT NULL")
     cursor.execute("PRAGMA table_info(alpha_subscriptions)")
     alpha_subscription_columns = {row[1] for row in cursor.fetchall()}
     alpha_subscription_migrations = {
@@ -379,36 +392,9 @@ def init_db():
     scan_event_columns = {row[1] for row in cursor.fetchall()}
     if "user_id" not in scan_event_columns:
         cursor.execute("ALTER TABLE scan_events ADD COLUMN user_id TEXT")
-    cursor.execute("""
-        UPDATE scan_history
-        SET user_id = (
-            SELECT users.google_id
-            FROM users
-            WHERE lower(users.email) = lower(scan_history.email)
-            LIMIT 1
-        )
-        WHERE user_id IS NULL
-    """)
-    cursor.execute("""
-        UPDATE scans
-        SET user_id = (
-            SELECT users.google_id
-            FROM users
-            WHERE lower(users.email) = lower(scans.email)
-            LIMIT 1
-        )
-        WHERE user_id IS NULL
-    """)
-    cursor.execute("""
-        UPDATE scan_events
-        SET user_id = (
-            SELECT users.google_id
-            FROM users
-            WHERE lower(users.email) = lower(scan_events.email)
-            LIMIT 1
-        )
-        WHERE user_id IS NULL
-    """)
+    # Do not infer ownership of old scan rows from email during startup. The
+    # old LIMIT 1 backfill could assign a collision to an arbitrary account.
+    # The offline ownership audit must review those rows before migration.
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_scan_history_user_id ON scan_history(user_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_scans_user_id ON scans(user_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_scan_events_user_id ON scan_events(user_id)")

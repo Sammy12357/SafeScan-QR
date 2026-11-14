@@ -60,7 +60,25 @@ def make_id(prefix):
     # and data-request identifiers unguessable without changing their prefix.
     return f"{prefix}_{secrets.token_urlsafe(16)}"
 
+def validate_privacy_hash_salt():
+    """Refuse the development IP hash key when serving production traffic.
+
+    Length and variety catch placeholders, but operators must still generate a
+    random secret and keep it stable; this check cannot prove entropy.
+    """
+    production = bool(os.getenv("RENDER")) or os.getenv("ENVIRONMENT", "").strip().lower() in ("prod", "production")
+    configured_salt = os.getenv("PRIVACY_HASH_SALT", "")
+    salt = configured_salt.strip()
+    if production and (
+        len(salt) < 32
+        or len(set(salt)) < 8
+        or configured_salt != salt
+        or any(marker in salt.lower() for marker in ("safescan-dev", "replace-with", "placeholder", "change-me"))
+    ):
+        raise RuntimeError("Production requires a stable, randomly generated PRIVACY_HASH_SALT of at least 32 characters")
+
 def hash_ip(ip_value):
+    validate_privacy_hash_salt()
     salt = os.getenv("PRIVACY_HASH_SALT", "safescan-dev-salt")
     return hashlib.sha256(f"{salt}:{ip_value or 'unknown'}".encode("utf-8")).hexdigest()
 

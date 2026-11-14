@@ -150,7 +150,7 @@ def validate_and_rotate_remember_me(request):
             """
             SELECT ps.id AS persistent_session_id, ps.expires_at, ps.revoked_at,
                    u.google_id, u.email, u.username, u.display_name, u.picture,
-                   u.role, u.status, u.last_login_at, u.login_ip, u.google_sub
+                   u.role, u.status, u.last_login_at, u.google_sub
             FROM persistent_sessions ps
             JOIN users u ON u.google_id = ps.user_id
             WHERE ps.token_hash = ?

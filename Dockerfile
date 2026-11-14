@@ -32,7 +32,7 @@ WORKDIR /app
 COPY --from=builder /install /usr/local
 
 # Copy only application code
-COPY distribute.py scrop.py db.py storage.py ml_model_final.py \
+COPY distribute.py scrop.py db.py storage.py private_files.py ml_model_final.py \
      safescan_allowlist.py ./
 COPY hackabull/ ./hackabull/
 COPY safescan_model_calibration/ ./safescan_model_calibration/
@@ -40,6 +40,7 @@ COPY templates/ ./templates/
 COPY static/ ./static/
 COPY models/ ./models/
 COPY removals/ ./removals/
+COPY scripts/security/backup_sqlite.py ./scripts/security/backup_sqlite.py
 # Tranco top-10K CSV ships with the code so the allowlist short-circuit is
 # hermetic - no external fetch at boot, no failure mode if Tranco is down.
 COPY data/ ./data/

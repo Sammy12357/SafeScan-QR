@@ -15,9 +15,17 @@ Responsibilities:
 from __future__ import annotations
 import os
 import sqlite3
+import logging
+import unicodedata
 from contextvars import ContextVar
 from contextlib import contextmanager
 from urllib.parse import urlparse, unquote
+import idna
+
+
+logger = logging.getLogger(__name__)
+
+from private_files import secure_sqlite_path
 
 
 # One immutable value keeps the role and identity together. ContextVar follows
@@ -60,6 +68,8 @@ ADMIN_ONLY = {
     "alpha_subscriptions",
     "users",
     "scan_results",
+    # Global anti-abuse correlation data is never exposed through per-user RLS.
+    "ip_registry_accounts",
 }
 
 # Candidate locations for the SQLite file, in order of preference. The legacy
@@ -248,7 +258,7 @@ def get_conn(row_factory=True):
 
     Rows come back as ``sqlite3.Row`` (dict-like) unless ``row_factory=False``.
     """
-    conn = sqlite3.connect(database_path(), check_same_thread=False)
+    conn = sqlite3.connect(secure_sqlite_path(database_path()), check_same_thread=False)
     if row_factory:
         conn.row_factory = sqlite3.Row
     try:
@@ -264,6 +274,56 @@ def get_conn(row_factory=True):
 def _where_clause(extra_where: str) -> str:
     """Prefix a caller-supplied condition with WHERE, or return '' if empty."""
     return f"WHERE {extra_where}" if extra_where else ""
+
+
+def _email_review_key(raw: object) -> str | None:
+    """Conservative ownership key; aliases such as plus tags are never guessed."""
+    if not isinstance(raw, str) or len(raw) > 1024:
+        return None
+    value = raw.strip()
+    if value.count("@") != 1 or any(ch.isspace() or ord(ch) < 32 for ch in value):
+        return None
+    local, domain = value.split("@")
+    local = unicodedata.normalize("NFKC", local).casefold()
+    local = unicodedata.normalize("NFKC", local)
+    if not local or not domain or "@" in local or len(local.encode("utf-8")) > 64:
+        return None
+    if domain.endswith("."):
+        domain = domain[:-1]
+    try:
+        domain = idna.encode(domain, uts46=True, std3_rules=True).decode("ascii").lower()
+    except (idna.IDNAError, UnicodeError):
+        return None
+    if not domain or len(domain) > 253:
+        return None
+    return f"{local}@{domain}"
+
+
+def unique_email_owner(conn, email: str | None, user_id: str | None) -> bool:
+    """Prove an email belongs to exactly this account, including inactive rows.
+
+    This intentionally scans the account table until a normalized unique index
+    can be introduced after the offline collision audit and migration.
+    """
+    key = _email_review_key(email)
+    if not key or not user_id:
+        return False
+    matches = 0
+    for row in conn.execute("SELECT google_id, email FROM users WHERE email IS NOT NULL"):
+        if _email_review_key(row[1]) == key:
+            matches += 1
+            if matches > 1 or str(row[0]) != str(user_id):
+                return False
+    return matches == 1
+
+
+def _log_withheld_legacy_rows(conn, table: str, email: str) -> None:
+    count = conn.execute(
+        f"SELECT COUNT(*) FROM {table} WHERE (user_id IS NULL OR user_id = '') AND lower(email) = lower(?)",
+        (email,),
+    ).fetchone()[0]
+    if count:
+        logger.warning("Withheld %d legacy %s rows pending ownership review", count, table)
 
 
 def user_scoped_select(conn, table: str, extra_where: str = "", params: tuple = ()):
@@ -287,19 +347,18 @@ def user_scoped_select(conn, table: str, extra_where: str = "", params: tuple = 
     if not uid:
         return []
 
-    # Scan tables are special: historically rows were keyed by email, but newer
-    # rows carry a user_id. Match on either so a user sees their whole history
-    # regardless of which scheme wrote the row. scan_events only has an email.
+    # A stable ID always wins. Email fallback is limited to truly unbound legacy
+    # rows, and only when the account is the sole canonical owner of the email.
     email = rls_email()
     if table in ("scans", "scan_events", "scan_history"):
-        owner_clause = "email = ?"
+        owner_clause = "user_id = ?"
         owner_params = [uid]
-        if email and email != uid:
-            owner_clause = "(user_id = ? OR lower(email) = lower(?))" if table != "scan_events" else "lower(email) = lower(?)"
-            owner_params = [uid, email] if table != "scan_events" else [email]
-        elif table != "scan_events":
-            owner_clause = "(user_id = ? OR email = ?)"
-            owner_params = [uid, uid]
+        if email:
+            if unique_email_owner(conn, email, uid):
+                owner_clause = "(user_id = ? OR ((user_id IS NULL OR user_id = '') AND lower(email) = lower(?)))"
+                owner_params.append(email)
+            else:
+                _log_withheld_legacy_rows(conn, table, email)
         if extra_where:
             return conn.execute(
                 f"SELECT * FROM {table} WHERE {owner_clause} AND ({extra_where})",
@@ -334,10 +393,19 @@ def assert_owns_row(conn, table: str, row_id: str):
     if not col:
         raise ValueError(f"Unknown table: {table}")
 
+    if table == "scan_events":
+        # This table has a composite primary key; there is no row id to check.
+        raise PermissionError("This resource requires a composite ownership check.")
+
     if table in ("scans", "scan_history"):
-        row = conn.execute(f"SELECT email, user_id FROM {table} WHERE id = ?", (row_id,)).fetchone()
+        key_column = "email" if table == "scans" else "id"
+        row = conn.execute(f"SELECT email, user_id FROM {table} WHERE {key_column} = ?", (row_id,)).fetchone()
         email = rls_email()
-        if row and (str(row["user_id"] or "") == str(uid) or (email and str(row["email"]).lower() == str(email).lower())):
+        if row and str(row["user_id"] or "") == str(uid):
+            return
+        if (row and not row["user_id"] and email
+                and str(row["email"]).lower() == str(email).lower()
+                and unique_email_owner(conn, email, uid)):
             return
         raise PermissionError("You do not own this resource.")
 

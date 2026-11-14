@@ -41,6 +41,7 @@ from db import (
     rls_user_id,
     set_rls_context,
     user_scoped_select,
+    unique_email_owner,
 )
 from storage import backend_status as storage_backend_status
 from storage import download_file as storage_download_file
@@ -78,7 +79,15 @@ def record_unique_scan(email, url, wallet, user_id=None, payload_type=None):
     cutoff = (datetime.utcnow() - timedelta(seconds=60)).isoformat()
 
     with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if user_id and not unique_email_owner(conn, normalized_email, user_id):
+            return False
         cursor = conn.cursor()
+        existing_owner = cursor.execute(
+            "SELECT user_id FROM scans WHERE email = ?", (normalized_email,)
+        ).fetchone()
+        if existing_owner and existing_owner[0] and user_id and existing_owner[0] != user_id:
+            return False
         cursor.execute("""
             INSERT INTO scans (email, url_found, scan_count, wallet_address, user_id)
             VALUES (?, ?, 0, ?, ?)
@@ -131,6 +140,9 @@ def record_unique_scan(email, url, wallet, user_id=None, payload_type=None):
 
 def get_scan_count(email):
     with get_conn() as conn:
+        current_id = rls_user_id()
+        if current_id and not unique_email_owner(conn, email, current_id):
+            return 0
         cursor = conn.cursor()
         cursor.execute("SELECT scan_count FROM scans WHERE email = ?", (email,))
         result = cursor.fetchone()

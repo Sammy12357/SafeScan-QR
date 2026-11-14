@@ -56,7 +56,6 @@ from .config import APP_URL
 from .config import CLIENT_ID
 from .config import LOCAL_AUTH_ENABLED
 from .config import templates
-from .request_helpers import request_ip
 
 # =============================================================================
 # USER ACCOUNTS, PASSWORDS & USERNAMES
@@ -159,18 +158,17 @@ def save_user_to_db(google_id, email, request=None, display_name="", picture="")
     with get_conn() as conn:
         google_sub = google_id if not google_id.startswith("user_") and not google_id.startswith("local_") else None
         conn.execute("""
-            INSERT INTO users (google_id, email, display_name, picture, last_login, role, status, last_login_at, login_ip, created_at, referral_code, google_sub)
-            VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
+            INSERT INTO users (google_id, email, display_name, picture, last_login, role, status, last_login_at, created_at, referral_code, google_sub)
+            VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
             ON CONFLICT(google_id) DO UPDATE SET
                 email=excluded.email,
                 display_name=COALESCE(NULLIF(users.display_name, ''), excluded.display_name),
                 picture=COALESCE(NULLIF(users.picture, ''), excluded.picture),
                 last_login=excluded.last_login,
                 last_login_at=excluded.last_login_at,
-                login_ip=excluded.login_ip,
                 referral_code=COALESCE(users.referral_code, excluded.referral_code),
                 google_sub=COALESCE(users.google_sub, excluded.google_sub)
-        """, (google_id, normalized_email, normalized_display_name, normalized_picture, datetime.now().isoformat(), "user", now_iso(), request_ip(request) if request else None, now_iso(), referral_code, google_sub))
+        """, (google_id, normalized_email, normalized_display_name, normalized_picture, datetime.now().isoformat(), "user", now_iso(), now_iso(), referral_code, google_sub))
     return google_id
 
 
@@ -210,11 +208,11 @@ def save_federated_user_to_db(provider, issuer, subject, email, request=None, di
             if not user or user["status"] != "active":
                 raise SafeScanError("Authentication required.", 401)
             conn.execute(
-                """UPDATE users SET last_login = ?, last_login_at = ?, login_ip = ?,
+                """UPDATE users SET last_login = ?, last_login_at = ?,
                    display_name = COALESCE(NULLIF(display_name, ''), ?),
                    picture = COALESCE(NULLIF(picture, ''), ?)
                    WHERE google_id = ?""",
-                (now, now, request_ip(request) if request else None,
+                (now, now,
                  normalized_display_name, normalized_picture, user_id),
             )
             return user_id
@@ -230,10 +228,10 @@ def save_federated_user_to_db(provider, issuer, subject, email, request=None, di
         conn.execute(
             """INSERT INTO users
                (google_id, email, display_name, picture, last_login, role, status,
-                last_login_at, login_ip, created_at, referral_code, google_sub)
-               VALUES (?, ?, ?, ?, ?, 'user', 'active', ?, ?, ?, ?, ?)""",
+                last_login_at, created_at, referral_code, google_sub)
+               VALUES (?, ?, ?, ?, ?, 'user', 'active', ?, ?, ?, ?)""",
             (user_id, normalized_email, normalized_display_name, normalized_picture,
-             now, now, request_ip(request) if request else None, now,
+             now, now, now,
              referral_code, subject if provider == "google" else None),
         )
         conn.execute(

@@ -16,6 +16,7 @@ from fastapi import Form, HTTPException, Request
 from jinja2 import pass_context
 
 from .config import ALLOWED_ORIGINS
+from .config import CSRF_SECRET
 from .config import REMEMBER_ME_COOKIE_NAME
 from .config import SESSION_COOKIE_NAME
 
@@ -39,7 +40,7 @@ def _cookie_key(request: Request) -> str | None:
 
 
 def _token_for_key(key: str) -> str:
-    return hmac.new(key.encode("ascii"), b"safescan-csrf-v1", hashlib.sha256).hexdigest()
+    return hmac.new(CSRF_SECRET.encode("utf-8"), b"safescan-csrf-v2:" + key.encode("ascii"), hashlib.sha256).hexdigest()
 
 
 def prepare_csrf_token(request: Request) -> None:

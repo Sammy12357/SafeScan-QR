@@ -71,8 +71,11 @@ def iso_from_unix_timestamp(value):
     except (TypeError, ValueError, OSError):
         return None
 
+
+_AUDIT_URL_RE = re.compile(r"(?i)\b(?:https?://|www\.)[^\s<>\"']+")
+
 def sanitize_metadata(value):
-    blocked = ("password", "token", "secret", "key", "hash", "credential")
+    blocked = ("password", "token", "secret", "key", "hash", "credential", "url", "uri", "link")
     if isinstance(value, dict):
         return {
             key: sanitize_metadata(item)
@@ -81,6 +84,8 @@ def sanitize_metadata(value):
         }
     if isinstance(value, list):
         return [sanitize_metadata(item) for item in value]
+    if isinstance(value, str):
+        return _AUDIT_URL_RE.sub("[redacted-url]", value)
     return value
 
 def audit_log(action, request=None, actor_user_id=None, target_type=None, target_id=None, metadata=None):

@@ -115,7 +115,7 @@ def get_session_user(request):
             """
             SELECT s.id AS session_id, s.expires_at, s.last_active, s.revoked_at,
                    u.google_id, u.email, u.username, u.display_name, u.picture,
-                   u.role, u.status, u.last_login_at, u.login_ip
+                   u.role, u.status, u.last_login_at
             FROM sessions s
             JOIN users u ON u.google_id = s.google_id
             WHERE s.id = ?
