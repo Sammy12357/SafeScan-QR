@@ -217,6 +217,11 @@ def init_db():
                         (event_id TEXT PRIMARY KEY, object_id TEXT NOT NULL,
                          event_type TEXT NOT NULL, dedupe_key TEXT UNIQUE,
                          processed_at TEXT NOT NULL, outcome TEXT NOT NULL)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS alpha_checkout_references
+                        (reference TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+                         checkout_session_id TEXT UNIQUE, created_at TEXT NOT NULL,
+                         FOREIGN KEY(user_id) REFERENCES users(google_id))''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_alpha_checkout_user ON alpha_checkout_references(user_id)")
     cursor.execute('''CREATE TABLE IF NOT EXISTS alpha_solana_payment_references
                         (id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
                          email TEXT NOT NULL, reference TEXT NOT NULL UNIQUE,

@@ -209,18 +209,18 @@ def alpha_solana_quote_for_user(user):
     return quote_row
 
 def alpha_solana_pay_url(request: Request | None = None):
-    if not ALPHA_SOLANA_RECIPIENT:
+    if not ALPHA_SOLANA_RECIPIENT or request is None:
         return ""
 
+    user = get_session_user(request)
+    if not user:
+        return ""
+    quote_row = alpha_solana_quote_for_user(user)
+    if not quote_row:
+        return ""
     params = []
-    quote_row = None
-    if request:
-        quote_row = alpha_solana_quote_for_user(get_session_user(request))
-    if quote_row:
-        params.append(("amount", str(quote_row["amountSol"])))
-        params.append(("reference", str(quote_row["reference"])))
-    elif ALPHA_SOLANA_AMOUNT_SOL:
-        params.append(("amount", ALPHA_SOLANA_AMOUNT_SOL))
+    params.append(("amount", str(quote_row["amountSol"])))
+    params.append(("reference", str(quote_row["reference"])))
     if ALPHA_SOLANA_LABEL:
         params.append(("label", ALPHA_SOLANA_LABEL))
     if ALPHA_SOLANA_MESSAGE:

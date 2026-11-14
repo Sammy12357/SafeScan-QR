@@ -57,7 +57,7 @@ from .auth import require_role_user
 from .auth import require_user
 from .config import AIRDROP_ADMIN_SECRET
 from .config import APP_STARTED_AT
-from .config import APP_ORIGIN
+from .csrf import require_same_origin_action
 from .config import CLIENT_ID
 from .config import LEGAL_VERSION
 from .config import templates
@@ -321,10 +321,7 @@ async def trigger_airdrop(
     admin_user = get_session_user(request)
     if admin_user:
         require_role_user(request, "admin")
-        origin = request.headers.get("origin")
-        fetch_site = request.headers.get("sec-fetch-site")
-        if origin != APP_ORIGIN and fetch_site != "same-origin":
-            raise HTTPException(status_code=403, detail="You do not have permission to do this.")
+        require_same_origin_action(request)
     elif not (
         AIRDROP_ADMIN_SECRET and len(AIRDROP_ADMIN_SECRET) >= 32 and
         x_airdrop_secret and hmac.compare_digest(x_airdrop_secret, AIRDROP_ADMIN_SECRET)

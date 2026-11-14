@@ -69,16 +69,30 @@ def alpha_stripe_checkout_url(request: Request):
         return ""
 
     user = get_session_user(request)
-    if not user:
+    if not user or not user.get("google_id"):
         return ""
+    user_id = user["google_id"]
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            """SELECT reference FROM alpha_checkout_references
+               WHERE user_id = ? AND checkout_session_id IS NULL
+               ORDER BY created_at DESC LIMIT 1""",
+            (user_id,),
+        ).fetchone()
+        if row:
+            checkout_reference = row["reference"]
+        else:
+            checkout_reference = "sq_" + secrets.token_urlsafe(24)
+            conn.execute(
+                """INSERT INTO alpha_checkout_references (user_id, reference, created_at)
+                   VALUES (?, ?, ?)""",
+                (user_id, checkout_reference, now_iso()),
+            )
     params = []
     if user.get("email"):
         params.append(("prefilled_email", user["email"]))
-    if user.get("google_id"):
-        params.append(("client_reference_id", user["google_id"]))
-
-    if not user.get("google_id"):
-        return ""
+    params.append(("client_reference_id", checkout_reference))
 
     separator = "&" if "?" in ALPHA_STRIPE_PAYMENT_LINK else "?"
     return f"{ALPHA_STRIPE_PAYMENT_LINK}{separator}{urlencode(params)}"
@@ -110,14 +124,33 @@ def verify_stripe_webhook_signature(payload: bytes, signature_header: str):
     if not any(hmac.compare_digest(expected, signature) for signature in signatures):
         raise HTTPException(status_code=400, detail="Invalid Stripe signature.")
 
-def stripe_user_identity(conn, client_reference_id):
+def stripe_user_identity(conn, client_reference_id, checkout_session_id):
     """Resolve a signed checkout reference to an existing user, never by email."""
-    if not isinstance(client_reference_id, str) or not client_reference_id:
+    if (not isinstance(client_reference_id, str) or not client_reference_id
+            or not isinstance(checkout_session_id, str) or not checkout_session_id):
         return None
-    return conn.execute(
-        "SELECT google_id, email FROM users WHERE google_id = ? AND status = 'active'",
+    row = conn.execute(
+        """SELECT u.google_id, u.email, r.checkout_session_id
+           FROM alpha_checkout_references AS r
+           JOIN users AS u ON u.google_id = r.user_id
+           WHERE r.reference = ? AND u.status = 'active'""",
         (client_reference_id,),
     ).fetchone()
+    if not row or (row["checkout_session_id"] and row["checkout_session_id"] != checkout_session_id):
+        return None
+    if row["checkout_session_id"] is None:
+        already_bound = conn.execute(
+            "SELECT 1 FROM alpha_checkout_references WHERE checkout_session_id = ?",
+            (checkout_session_id,),
+        ).fetchone()
+        if already_bound:
+            return None
+        conn.execute(
+            """UPDATE alpha_checkout_references SET checkout_session_id = ?
+               WHERE reference = ? AND checkout_session_id IS NULL""",
+            (checkout_session_id, client_reference_id),
+        )
+    return row
 
 
 def stripe_invoice_subscription_and_period(obj):
@@ -193,20 +226,31 @@ def upsert_alpha_subscription_from_stripe(conn, obj, event_type):
             or not isinstance(stripe_subscription_id, str) or not stripe_subscription_id
         ):
             return {"ignored": True, "reason": "not_alpha_checkout"}
-        identity = stripe_user_identity(conn, client_reference_id)
+        identity = stripe_user_identity(conn, client_reference_id, obj.get("id"))
     else:
         # Later lifecycle events can only update a checkout already attached to
-        # a user. Invoice metadata and customer email never establish identity.
+        # a user by this version's product-verified checkout. Older webhook
+        # rows did not verify the Payment Link and cannot establish entitlement.
+        # Invoice metadata and customer email never establish identity.
         identity = None
         if isinstance(stripe_subscription_id, str) and stripe_subscription_id:
-            identity = conn.execute(
-                """SELECT u.google_id, u.email FROM alpha_subscriptions AS a
+            rows = conn.execute(
+                """SELECT u.google_id, u.email, a.metadata FROM alpha_subscriptions AS a
                    JOIN users AS u ON u.google_id = a.user_id AND u.status = 'active'
                    WHERE a.provider = 'stripe' AND a.checkout_session_id IS NOT NULL
-                     AND a.stripe_subscription_id = ?
-                   LIMIT 1""",
+                     AND a.stripe_subscription_id = ?""",
                 (stripe_subscription_id,),
-            ).fetchone()
+            ).fetchall()
+            verified_rows = []
+            for row in rows:
+                try:
+                    metadata = json.loads(row["metadata"] or "{}")
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(metadata, dict) and metadata.get("verifiedAlphaCheckout") is True:
+                    verified_rows.append(row)
+            if len(verified_rows) == 1:
+                identity = verified_rows[0]
     if identity is None:
         return {"unmatched": True, "type": event_type}
     user_id, stored_email = identity["google_id"], identity["email"]
@@ -237,6 +281,7 @@ def upsert_alpha_subscription_from_stripe(conn, obj, event_type):
     updated_at = now_iso()
     webhook_metadata = {
         "source": "stripe_webhook",
+        "verifiedAlphaCheckout": True,
         "eventType": event_type,
         "stripeObjectId": obj.get("id"),
         "rawStatus": obj.get("status"),
@@ -351,7 +396,9 @@ def has_active_alpha(user):
         ).fetchall()
     for row in rows:
         try:
-            if json.loads(row["metadata"] or "{}").get("source") == "stripe_webhook":
+            metadata = json.loads(row["metadata"] or "{}")
+            if (isinstance(metadata, dict) and metadata.get("source") == "stripe_webhook"
+                    and metadata.get("verifiedAlphaCheckout") is True):
                 return True
         except (TypeError, ValueError):
             pass

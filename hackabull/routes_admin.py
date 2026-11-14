@@ -65,6 +65,7 @@ from .audit import now_iso
 from .auth import has_role
 from .auth import require_role_user
 from .config import APP_URL
+from .csrf import require_same_origin_action
 from .config import VALID_ROLES
 from .config import templates
 from .history import admin_avatar
@@ -227,6 +228,7 @@ async def admin_airdrop(request: Request):
 @qr_app.post("/admin/airdrop/distribute", response_class=HTMLResponse)
 async def admin_airdrop_distribute(request: Request):
     admin_user = require_role_user(request, "admin")
+    require_same_origin_action(request)
     try:
         from distribute import airdrop_sweep
         result = await airdrop_sweep()

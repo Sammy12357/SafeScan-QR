@@ -124,6 +124,10 @@ def test_stripe_webhook_stores_and_cancels_subscription(auth_app):
     register(client, "stripe@example.com")
     users = db_rows(db_path, "SELECT google_id FROM users WHERE email = ?", ("stripe@example.com",))
     user_id = users[0]["google_id"]
+    assert client.get("/pay/alpha").status_code == 200
+    checkout_reference = db_rows(
+        db_path, "SELECT reference FROM alpha_checkout_references WHERE user_id = ?", (user_id,)
+    )[0]["reference"]
 
     checkout_event = {
         "id": "evt_checkout",
@@ -135,7 +139,7 @@ def test_stripe_webhook_stores_and_cancels_subscription(auth_app):
                 "customer": "cus_123",
                 "subscription": "sub_123",
                 "customer_details": {"email": "stripe@example.com"},
-                "client_reference_id": user_id,
+                "client_reference_id": checkout_reference,
                 "payment_status": "paid",
                 "payment_link": "plink_alpha_test",
                 "mode": "subscription",

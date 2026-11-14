@@ -11,19 +11,20 @@ Prepared 2026-11-14. This branch is Phase 2 preparation and must be merged only 
    ```sql
    SELECT COUNT(*) FROM alpha_subscriptions
      WHERE provider = 'stripe' AND status = 'active' AND checkout_session_id IS NULL;
+   SELECT COUNT(*) FROM alpha_subscriptions WHERE provider = 'stripe';
    SELECT COUNT(*) FROM (
      SELECT signature FROM alpha_solana_payment_references
      WHERE signature IS NOT NULL GROUP BY signature HAVING COUNT(*) > 1
    );
    ```
 
-   The new unique index on Solana signatures will reject an existing database with duplicates. Review any such rows privately before the migration. Legacy success-page rows remain in the database; `has_active_alpha()` deliberately excludes them because no verified Stripe payment is attached.
+   The new unique index on Solana signatures will reject an existing database with duplicates. Review any such rows privately before the migration. **Every existing Stripe row** must be treated as unverified until individually reconciled: the old webhook did not confirm the Alpha Payment Link. New lifecycle events cannot extend those rows, and `has_active_alpha()` requires the new product-verification marker. Review any in-flight checkouts before release because old direct `client_reference_id` values will not map through the new reference table.
 4. Use a Stripe test payment and a distinct Solana test transaction to verify activation, replay behavior, cancellation, and expiry. Do not use a public production payment as a test.
 
 ## Processing behavior
 
 - A success-page visit is informational and writes no subscription.
-- A guest sees a sign-in link before card checkout so the resulting Checkout Session has an account reference. A paid event without a valid account reference is recorded as `unmatched` in `stripe_events` for manual review; customer email never chooses an account.
+- A guest sees sign-in links before either card or Solana checkout. Signed-in card checkout uses a random URL-safe reference mapped to the account in `alpha_checkout_references`; no account ID is sent as the reference. The first paid Checkout Session binds that reference. A second session using the same reference, or a paid event without a valid reference, is recorded as `unmatched` for manual review; customer email never chooses an account.
 - The `stripe_events` ledger stores event IDs and a limited outcome. It does not store the raw webhook payload. Duplicate event IDs and one-time object/type pairs are ignored atomically with the subscription update. `customer.subscription.updated` can recur for the same object, so it is deduplicated only by event ID.
 - Only a finalized Solana transaction can activate a quote. The database allows a signature to be claimed once.
 - `has_active_alpha()` requires a webhook-sourced Stripe row with `status='active'` and a future `expires_at`. A paid invoice with a positive amount establishes that period, including when the period is present only on modern invoice lines. Stripe can settle in a customer's local currency, so the configured Payment Link and subscription ID bind the product instead of a USD-only check. Subscription updates do not extend access before payment. The helper is prepared for future feature gates and is not yet used by the site.

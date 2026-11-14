@@ -58,3 +58,20 @@ SafeScan client IDs. The server checks `email_verified` independently.
 This mapping follows [Google's requirement to identify users by `sub`](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token),
 [Auth0's requirement to authenticate both accounts before linking](https://auth0.com/docs/manage-users/user-accounts/user-account-linking/link-user-accounts),
 and [Auth0's post-login verification guidance](https://support.auth0.com/center/s/article/implement-email-verification-to-prevent-access-with-unverified-emails-in-auth0).
+
+Once the identity mapping has been reviewed and installed, an owner can be
+bootstrapped from an existing **verified Google identity**. The command checks
+the exact Google subject and expected email against `user_identities` and
+`users`, then writes an audit entry. It never grants a role by email alone.
+Run it only after reviewing the target account and database backup:
+
+```sh
+python -m hackabull.cli grant-owner \
+  --google-sub 'the-exact-google-sub' \
+  --expected-email 'owner@example.com' \
+  --apply
+```
+
+Omitting `--apply` makes no change. `--database /path/to/backup.db` can be
+used to rehearse against an offline copy. This command has not been run on
+production as part of this branch.

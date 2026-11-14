@@ -216,6 +216,29 @@ def test_airdrop_admin_post_requires_same_origin(identity_app):
     assert owner.post("/trigger-airdrop-secret").status_code == 403
 
 
+def test_admin_airdrop_distribute_rejects_missing_origin(identity_app, monkeypatch):
+    app, routes, database = identity_app
+    owner = TestClient(app.qr_app, base_url="https://testserver")
+    assert owner.post(
+        "/auth/register", data={"email": "operator@example.com", "password": "password123"},
+        follow_redirects=False,
+    ).status_code == 303
+    with sqlite3.connect(database) as conn:
+        conn.execute("UPDATE users SET role = 'owner' WHERE email = 'operator@example.com'")
+
+    calls = []
+    async def fake_sweep():
+        calls.append(True)
+        return {"status": "dry_run", "eligible": 0, "sent": [], "total_tokens_sent": 0}
+    monkeypatch.setattr(importlib.import_module("distribute"), "airdrop_sweep", fake_sweep)
+    assert owner.post("/admin/airdrop/distribute").status_code == 403
+    assert calls == []
+    assert owner.post(
+        "/admin/airdrop/distribute", headers={"Origin": "https://testserver"}
+    ).status_code == 200
+    assert calls == [True]
+
+
 def test_airdrop_header_secret_allows_one_post_without_browser_cookie(identity_app, monkeypatch):
     app, routes, _ = identity_app
     account_routes = importlib.import_module("hackabull.routes_account")

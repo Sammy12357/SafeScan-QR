@@ -444,6 +444,8 @@ async def alpha_payment_page(request: Request):
     solana_button = (
         f"<a class='secondary-button payment-button' href='{solana_url}'>Pay with Solana</a>"
         if solana_url else
+        "<a class='secondary-button payment-button' href='/login?next=%2Fpay%2Falpha'>Sign in to pay with Solana</a>"
+        if not user else
         "<span class='secondary-button payment-button payment-disabled'>Solana Pay not configured</span>"
     )
     solana_note = (
@@ -454,6 +456,8 @@ async def alpha_payment_page(request: Request):
             + f"<p class='payment-note'>Solana payment recipient: <code>{ALPHA_SOLANA_RECIPIENT}</code></p>"
         )
         if solana_quote else
+        "<p class='payment-note'>Sign in to receive a payment quote.</p>"
+        if not user else
         f"<p class='payment-note'>Solana payment recipient: <code>{ALPHA_SOLANA_RECIPIENT}</code></p>"
         if ALPHA_SOLANA_RECIPIENT else
         "<p class='payment-note'>Add ALPHA_SOLANA_RECIPIENT in Render to enable wallet checkout.</p>"
