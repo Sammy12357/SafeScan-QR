@@ -12,6 +12,7 @@ from db import get_conn
 
 GOOGLE_NONCE_COOKIE = "__Host-safescan_google_nonce"
 GOOGLE_NONCE_TTL_SECONDS = 10 * 60
+GOOGLE_NONCE_MAX_ACTIVE = 10_000
 
 
 def _digest(value: str) -> str:
@@ -30,6 +31,16 @@ def issue_google_login_challenge(request) -> str:
             "INSERT INTO google_login_challenges (nonce_hash, browser_hash, created_at) VALUES (?, ?, ?)",
             (_digest(nonce), _digest(browser_token), now),
         )
+        active = conn.execute("SELECT COUNT(*) FROM google_login_challenges").fetchone()[0]
+        excess = active - GOOGLE_NONCE_MAX_ACTIVE
+        if excess > 0:
+            conn.execute(
+                """DELETE FROM google_login_challenges WHERE nonce_hash IN (
+                   SELECT nonce_hash FROM google_login_challenges
+                   ORDER BY created_at, rowid LIMIT ?
+                )""",
+                (excess,),
+            )
     request.state.google_login_nonce = nonce
     request.state.google_login_browser_token = browser_token
     return nonce

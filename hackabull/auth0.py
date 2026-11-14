@@ -10,6 +10,7 @@ import math
 import re
 import asyncio
 import base64
+import binascii
 import ipaddress
 import secrets
 import socket
@@ -60,14 +61,21 @@ from .config import _AUTH0_JWKS_TTL_SECONDS
 # AUTH0 / JWT TOKEN VERIFICATION
 # =============================================================================
 def _decode_jwt_unverified(token):
+    """Read only the issuer hint for provider dispatch; never authenticate it."""
     if not isinstance(token, str) or len(token) > 16_384:
         raise ValueError("Invalid JWT size.")
+    parts = token.split(".")
+    if len(parts) != 3:
+        raise ValueError("Malformed JWT.")
     try:
         header = jwt.get_unverified_header(token)
-        payload = jwt.decode(token, options={"verify_signature": False})
-    except PyJWTError as exc:
+        encoded = parts[1] + "=" * (-len(parts[1]) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(encoded).decode("utf-8"))
+    except (PyJWTError, ValueError, UnicodeDecodeError, binascii.Error, RecursionError) as exc:
         raise ValueError("Malformed JWT.") from exc
-    return header, payload, token.split(".")
+    if not isinstance(payload, dict):
+        raise ValueError("Malformed JWT payload.")
+    return header, payload, parts
 
 def _fetch_auth0_jwks():
     now = time.time()

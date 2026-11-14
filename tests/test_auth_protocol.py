@@ -200,3 +200,18 @@ def test_google_login_page_redirects_to_canonical_nonce_host(auth0_verifier):
     assert response.status_code in {302, 303, 307, 308}
     assert response.headers["location"] == "https://testserver/login"
     assert "__Host-safescan_google_nonce" not in response.cookies
+
+
+def test_google_login_challenges_keep_a_bounded_active_set(auth0_verifier, monkeypatch):
+    app = importlib.import_module("hackabull")
+    google_login = importlib.import_module("hackabull.google_login")
+    monkeypatch.setattr(google_login, "GOOGLE_NONCE_MAX_ACTIVE", 3, raising=False)
+    client = TestClient(app.qr_app, base_url="https://testserver")
+
+    for _ in range(5):
+        assert client.get("/login").status_code == 200
+
+    from db import get_conn
+    with get_conn() as conn:
+        count = conn.execute("SELECT COUNT(*) FROM google_login_challenges").fetchone()[0]
+    assert count <= 3
