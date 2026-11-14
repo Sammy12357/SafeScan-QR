@@ -3,6 +3,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <meta name="csrf-token" content="{{ csrf_token() if csrf_token is defined else '' }}">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
@@ -79,7 +80,7 @@
         <div class="panel-header"><div><p class="eyebrow">SafeScan Tool</p><h2>Analyze Payload</h2></div></div>
         <div class="scanner-grid">
           <div class="scanner-card scanner-card-stack">
-            <form id="qrForm" action="/search_qr_api" method="post" enctype="multipart/form-data" class="scanner-subcard">
+            <form id="qrForm" action="/search_qr_api" method="post" enctype="multipart/form-data" class="scanner-subcard"><input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
               <p class="scanner-subcard-eyebrow">Upload or scan</p>
               <input type="hidden" name="template_variant" value="{{ 'test_site' if test_site_path else ('main_site' if test_site else '') }}">
               <input type="hidden" name="user_email" value="{{ email }}">
@@ -92,7 +93,7 @@
               <div id="analysisLoadingState" class="scan-status hidden" aria-live="polite">Tracing redirects...</div>
             </form>
 
-            <form id="urlForm" action="/search_qr_api" method="post" class="scanner-subcard scanner-subcard-url">
+            <form id="urlForm" action="/search_qr_api" method="post" class="scanner-subcard scanner-subcard-url"><input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
               <p class="scanner-subcard-eyebrow">Or paste decoded content</p>
               <input type="hidden" name="template_variant" value="{{ 'test_site' if test_site_path else ('main_site' if test_site else '') }}">
               <input type="hidden" name="user_email" value="{{ email }}">
@@ -287,7 +288,7 @@
   {% if scanner_v3 %}<script src="/static/qr-camera.js?v=scanner-v3-simplified-controls" defer></script>
   {% else %}<script src="/static/qr-camera-phase3.js?v=scanner-phase-3-simplified-controls" defer></script>{% endif %}
   <script src="/static/app-core.js?v=scanner-phase-4"></script>
-  <script src="/static/app-widgets.js?v=no-vt-v1"></script>
+  <script src="/static/app-widgets.js?v=security-consent-v1"></script>
   <script src="/static/app-go-ghost.js?v=native-scroll-v3"></script>
   <script src="/static/app-go-ghost-ui.js?v=native-scroll-v3"></script>
   <script src="/static/app-generate-qr.js?v=qr-defense-v1"></script>

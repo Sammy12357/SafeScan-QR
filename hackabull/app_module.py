@@ -11,7 +11,6 @@ import mimetypes
 import re
 import asyncio
 import base64
-import ipaddress
 import secrets
 import socket
 import time
@@ -52,6 +51,7 @@ from storage import upload_bytes as storage_upload_bytes
 from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party
 import safescan_model_calibration as sm_calibration
 from .audit import SafeScanError
+from .client_ip import rate_limit_identity
 from .auth import create_session
 from .auth import get_session_user
 from .config import ACTIVE_SCANS
@@ -59,12 +59,20 @@ from .config import ALLOWED_ORIGINS
 from .config import APP_ORIGIN
 from .config import CLIENT_ID
 from .config import CONTENT_TYPE_LATEST
+from .config import CSP_REPORT_ONLY_ENABLED
 from .config import MAX_QR_UPLOAD_BYTES
 from .config import REMEMBER_ME_COOKIE_NAME
 from .config import REQUEST_COUNT
 from .config import REQUEST_LATENCY
 from .config import SESSION_COOKIE_NAME
 from .config import generate_latest
+from .config import templates
+from .csrf import browser_csrf_required
+from .csrf import check_browser_origin
+from .csrf import csrf_token
+from .csrf import prepare_csrf_token
+from .csrf import require_csrf_header
+from .csrf import set_guest_csrf_cookie
 from .google_login import issue_google_login_challenge
 from .google_login import set_google_login_cookie
 from .provider_policy import reputation_configuration
@@ -147,20 +155,8 @@ QR_REQUEST_READ_TIMEOUT_SECONDS = 15
 
 
 def qr_request_client_identity(request: Request):
-    """Use Render's edge-authored client IP, never caller-supplied XFF.
-
-    On Render, Cloudflare overwrites CF-Connecting-IP before the request
-    reaches the app. Outside Render, the ASGI peer is the only trusted source.
-    A missing/invalid edge header disables the per-client bucket rather than
-    grouping every visitor behind one Render load-balancer address.
-    """
-    if os.getenv("RENDER", "").lower() == "true":
-        candidate = request.headers.get("cf-connecting-ip", "")
-        try:
-            return str(ipaddress.ip_address(candidate))
-        except ValueError:
-            return None
-    return request.client.host if request.client else None
+    """Apply QR upload limits even when Render's edge identity is missing."""
+    return rate_limit_identity(request)
 
 qr_app.add_middleware(
     CORSMiddleware,
@@ -172,6 +168,28 @@ qr_app.add_middleware(
     expose_headers=["X-Request-Id"],
     max_age=600,
 )
+
+templates.env.globals["csrf_token"] = csrf_token
+
+
+@qr_app.middleware("http")
+async def csrf_middleware(request: Request, call_next):
+    if request.method in {"GET", "HEAD"}:
+        if not request.url.path.startswith("/static/"):
+            prepare_csrf_token(request)
+    else:
+        prepare_csrf_token(request)
+        if browser_csrf_required(request):
+            try:
+                check_browser_origin(request)
+                content_type = request.headers.get("content-type", "").split(";", 1)[0].lower()
+                if content_type not in {"application/x-www-form-urlencoded", "multipart/form-data"}:
+                    require_csrf_header(request)
+            except HTTPException:
+                return JSONResponse({"error": "CSRF check failed."}, status_code=403)
+    response = await call_next(request)
+    set_guest_csrf_cookie(response, request)
+    return response
 
 @qr_app.middleware("http")
 async def google_login_challenge_middleware(request: Request, call_next):
@@ -204,8 +222,8 @@ async def rls_context_middleware(request: Request, call_next):
     # Start fail-closed even if a request task inherited an outer context.
     token = set_rls_context(None, "guest")
     try:
-        # The counts endpoint never needs an account lookup, even with a cookie.
-        if request.url.path != "/api/telemetry/scan":
+        # Count-only endpoints never need an account lookup, even with a cookie.
+        if request.url.path not in {"/api/telemetry/scan", "/api/security/csp-report"}:
             user = get_session_user(request)
             if user:
                 set_rls_context(
@@ -220,7 +238,7 @@ async def rls_context_middleware(request: Request, call_next):
 @qr_app.middleware("http")
 async def remember_me_middleware(request: Request, call_next):
     path = request.url.path
-    if path.startswith("/static/") or path == "/api/telemetry/scan" or request.cookies.get(SESSION_COOKIE_NAME):
+    if path.startswith("/static/") or path in {"/api/telemetry/scan", "/api/security/csp-report"} or request.cookies.get(SESSION_COOKIE_NAME):
         return await call_next(request)
 
     if getattr(request.state, "remembered_user", None):
@@ -237,6 +255,7 @@ async def remember_me_middleware(request: Request, call_next):
     if remembered_user:
         request.state.remembered_user = remembered_user
         session_id = create_session(remembered_user["google_id"], request)
+        request.state.remembered_session_id = session_id
         response = await call_next(request)
         set_session_cookie(response, session_id)
         set_remember_me_cookie(response, rotated_token)
@@ -267,6 +286,15 @@ CSP_POLICY = "; ".join([
     "upgrade-insecure-requests",
 ])
 
+# Probe the removal of inline styles without changing the enforced policy.
+# The Reporting-Endpoints header maps the report-to name to a same-origin URL;
+# report-uri covers browsers that do not implement the Reporting API.
+CSP_REPORT_PATH = "/api/security/csp-report"
+CSP_REPORT_ONLY_POLICY = (
+    "style-src 'self' https://fonts.googleapis.com; "
+    f"report-uri {CSP_REPORT_PATH}; report-to safescan-csp"
+)
+
 PERMISSIONS_POLICY = ", ".join([
     "camera=(self)",
     "microphone=()",
@@ -285,13 +313,25 @@ def apply_security_headers(request: Request, response):
         del response.headers["Server"]
     if "X-Powered-By" in response.headers:
         del response.headers["X-Powered-By"]
-    if request.url.path.startswith("/api/") or request.url.path == "/search_qr_api":
-        response.headers["Cache-Control"] = "no-store"
-        response.headers["Pragma"] = "no-cache"
-    elif request.url.path.startswith("/static/") and response.status_code == 200:
+    if request.url.path.startswith("/static/") and response.status_code == 200:
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     elif request.url.path.startswith("/static/"):
         response.headers["Cache-Control"] = "no-store"
+    elif "text/html" in response.headers.get("Content-Type", "").lower():
+        if CSP_REPORT_ONLY_ENABLED and response.status_code == 200:
+            response.headers["Content-Security-Policy-Report-Only"] = CSP_REPORT_ONLY_POLICY
+            response.headers["Reporting-Endpoints"] = f'safescan-csp="{CSP_REPORT_PATH}"'
+        # Login pages and scan results can include user-specific content or a
+        # browser challenge. Dynamic HTML must never enter a shared cache.
+        response.headers["Cache-Control"] = "private, no-store"
+        response.headers["Pragma"] = "no-cache"
+        existing_vary = [value.strip() for value in response.headers.get("Vary", "").split(",") if value.strip()]
+        if not any(value.lower() == "cookie" for value in existing_vary) and "*" not in existing_vary:
+            existing_vary.append("Cookie")
+            response.headers["Vary"] = ", ".join(existing_vary)
+    elif request.url.path.startswith("/api/") or request.url.path == "/search_qr_api":
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
     return response
 
 @qr_app.middleware("http")
@@ -326,8 +366,8 @@ async def start_wallet_nonce_cleanup():
 @qr_app.middleware("http")
 async def security_headers_and_rate_limits(request: Request, call_next):
     path = request.url.path
-    if path == "/api/telemetry/scan":
-        # The telemetry endpoint has its own in-memory count-only budget.
+    if path in {"/api/telemetry/scan", "/api/security/csp-report"}:
+        # These count-only endpoints have separate bounded global budgets.
         # Generic rate-limit failures write IP-linked audit rows.
         return await call_next(request)
     if request.method == "POST" and path in ("/search_qr_api", "/api/scan/file"):
@@ -341,7 +381,9 @@ async def security_headers_and_rate_limits(request: Request, call_next):
                 return apply_security_headers(request, JSONResponse({"error": "QR scan request is too large."}, status_code=413))
         client_identity = qr_request_client_identity(request)
         if client_identity:
-            scan_limit = enforce_rate_limit(request, "qr_upload_client", 90, 15 * 60, user_key=client_identity)
+            # This budget is already keyed by the ingress client identity.
+            # Passing it as a signed-in user would raise its IP cap to 900.
+            scan_limit = enforce_rate_limit(request, "qr_upload_client", 90, 15 * 60)
             if scan_limit:
                 return apply_security_headers(request, scan_limit)
             # One visitor may use two tabs, but cannot occupy every upload
@@ -402,8 +444,15 @@ async def metrics_middleware(request: Request, call_next):
     finally:
         duration = time.monotonic() - start
         status = getattr(locals().get("response", None), "status_code", 500)
-        REQUEST_COUNT.labels(method=request.method, path=request.url.path, status=str(status)).inc()
-        REQUEST_LATENCY.labels(path=request.url.path).observe(duration)
+        matched_route = request.scope.get("route")
+        route_path = getattr(matched_route, "path", None)
+        metric_path = route_path if isinstance(route_path, str) and route_path.startswith("/") else "unmatched"
+        method = request.method
+        metric_method = method.upper() if isinstance(method, str) and len(method) <= 16 else "OTHER"
+        if metric_method not in {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}:
+            metric_method = "OTHER"
+        REQUEST_COUNT.labels(method=metric_method, path=metric_path, status=str(status)).inc()
+        REQUEST_LATENCY.labels(path=metric_path).observe(duration)
         if request.url.path in ("/api/scan", "/api/scan/file", "/search_qr_api"):
             ACTIVE_SCANS.dec()
 

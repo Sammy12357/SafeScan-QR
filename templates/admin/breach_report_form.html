@@ -1,0 +1,9 @@
+<form class="legal-form" action="/admin/report-breach" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+  <label>Breach discovery date <input name="discovery_date" required placeholder="2026-05-05T14:32:00Z"></label>
+  <label>Data categories affected <textarea name="data_categories" required rows="3"></textarea></label>
+  <label>Estimated users affected <input name="users_affected" required></label>
+  <label>Likely consequences <textarea name="likely_consequences" required rows="4"></textarea></label>
+  <label>Measures taken <textarea name="measures_taken" required rows="4"></textarea></label>
+  <button class="primary-button" type="submit">Generate breach template</button>
+</form>

@@ -1,0 +1,40 @@
+<h2>Alpha Premium</h2>
+<p>Pay $1/mo for Alpha access to Go Ghost privacy cleanup, SafeScan QR premium API docs, risk scoring endpoints, and merchant QR safety workflows.</p>
+<div class="payment-panel">
+  <div class="payment-option">
+    <p class="eyebrow">Card</p>
+    <h3>Stripe checkout</h3>
+    <p>Use this for credit card and subscription billing.</p>
+    {% if stripe_url %}
+      <a class="primary-button payment-button stripe-payment-button" style="color:#000 !important;-webkit-text-fill-color:#000;text-shadow:none;" href="{{ stripe_url }}" target="_blank" rel="noopener noreferrer">Pay by card with Stripe</a>
+    {% elif not user %}
+      <a class="secondary-button payment-button" href="/login?next=%2Fpay%2Falpha">Sign in to pay by card</a>
+    {% else %}
+      <span class="secondary-button payment-button payment-disabled">Stripe checkout not configured</span>
+    {% endif %}
+  </div>
+  <div class="payment-option payment-option-wallet">
+    <h3>Wallet payment</h3>
+    <p>Use this for a Solana Pay transfer, then verify it on-chain to activate Alpha access.</p>
+    {% if solana_url and user %}
+      <a class="secondary-button payment-button" href="{{ solana_url }}">Pay with Solana</a>
+      <form action="/pay/alpha/solana/verify" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+        <button class="secondary-button payment-button" type="submit">Verify Solana payment</button>
+      </form>
+    {% elif not user %}
+      <a class="secondary-button payment-button" href="/login?next=%2Fpay%2Falpha">Sign in to pay with Solana</a>
+      <p class="payment-note">Sign in before paying with Solana so SafeScan can attach the payment to your account.</p>
+    {% else %}
+      <span class="secondary-button payment-button payment-disabled">Solana Pay not configured</span>
+    {% endif %}
+    {% if solana_quote %}
+      <p class="payment-note">Quote: ${{ solana_quote.amountUsd }} = {{ solana_quote.amountSol }} SOL{% if solana_quote.solUsdPrice %} at ${{ solana_quote.solUsdPrice }}/SOL{% else %} using fallback SOL pricing{% endif %}. Valid until {{ solana_quote.quoteExpiresAt }}.</p>
+      <p class="payment-note">Solana payment recipient: <code>{{ solana_recipient }}</code></p>
+    {% elif user and solana_recipient %}
+      <p class="payment-note">Solana payment recipient: <code>{{ solana_recipient }}</code></p>
+    {% elif user %}
+      <p class="payment-note">Add ALPHA_SOLANA_RECIPIENT in Render to enable wallet checkout.</p>
+    {% endif %}
+  </div>
+</div>

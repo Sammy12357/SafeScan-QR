@@ -49,6 +49,7 @@ from storage import upload_bytes as storage_upload_bytes
 
 from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party
 import safescan_model_calibration as sm_calibration
+from .limits import RateLimitStore
 
 # =============================================================================
 # OPTIONAL PROMETHEUS METRICS
@@ -136,7 +137,8 @@ MAX_QR_UPLOAD_BYTES = int(os.getenv("MAX_QR_UPLOAD_BYTES", str(8 * 1024 * 1024))
 MAX_QR_PDF_PAGES = int(os.getenv("MAX_QR_PDF_PAGES", "5"))
 VALID_ROLES = ("user", "admin", "owner")
 VALID_STATUSES = ("active", "suspended", "deleted")
-RATE_LIMITS = {}
+RATE_LIMITS = RateLimitStore(max_buckets=4096)
+CSP_REPORT_ONLY_ENABLED = os.getenv("CSP_REPORT_ONLY_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")
 AIRDROP_BASE_ALLOCATION = int(os.getenv("SQR_BASE_ALLOCATION", "100"))
 WHOISXML_API_KEY = os.getenv("WHOISXML_API_KEY")
 SECURITYTRAILS_API_KEY = os.getenv("SECURITYTRAILS_API_KEY")
@@ -217,6 +219,7 @@ QR_DECODE_SECONDS = build_metric(
 SCANNER_EVENTS = build_metric(Counter, "safescan_scanner_events_total", "Anonymous camera scanner outcomes", ["engine", "stage", "outcome"])
 SCANNER_CAPTURE_SECONDS = build_metric(Histogram, "safescan_scanner_capture_seconds", "Camera scan time reported by the browser", ["stage"], buckets=[0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30])
 SCANNER_GUIDANCE = build_metric(Counter, "safescan_scanner_guidance_total", "Anonymous camera guidance categories shown", ["category"])
+CSP_REPORTS = build_metric(Counter, "safescan_csp_reports_total", "Report-only CSP violations by bounded directive category", ["directive"])
 # Single-label TLDs that show up disproportionately in spam/phishing/scam
 # campaigns because they're cheap (often <$2/yr) and effectively unmoderated.
 HIGH_RISK_TLDS = {

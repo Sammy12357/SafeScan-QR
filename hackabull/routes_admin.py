@@ -21,7 +21,7 @@ from urllib.parse import quote, urlencode, urljoin, urlparse, parse_qsl
 from datetime import datetime, timedelta, timezone
 from xml.etree import ElementTree
 
-from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body, HTTPException
+from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body, HTTPException, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
@@ -64,6 +64,7 @@ from .audit import audit_log
 from .audit import now_iso
 from .auth import has_role
 from .auth import require_role_user
+from .csrf import require_csrf_form
 from .config import APP_URL
 from .csrf import require_same_origin_action
 from .config import VALID_ROLES
@@ -99,7 +100,7 @@ async def admin_user_drawer(request: Request, email: str):
         raise HTTPException(status_code=404, detail="Not found.")
     return templates.TemplateResponse("admin_shell.html", {"request": request, "page": "user_drawer", "title": "User Detail", "data": data, "admin_user": admin_user, "is_owner": has_role(admin_user, "owner"), "avatar": admin_avatar(admin_user.get("email"))})
 
-@qr_app.post("/admin/users/{email}/suspend")
+@qr_app.post("/admin/users/{email}/suspend", dependencies=[Depends(require_csrf_form)])
 async def admin_suspend_user(request: Request, email: str, action: str = Form("suspend")):
     admin_user = require_role_user(request, "admin")
     new_status = "active" if action == "unsuspend" else "suspended"
@@ -108,7 +109,7 @@ async def admin_suspend_user(request: Request, email: str, action: str = Form("s
     audit_log("admin.user_unsuspended" if new_status == "active" else "admin.user_suspended", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=email)
     return RedirectResponse("/admin/users", status_code=303)
 
-@qr_app.post("/admin/users/{email}/role")
+@qr_app.post("/admin/users/{email}/role", dependencies=[Depends(require_csrf_form)])
 async def admin_change_role(request: Request, email: str, role: str = Form(...)):
     admin_user = require_role_user(request, "owner")
     if role not in VALID_ROLES:
@@ -124,7 +125,7 @@ async def admin_change_role(request: Request, email: str, role: str = Form(...))
     audit_log("admin.role_changed", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=target_user_id, metadata={"role": role})
     return RedirectResponse("/admin/users", status_code=303)
 
-@qr_app.post("/admin/users/{email}/delete")
+@qr_app.post("/admin/users/{email}/delete", dependencies=[Depends(require_csrf_form)])
 async def admin_delete_user(request: Request, email: str, confirm: str = Form("")):
     admin_user = require_role_user(request, "owner")
     if confirm != "DELETE":
@@ -166,7 +167,7 @@ async def admin_export_waitlist(request: Request):
     audit_log("admin.export", request=request, actor_user_id=owner.get("google_id"), target_type="waitlist")
     return Response(out.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=safescan-waitlist.csv"})
 
-@qr_app.post("/admin/scans/{scan_id}/flag")
+@qr_app.post("/admin/scans/{scan_id}/flag", dependencies=[Depends(require_csrf_form)])
 async def admin_flag_scan(request: Request, scan_id: str):
     admin_user = require_role_user(request, "admin")
     with get_conn() as conn:
@@ -186,7 +187,7 @@ async def admin_flag_scan(request: Request, scan_id: str):
 async def admin_reports(request: Request, tab: str = Query("reports")):
     return admin_context(request, "Reported URLs", "reports", fetch_reports(tab=tab))
 
-@qr_app.post("/admin/reports/{report_id}/action")
+@qr_app.post("/admin/reports/{report_id}/action", dependencies=[Depends(require_csrf_form)])
 async def admin_report_action(request: Request, report_id: str, action: str = Form(...)):
     admin_user = require_role_user(request, "admin")
     with get_conn() as conn:
@@ -208,7 +209,7 @@ async def admin_report_action(request: Request, report_id: str, action: str = Fo
     audit_log("admin.report_reviewed", request=request, actor_user_id=admin_user.get("google_id"), target_type="url_report", target_id=report_id, metadata={"action": action})
     return RedirectResponse("/admin/reports", status_code=303)
 
-@qr_app.post("/admin/blocklist/{block_id}/remove")
+@qr_app.post("/admin/blocklist/{block_id}/remove", dependencies=[Depends(require_csrf_form)])
 async def admin_remove_block(request: Request, block_id: str):
     admin_user = require_role_user(request, "admin")
     with get_conn() as conn:
@@ -225,7 +226,7 @@ async def admin_risk_logs(request: Request):
 async def admin_airdrop(request: Request):
     return admin_context(request, "Tier Overview", "airdrop", fetch_airdrop_data())
 
-@qr_app.post("/admin/airdrop/distribute", response_class=HTMLResponse)
+@qr_app.post("/admin/airdrop/distribute", response_class=HTMLResponse, dependencies=[Depends(require_csrf_form)])
 async def admin_airdrop_distribute(request: Request):
     admin_user = require_role_user(request, "admin")
     require_same_origin_action(request)
@@ -261,7 +262,7 @@ async def admin_airdrop_fraud(request: Request):
 async def admin_airdrop_wallets(request: Request):
     return admin_context(request, "Wallet Registry", "airdrop", fetch_airdrop_data())
 
-@qr_app.post("/admin/airdrop/{email}/status")
+@qr_app.post("/admin/airdrop/{email}/status", dependencies=[Depends(require_csrf_form)])
 async def admin_airdrop_status(request: Request, email: str, status: str = Form(...), reason: str = Form("")):
     admin_user = require_role_user(request, "admin")
     if status not in ("eligible", "flagged", "disqualified", "cleared"):
@@ -271,7 +272,7 @@ async def admin_airdrop_status(request: Request, email: str, status: str = Form(
     audit_log("admin.airdrop_status_changed", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=email, metadata={"status": status, "reason": reason})
     return RedirectResponse("/admin/airdrop", status_code=303)
 
-@qr_app.post("/admin/fraud/{email}/review")
+@qr_app.post("/admin/fraud/{email}/review", dependencies=[Depends(require_csrf_form)])
 async def admin_fraud_review(request: Request, email: str, outcome: str = Form(...), reason: str = Form("")):
     admin_user = require_role_user(request, "admin")
     if outcome not in ("cleared", "disqualified", "escalated"):
@@ -305,7 +306,7 @@ async def admin_api_keys(request: Request):
         keys = [dict(row) for row in conn.execute("SELECT * FROM api_keys ORDER BY created_at DESC")]
     return admin_context(request, "API Keys", "api_keys", {"keys": keys}, owner_only=True)
 
-@qr_app.post("/admin/api-keys")
+@qr_app.post("/admin/api-keys", dependencies=[Depends(require_csrf_form)])
 async def admin_create_api_key(request: Request, name: str = Form(...), scopes: list[str] = Form([]), expires_at: str = Form("")):
     owner = require_role_user(request, "owner")
     raw_key = "sk_live_" + secrets.token_urlsafe(32)
@@ -315,7 +316,7 @@ async def admin_create_api_key(request: Request, name: str = Form(...), scopes: 
     audit_log("api_key.created", request=request, actor_user_id=owner.get("google_id"), target_type="api_key", metadata={"name": name, "scopes": scopes})
     return admin_context(request, "API Keys", "api_key_created", {"raw_key": raw_key}, owner_only=True)
 
-@qr_app.post("/admin/api-keys/{key_id}/revoke")
+@qr_app.post("/admin/api-keys/{key_id}/revoke", dependencies=[Depends(require_csrf_form)])
 async def admin_revoke_api_key(request: Request, key_id: str):
     owner = require_role_user(request, "owner")
     with get_conn() as conn:

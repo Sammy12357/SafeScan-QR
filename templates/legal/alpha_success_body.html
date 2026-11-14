@@ -1,0 +1,14 @@
+<h2>Alpha payment pending</h2>
+<p>SafeScan is waiting for payment confirmation from Stripe. Visiting this page does not activate access.</p>
+<div class="payment-panel">
+  <div>
+    <p class="eyebrow">Next step</p><h3>Activate access</h3>
+    <p>Email your Stripe receipt or Solana transaction signature to <a href="mailto:{{ admin_email }}">{{ admin_email }}</a>. Include the email you use to sign in to SafeScan.</p>
+  </div>
+  <div>
+    <p class="eyebrow">Alpha docs</p><h3>Continue to docs</h3>
+    <p>Review the current Alpha docs while access is activated.</p>
+    <a class="primary-button payment-button" href="/resources/docs">Open docs</a>
+  </div>
+</div>
+<p class="payment-note">A verified Stripe webhook updates subscription access after payment, renewal, cancellation, or period-end expiration.</p>

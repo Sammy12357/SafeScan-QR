@@ -3,6 +3,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <meta name="csrf-token" content="{{ csrf_token() if csrf_token is defined else '' }}">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
@@ -52,7 +53,7 @@
           <h2>Choose a username</h2>
           <p class="profile-muted">Set this once so the leaderboard can show a public name without exposing your email.</p>
           {% if error %}<p class="error-text">{{ error }}</p>{% endif %}
-          <form action="/profile/username" method="post" class="profile-form">
+          <form action="/profile/username" method="post" class="profile-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
             <label>
               Username
               <input name="username" autocomplete="username" minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" placeholder="safescanner" required>
@@ -78,7 +79,7 @@
               Account linked. <a href="{{ discord_invite }}" target="_blank" rel="noopener noreferrer">Join the SafeScan server</a> to claim your Verified role.
             {% endif %}
           </p>
-          <form action="/auth/discord/unlink" method="post">
+          <form action="/auth/discord/unlink" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
             <button class="sign-out-button" type="submit">Unlink Discord</button>
           </form>
         {% else %}
@@ -98,7 +99,7 @@
         <div class="profile-menu-actions" aria-label="Menu actions">
           <a href="/profile" class="profile-button" aria-current="page">Profile</a>
           {% if is_admin %}<a href="/admin" class="admin-dashboard-button">Admin dashboard</a>{% endif %}
-          <form class="sign-out-form" action="/auth/logout" method="post">
+          <form class="sign-out-form" action="/auth/logout" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
             <button class="sign-out-button" type="submit">Sign out</button>
           </form>
         </div>
@@ -107,7 +108,7 @@
   </div>
   {% include "footer.html" %}
   <script src="/static/app-core.js?v=native-scroll-v3"></script>
-  <script src="/static/app-widgets.js?v=native-scroll-v3"></script>
+  <script src="/static/app-widgets.js?v=security-consent-v1"></script>
   <script src="/static/app-go-ghost.js?v=native-scroll-v3"></script>
   <script src="/static/app-go-ghost-ui.js?v=native-scroll-v3"></script>
   <script src="/static/app-generate-qr.js?v=native-scroll-v3"></script>

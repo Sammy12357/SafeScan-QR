@@ -2,6 +2,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <meta name="csrf-token" content="{{ csrf_token() if csrf_token is defined else '' }}">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
@@ -85,7 +86,7 @@
     {% include "footer.html" %}
   </div>
   <script src="/static/app-core.js?v=native-scroll-v3"></script>
-  <script src="/static/app-widgets.js?v=native-scroll-v3"></script>
+  <script src="/static/app-widgets.js?v=security-consent-v1"></script>
   <script src="/static/app-go-ghost.js?v=native-scroll-v3"></script>
   <script src="/static/app-go-ghost-ui.js?v=native-scroll-v3"></script>
   <script src="/static/app-generate-qr.js?v=native-scroll-v3"></script>

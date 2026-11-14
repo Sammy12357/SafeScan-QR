@@ -65,6 +65,7 @@ jobs:
           npm ci --prefix scripts/qr_bench
           node scripts/qr_bench/test_worker.mjs 16
           node scripts/qr_bench/test_camera_controls.mjs
+          node scripts/test_consent_ui.mjs
 
   dependency-audit:
     runs-on: ubuntu-latest

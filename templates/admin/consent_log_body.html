@@ -1,0 +1,6 @@
+<table class="legal-table">
+  <thead><tr><th>Time</th><th>User</th><th>Type</th><th>IP Hash</th><th>Locale</th></tr></thead>
+  <tbody>
+    {% for row in rows %}<tr><td>{{ row.timestamp }}</td><td>{{ row.user_id or '' }}</td><td>{{ row.consent_type }}</td><td>{{ row.ip_hash[:16] }}...</td><td>{{ row.locale or '' }}</td></tr>{% endfor %}
+  </tbody>
+</table>

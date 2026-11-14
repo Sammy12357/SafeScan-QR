@@ -59,7 +59,7 @@
     try {
       const res = await fetch("/api/qr/generate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content || "" },
         body: JSON.stringify({ url: normalized })
       });
       if (!res.ok) {

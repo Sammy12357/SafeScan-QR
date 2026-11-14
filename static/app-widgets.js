@@ -127,7 +127,7 @@ blockReportButton?.addEventListener("click", async () => {
   try {
     const response = await fetch("/api/report", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content || "" },
       body: JSON.stringify({ url: payload, reason: "other" })
     });
     if (!response.ok) throw new Error(`Report request failed: ${response.status}`);
@@ -172,9 +172,11 @@ if (continueSafelyButton && cautionOpenConsent) {
 riskModalCloseButton?.addEventListener("click", closeRiskModal);
 
 function storedConsentIsFresh(record) {
-  if (!record?.timestamp) return false;
+  if (!["all", "essential_only"].includes(record?.consentType) ||
+      record.bannerVersion !== cookieConsentBanner?.dataset.version || !record.timestamp) return false;
   const acceptedAt = new Date(record.timestamp).getTime();
-  return Number.isFinite(acceptedAt) && Date.now() - acceptedAt < 365 * 24 * 60 * 60 * 1000;
+  const age = Date.now() - acceptedAt;
+  return Number.isFinite(age) && age >= 0 && age < 365 * 24 * 60 * 60 * 1000;
 }
 
 function showConsentBannerIfNeeded() {
@@ -190,26 +192,83 @@ function showConsentBannerIfNeeded() {
   }
 }
 
-cookieConsentBanner?.addEventListener("click", async (event) => {
-  const button = event.target.closest("[data-consent-choice]");
-  if (!button) return;
-  const consentType = button.dataset.consentChoice;
-  const bannerVersion = cookieConsentBanner.dataset.version || "consent-v1";
-  const record = { consentType, bannerVersion, timestamp: new Date().toISOString() };
-  window.localStorage.setItem("safeScanConsent", JSON.stringify(record));
-  cookieConsentBanner.classList.add("hidden");
+// A verified account revocation also updates the choice on this browser. The
+// anonymous scanner-count request intentionally has no account cookie, so
+// preferences on other devices remain independent.
+if (document.getElementById("consentRevocationApplied")) {
+  try {
+    const bannerVersion = cookieConsentBanner?.dataset.version || "consent-v1";
+    window.localStorage.removeItem("safeScanConsent");
+    window.localStorage.removeItem("safeScanConsentId");
+    window.localStorage.setItem("safeScanConsent", JSON.stringify({
+      consentType: "essential_only", bannerVersion, timestamp: new Date().toISOString()
+    }));
+  } catch (_err) {
+    // With no readable opt-in record, the scanner sends no optional counts.
+  }
+}
 
+const consentPreferences = document.getElementById("cookieConsentPreferences");
+const manageConsentPreferences = document.getElementById("manageConsentPreferences");
+const consentAnalytics = document.getElementById("consentAnalytics");
+const consentSaveStatus = document.getElementById("consentSaveStatus");
+
+manageConsentPreferences?.addEventListener("click", () => {
+  consentPreferences?.classList.remove("hidden");
+  manageConsentPreferences.setAttribute("aria-expanded", "true");
+  consentAnalytics?.focus();
+});
+
+document.getElementById("cancelConsentPreferences")?.addEventListener("click", () => {
+  consentPreferences?.classList.add("hidden");
+  manageConsentPreferences?.setAttribute("aria-expanded", "false");
+  manageConsentPreferences?.focus();
+});
+
+let consentSaving = false;
+async function saveConsentChoice(consentType) {
+  if (!cookieConsentBanner || consentSaving) return;
+  consentSaving = true;
+  const buttons = [...cookieConsentBanner.querySelectorAll("button")];
+  buttons.forEach((button) => { button.disabled = true; });
+  if (consentSaveStatus) consentSaveStatus.textContent = "Saving preferences...";
+  const bannerVersion = cookieConsentBanner.dataset.version || "consent-v1";
   try {
     const response = await fetch("/api/consent", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content || "" },
+      credentials: "same-origin",
       body: JSON.stringify({ consentType, bannerVersion })
     });
+    if (!response.ok) throw new Error(`Consent request failed: ${response.status}`);
     const body = await response.json();
-    if (body.id) window.localStorage.setItem("safeScanConsentId", body.id);
-  } catch {
-    cookieConsentBanner.classList.remove("hidden");
+    if (typeof body?.id !== "string" || !body.id) throw new Error("Consent was not confirmed");
+    const record = { consentType, bannerVersion, timestamp: new Date().toISOString() };
+    try {
+      window.localStorage.setItem("safeScanConsent", JSON.stringify(record));
+      window.localStorage.setItem("safeScanConsentId", body.id);
+    } catch (_err) {
+      // The server saved the choice; blocked local storage only means the banner
+      // may reappear next visit and optional scanner counts remain off.
+    }
+    cookieConsentBanner.classList.add("hidden");
+    if (consentSaveStatus) consentSaveStatus.textContent = "";
+  } catch (_err) {
+    if (consentSaveStatus) consentSaveStatus.textContent = "Could not save preferences. Please try again.";
+  } finally {
+    buttons.forEach((button) => { button.disabled = false; });
+    consentSaving = false;
   }
+}
+
+document.getElementById("saveConsentPreferences")?.addEventListener("click", () => {
+  void saveConsentChoice(consentAnalytics?.checked ? "all" : "essential_only");
+});
+
+cookieConsentBanner?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-consent-choice]");
+  if (!button) return;
+  void saveConsentChoice(button.dataset.consentChoice);
 });
 
 showConsentBannerIfNeeded();

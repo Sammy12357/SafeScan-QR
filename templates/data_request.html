@@ -3,6 +3,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <meta name="csrf-token" content="{{ csrf_token() if csrf_token is defined else '' }}">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
@@ -17,6 +18,7 @@
       <h1>Data Request</h1>
       <p class="legal-meta">Version {{ version }} - Last updated {{ last_updated }}</p>
       {% if message %}<div class="request-message">{{ message }}</div>{% endif %}
+      {% if consent_revoked %}<div id="consentRevocationApplied" hidden></div>{% endif %}
       <p>Use this portal to submit GDPR, CCPA/CPRA, LGPD, PIPEDA, or general privacy requests. SafeScan logs the request timestamp and targets completion within 30 days.</p>
 
       <div class="rights-grid">
@@ -34,7 +36,7 @@
         </article>
       </div>
 
-      <form class="legal-form" action="/legal/data-request" method="post">
+      <form class="legal-form" action="/legal/data-request" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
         <label>Email
           <input type="email" name="email" required placeholder="you@example.com" value="{{ email | default('') }}">
         </label>
@@ -68,7 +70,7 @@
     {% include "footer.html" %}
   </div>
   <script src="/static/app-core.js?v=native-scroll-v3"></script>
-  <script src="/static/app-widgets.js?v=native-scroll-v3"></script>
+  <script src="/static/app-widgets.js?v=security-consent-v1"></script>
   <script src="/static/app-go-ghost.js?v=native-scroll-v3"></script>
   <script src="/static/app-go-ghost-ui.js?v=native-scroll-v3"></script>
   <script src="/static/app-generate-qr.js?v=native-scroll-v3"></script>

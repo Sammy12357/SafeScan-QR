@@ -64,12 +64,22 @@ def session_count(db_path):
     return db_rows(db_path, "SELECT COUNT(*) AS total FROM sessions WHERE revoked_at IS NULL")[0]["total"]
 
 
+def browser_post(client, path, *, data=None, headers=None, **kwargs):
+    """Submit as a same-origin browser, including the page's CSRF field."""
+    page = client.get("/")
+    token = re.search(r'<meta name="csrf-token" content="([a-f0-9]{64})"', page.text)
+    assert token
+    form_data = dict(data or {})
+    form_data["csrf_token"] = token.group(1)
+    return client.post(path, data=form_data, headers={"Origin": "https://testserver", **(headers or {})}, **kwargs)
+
+
 def register(client, email="person@example.com", password="password123"):
-    return client.post("/auth/register", data={"email": email, "password": password})
+    return browser_post(client, "/auth/register", data={"email": email, "password": password})
 
 
 def login(client, email="person@example.com", password="password123"):
-    return client.post("/auth/login", data={"email": email, "password": password})
+    return browser_post(client, "/auth/login", data={"email": email, "password": password})
 
 
 def google_nonce_for_test(client):
@@ -224,12 +234,12 @@ def test_solana_payment_link_and_verification_store_subscription(auth_app):
     }]
 
     set_everywhere("verify_alpha_solana_payment", lambda ref: "")
-    pending = client.post("/pay/alpha/solana/verify")
+    pending = browser_post(client, "/pay/alpha/solana/verify")
     assert pending.status_code == 202
     assert not db_rows(db_path, "SELECT * FROM alpha_subscriptions WHERE email = ? AND provider = 'solana'", ("solana@example.com",))
 
     set_everywhere("verify_alpha_solana_payment", lambda ref: "solana_signature_123")
-    verified = client.post("/pay/alpha/solana/verify")
+    verified = browser_post(client, "/pay/alpha/solana/verify")
 
     assert verified.status_code == 200
     assert "Solana payment verified" in verified.text
@@ -348,6 +358,9 @@ def test_google_login_persists_provider_user_and_session(auth_app, monkeypatch):
 
     assert response.status_code == 200
     assert module.SESSION_COOKIE_NAME in client.cookies
+    response_token = re.search(r'<meta name="csrf-token" content="([a-f0-9]{64})"', response.text)
+    profile_token = re.search(r'<meta name="csrf-token" content="([a-f0-9]{64})"', client.get("/profile").text)
+    assert response_token and profile_token and response_token.group(1) == profile_token.group(1)
     users = db_rows(db_path, "SELECT google_id, email, google_sub FROM users WHERE lower(email) = ?", ("google@example.com",))
     sessions = db_rows(db_path, "SELECT google_id FROM sessions WHERE revoked_at IS NULL")
     assert len(users) == 1
@@ -505,7 +518,7 @@ def test_duplicate_qr_scans_do_not_increment_user_counter(auth_app):
 def test_login_redirects_missing_username_to_onboarding(auth_app):
     module, client, db_path = auth_app
 
-    response = client.post("/auth/register", data={"email": "name-me@example.com", "password": "password123"}, follow_redirects=False)
+    response = browser_post(client, "/auth/register", data={"email": "name-me@example.com", "password": "password123"}, follow_redirects=False)
 
     assert response.status_code == 303
     assert response.headers["location"] == "/onboarding/username"
@@ -515,9 +528,9 @@ def test_login_redirects_missing_username_to_onboarding(auth_app):
 
 def test_username_onboarding_saves_unique_username(auth_app):
     module, client, db_path = auth_app
-    client.post("/auth/register", data={"email": "named@example.com", "password": "password123"})
+    browser_post(client, "/auth/register", data={"email": "named@example.com", "password": "password123"})
 
-    response = client.post("/onboarding/username", data={"username": "SafeScanner_1"}, follow_redirects=False)
+    response = browser_post(client, "/onboarding/username", data={"username": "SafeScanner_1"}, follow_redirects=False)
 
     assert response.status_code == 303
     assert response.headers["location"] == "/"
@@ -714,7 +727,7 @@ def test_uploaded_qr_image_decodes_saves_history_and_increments_counter(auth_app
     qr_image.save(buffer, format="PNG")
     buffer.seek(0)
 
-    response = client.post(
+    response = browser_post(client,
         "/search_qr_api",
         data={"user_email": "upload@example.com", "wallet_address": "", "device_fingerprint": ""},
         files={"file": ("scan.png", buffer, "image/png")},
@@ -738,7 +751,7 @@ def test_uploaded_aztec_style_code_decodes_with_zxing_fallback(auth_app):
     module.set_user_username(user["google_id"], "AztecUser")
 
     with fixture.open("rb") as uploaded:
-        response = client.post(
+        response = browser_post(client,
             "/search_qr_api",
             data={"user_email": "aztec@example.com", "wallet_address": "", "device_fingerprint": ""},
             files={"file": ("aztec.png", uploaded, "image/png")},

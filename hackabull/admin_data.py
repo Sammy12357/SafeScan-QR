@@ -420,7 +420,7 @@ PRIVACY_POLICY_HTML = f"""
   <li>Security incidents are tracked for GDPR Article 33 72-hour supervisory authority review and Article 34 user notice if high risk.</li>
 </ul>
 <h2>10. Contact</h2>
-<p>Privacy requests: <a href="mailto:{ADMIN_EMAIL}">{ADMIN_EMAIL}</a>. A formal Data Protection Officer is not required at current scale but will be appointed upon reaching 5,000 EU users or when legally required.</p>
+<p>Privacy requests: <a href="mailto:{escape_html(ADMIN_EMAIL, quote=True)}">{escape_html(ADMIN_EMAIL, quote=True)}</a>. A formal Data Protection Officer is not required at current scale but will be appointed upon reaching 5,000 EU users or when legally required.</p>
 """
 
 TERMS_HTML = """

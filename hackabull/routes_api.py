@@ -21,7 +21,7 @@ from urllib.parse import quote, urlencode, urljoin, urlparse, parse_qsl
 from datetime import datetime, timedelta, timezone
 from xml.etree import ElementTree
 
-from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body, HTTPException
+from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body, HTTPException, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
@@ -60,6 +60,7 @@ from .audit import now_iso
 from .auth import get_session_user
 from .auth import require_role_user
 from .auth import require_user
+from .csrf import require_csrf_form
 from .config import APP_STARTED_AT
 from .config import APP_URL
 from .config import MAX_QR_UPLOAD_BYTES
@@ -107,7 +108,12 @@ from .wallet import wallet_verification_message
 @qr_app.post("/api/analyze")
 async def api_analyze(request: Request, payload: dict = Body(...)):
     user = get_session_user(request)
-    rate_limit = enforce_rate_limit(request, "analyze", 30, 60 * 60, user_key=user.get("google_id") if user else None)
+    # Share the anonymous budget with the HTML scanner, so switching entry
+    # points does not grant a second set of guest scans.
+    rate_limit = (
+        enforce_rate_limit(request, "scan", 30, 60 * 60, user_key=user.get("google_id"))
+        if user else enforce_rate_limit(request, "anonymous_scan", 10, 60 * 60)
+    )
     if rate_limit:
         return rate_limit
     validate_strict_payload(payload, {"url"})
@@ -132,10 +138,11 @@ async def api_scan(request: Request, response: Response, payload: dict = Body(..
     response.headers["Pragma"] = "no-cache"
     return await analyze_and_record_scan(request, user, raw_payload, request.headers.get("x-device-fingerprint", ""))
 
-@qr_app.post("/api/scan/file")
+@qr_app.post("/api/scan/file", dependencies=[Depends(require_csrf_form)])
 async def api_scan_file(request: Request, response: Response, file: UploadFile = File(...)):
     user = require_user(request)
-    rate_limit = enforce_rate_limit(request, "scan_file", 30, 60 * 60, user_key=user.get("google_id"))
+    # Text and file scans are one signed-in scan budget.
+    rate_limit = enforce_rate_limit(request, "scan", 30, 60 * 60, user_key=user.get("google_id"))
     if rate_limit:
         return rate_limit
     contents = await file.read(MAX_QR_UPLOAD_BYTES + 1)
@@ -388,7 +395,11 @@ async def api_app_runtime():
 @qr_app.post("/api/report")
 async def api_report_url(request: Request, payload: dict = Body(...)):
     user = get_session_user(request)
-    rate_limit = enforce_rate_limit(request, "report", 10, 60 * 60, user_key=user.get("google_id") if user else None)
+    rate_limit = enforce_rate_limit(
+        request, "report", 10, 60 * 60,
+        user_key=user.get("google_id") if user else None,
+        ip_limit=10,
+    )
     if rate_limit:
         return rate_limit
     validate_strict_payload(payload, {"url", "reason"})
