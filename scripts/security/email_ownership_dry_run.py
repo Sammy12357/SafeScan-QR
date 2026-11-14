@@ -27,9 +27,8 @@ FORBIDDEN_LIVE_ROOTS = (Path("/var/data"), Path("/app/data"))
 PRIVILEGED_ROLES = {"admin", "owner"}
 SCAN_TABLES = {"scan_history", "scans", "scan_events"}
 
-# These columns contain email strings, including legacy columns named user_id.
-# The second value distinguishes account-owned records from public submissions,
-# where an email without a registered user is expected.
+# These columns contain email strings. The second value distinguishes
+# account-owned records from public submissions without a registered user.
 EMAIL_FIELDS = {
     "scan_history": (("email",), True),
     "scans": (("email",), True),
@@ -39,28 +38,38 @@ EMAIL_FIELDS = {
     "alpha_subscriptions": (("email",), True),
     "alpha_solana_payment_references": (("email",), True),
     "go_ghost_removal_jobs": (("email",), True),
-    "wallets": (("user_id",), True),
-    "wallet_nonces": (("user_id",), True),
-    "scan_velocity": (("user_id",), True),
-    "fraud_flags": (("user_id", "reviewed_by"), True),
-    "device_fingerprints": (("user_id",), True),
-    "ip_registry": (("user_id",), True),
     "data_requests": (("email",), False),
     "age_confirmations": (("email",), False),
     "privacy_opt_outs": (("email",), False),
     "waitlist_signups": (("email",), False),
     "abuse_flags": (("email",), False),
     "referrals": (("referrer_email", "referred_email"), False),
-    "url_reports": (("reporter_email", "reviewed_by"), False),
-    "url_blocklist": (("added_by",), True),
-    "api_keys": (("created_by",), True),
-    "audit_logs": (("target_id",), False),
+    "url_reports": (("reporter_email",), False),
 }
 
 OWNED_EMAIL_FIELDS = {
     ("referrals", "referrer_email"),
+}
+
+# Newer rows use users.google_id. Older rows in these same columns can contain
+# email addresses. Resolve exact known IDs first, then inspect legacy email
+# values; never infer an account from a free-form identifier.
+MIXED_OWNER_FIELDS = {
+    "wallets": ("user_id",),
+    "wallet_nonces": ("user_id",),
+    "ip_registry": ("user_id",),
+    "fraud_flags": ("user_id", "reviewed_by"),
+    "scan_velocity": ("user_id",),
+    "device_fingerprints": ("user_id",),
+    "api_keys": ("created_by",),
+    "url_blocklist": ("added_by",),
+    "url_reports": ("reviewed_by",),
+    "audit_logs": ("target_id",),
+}
+OPTIONAL_MIXED_FIELDS = {
+    ("fraud_flags", "reviewed_by"),
     ("url_reports", "reviewed_by"),
-    ("audit_logs", "target_id"),
+    ("url_blocklist", "added_by"),
 }
 
 # These columns hold immutable users.google_id values, not email addresses.
@@ -107,6 +116,24 @@ def canonical_email(raw: object) -> str | None:
     if not ascii_domain or len(ascii_domain) > 253:
         return None
     return f"{local}@{ascii_domain}"
+
+
+def _mixed_owner(value: object, users: dict[str, dict],
+                 email_users: dict[str, set[str]]) -> tuple[str, set[str]]:
+    """Classify one mixed-format owner without turning email into an ID."""
+    if isinstance(value, str) and value in users:
+        return "stable_user_id", {value}
+    key = canonical_email(value)
+    if key is None:
+        if isinstance(value, str) and "@" not in value:
+            return "orphaned_user_id", set()
+        return "invalid_reference", set()
+    candidates = email_users.get(key, set())
+    if len(candidates) > 1:
+        return "ambiguous_legacy_email", candidates
+    if not candidates:
+        return "orphaned_legacy_email", set()
+    return "unique_legacy_email", candidates
 
 
 def _offline_path(path: Path) -> Path:
@@ -230,7 +257,8 @@ def analyze_database(database: str | Path) -> dict:
             if {"user_id", "address", "verified"} <= cols:
                 inactive = "AND disconnected_at IS NULL" if "disconnected_at" in cols else ""
                 for row in conn.execute(f"SELECT user_id, address FROM wallets WHERE verified=1 {inactive}"):
-                    for uid in email_users.get(canonical_email(row["user_id"]) or "", ()):
+                    _, possible_owners = _mixed_owner(row["user_id"], users, email_users)
+                    for uid in possible_owners:
                         wallet_users.add(uid)
                         wallet_addresses[uid].add(row["address"])
         if _table_exists(conn, "scans") and {"email", "wallet_address"} <= _columns(conn, "scans"):
@@ -260,7 +288,7 @@ def analyze_database(database: str | Path) -> dict:
                            "wallet_evidence": uid in wallet_users} for uid in sorted(ids)],
             })
 
-        all_tables = set(EMAIL_FIELDS) | set(USER_ID_FIELDS)
+        all_tables = set(EMAIL_FIELDS) | set(USER_ID_FIELDS) | set(MIXED_OWNER_FIELDS)
         for table in sorted(all_tables):
             if not _table_exists(conn, table):
                 missing_tables.append(table)
@@ -268,26 +296,28 @@ def analyze_database(database: str | Path) -> dict:
             available = _columns(conn, table)
             configured_emails, owned = EMAIL_FIELDS.get(table, ((), True))
             configured_ids = USER_ID_FIELDS.get(table, ())
+            configured_mixed = MIXED_OWNER_FIELDS.get(table, ())
             email_fields = tuple(field for field in configured_emails if field in available)
             id_fields = tuple(field for field in configured_ids if field in available)
-            for field in (*configured_emails, *configured_ids):
+            mixed_fields = tuple(field for field in configured_mixed if field in available)
+            for field in (*configured_emails, *configured_ids, *configured_mixed):
                 if field not in available:
                     missing_columns.append(f"{table}:{field}")
-            if not email_fields and not id_fields:
+            if not email_fields and not id_fields and not mixed_fields:
                 continue
             extras = {"target_type"} if table == "audit_logs" and "target_type" in available else set()
             if table == "audit_logs" and not extras:
                 missing_columns.append("audit_logs:target_type")
-                email_fields = ()  # No safe way to classify target_id without its type.
-            for row in _rows(conn, table, set(email_fields + id_fields) | extras):
+                mixed_fields = tuple(field for field in mixed_fields if field != "target_id")
+            if not email_fields and not id_fields and not mixed_fields:
+                continue
+            for row in _rows(conn, table, set(email_fields + id_fields + mixed_fields) | extras):
                 counts["association_rows_examined"] += 1
                 row_id = row["audit_rowid"]
                 row_issues: set[str] = set()
                 row_keys: set[str] = set()
                 flagged_emails: dict[str, str] = {}
                 for field in email_fields:
-                    if table == "audit_logs" and row["target_type"] != "user":
-                        continue
                     value = row[field]
                     if value is None or value == "":
                         continue
@@ -324,6 +354,34 @@ def analyze_database(database: str | Path) -> dict:
                     elif row_keys and canonical_email(users[value]["email"]) not in row_keys:
                         counts["email_user_id_mismatches"] += 1
                         row_issues.add("email_user_id_mismatch")
+                for field in mixed_fields:
+                    if table == "audit_logs" and row["target_type"] != "user":
+                        continue
+                    value = row[field]
+                    if value is None or value == "":
+                        if (table, field) not in OPTIONAL_MIXED_FIELDS:
+                            counts["unbound_user_id_references"] += 1
+                            row_issues.add("unbound_mixed_owner_reference")
+                        continue
+                    counts["mixed_owner_references_examined"] += 1
+                    kind, _ = _mixed_owner(value, users, email_users)
+                    if kind == "stable_user_id":
+                        counts["stable_user_id_references"] += 1
+                    elif kind == "unique_legacy_email":
+                        counts["unique_legacy_email_references"] += 1
+                        row_issues.add("legacy_email_owner_reference")
+                    elif kind == "ambiguous_legacy_email":
+                        counts["ambiguous_email_references"] += 1
+                        row_issues.add("ambiguous_legacy_email_reference")
+                    elif kind == "orphaned_legacy_email":
+                        counts["orphaned_email_references"] += 1
+                        row_issues.add("orphaned_legacy_email_reference")
+                    elif kind == "orphaned_user_id":
+                        counts["orphaned_user_id_references"] += 1
+                        row_issues.add("orphaned_user_id_reference")
+                    else:
+                        counts["invalid_mixed_owner_references"] += 1
+                        row_issues.add("invalid_mixed_owner_reference")
                 if row_issues:
                     if not flagged_emails:
                         flagged_emails = {field: row[field] for field in email_fields if row[field]}
@@ -333,7 +391,8 @@ def analyze_database(database: str | Path) -> dict:
                     details.append({"kind": "association", "table": table, "rowid": row_id,
                                     "issues": sorted(row_issues),
                                     "emails": flagged_emails,
-                                    "user_ids": {field: row[field] for field in id_fields if row[field]}})
+                                    "user_ids": {field: row[field] for field in id_fields if row[field]},
+                                    "mixed_references": {field: row[field] for field in mixed_fields if row[field]}})
 
     if _sha256(path) != source_hash:
         raise ValueError("The offline backup changed during the audit.")
@@ -345,7 +404,9 @@ def analyze_database(database: str | Path) -> dict:
         "canonical_collision_users", "privileged_collision_groups", "paid_collision_groups",
         "wallet_collision_groups", "multiple_wallet_collision_groups", "orphaned_identity_links",
         "stale_identity_email_links", "association_rows_examined", "email_references_examined",
-        "user_id_references_examined", "ambiguous_email_references", "ambiguous_scan_rows",
+        "user_id_references_examined", "mixed_owner_references_examined",
+        "stable_user_id_references", "unique_legacy_email_references",
+        "invalid_mixed_owner_references", "ambiguous_email_references", "ambiguous_scan_rows",
         "orphaned_email_references", "orphaned_user_id_references", "invalid_email_references",
         "email_user_id_mismatches", "unbound_user_id_references", "unbound_scan_rows",
         "association_rows_requiring_review",

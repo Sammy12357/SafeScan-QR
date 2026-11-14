@@ -34,16 +34,20 @@ subject remain the identity key; an Auth0 `google-oauth2|123` subject is not
 equivalent to Google subject `123`.
 
 The summary separates invalid or duplicate account IDs, collision groups,
-privileged/paid/wallet groups,
-ambiguous scan **rows**, ambiguous email **references**, orphaned email and
-user ID references, missing user IDs, and email/user ID mismatches. One row
-with two email columns can contribute two reference counts. Legacy columns
-named `user_id` in `wallets`, `wallet_nonces`, and fraud tables actually hold
-email values and are audited as such. Public submissions, such as waitlist
-signups, may have no SafeScan user; they count toward ambiguous references
-but not orphaned owned rows. `coverage` in the private report lists absent
-tables or columns, which may be expected for older backups and must be
-reviewed before interpreting zero counts.
+privileged/paid/wallet groups, ambiguous scan **rows**, ambiguous email
+**references**, orphaned email and user ID references, missing user IDs, and
+email/user ID mismatches. One row with two email columns can contribute two
+reference counts. Mixed-format owner fields in `wallets`, `wallet_nonces`,
+fraud, velocity, device, admin, and audit tables are resolved by exact
+`users.google_id` first. Only a value that is not a known account ID is
+examined as a possible legacy email; unknown IDs, ambiguous legacy emails,
+and malformed values are reported separately. A stable ID that happens to
+look like an email still remains an ID. Even a legacy email with just one
+current user is listed for review and is never linked automatically. Public
+submissions, such as waitlist signups, may have no SafeScan user; they count
+toward ambiguous references but not orphaned owned rows. `coverage` in the
+private report lists absent tables or columns, which may be expected for older
+backups. Review that coverage before interpreting zero counts.
 
 ### Phase 5 release gates
 
@@ -53,8 +57,8 @@ reviewed before interpreting zero counts.
 2. Manually resolve or quarantine every canonical collision, especially
    groups involving owner/admin roles, active subscriptions, or wallet
    evidence. Review every ambiguous `scan_history`, `scans`, and `scan_events`
-   row, orphan, missing owner ID, invalid/duplicate account ID, and email/user ID
-   mismatch. Zero counts are
+   row, legacy email owner reference, orphan, missing owner ID,
+   invalid/duplicate account ID, and email/user ID mismatch. Zero counts are
    required for unattended migration; an exception needs a documented owner
    disposition and fail-closed handling. Audit findings alone authorize no
    merge or transfer.

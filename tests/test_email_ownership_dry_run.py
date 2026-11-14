@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.security.email_ownership_dry_run import analyze_database, canonical_email
+from scripts.security.email_ownership_dry_run import _mixed_owner, analyze_database, canonical_email
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "security" / "email_ownership_dry_run.py"
@@ -98,6 +98,13 @@ def test_canonical_key_handles_nfkc_casefold_and_idna_without_alias_guessing():
     assert canonical_email("a.b+tag@example.com") != canonical_email("ab@example.com")
     assert canonical_email('"a@b"@example.com') is None
     assert canonical_email("bad domain@example .com") is None
+
+
+def test_mixed_owner_prefers_exact_account_id_even_when_it_looks_like_email():
+    users = {"local@example.com": {"email": "local@example.com"}, "other": {"email": "LOCAL@example.com"}}
+    email_users = {"local@example.com": {"local@example.com", "other"}}
+    assert _mixed_owner("local@example.com", users, email_users) == ("stable_user_id", {"local@example.com"})
+    assert _mixed_owner("LOCAL@example.com", users, email_users)[0] == "ambiguous_legacy_email"
 
 
 def test_collision_audit_preserves_identity_namespaces_and_finds_ownership_risks(collision_db):
@@ -190,3 +197,57 @@ def test_invalid_account_id_is_counted_without_losing_other_users(tmp_path):
     assert report["summary"]["invalid_user_ids"] == 1
     assert report["summary"]["canonical_collision_groups"] == 0
     assert {item["kind"] for item in report["review"]} == {"invalid_user_id"}
+
+
+def test_mixed_owner_columns_prefer_stable_ids_and_find_legacy_orphans(tmp_path):
+    path = tmp_path / "mixed.db"
+    with sqlite3.connect(path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE users (google_id TEXT PRIMARY KEY, email TEXT, role TEXT, status TEXT);
+            CREATE TABLE wallets (user_id TEXT, address TEXT, verified INTEGER, disconnected_at TEXT);
+            CREATE TABLE wallet_nonces (user_id TEXT);
+            CREATE TABLE ip_registry (user_id TEXT);
+            CREATE TABLE fraud_flags (user_id TEXT, reviewed_by TEXT);
+            CREATE TABLE scan_velocity (user_id TEXT);
+            CREATE TABLE device_fingerprints (user_id TEXT);
+            CREATE TABLE api_keys (created_by TEXT);
+            CREATE TABLE url_blocklist (added_by TEXT);
+            CREATE TABLE url_reports (reporter_email TEXT, reviewed_by TEXT);
+            CREATE TABLE audit_logs (actor_user_id TEXT, target_type TEXT, target_id TEXT);
+            """
+        )
+        conn.executemany("INSERT INTO users VALUES (?, ?, 'user', 'active')",
+                         [("stable-1", "Case@example.com"), ("stable-2", "CASE@EXAMPLE.COM"),
+                          ("unique", "unique@example.com")])
+        conn.execute("INSERT INTO wallets VALUES ('stable-1', 'wallet-secret', 1, NULL)")
+        conn.execute("INSERT INTO wallet_nonces VALUES ('stable-2')")
+        conn.executemany("INSERT INTO ip_registry VALUES (?)",
+                         [("stable-1",), ("case@example.com",), ("missing-id",), ("bad@",)])
+        conn.executemany("INSERT INTO fraud_flags VALUES (?, ?)",
+                         [("stable-1", "stable-2"), ("CASE@example.com", None)])
+        conn.execute("INSERT INTO scan_velocity VALUES ('stable-1')")
+        conn.executemany("INSERT INTO device_fingerprints VALUES (?)",
+                         [("stable-2",), ("unique@example.com",)])
+        conn.execute("INSERT INTO api_keys VALUES ('stable-1')")
+        conn.execute("INSERT INTO url_blocklist VALUES ('stable-2')")
+        conn.execute("INSERT INTO url_reports VALUES ('guest@example.com', 'stable-1')")
+        conn.execute("INSERT INTO audit_logs VALUES ('stable-1', 'user', 'stable-2')")
+        conn.execute("INSERT INTO audit_logs VALUES ('stable-1', 'wallet', 'wallet-secret')")
+
+    report = analyze_database(path)
+    summary = report["summary"]
+    assert summary["wallet_collision_groups"] == 1  # Stable-ID wallet is attached to a collision group.
+    assert summary["stable_user_id_references"] == 11
+    assert summary["unique_legacy_email_references"] == 1
+    assert summary["ambiguous_email_references"] == 2
+    assert summary["orphaned_user_id_references"] == 1
+    assert summary["invalid_mixed_owner_references"] == 1
+    assert summary["invalid_email_references"] == 0
+    assert summary["orphaned_email_references"] == 0
+    assert summary["association_rows_requiring_review"] == 5
+    assert any("legacy_email_owner_reference" in row["issues"] for row in report["review"])
+    assert "wallet-secret" not in json.dumps(report)
+    assert "guest@example.com" not in json.dumps(report)
+    assert not any("stable-1" == row.get("mixed_references", {}).get("user_id")
+                   for row in report["review"])
