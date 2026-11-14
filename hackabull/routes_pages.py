@@ -693,13 +693,15 @@ async def submit_data_request(
     verified_self_request = session_user and session_user.get("email") == email.strip().lower()
     if request_type in ("access", "portability"):
         if verified_self_request:
-            export_data = json.dumps(get_user_export(email), indent=2)
-            status = "completed"
+            export = get_user_export(session_user["email"], session_user.get("google_id"))
+            if export is not None:
+                export_data = json.dumps(export, indent=2)
+                status = "completed"
     elif request_type == "erasure":
         if verified_self_request:
-            delete_user_data(email)
-            status = "completed"
-            audit_log("account.deleted", request=request, actor_user_id=session_user.get("google_id"), target_type="user", target_id=email)
+            if delete_user_data(session_user["email"], session_user.get("google_id")):
+                status = "completed"
+                audit_log("account.deleted", request=request, actor_user_id=session_user.get("google_id"), target_type="user", target_id=email)
     elif request_type in ("do_not_sell", "limit_sensitive", "object", "revoke_consent"):
         with get_conn() as conn:
             conn.execute(
@@ -714,6 +716,8 @@ async def submit_data_request(
         )
 
     message = f"Request {request_id} recorded. Confirmation email hooks are documented; connect an email provider before production."
+    if verified_self_request and request_type in ("access", "portability", "erasure") and status == "submitted":
+        message = f"Request {request_id} recorded. Account ownership needs review before this request can be completed."
     return templates.TemplateResponse("data_request.html", {
         "request": request, "email": email, "message": message, "export_data": export_data,
         "version": LEGAL_VERSION, "last_updated": LEGAL_LAST_UPDATED

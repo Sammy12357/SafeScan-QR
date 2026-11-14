@@ -355,36 +355,8 @@ def init_db():
     scan_event_columns = {row[1] for row in cursor.fetchall()}
     if "user_id" not in scan_event_columns:
         cursor.execute("ALTER TABLE scan_events ADD COLUMN user_id TEXT")
-    cursor.execute("""
-        UPDATE scan_history
-        SET user_id = (
-            SELECT users.google_id
-            FROM users
-            WHERE lower(users.email) = lower(scan_history.email)
-            LIMIT 1
-        )
-        WHERE user_id IS NULL
-    """)
-    cursor.execute("""
-        UPDATE scans
-        SET user_id = (
-            SELECT users.google_id
-            FROM users
-            WHERE lower(users.email) = lower(scans.email)
-            LIMIT 1
-        )
-        WHERE user_id IS NULL
-    """)
-    cursor.execute("""
-        UPDATE scan_events
-        SET user_id = (
-            SELECT users.google_id
-            FROM users
-            WHERE lower(users.email) = lower(scan_events.email)
-            LIMIT 1
-        )
-        WHERE user_id IS NULL
-    """)
+    # Do not infer owner IDs from email during startup. The former LIMIT 1
+    # backfill could assign a colliding address to an arbitrary account.
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_scan_history_user_id ON scan_history(user_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_scans_user_id ON scans(user_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_scan_events_user_id ON scan_events(user_id)")
