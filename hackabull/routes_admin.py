@@ -70,12 +70,29 @@ from .config import OWNER_EMAILS
 from .config import VALID_ROLES
 from .config import templates
 from .history import admin_avatar
+from .ip_diagnostic import diagnostic_key
+from .ip_diagnostic import diagnostic_snapshot
 from .pipeline import analyze_full_pipeline
 from .request_helpers import make_id
+from .request_helpers import request_ip
 
 # =============================================================================
 # ROUTES — ADMIN CONSOLE (/admin/*)  [staff only]
 # =============================================================================
+@qr_app.get("/admin/debug/client-ip", include_in_schema=False)
+async def admin_client_ip_diagnostic(request: Request):
+    # TEMPORARY F3 check: remove after comparing two distinct client networks
+    # through sqafe.com and safescan-qr.onrender.com. Never echo raw headers.
+    key = diagnostic_key()
+    if key is None:
+        raise HTTPException(status_code=404)
+    require_role_user(request, "owner")
+    return JSONResponse(
+        diagnostic_snapshot(request, request_ip(request), key),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @qr_app.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(request: Request):
     return admin_context(request, "Dashboard", "dashboard", dashboard_data())
