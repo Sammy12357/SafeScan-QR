@@ -157,6 +157,24 @@ def test_rejects_configured_application_database_as_source(tmp_path, monkeypatch
     assert not output.exists()
 
 
+def test_rejects_configured_data_directory_as_offline_source(tmp_path, monkeypatch):
+    source = _source(tmp_path)
+    approved = _approved(tmp_path, source, [_google()])
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+
+    with pytest.raises(ValueError):
+        prepare_identity_copy(source, approved, tmp_path / "migrated.db")
+
+
+def test_rejects_render_runtime_even_with_other_database_path(tmp_path, monkeypatch):
+    source = _source(tmp_path)
+    approved = _approved(tmp_path, source, [_google()])
+    monkeypatch.setenv("RENDER", "true")
+
+    with pytest.raises(ValueError):
+        prepare_identity_copy(source, approved, tmp_path / "migrated.db")
+
+
 def test_cli_checks_plan_without_writing_until_apply(tmp_path, capsys):
     source = _source(tmp_path)
     approved = _approved(tmp_path, source, [_google()])

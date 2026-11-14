@@ -64,9 +64,10 @@ and [Auth0's post-login verification guidance](https://support.auth0.com/center/
 `identity_apply.py` is a rehearsal and preparation tool. It reads a standalone
 SQLite backup **without changing it**, checks an explicitly approved mapping
 file against that backup, and writes a **new** private database copy only when
-`--apply` is present. It refuses the configured application database, the
-Render production data directories, symlinked paths, and backups with WAL
-sidecars. The output must not exist. A failed migration removes the output.
+`--apply` is present. It refuses to run in the Render/production runtime or
+against the configured application database or data directory, symlinked
+paths, and backups with WAL sidecars. The output must not exist. A failed
+migration removes the output.
 
 First finish the dry run and obtain proof of the exact issuer and full subject
 for each account, especially owners and admins. Do not infer an Auth0 subject

@@ -56,11 +56,18 @@ def _auth0_issuer(raw: str | None) -> str | None:
 
 
 def _check_offline_path(path: Path, *, must_exist: bool) -> Path:
+    if os.getenv("RENDER") or os.getenv("ENVIRONMENT", "").strip().lower() in {"prod", "production"}:
+        raise ValueError("Identity preparation must run outside the production runtime.")
     if path.is_symlink():
         raise ValueError("Symlinked database paths are not allowed.")
     resolved = path.resolve()
     if any(resolved == root or root in resolved.parents for root in FORBIDDEN_LIVE_ROOTS):
         raise ValueError("The production data directory is not an offline backup location.")
+    data_dir = os.getenv("DATA_DIR", "").strip()
+    if data_dir:
+        configured_dir = Path(data_dir).resolve()
+        if resolved == configured_dir or configured_dir in resolved.parents:
+            raise ValueError("The configured data directory is not an offline backup location.")
     for variable in ("SQLITE_DB_PATH", "DATABASE_URL"):
         configured = os.getenv(variable, "")
         if variable == "DATABASE_URL" and configured.startswith("sqlite:///"):
