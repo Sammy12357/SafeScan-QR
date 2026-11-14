@@ -53,6 +53,7 @@ from .audit import SafeScanError
 from .audit import audit_log
 from .audit import now_iso
 from .config import RATE_LIMITS
+from .config import templates
 from .lowlevel import normalize_url
 from .request_helpers import make_id
 from .client_ip import rate_limit_identity
@@ -90,6 +91,16 @@ def enforce_rate_limit(request, bucket, limit, window_seconds, user_key=None, ip
             headers={"Retry-After": str(retry_after)}
         )
     return None
+
+
+def html_rate_limit_response(request, limited_response):
+    """Keep browser form endpoints HTML while preserving 429 and Retry-After."""
+    return templates.TemplateResponse(
+        "rate_limited.html",
+        {"request": request, "retry_after": limited_response.headers.get("Retry-After", "60")},
+        status_code=429,
+        headers={"Retry-After": limited_response.headers.get("Retry-After", "60")},
+    )
 
 def validate_strict_payload(payload, allowed_fields):
     if not isinstance(payload, dict):
