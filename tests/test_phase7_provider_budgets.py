@@ -102,6 +102,27 @@ def test_missing_web_risk_cap_is_unverified_without_outbound_call(providers, mon
     assert budget.usage_snapshot()["providers"]["web_risk"]["attempts"] == 0
 
 
+def test_malformed_web_risk_response_is_unverified_and_counts_as_failure(providers, monkeypatch):
+    budget, reputation, _, pipeline = providers
+    monkeypatch.setenv("GOOGLE_WEB_RISK_API_KEY", "test-key")
+    monkeypatch.setenv("WEB_RISK_MONTHLY_BUDGET", "2")
+
+    class Response:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"threat": "not-an-object"}
+
+    monkeypatch.setattr(reputation.requests, "get", lambda *_a, **_kw: Response())
+    finding = reputation.google_reputation_signal("https://example.org/")
+    assert finding["verified"] is False
+    assert finding["passed"] is False
+    assert pipeline.verification_coverage([finding])[0] == "incomplete"
+    usage = budget.usage_snapshot()["providers"]["web_risk"]
+    assert usage["attempts"] == usage["failures"] == 1
+
+
 def test_denied_feed_refresh_keeps_existing_freshness_semantics(providers, monkeypatch):
     _, _, feed, _ = providers
     monkeypatch.setenv("PHISHTANK_APP_KEY", "test-app-key")

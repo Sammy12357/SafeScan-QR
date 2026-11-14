@@ -138,6 +138,12 @@ def check_url_reputation(target_url):
                 result = response.json()
                 if not isinstance(result, dict):
                     raise ValueError("Invalid provider response")
+                threat = result.get("threat") or {}
+                if not isinstance(threat, dict):
+                    raise ValueError("Invalid provider threat data")
+                matches = threat.get("threatTypes") or []
+                if not isinstance(matches, list) or not all(isinstance(item, str) for item in matches):
+                    raise ValueError("Invalid provider threat types")
         except ProviderUnavailable:
             return {
                 "provider": "Google Web Risk", "status": "ERROR", "matches": [],
@@ -150,7 +156,6 @@ def check_url_reputation(target_url):
                 "matches": [],
                 "detail": f"Reputation lookup failed: {type(exc).__name__}",
             }
-        matches = (result.get("threat") or {}).get("threatTypes") or []
         return {
             "provider": "Google Web Risk",
             "status": "MALICIOUS" if matches else "CLEAR",
