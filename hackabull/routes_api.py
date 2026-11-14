@@ -394,7 +394,11 @@ async def api_app_runtime():
 @qr_app.post("/api/report")
 async def api_report_url(request: Request, payload: dict = Body(...)):
     user = get_session_user(request)
-    rate_limit = enforce_rate_limit(request, "report", 10, 60 * 60, user_key=user.get("google_id") if user else None)
+    rate_limit = enforce_rate_limit(
+        request, "report", 10, 60 * 60,
+        user_key=user.get("google_id") if user else None,
+        ip_limit=10,
+    )
     if rate_limit:
         return rate_limit
     validate_strict_payload(payload, {"url", "reason"})

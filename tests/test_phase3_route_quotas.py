@@ -82,6 +82,21 @@ def test_consent_budget_limits_database_writes(quota_app):
         assert conn.execute("SELECT count(*) FROM consent_logs").fetchone()[0] == 10
 
 
+def test_reports_share_ten_per_hour_ip_budget_across_accounts(quota_app):
+    _, client, _, monkeypatch = quota_app
+    routes_api = importlib.import_module("hackabull.routes_api")
+    account = [0]
+    monkeypatch.setattr(
+        routes_api, "get_session_user",
+        lambda request: {"google_id": f"reporter-{account[0]}", "email": "reporter@example.com"},
+    )
+    for index in range(10):
+        account[0] = index
+        assert client.post("/api/report", json={"url": "https://example.com", "reason": "invalid"}).status_code == 400
+    account[0] = 10
+    assert_limited(client.post("/api/report", json={"url": "https://example.com", "reason": "invalid"}))
+
+
 def test_waitlist_has_address_and_ip_budgets(quota_app):
     app, client, db_path, _ = quota_app
     assert client.post("/waitlist", data={"email": "Person@Example.com"}).status_code == 200
