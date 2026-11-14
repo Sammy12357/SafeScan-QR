@@ -178,7 +178,8 @@ def _load_url_classifier():
             import joblib
             _url_classifier = joblib.load(URL_CLASSIFIER_PATH)
         except Exception as exc:
-            print({"warning": "url_classifier load failed", "error": f"{type(exc).__name__}: {exc}"})
+            from hackabull.observability import log_event
+            log_event("ml.classifier_load_failed", level="warning", error_type=type(exc).__name__)
             _url_classifier_missing = True
             return None
     return _url_classifier
@@ -198,7 +199,8 @@ def predict_url(url: str):
     try:
         prob = float(clf.predict_proba(vec.transform([normalized]))[0, 1])
     except Exception as exc:
-        print({"warning": "url_classifier predict failed", "error": f"{type(exc).__name__}: {exc}"})
+        from hackabull.observability import log_event
+        log_event("ml.classifier_predict_failed", level="warning", error_type=type(exc).__name__)
         return None
     return _result_from_probs(prob, "url_classifier")
 

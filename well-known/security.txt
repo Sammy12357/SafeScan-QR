@@ -1,0 +1,3 @@
+Contact: mailto:safescanqr@gmail.com
+Expires: 2027-05-01T00:00:00Z
+Preferred-Languages: en

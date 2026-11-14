@@ -49,6 +49,7 @@ from storage import upload_bytes as storage_upload_bytes
 
 from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party
 import safescan_model_calibration as sm_calibration
+from .observability import log_event
 
 # =============================================================================
 # OUTBOUND EMAIL (SMTP)
@@ -97,7 +98,7 @@ def send_email(to_address, subject, html_body, text_body=None):
         return True
     except Exception as exc:
         # SMTP error strings can echo recipient addresses or provider details.
-        print({"warning": "email send failed", "error_type": type(exc).__name__})
+        log_event("email.send_failed", level="warning", error_type=type(exc).__name__)
         return False
 
 

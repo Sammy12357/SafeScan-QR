@@ -55,6 +55,7 @@ import safescan_model_calibration as sm_calibration
 from .audit import SafeScanError
 from .audit import audit_log
 from .audit import now_iso
+from .observability import log_event
 from .config import BASE58_ALPHABET
 from .config import SOLANA_RPC_URL
 from .fraud import run_fraud_checks
@@ -231,5 +232,5 @@ async def verify_wallet_on_chain(wallet_address, user_id):
                 }
             )
     except Exception as exc:
-        print({"warning": "wallet_onchain_verification_failed", "error": str(exc)})
+        log_event("wallet.onchain_verification_failed", level="warning", error_type=type(exc).__name__)
 
