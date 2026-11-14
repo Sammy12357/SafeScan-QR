@@ -80,7 +80,7 @@ decoding in a thread pool behind `QR_DECODE_CONCURRENCY` (default 2). Each
 production upload runs in a killable child process, so a native C++ stall cannot
 hold an upload worker indefinitely. The internal tier deadline is
 `QR_DECODE_BUDGET_S` (default 1.5 seconds); the parent enforces a wall limit of
-that budget plus one second for an image or 3.5 seconds for a PDF. Direct
+that budget plus two seconds for an image or 3.5 seconds for a PDF. Direct
 internal calls to `decode_qr_image()` still use the soft tier deadline. The
 decoder reads EXIF orientation and rejects images over 40 megapixels. Monitor
 latency and memory on Render, particularly for pathological images.

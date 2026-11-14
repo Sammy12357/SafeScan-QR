@@ -626,7 +626,10 @@ def decode_qr_upload(contents, filename="", content_type=""):
     from pathlib import Path
 
     started = time.monotonic()
-    timeout = _decode_budget_seconds() + (3.5 if _looks_like_pdf(contents, filename, content_type) else 1.0)
+    # Render's small CPU instance can spend more than a second starting a
+    # fresh Python child under load. Keep the decode tier at 1.5 seconds, but
+    # allow bounded startup/IPC time before killing the process.
+    timeout = _decode_budget_seconds() + (3.5 if _looks_like_pdf(contents, filename, content_type) else 2.0)
     worker = Path(__file__).with_name("qr_decode_worker.py")
     worker_filename = str(filename or "")[:255].replace("\x00", "")
     worker_content_type = str(content_type or "")[:255].replace("\x00", "")
