@@ -10,8 +10,11 @@ from __future__ import annotations
 import hashlib
 import os
 import posixpath
+import tempfile
 from datetime import datetime
 from pathlib import Path
+
+from private_files import assert_outside_static
 
 
 # --- Configuration (all from environment variables) ------------------------
@@ -32,6 +35,7 @@ def data_dir() -> Path:
     """
     configured = os.getenv("DATA_DIR")
     if configured:
+        assert_outside_static(configured)
         return Path(configured)
     default_render_disk = Path("/var/data")
     if default_render_disk.is_dir() and os.access(default_render_disk, os.W_OK):
@@ -78,12 +82,13 @@ def _local_path(key: str) -> Path:
 
 
 def _s3_client():
-    """Return a configured boto3 S3 client, or None when S3/R2 is not in use or
-    its credentials are incomplete (in which case callers use local storage)."""
+    """Return a configured boto3 client, or None for the local backend only."""
+    if STORAGE_BACKEND == "local":
+        return None
     if STORAGE_BACKEND not in ("s3", "r2"):
-        return None
+        raise RuntimeError("Unknown object storage backend.")
     if not (S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY and S3_BUCKET_NAME):
-        return None
+        raise RuntimeError("Object storage credentials or bucket are incomplete.")
     import boto3
 
     kwargs = {
@@ -104,18 +109,38 @@ def upload_bytes(content: bytes, key: str, content_type: str = "application/octe
     """
     client = _s3_client()
     if client:
-        client.put_object(
+        put_args = dict(
             Bucket=S3_BUCKET_NAME,
             Key=key,
             Body=content,
             ContentType=content_type or "application/octet-stream",
-            ServerSideEncryption="AES256",
         )
+        if STORAGE_BACKEND == "s3":
+            # AWS S3 accepts SSE-S3's explicit AES256 header. R2 encrypts all
+            # objects at rest but does not support this S3 request header.
+            put_args["ServerSideEncryption"] = "AES256"
+        client.put_object(**put_args)
         return {"backend": STORAGE_BACKEND, "bucket": S3_BUCKET_NAME, "key": key}
 
     path = _local_path(key)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(content)
+    root = (data_dir() / "uploads").resolve()
+    current = root
+    for part in (".", *path.parent.relative_to(root).parts):
+        if part != ".":
+            current = current / part
+        current.mkdir(mode=0o700, parents=True, exist_ok=True)
+        current.chmod(0o700)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".upload-", delete=False) as staged:
+            temporary = Path(staged.name)
+            staged.write(content)
+            staged.flush()
+            os.fsync(staged.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
     return {"backend": "local", "bucket": None, "key": key, "path": str(path)}
 
 

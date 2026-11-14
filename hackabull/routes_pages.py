@@ -72,8 +72,6 @@ from .email_util import email_sending_configured
 from .email_util import send_email
 from .history import index_user_context
 from .input_validation import bounded_text
-from .legal import delete_user_data
-from .legal import get_user_export
 from .legal import legal_context
 from .payments_solana import alpha_solana_pay_url
 from .payments_solana import alpha_solana_quote_for_user
@@ -757,22 +755,16 @@ async def submit_data_request(
             }, status_code=exc.status_code)
     request_id = make_id("dsr")
     now = datetime.utcnow().isoformat() + "Z"
-    export_data = ""
-    status = "submitted"
     session_email = (session_user or {}).get("email") or ""
     verified_self_request = bool(session_email and session_email.casefold() == email.strip().casefold())
     if request_type == "revoke_consent" and verified_self_request:
         email = session_email
-    if request_type in ("access", "portability"):
-        if verified_self_request:
-            export_data = json.dumps(get_user_export(email), indent=2)
-            status = "completed"
-    elif request_type == "erasure":
-        if verified_self_request:
-            email = session_email
-            if delete_user_data(email, session_user["google_id"]):
-                status = "completed"
-                audit_log("account.deleted", request=request, actor_user_id=session_user.get("google_id"), target_type="user", target_id=session_user["google_id"])
+    if request_type in ("access", "portability", "erasure") and verified_self_request:
+        # The automated export/erasure inventory does not yet cover retained
+        # uploads, billing, audit, and external processors. Keep requests
+        # pending for ownership and completeness review; never report a
+        # partial response as a completed privacy request.
+        email = session_email
     elif request_type in ("do_not_sell", "limit_sensitive", "object", "revoke_consent"):
         # A submitted address is not proof that the requester owns it. Leave
         # anonymous or mismatched revocations pending for manual verification.
@@ -786,12 +778,12 @@ async def submit_data_request(
     with get_conn() as conn:
         conn.execute(
             "INSERT INTO data_requests VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (request_id, email, region, request_type, details, status, now, now if status == "completed" else None)
+            (request_id, email, region, request_type, details, "submitted", now, None)
         )
 
-    message = f"Request {request_id} recorded. Confirmation email hooks are documented; connect an email provider before production."
+    message = f"Request {request_id} recorded for review. SafeScan will verify ownership before sharing or deleting account data."
     return templates.TemplateResponse("data_request.html", {
-        "request": request, "email": email, "message": message, "export_data": export_data,
+        "request": request, "email": email, "message": message, "export_data": "",
         "version": LEGAL_VERSION, "last_updated": LEGAL_LAST_UPDATED,
         "turnstile_required": not bool(session_user),
         "consent_revoked": request_type == "revoke_consent" and bool(verified_self_request),

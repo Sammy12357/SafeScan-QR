@@ -165,6 +165,7 @@ SOLANA_RPC_URL = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.co
 ALPHA_STRIPE_PAYMENT_LINK = os.getenv("ALPHA_STRIPE_PAYMENT_LINK", "https://buy.stripe.com/00w3cxfdAb7OcKB4sC87K01").strip()
 ALPHA_STRIPE_PAYMENT_LINK_ID = os.getenv("ALPHA_STRIPE_PAYMENT_LINK_ID", "").strip()
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()
+CSRF_SECRET = os.getenv("CSRF_SECRET", "").strip() or secrets.token_urlsafe(32)
 ALPHA_SOLANA_RECIPIENT = os.getenv("ALPHA_SOLANA_RECIPIENT", "").strip()
 ALPHA_SOLANA_AMOUNT_SOL = os.getenv("ALPHA_SOLANA_AMOUNT_SOL", "").strip()
 ALPHA_SOLANA_PRICE_USD = Decimal(os.getenv("ALPHA_SOLANA_PRICE_USD", "1.00"))
@@ -198,6 +199,29 @@ ML_AGGREGATE_WEIGHT = max(0.0, min(0.85, float(os.getenv("SAFESCAN_ML_WEIGHT", "
 # user-facing UI. Flip to "true" if you need ML row visible for debugging.
 ML_SIGNAL_VISIBLE = os.getenv("SAFESCAN_ML_SIGNAL_VISIBLE", "false").lower() in ("1", "true", "yes", "on")
 _PRODUCTION_RUNTIME = bool(os.getenv("RENDER")) or os.getenv("ENVIRONMENT", "").strip().lower() in ("prod", "production")
+
+
+def validate_production_secrets(environ=None):
+    """Reject missing or clearly weak deployment secrets without logging values."""
+    source = os.environ if environ is None else environ
+    production = bool(source.get("RENDER")) or str(source.get("ENVIRONMENT", "")).strip().lower() in ("prod", "production")
+    if not production:
+        return
+    names = ("PRIVACY_HASH_SALT", "STRIPE_WEBHOOK_SECRET", "METRICS_TOKEN", "CSRF_SECRET")
+    weak = []
+    for name in names:
+        value = str(source.get(name, "")).strip()
+        normalized = value.casefold()
+        if (
+            len(value) < 32
+            or len(set(value)) < 12
+            or any(marker in normalized for marker in ("replace", "changeme", "example", "dummy", "your-"))
+            or (name == "STRIPE_WEBHOOK_SECRET" and not value.startswith("whsec_"))
+        ):
+            weak.append(name)
+    if weak:
+        raise RuntimeError("Production secrets missing or weak: " + ", ".join(weak))
+
 LOCAL_AUTH_ENABLED = not _PRODUCTION_RUNTIME and (
     MOCK_MODE or APP_URL.startswith("http://127.0.0.1") or APP_URL.startswith("http://localhost")
 )

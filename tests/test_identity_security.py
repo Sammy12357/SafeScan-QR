@@ -1,6 +1,7 @@
 """Federated identities must never inherit another account's privileges by email."""
 
 import importlib
+from concurrent.futures import ThreadPoolExecutor
 import csv
 import io
 import re
@@ -74,6 +75,195 @@ def _staff_client(app, database, email, role):
         user_id = conn.execute("SELECT google_id FROM users WHERE email = ?", (email,)).fetchone()[0]
         conn.execute("UPDATE users SET role = ? WHERE google_id = ?", (role, user_id))
     return client, user_id
+
+
+def _insert_scan_ownership_rows(database, first_id, second_id, email):
+    with sqlite3.connect(database) as conn:
+        for label, owner in (("first", first_id), ("second", second_id), ("legacy", None)):
+            conn.execute(
+                "INSERT INTO scan_history (id, email, url, created_at, user_id) VALUES (?, ?, ?, ?, ?)",
+                (label, email, f"https://{label}.example", "2026-11-14T00:00:00Z", owner),
+            )
+            conn.execute(
+                "INSERT INTO scan_events (email, payload_hash, url_found, first_scanned_at, user_id) VALUES (?, ?, ?, ?, ?)",
+                (email, label, f"https://{label}.example", "2026-11-14T00:00:00Z", owner),
+            )
+        conn.execute(
+            "INSERT INTO scans (email, url_found, scan_count, user_id) VALUES (?, ?, ?, ?)",
+            (email, "[Scan payload list hidden]", 5, second_id),
+        )
+
+
+def test_scan_endpoints_never_cross_stable_ids_or_claim_ambiguous_legacy_rows(identity_app, caplog):
+    app, _, database = identity_app
+    first, first_id = _staff_client(app, database, "shared@example.com", "user")
+    second, second_id = _staff_client(app, database, "other@example.com", "user")
+    with sqlite3.connect(database) as conn:
+        conn.execute("UPDATE users SET email = ? WHERE google_id = ?", ("shared@example.com", second_id))
+    _insert_scan_ownership_rows(database, first_id, second_id, "shared@example.com")
+    assert app.record_unique_scan("shared@example.com", "https://new.example", "", user_id=first_id) is False
+    assert _rows(database, "SELECT user_id, scan_count FROM scans") == [{"user_id": second_id, "scan_count": 5}]
+
+    for client, expected in ((first, "first"), (second, "second")):
+        assert [row["url"] for row in client.get("/api/history").json()] == [f"https://{expected}.example"]
+        assert [row["url"] for row in client.get("/api/scan-history").json()] == [f"https://{expected}.example"]
+        scans = client.get("/api/scans").json()
+        assert len(scans["events"]) == 1
+        assert scans["events"][0]["user_id"] == (first_id if client is first else second_id)
+        assert len(scans["scans"]) == (1 if client is second else 0)
+
+    assert any("Withheld 1 legacy scan_history rows" in record.message for record in caplog.records)
+    assert all("shared@example.com" not in record.message for record in caplog.records)
+
+    db = importlib.import_module("db")
+    with db.get_conn() as conn:
+        token = db.set_rls_context(first_id, "user", "shared@example.com")
+        try:
+            with pytest.raises(PermissionError):
+                db.assert_owns_row(conn, "scan_history", "second")
+            with pytest.raises(PermissionError):
+                db.assert_owns_row(conn, "scan_history", "legacy")
+        finally:
+            db.reset_rls_context(token)
+        token = db.set_rls_context(first_id, "admin", "shared@example.com")
+        try:
+            assert len(db.user_scoped_select(conn, "scan_history")) == 3
+        finally:
+            db.reset_rls_context(token)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first_future = pool.submit(lambda: first.get("/api/history").json())
+        second_future = pool.submit(lambda: second.get("/api/history").json())
+        assert [row["url"] for row in first_future.result()] == ["https://first.example"]
+        assert [row["url"] for row in second_future.result()] == ["https://second.example"]
+
+
+@pytest.mark.parametrize("request_type", ["access", "portability"])
+def test_privacy_export_withholds_ambiguous_email_and_stays_pending(identity_app, request_type):
+    app, _, database = identity_app
+    first, first_id = _staff_client(app, database, "shared@example.com", "user")
+    with sqlite3.connect(database) as conn:
+        conn.execute("INSERT INTO users (google_id, email) VALUES (?, ?)", ("second-id", "SHARED@example.com"))
+        conn.execute(
+            "INSERT INTO scan_history (id, email, url, created_at, user_id) VALUES (?, ?, ?, ?, ?)",
+            ("private", "shared@example.com", "https://private.example", "2026-11-14T00:00:00Z", "second-id"),
+        )
+
+    response = _browser_form_post(first, "/legal/data-request", {
+        "email": "shared@example.com", "request_type": request_type,
+    })
+
+    assert response.status_code == 200
+    assert "https://private.example" not in response.text
+    assert _rows(database, "SELECT status FROM data_requests WHERE request_type = ?", (request_type,)) == [{"status": "submitted"}]
+
+
+def test_unique_owner_can_export_only_own_bound_and_legacy_data(identity_app):
+    app, _, database = identity_app
+    first, first_id = _staff_client(app, database, "unique@example.com", "user")
+    _insert_scan_ownership_rows(database, first_id, "unrelated-id", "unique@example.com")
+    with sqlite3.connect(database) as conn:
+        conn.execute(
+            "INSERT INTO go_ghost_removal_jobs (id, user_id, email, broker, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("own-job", first_id, "unique@example.com", "broker", "pending", "now", "now"),
+        )
+        conn.execute(
+            "INSERT INTO go_ghost_removal_jobs (id, user_id, email, broker, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("foreign-job", "unrelated-id", "unique@example.com", "broker", "pending", "now", "now"),
+        )
+        conn.execute(
+            "INSERT INTO discord_links (id, user_id, discord_id, linked_at) VALUES (?, ?, ?, ?)",
+            ("own-link", first_id, "discord-own", "now"),
+        )
+        conn.execute(
+            "INSERT INTO discord_links (id, user_id, discord_id, linked_at) VALUES (?, ?, ?, ?)",
+            ("foreign-link", "unrelated-id", "discord-foreign", "now"),
+        )
+    export = importlib.import_module("hackabull.legal").get_user_export("unique@example.com", first_id)
+    app.init_db()
+    assert _rows(database, "SELECT user_id FROM scan_history WHERE id = 'legacy'") == [{"user_id": None}]
+    assert {row["id"] for row in export["scanHistory"]} == {"first", "legacy"}
+    assert {row["payload_hash"] for row in export["scanEvents"]} == {"first", "legacy"}
+    assert export["scans"] == []
+    assert [row["id"] for row in export["goGhostRemovalJobs"]] == ["own-job"]
+    assert [row["id"] for row in export["discordLinks"]] == ["own-link"]
+    assert [row["url"] for row in first.get("/api/history").json()] == ["https://first.example", "https://legacy.example"]
+
+
+def test_erasure_request_stays_pending_and_preserves_all_rows(identity_app):
+    app, _, database = identity_app
+    first, first_id = _staff_client(app, database, "unique@example.com", "user")
+    _insert_scan_ownership_rows(database, first_id, "unrelated-id", "unique@example.com")
+
+    response = _browser_form_post(first, "/legal/data-request", {
+        "email": "unique@example.com", "request_type": "erasure",
+    })
+
+    assert response.status_code == 200
+    assert {row["id"] for row in _rows(database, "SELECT id FROM scan_history")} == {"first", "second", "legacy"}
+    assert {row["payload_hash"] for row in _rows(database, "SELECT payload_hash FROM scan_events")} == {"first", "second", "legacy"}
+    assert _rows(database, "SELECT user_id FROM scans") == [{"user_id": "unrelated-id"}]
+    assert _rows(database, "SELECT status FROM data_requests WHERE request_type = 'erasure'") == [{"status": "submitted"}]
+
+
+def test_ambiguous_email_cannot_read_or_disconnect_legacy_wallet(identity_app):
+    app, _, database = identity_app
+    first, first_id = _staff_client(app, database, "shared@example.com", "user")
+    with sqlite3.connect(database) as conn:
+        conn.execute("INSERT INTO users (google_id, email) VALUES (?, ?)", ("second-id", "SHARED@example.com"))
+        conn.execute(
+            "INSERT INTO wallets (id, user_id, address, connected_at) VALUES (?, ?, ?, ?)",
+            ("wallet-one", "shared@example.com", "wallet-private", "now"),
+        )
+    assert first.get("/api/wallet").status_code == 409
+    page = first.get("/")
+    token = re.search(r'<meta name="csrf-token" content="([a-f0-9]{64})"', page.text).group(1)
+    assert first.delete("/api/wallet", headers={"Origin": "https://testserver", "X-CSRF-Token": token}).status_code == 409
+    assert _rows(database, "SELECT id FROM wallets") == [{"id": "wallet-one"}]
+
+
+def test_unique_email_owner_can_read_and_disconnect_legacy_wallet(identity_app):
+    app, _, database = identity_app
+    first, _ = _staff_client(app, database, "unique@example.com", "user")
+    with sqlite3.connect(database) as conn:
+        conn.execute(
+            "INSERT INTO wallets (id, user_id, address, connected_at) VALUES (?, ?, ?, ?)",
+            ("wallet-one", "unique@example.com", "wallet-private", "now"),
+        )
+    assert first.get("/api/wallet").json()["walletAddress"] == "wallet-private"
+    page = first.get("/")
+    token = re.search(r'<meta name="csrf-token" content="([a-f0-9]{64})"', page.text).group(1)
+    assert first.delete("/api/wallet", headers={"Origin": "https://testserver", "X-CSRF-Token": token}).status_code == 200
+    assert _rows(database, "SELECT id FROM wallets") == []
+
+
+def test_fraud_score_update_uses_stable_account_id_under_email_collision(identity_app):
+    app, _, database = identity_app
+    _, first_id = _staff_client(app, database, "shared@example.com", "user")
+    with sqlite3.connect(database) as conn:
+        conn.execute("INSERT INTO users (google_id, email) VALUES (?, ?)", ("second-id", "SHARED@example.com"))
+    db = importlib.import_module("db")
+    fraud = importlib.import_module("hackabull.fraud")
+    token = db.set_rls_context(first_id, "user", "shared@example.com")
+    try:
+        fraud.run_fraud_checks("wallet_connect", "shared@example.com", metadata={"walletAddress": "wallet-test", "txCount": 0})
+    finally:
+        db.reset_rls_context(token)
+    scores = {row["google_id"]: row["fraud_score"] for row in _rows(database, "SELECT google_id, fraud_score FROM users")}
+    assert scores == {first_id: 20, "second-id": 0}
+    assert fraud.lookup_user_id_by_email("shared@example.com") is None
+
+
+def test_public_leaderboard_does_not_attribute_same_email_scan_to_other_account(identity_app):
+    app, _, database = identity_app
+    _, first_id = _staff_client(app, database, "shared@example.com", "user")
+    with sqlite3.connect(database) as conn:
+        conn.execute("INSERT INTO users (google_id, email) VALUES (?, ?)", ("second-id", "SHARED@example.com"))
+        conn.execute(
+            "INSERT INTO scan_history (id, email, url, created_at, user_id) VALUES (?, ?, ?, ?, ?)",
+            ("owned", "shared@example.com", "https://owned.example", "2026-11-14T00:00:00Z", first_id),
+        )
+    assert [row["user_id"] for row in app.get_global_leaderboard()] == [first_id]
 
 
 def test_google_unverified_email_cannot_sign_in(identity_app, monkeypatch):
@@ -374,7 +564,7 @@ def test_erasure_helper_rejects_mismatched_account_id(identity_app):
     ]
 
 
-def test_self_service_erasure_can_remove_owner_after_transfer(identity_app):
+def test_erasure_stays_pending_after_owner_transfer_until_complete_review(identity_app):
     app, _, database = identity_app
     owner, owner_id = _staff_client(app, database, "owner1@example.com", "owner")
     _, second_owner_id = _staff_client(app, database, "owner2@example.com", "owner")
@@ -384,8 +574,24 @@ def test_self_service_erasure_can_remove_owner_after_transfer(identity_app):
     })
 
     assert response.status_code == 200
-    assert _rows(database, "SELECT google_id FROM users WHERE role = 'owner'") == [{"google_id": second_owner_id}]
-    assert _rows(database, "SELECT status FROM data_requests WHERE request_type = 'erasure'") == [{"status": "completed"}]
+    assert {row["google_id"] for row in _rows(database, "SELECT google_id FROM users WHERE role = 'owner'")} == {
+        owner_id, second_owner_id,
+    }
+    assert _rows(database, "SELECT status FROM data_requests WHERE request_type = 'erasure'") == [{"status": "submitted"}]
+
+
+@pytest.mark.parametrize("request_type", ["access", "portability"])
+def test_self_service_export_stays_pending_until_full_inventory_review(identity_app, request_type):
+    app, _, database = identity_app
+    owner, owner_id = _staff_client(app, database, "owner1@example.com", "owner")
+    response = _browser_form_post(owner, "/legal/data-request", {
+        "email": "owner1@example.com", "request_type": request_type,
+    })
+    assert response.status_code == 200
+    assert "Your Data Export" not in response.text
+    assert _rows(database, "SELECT status, completed_at FROM data_requests WHERE request_type = ?", (request_type,)) == [
+        {"status": "submitted", "completed_at": None},
+    ]
 
 
 @pytest.mark.parametrize("path, helper, field", [

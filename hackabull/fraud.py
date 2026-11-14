@@ -41,6 +41,8 @@ from db import (
     rls_user_id,
     set_rls_context,
     user_scoped_select,
+    unique_email_owner,
+    rls_email,
 )
 from storage import backend_status as storage_backend_status
 from storage import download_file as storage_download_file
@@ -53,6 +55,7 @@ from .audit import audit_log
 from .audit import now_iso
 from .config import MALICIOUS_CONTRACT_BLOCKLIST
 from .request_helpers import make_id
+from .request_helpers import hash_ip
 from .request_helpers import request_ip
 
 # =============================================================================
@@ -61,12 +64,91 @@ from .request_helpers import request_ip
 def severity_points(severity):
     return {"low": 5, "medium": 20, "high": 50, "critical": 100}.get(severity, 0)
 
+IP_REGISTRY_RETENTION_DAYS = 30
+IP_REGISTRY_MAINTENANCE_BATCH = 100
+_IP_HASH_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
+
+def _registry_ip_hash(value):
+    # A previous maintenance pass may already have converted this row.
+    return value if _IP_HASH_PATTERN.fullmatch(value) else hash_ip(value)
+
+def _upsert_ip_account(conn, ip_hash, user_id, seen_at):
+    conn.execute(
+        """INSERT INTO ip_registry_accounts (ip_hash, user_id, first_seen, last_seen)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(ip_hash, user_id) DO UPDATE SET
+             first_seen = min(first_seen, excluded.first_seen),
+             last_seen = max(last_seen, excluded.last_seen)""",
+        (ip_hash, user_id, seen_at, seen_at),
+    )
+
+def _maintain_ip_registry(conn, batch_limit, *, scrub_flags=True, scrub_audit=True):
+    """Fold expired detailed events into account aggregates, then delete them.
+
+    The batch bound keeps normal requests short. A daily maintenance command
+    drains all batches so quiet deployments also meet the retention policy.
+    """
+    cutoff = (datetime.utcnow() - timedelta(days=IP_REGISTRY_RETENTION_DAYS)).isoformat() + "Z"
+    rows = conn.execute(
+        "SELECT id, ip_address, user_id, created_at FROM ip_registry "
+        "WHERE created_at < ? ORDER BY created_at, id LIMIT ?",
+        (cutoff, batch_limit),
+    ).fetchall()
+    for row in rows:
+        _upsert_ip_account(conn, _registry_ip_hash(row["ip_address"]), row["user_id"], row["created_at"])
+        conn.execute("DELETE FROM ip_registry WHERE id = ?", (row["id"],))
+
+    # Older clustering flags contain the literal address in metadata. Scrub a
+    # bounded number per pass without changing their severity or review state.
+    if scrub_flags:
+        flags = conn.execute(
+            "SELECT id, metadata FROM fraud_flags "
+            "WHERE check_name IN ('ip_clustering', 'ip_scan_cluster') "
+            "AND metadata LIKE '%\"ip\"%' ORDER BY created_at, id LIMIT ?",
+            (batch_limit,),
+        ).fetchall()
+    else:
+        flags = []
+    for flag in flags:
+        try:
+            details = json.loads(flag["metadata"] or "{}")
+        except (TypeError, ValueError):
+            details = {}
+        if not isinstance(details, dict):
+            details = {}
+        raw_ip = details.pop("ip", None)
+        if isinstance(raw_ip, str) and raw_ip:
+            details["ipHash"] = _registry_ip_hash(raw_ip)
+        conn.execute("UPDATE fraud_flags SET metadata = ? WHERE id = ?", (json.dumps(details), flag["id"]))
+    if scrub_audit:
+        audit_rows = conn.execute(
+            "SELECT id FROM audit_logs WHERE ip_address IS NOT NULL AND created_at < ? "
+            "ORDER BY created_at, id LIMIT ?",
+            (cutoff, batch_limit),
+        ).fetchall()
+        for audit_row in audit_rows:
+            conn.execute("UPDATE audit_logs SET ip_address = NULL WHERE id = ?", (audit_row["id"],))
+    else:
+        audit_rows = []
+    return {"eventsDeleted": len(rows), "flagsRedacted": len(flags), "auditIpsCleared": len(audit_rows)}
+
+def maintain_ip_registry(batch_limit=IP_REGISTRY_MAINTENANCE_BATCH):
+    """Process one bounded privacy maintenance batch; safe to call repeatedly."""
+    if not isinstance(batch_limit, int) or batch_limit < 1 or batch_limit > 1000:
+        raise ValueError("batch_limit must be between 1 and 1000")
+    with get_conn() as conn:
+        return _maintain_ip_registry(conn, batch_limit)
+
 def register_ip_event(user_id, request, event_type):
+    ip_hash = hash_ip(request_ip(request))
+    created_at = now_iso()
     with get_conn() as conn:
         conn.execute(
             "INSERT INTO ip_registry VALUES (?, ?, ?, ?, ?)",
-            (make_id("ip"), request_ip(request), user_id, event_type, now_iso())
+            (make_id("ip"), ip_hash, user_id, event_type, created_at)
         )
+        _upsert_ip_account(conn, ip_hash, user_id, created_at)
+        _maintain_ip_registry(conn, IP_REGISTRY_MAINTENANCE_BATCH, scrub_flags=False, scrub_audit=False)
 
 def register_device_fingerprint(user_id, fingerprint):
     clean = (fingerprint or "").strip()
@@ -98,27 +180,32 @@ def run_fraud_checks(event_type, user_id, request=None, metadata=None):
 
     if ip_value:
         register_ip_event(user_id, request, event_type) if request else None
+        ip_digest = hash_ip(ip_value)
         with get_conn() as conn:
             since_24h = (datetime.utcnow() - timedelta(hours=24)).isoformat()
             since_1h = (datetime.utcnow() - timedelta(hours=1)).isoformat()
             recent_signups = conn.execute(
-                "SELECT COUNT(*) FROM ip_registry WHERE ip_address = ? AND event_type = 'signup' AND created_at >= ?",
-                (ip_value, since_24h)
+                "SELECT COUNT(*) FROM ip_registry WHERE ip_address IN (?, ?) AND event_type = 'signup' AND created_at >= ?",
+                (ip_digest, ip_value, since_24h)
             ).fetchone()[0]
             active_scan_accounts = conn.execute(
-                "SELECT COUNT(DISTINCT user_id) FROM ip_registry WHERE ip_address = ? AND event_type = 'scan' AND created_at >= ?",
-                (ip_value, since_1h)
+                "SELECT COUNT(DISTINCT user_id) FROM ip_registry WHERE ip_address IN (?, ?) AND event_type = 'scan' AND created_at >= ?",
+                (ip_digest, ip_value, since_1h)
             ).fetchone()[0]
             lifetime_accounts = conn.execute(
-                "SELECT COUNT(DISTINCT user_id) FROM ip_registry WHERE ip_address = ?",
-                (ip_value,)
+                """SELECT COUNT(*) FROM (
+                     SELECT user_id FROM ip_registry_accounts WHERE ip_hash = ?
+                     UNION
+                     SELECT user_id FROM ip_registry WHERE ip_address IN (?, ?)
+                   )""",
+                (ip_digest, ip_digest, ip_value)
             ).fetchone()[0]
         if lifetime_accounts > 10:
-            signals.append({"checkName": "ip_clustering", "severity": "critical", "autoDisqualify": True, "reason": f"IP has {lifetime_accounts} accounts registered.", "metadata": {"ip": ip_value, "accountCount": lifetime_accounts}})
+            signals.append({"checkName": "ip_clustering", "severity": "critical", "autoDisqualify": True, "reason": f"IP has {lifetime_accounts} accounts registered.", "metadata": {"ipHash": ip_digest, "accountCount": lifetime_accounts}})
         elif recent_signups > 3:
-            signals.append({"checkName": "ip_clustering", "severity": "high", "autoDisqualify": False, "reason": f"{recent_signups} signups from same IP in 24 hours.", "metadata": {"ip": ip_value, "recentSignups": recent_signups}})
+            signals.append({"checkName": "ip_clustering", "severity": "high", "autoDisqualify": False, "reason": f"{recent_signups} signups from same IP in 24 hours.", "metadata": {"ipHash": ip_digest, "recentSignups": recent_signups}})
         elif event_type == "scan" and active_scan_accounts > 2:
-            signals.append({"checkName": "ip_scan_cluster", "severity": "medium", "autoDisqualify": False, "reason": f"{active_scan_accounts} active scan accounts share one IP in the last hour.", "metadata": {"ip": ip_value, "activeScanAccounts": active_scan_accounts}})
+            signals.append({"checkName": "ip_scan_cluster", "severity": "medium", "autoDisqualify": False, "reason": f"{active_scan_accounts} active scan accounts share one IP in the last hour.", "metadata": {"ipHash": ip_digest, "activeScanAccounts": active_scan_accounts}})
 
     if event_type == "scan":
         with get_conn() as conn:
@@ -189,14 +276,22 @@ def run_fraud_checks(event_type, user_id, request=None, metadata=None):
 
     if signals:
         new_points = sum(severity_points(item["severity"]) for item in signals)
+        account_id = rls_user_id() if user_id == rls_email() else None
+        if not account_id:
+            with get_conn() as conn:
+                direct = conn.execute("SELECT google_id FROM users WHERE google_id = ?", (user_id,)).fetchone()
+                account_id = direct[0] if direct else None
+        if not account_id:
+            account_id = lookup_user_id_by_email(user_id)
         with get_conn() as conn:
             for item in signals:
                 conn.execute(
                     "INSERT INTO fraud_flags VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, NULL, ?)",
                     (make_id("fraud"), user_id, item["checkName"], item["severity"], item["reason"], json.dumps(item["metadata"]), int(item["autoDisqualify"]), now_iso())
                 )
-            conn.execute("UPDATE users SET fraud_score = COALESCE(fraud_score, 0) + ?, airdrop_status = CASE WHEN COALESCE(fraud_score, 0) + ? >= 40 THEN 'flagged' ELSE airdrop_status END WHERE email = ? OR google_id = ?", (new_points, new_points, user_id, user_id))
-        audit_log("fraud.flags_added", request=request, actor_user_id=user_id, target_type="user", target_id=user_id, metadata={"signalCount": len(signals), "points": new_points})
+            if account_id:
+                conn.execute("UPDATE users SET fraud_score = COALESCE(fraud_score, 0) + ?, airdrop_status = CASE WHEN COALESCE(fraud_score, 0) + ? >= 40 THEN 'flagged' ELSE airdrop_status END WHERE google_id = ?", (new_points, new_points, account_id))
+        audit_log("fraud.flags_added", request=request, actor_user_id=account_id, target_type="user", target_id=account_id, metadata={"signalCount": len(signals), "points": new_points})
     return signals
 
 def lookup_user_id_by_email(email):
@@ -204,11 +299,13 @@ def lookup_user_id_by_email(email):
     if not normalized_email:
         return None
     with get_conn() as conn:
-        row = conn.execute(
-            "SELECT google_id FROM users WHERE lower(email) = ? AND status != 'deleted' ORDER BY created_at LIMIT 1",
+        rows = conn.execute(
+            "SELECT google_id FROM users WHERE lower(email) = ? AND status != 'deleted'",
             (normalized_email,),
-        ).fetchone()
-    return row["google_id"] if row else None
+        ).fetchall()
+        if len(rows) == 1 and unique_email_owner(conn, email, rows[0]["google_id"]):
+            return rows[0]["google_id"]
+    return None
 
 SCAN_CLASSIFICATIONS = (
     ("MALICIOUS", "Dangerous"),

@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 LOG = logging.getLogger(__name__)
 from .decision import interpret_probability
 from .features import _normalize_url
+from private_files import secure_sqlite_path
 
 # -----------------------------------------------------------------------------
 # 3. URL prediction cache (SQLite, TTL-based with split benign/malicious)
@@ -46,7 +47,7 @@ def _cache_connection() -> Optional[sqlite3.Connection]:
             return _cache_conn
         try:
             os.makedirs(os.path.dirname(_CACHE_PATH) or ".", exist_ok=True)
-            conn = sqlite3.connect(_CACHE_PATH, check_same_thread=False, isolation_level=None)
+            conn = sqlite3.connect(secure_sqlite_path(_CACHE_PATH), check_same_thread=False, isolation_level=None)
             conn.execute(
                 """CREATE TABLE IF NOT EXISTS ml_cache (
                     url_key   TEXT PRIMARY KEY,

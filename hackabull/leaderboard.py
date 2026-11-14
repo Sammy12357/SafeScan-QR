@@ -82,21 +82,23 @@ def get_global_leaderboard(limit=50):
                 COALESCE(h.total_saved_scans, 0) AS total_saved_scans,
                 COALESCE(h.last_history_at, se.last_event_at) AS last_scanned_at
             FROM users u
-            LEFT JOIN scans s ON s.user_id = u.google_id OR lower(s.email) = lower(u.email)
             LEFT JOIN (
-                SELECT user_id, lower(email) AS email_key, COUNT(*) AS total_saved_scans,
-                       COUNT(DISTINCT url) AS unique_saved_scans, MAX(created_at) AS last_history_at
-                FROM scan_history
-                GROUP BY user_id, lower(email)
-            ) h ON h.user_id = u.google_id OR h.email_key = lower(u.email)
+                SELECT user_id, MAX(scan_count) AS scan_count
+                FROM scans WHERE user_id IS NOT NULL AND user_id != ''
+                GROUP BY user_id
+            ) s ON s.user_id = u.google_id
             LEFT JOIN (
-                SELECT lower(email) AS email_key, COUNT(DISTINCT payload_hash) AS unique_events, MAX(first_scanned_at) AS last_event_at
-                FROM scan_events
-                GROUP BY lower(email)
-            ) se ON se.email_key = lower(u.email)
+                SELECT user_id, COUNT(*) AS total_saved_scans, MAX(created_at) AS last_history_at
+                FROM scan_history WHERE user_id IS NOT NULL AND user_id != ''
+                GROUP BY user_id
+            ) h ON h.user_id = u.google_id
+            LEFT JOIN (
+                SELECT user_id, COUNT(DISTINCT payload_hash) AS unique_events, MAX(first_scanned_at) AS last_event_at
+                FROM scan_events WHERE user_id IS NOT NULL AND user_id != ''
+                GROUP BY user_id
+            ) se ON se.user_id = u.google_id
             WHERE u.status != 'deleted'
-            GROUP BY u.google_id, u.email, u.username, u.display_name, s.scan_count, h.total_saved_scans, h.unique_saved_scans, h.last_history_at, se.unique_events, se.last_event_at
-            HAVING MAX(COALESCE(s.scan_count, 0), COALESCE(se.unique_events, 0), COALESCE(h.total_saved_scans, 0)) > 0
+              AND MAX(COALESCE(s.scan_count, 0), COALESCE(se.unique_events, 0), COALESCE(h.total_saved_scans, 0)) > 0
             ORDER BY scan_count DESC, total_saved_scans DESC, last_scanned_at DESC
             LIMIT ?
             """,

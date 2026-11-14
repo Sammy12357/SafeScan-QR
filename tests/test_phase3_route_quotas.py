@@ -19,6 +19,7 @@ def quota_app(tmp_path, monkeypatch):
     monkeypatch.setenv("GOOGLE_CLIENT_ID", "test-client")
     monkeypatch.setenv("MOCK_MODE", "true")
     monkeypatch.setenv("SAFESCAN_ML_ENABLED", "false")
+    monkeypatch.setenv("PRIVACY_HASH_SALT", "Phase3QuotaTest_12a589ed764b3f0c8d91a603")
     for name in list(sys.modules):
         if name == "hackabull" or name.startswith("hackabull.") or name == "db":
             sys.modules.pop(name, None)

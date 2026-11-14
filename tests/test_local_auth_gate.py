@@ -16,6 +16,7 @@ def local_auth_app(tmp_path, monkeypatch, request):
     monkeypatch.setenv("APP_URL", "https://testserver")
     monkeypatch.setenv("MOCK_MODE", "true")
     monkeypatch.setenv("SAFESCAN_ML_ENABLED", "false")
+    monkeypatch.setenv("PRIVACY_HASH_SALT", "LocalAuthGateTest_98701a4bdf2e39c675a08041")
     if getattr(request, "param", False):
         monkeypatch.setenv("RENDER", "true")
     else:
