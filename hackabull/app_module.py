@@ -317,7 +317,9 @@ async def security_headers_and_rate_limits(request: Request, call_next):
                 return apply_security_headers(request, JSONResponse({"error": "QR scan request is too large."}, status_code=413))
         client_identity = qr_request_client_identity(request)
         if client_identity:
-            scan_limit = enforce_rate_limit(request, "qr_upload_client", 90, 15 * 60, user_key=client_identity)
+            # This budget is already keyed by the ingress client identity.
+            # Passing it as a signed-in user would raise its IP cap to 900.
+            scan_limit = enforce_rate_limit(request, "qr_upload_client", 90, 15 * 60)
             if scan_limit:
                 return apply_security_headers(request, scan_limit)
             # One visitor may use two tabs, but cannot occupy every upload

@@ -132,3 +132,23 @@ def test_render_limit_is_per_edge_client_on_both_public_domains(monkeypatch, ip_
         assert ip_modules.enforce_rate_limit(other_client, "render_client_regression", 1, 60) is None
     finally:
         ip_modules.RATE_LIMITS.clear()
+
+
+def test_account_rotation_cannot_escape_render_edge_ip_budget(monkeypatch, ip_modules):
+    monkeypatch.setenv("RENDER", "true")
+    ip_modules.RATE_LIMITS.clear()
+    try:
+        for index in range(3):
+            request = make_request([
+                ("CF-Connecting-IP", "203.0.113.10"),
+                ("X-Forwarded-For", f"192.0.2.{index + 1}"),
+            ])
+            result = ip_modules.enforce_rate_limit(
+                request, "account_rotation", 10, 60, user_key=f"account-{index}", ip_limit=2,
+            )
+            if index < 2:
+                assert result is None
+            else:
+                assert result.status_code == 429
+    finally:
+        ip_modules.RATE_LIMITS.clear()
