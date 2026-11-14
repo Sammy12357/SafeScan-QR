@@ -59,6 +59,75 @@ This mapping follows [Google's requirement to identify users by `sub`](https://d
 [Auth0's requirement to authenticate both accounts before linking](https://auth0.com/docs/manage-users/user-accounts/user-account-linking/link-user-accounts),
 and [Auth0's post-login verification guidance](https://support.auth0.com/center/s/article/implement-email-verification-to-prevent-access-with-unverified-emails-in-auth0).
 
+## Apply a reviewed mapping to an offline copy
+
+`identity_apply.py` is a rehearsal and preparation tool. It reads a standalone
+SQLite backup **without changing it**, checks an explicitly approved mapping
+file against that backup, and writes a **new** private database copy only when
+`--apply` is present. It refuses the configured application database, the
+Render production data directories, symlinked paths, and backups with WAL
+sidecars. The output must not exist. A failed migration removes the output.
+
+First finish the dry run and obtain proof of the exact issuer and full subject
+for each account, especially owners and admins. Do not infer an Auth0 subject
+from a matching email or a stripped suffix. An approved mapping file contains
+no passwords or tokens, but it does contain account IDs and emails, so keep it
+outside the repository with mode `0600`. Bind it to the specific backup file
+using the output of `shasum -a 256 /secure/path/offline-backup.db`:
+
+```json
+{
+  "format": "safescan-identity-mappings-v1",
+  "database_sha256": "the-64-character-lowercase-sha256-of-the-backup",
+  "mappings": [
+    {
+      "provider": "google",
+      "issuer": "https://accounts.google.com",
+      "subject": "exact-google-sub-from-verified-token",
+      "user_id": "existing-users.google_id",
+      "email_at_link": "person@example.com",
+      "email_verified": true
+    }
+  ]
+}
+```
+
+The `email_verified` value records the reviewer's proof; the tool cannot
+verify a historical provider claim on its own. It checks that every mapped
+account is active, its email still matches the approved file, a stored Google
+subject does not conflict, and an existing identity mapping is identical.
+Write `email_at_link` in the same lowercase form used by the sign-in path;
+the tool rejects an uppercase or stale value.
+For Auth0 entries, include the **full** subject such as `google-oauth2|123`
+and pass the verified tenant issuer with `--auth0-issuer`. Mapping an active
+admin or owner additionally requires `--allow-privileged`.
+
+```sh
+chmod 600 /secure/path/approved-mappings.json
+python scripts/security/identity_apply.py \
+  --database /secure/path/offline-backup.db \
+  --approved-mappings /secure/path/approved-mappings.json \
+  --auth0-issuer https://your-tenant.auth0.com/ \
+  --allow-privileged \
+  --output /secure/path/migrated-copy.db
+
+# After the owner reviews the reported counts, create the copy:
+python scripts/security/identity_apply.py \
+  --database /secure/path/offline-backup.db \
+  --approved-mappings /secure/path/approved-mappings.json \
+  --auth0-issuer https://your-tenant.auth0.com/ \
+  --allow-privileged \
+  --output /secure/path/migrated-copy.db \
+  --apply
+```
+
+Only aggregate mapping counts are printed. The copied database is created
+with permission `0600`; all inserts occur in one SQLite transaction. Running
+again on that copy with an updated source hash and the same mappings inserts
+nothing. **Do not replace the live database with an old copy** while the app
+is accepting writes. The live migration, session policy, backup/restore drill,
+and Auth0 Action remain separate release steps requiring owner review.
+
 Once the identity mapping has been reviewed and installed, an owner can be
 bootstrapped from an existing **verified Google identity**. The command checks
 the exact Google subject and expected email against `user_identities` and
