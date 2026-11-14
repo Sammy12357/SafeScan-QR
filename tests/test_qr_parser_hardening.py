@@ -39,6 +39,12 @@ def test_svg_long_regex_attribute_and_deep_tree_are_rejected(decoder):
         decoder._parse_safe_svg(deep)
 
 
+def test_svg_element_limit_rejects_many_small_nodes(decoder, monkeypatch):
+    monkeypatch.setattr(decoder, "MAX_QR_SVG_ELEMENTS", 3)
+    with pytest.raises(decoder.QRDecodeSafetyError, match="structure"):
+        decoder._parse_safe_svg(b"<svg><g/><g/><g/></svg>")
+
+
 def test_valid_qr_svg_path_can_exceed_parsed_attribute_cap(decoder):
     # The path data is not parsed by SafeScan's SVG geometry regexes. A normal
     # QR generator can put thousands of path commands into that one attribute.

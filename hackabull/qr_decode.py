@@ -139,31 +139,40 @@ def _assert_supported_raster(image):
 
 def _parse_safe_svg(contents):
     try:
-        root = SafeElementTree.fromstring(
-            contents, forbid_dtd=True, forbid_entities=True, forbid_external=True,
-        )
+        root = None
+        depth = 0
+        elements = 0
+        attributes = 0
+        # iterparse lets us reject excessive structure as it arrives, before
+        # an attacker-controlled SVG can build a very large in-memory tree.
+        for event, element in SafeElementTree.iterparse(
+            io.BytesIO(contents), events=("start", "end"),
+            forbid_dtd=True, forbid_entities=True, forbid_external=True,
+        ):
+            if event == "end":
+                depth -= 1
+                continue
+            if root is None:
+                if str(element.tag).split("}", 1)[-1] != "svg":
+                    raise QRDecodeSafetyError("Upload an SVG document containing one QR code.")
+                root = element
+            depth += 1
+            elements += 1
+            if elements > MAX_QR_SVG_ELEMENTS or depth > MAX_QR_SVG_DEPTH:
+                raise QRDecodeSafetyError("SVG structure exceeds the QR parser limit.")
+            attributes += len(element.attrib)
+            if attributes > MAX_QR_SVG_ATTRIBUTES or any(
+                len(value) > MAX_QR_SVG_ATTRIBUTE_LENGTH
+                for name, value in element.attrib.items()
+                if str(name).split("}", 1)[-1] in QR_SVG_PARSED_ATTRIBUTES
+            ):
+                raise QRDecodeSafetyError("SVG attributes exceed the QR parser limit.")
     except DefusedXmlException as exc:
         raise QRDecodeSafetyError("SVG contains prohibited XML declarations or entities.") from exc
     except ElementTree.ParseError as exc:
         raise QRDecodeSafetyError("SVG could not be parsed safely.") from exc
-    if str(root.tag).split("}", 1)[-1] != "svg":
+    if root is None:
         raise QRDecodeSafetyError("Upload an SVG document containing one QR code.")
-    stack = [(root, 1)]
-    elements = 0
-    attributes = 0
-    while stack:
-        element, depth = stack.pop()
-        elements += 1
-        if elements > MAX_QR_SVG_ELEMENTS or depth > MAX_QR_SVG_DEPTH:
-            raise QRDecodeSafetyError("SVG structure exceeds the QR parser limit.")
-        attributes += len(element.attrib)
-        if attributes > MAX_QR_SVG_ATTRIBUTES or any(
-            len(value) > MAX_QR_SVG_ATTRIBUTE_LENGTH
-            for name, value in element.attrib.items()
-            if str(name).split("}", 1)[-1] in QR_SVG_PARSED_ATTRIBUTES
-        ):
-            raise QRDecodeSafetyError("SVG attributes exceed the QR parser limit.")
-        stack.extend((child, depth + 1) for child in element)
     return root
 
 
