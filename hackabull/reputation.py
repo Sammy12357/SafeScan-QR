@@ -54,6 +54,8 @@ from .lowlevel import normalize_url
 from .provider_policy import legacy_safe_browsing_enabled
 from .provider_policy import legacy_safe_browsing_key
 from .provider_policy import web_risk_key
+from .provider_budget import ProviderUnavailable
+from .provider_budget import outbound_provider
 from .scoring import signal
 from .security import validate_public_url
 
@@ -120,19 +122,27 @@ def check_url_reputation(target_url):
     commercial_key = web_risk_key()
     if commercial_key:
         try:
-            response = requests.get(
-                "https://webrisk.googleapis.com/v1/uris:search",
-                params=[
-                    ("uri", target_url),
-                    ("threatTypes", "MALWARE"),
-                    ("threatTypes", "SOCIAL_ENGINEERING"),
-                    ("threatTypes", "UNWANTED_SOFTWARE"),
-                    ("key", commercial_key),
-                ],
-                timeout=5,
-            )
-            response.raise_for_status()
-            result = response.json()
+            with outbound_provider("web_risk"):
+                response = requests.get(
+                    "https://webrisk.googleapis.com/v1/uris:search",
+                    params=[
+                        ("uri", target_url),
+                        ("threatTypes", "MALWARE"),
+                        ("threatTypes", "SOCIAL_ENGINEERING"),
+                        ("threatTypes", "UNWANTED_SOFTWARE"),
+                        ("key", commercial_key),
+                    ],
+                    timeout=5,
+                )
+                response.raise_for_status()
+                result = response.json()
+                if not isinstance(result, dict):
+                    raise ValueError("Invalid provider response")
+        except ProviderUnavailable:
+            return {
+                "provider": "Google Web Risk", "status": "ERROR", "matches": [],
+                "detail": "Reputation lookup could not be completed.",
+            }
         except (requests.RequestException, ValueError) as exc:
             return {
                 "provider": "Google Web Risk",
@@ -165,15 +175,23 @@ def check_url_reputation(target_url):
         }
     }
     try:
-        response = requests.post(
-            "https://safebrowsing.googleapis.com/v4/threatMatches:find",
-            params={"key": legacy_safe_browsing_key()},
-            json=payload,
-            timeout=5,
-        )
-        response.raise_for_status()
-        result = response.json()
-    except requests.RequestException as exc:
+        with outbound_provider("safe_browsing"):
+            response = requests.post(
+                "https://safebrowsing.googleapis.com/v4/threatMatches:find",
+                params={"key": legacy_safe_browsing_key()},
+                json=payload,
+                timeout=5,
+            )
+            response.raise_for_status()
+            result = response.json()
+            if not isinstance(result, dict):
+                raise ValueError("Invalid provider response")
+    except ProviderUnavailable:
+        return {
+            "provider": "Google Safe Browsing", "status": "ERROR", "matches": [],
+            "detail": "Reputation lookup could not be completed.",
+        }
+    except (requests.RequestException, ValueError) as exc:
         return {
             "provider": "Google Safe Browsing",
             "status": "ERROR",

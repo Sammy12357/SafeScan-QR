@@ -175,6 +175,12 @@
 
       {% elif page == 'settings' %}
       <section class="admin-card"><h2>System Settings</h2><p>App URL: {{ data.app_url }}</p><p>Admin emails: {{ data.admin_emails|join(', ') }}</p><p>Owner emails: {{ data.owner_emails|join(', ') }}</p></section>
+      <section class="admin-card"><h2>Provider budgets ({{ data.provider_usage.month }})</h2>
+        <p>Guard: {{ 'enabled' if data.provider_usage.enabled else 'disabled' }}; accounting: {{ data.provider_usage.state }}. Direct WHOIS is skipped when the guard is enabled.</p>
+        {% if data.provider_usage.state == 'ready' %}<table class="admin-table"><thead><tr><th>Provider</th><th>Calls</th><th>Monthly cap</th><th>Errors</th><th>Circuit</th></tr></thead><tbody>
+          {% for name, usage in data.provider_usage.providers.items() %}<tr><td>{{ name }}</td><td>{{ usage.attempts }}</td><td>{{ usage.monthlyLimit or 'unset' }}</td><td>{{ usage.failures }}</td><td>{{ 'open' if usage.circuitOpen else 'closed' }}</td></tr>{% endfor %}
+        </tbody></table>{% endif %}
+      </section>
       {% endif %}
     </section>
   </main>
