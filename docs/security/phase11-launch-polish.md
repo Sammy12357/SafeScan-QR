@@ -3,9 +3,9 @@
 ## What changed
 
 - Server-rendered pages share a single title, description, canonical URL, and favicon partial. Public pages also use Open Graph and Twitter metadata with a pink-and-black 1200 × 630 PNG social card. Account, admin, sign-in, consent-log, and error pages carry `noindex` and omit social-preview metadata.
-- Browser navigation gets static 404 and 500 pages. API paths and JSON clients keep JSON errors. Internal exception text is not rendered or logged with user-supplied paths.
+- Browser navigation gets static 404 and 500 pages. API paths and clients preferring JSON keep JSON errors. Both `SafeScanError` and HTTP 5xx responses use generic JSON messages so upstream provider diagnostics cannot reach clients. The waitlist confirmation page is `noindex` and has no social-preview tags.
 - `/robots.txt` points to `/sitemap.xml`; the sitemap lists only public routes. The legacy static Go Ghost page points crawlers to the current `/go-ghost` route and is `noindex`.
-- Consent, privacy, and cookie wording now matches the current count-only scanner endpoint: the browser sends count-only events only after an opt-in stored in local storage; the server aggregates them and does not store individual scanner events. The consent choice itself is recorded separately. Operational request metrics and abuse controls run regardless of optional scanner analytics.
+- Consent, privacy, and cookie wording now matches the current count-only scanner endpoint: the browser sends count-only events only after an opt-in stored in local storage; the server aggregates them and does not store individual scanner events. The consent choice itself is recorded separately. The remembered sign-in description allows for the configured cookie lifetime. Operational request metrics and abuse controls run regardless of optional scanner analytics.
 
 ## Asset and release gates
 

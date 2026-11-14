@@ -9,6 +9,7 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from PIL import Image
 
@@ -69,6 +70,26 @@ def test_browser_error_pages_and_api_json_negotiation(site):
     assert api_broken.status_code == 500
     assert api_broken.json() == {"error": "Something went wrong on our end."}
 
+    from hackabull.audit import SafeScanError
+
+    @module.qr_app.get("/api/_test/provider-failed")
+    async def provider_failed():
+        raise SafeScanError("private upstream RPC response", status_code=502)
+
+    @module.qr_app.get("/api/_test/http-failed")
+    async def http_failed():
+        raise HTTPException(status_code=503, detail="private provider diagnostic")
+
+    for path, status in (("/api/_test/provider-failed", 502), ("/api/_test/http-failed", 503)):
+        response = client.get(path, headers={"Accept": "application/json"})
+        assert response.status_code == status
+        assert response.json() == {"error": "Something went wrong on our end."}
+        assert "private" not in response.text
+
+    for accept in ("text/html;q=0, application/json", "application/json, text/html;q=0.5"):
+        response = client.get("/missing-page", headers={"Accept": accept})
+        assert response.headers["content-type"].startswith("application/json")
+
 
 def test_public_heads_canonical_aliases_and_assets(site):
     _, client = site
@@ -107,6 +128,9 @@ def test_public_heads_canonical_aliases_and_assets(site):
     with Image.open(BytesIO(card.content)) as image:
         assert image.format == "PNG"
         assert image.size == (1200, 630)
+    waitlist = client.get("/waitlist/confirm", headers={"Accept": "text/html"})
+    assert 'name="robots" content="noindex, nofollow"' in waitlist.text
+    assert 'property="og:image"' not in waitlist.text
 
 
 def test_robots_and_sitemap_list_only_live_public_pages(site):
@@ -161,3 +185,4 @@ def test_consent_text_matches_count_only_scanner_behavior(site):
     assert "account cookies, or device identifiers" in privacy.text
     assert "safeScanConsent and safeScanConsentId" in cookie.text
     assert "Browser local storage" in cookie.text
+    assert "Until its configured expiry or you sign out" in cookie.text

@@ -566,7 +566,38 @@ def _wants_html_error(request: Request) -> bool:
     path = request.url.path
     if path.startswith(("/api/", "/health", "/metrics", "/webhooks/")):
         return False
-    return "text/html" in request.headers.get("accept", "").lower()
+    accept = request.headers.get("accept", "")[:2048]
+    ranges = []
+    for position, entry in enumerate(accept.split(",")[:32]):
+        media, *parameters = entry.strip().lower().split(";")
+        quality = 1.0
+        for parameter in parameters:
+            name, separator, value = parameter.strip().partition("=")
+            if separator and name == "q":
+                try:
+                    quality = float(value)
+                except ValueError:
+                    quality = 0.0
+                if not 0.0 <= quality <= 1.0:
+                    quality = 0.0
+                break
+        ranges.append((media.strip(), quality, position))
+
+    def preference(target: str):
+        kind = target.split("/", 1)[0] + "/*"
+        matches = [
+            (2 if media == target else 1 if media == kind else 0, -position, quality)
+            for media, quality, position in ranges
+            if media in {target, kind, "*/*"}
+        ]
+        return max(matches) if matches else (-1, 0, 0.0)
+
+    html_specificity, html_order, html_quality = preference("text/html")
+    json_specificity, json_order, json_quality = preference("application/json")
+    return html_quality > 0 and (
+        html_quality > json_quality
+        or (html_quality == json_quality and (html_specificity, html_order) > (json_specificity, json_order))
+    )
 
 
 def _render_unhandled_error(request: Request):
@@ -583,7 +614,8 @@ async def safe_scan_error_handler(request: Request, exc: SafeScanError):
     if exc.status_code >= 500 and _wants_html_error(request):
         return templates.TemplateResponse("500.html", {"request": request}, status_code=exc.status_code,
                                           headers={"Cache-Control": "no-store"})
-    return JSONResponse({"error": str(exc)}, status_code=exc.status_code)
+    message = "Something went wrong on our end." if exc.status_code >= 500 else str(exc)
+    return JSONResponse({"error": message}, status_code=exc.status_code)
 
 @qr_app.exception_handler(StarletteHTTPException)
 async def http_error_handler(request: Request, exc: StarletteHTTPException):
@@ -600,7 +632,8 @@ async def http_error_handler(request: Request, exc: StarletteHTTPException):
         404: "Not found.",
         429: "Too many requests. Please slow down.",
     }
-    return JSONResponse({"error": safe_messages.get(exc.status_code, exc.detail)}, status_code=exc.status_code)
+    message = "Something went wrong on our end." if exc.status_code >= 500 else safe_messages.get(exc.status_code, exc.detail)
+    return JSONResponse({"error": message}, status_code=exc.status_code)
 
 @qr_app.exception_handler(PermissionError)
 async def permission_error_handler(request: Request, exc: PermissionError):

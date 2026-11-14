@@ -462,7 +462,7 @@ COOKIE_POLICY_HTML = """
   <thead><tr><th>Name</th><th>Storage</th><th>Purpose</th><th>Category</th><th>Duration</th></tr></thead>
   <tbody>
     <tr><td>__Host-safescan_session</td><td>SafeScan cookie</td><td>Authentication session reference</td><td>Essential</td><td>Up to 24 hours</td></tr>
-    <tr><td>__Host-safescan_remember</td><td>SafeScan cookie</td><td>Optional remembered sign-in</td><td>Essential</td><td>Up to 30 days</td></tr>
+    <tr><td>__Host-safescan_remember</td><td>SafeScan cookie</td><td>Optional remembered sign-in</td><td>Essential</td><td>Until its configured expiry or you sign out</td></tr>
     <tr><td>__Host-safescan_csrf</td><td>SafeScan cookie</td><td>Protects guest forms from cross-site requests</td><td>Essential</td><td>Up to 24 hours</td></tr>
     <tr><td>__Host-safescan_google_nonce</td><td>SafeScan cookie</td><td>Checks a Google sign-in attempt</td><td>Essential</td><td>Up to 10 minutes</td></tr>
     <tr><td>__Host-safescan_waitlist_confirm</td><td>SafeScan cookie</td><td>Confirms a waitlist request</td><td>Essential</td><td>Up to 30 minutes</td></tr>

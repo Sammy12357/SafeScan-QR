@@ -48,7 +48,7 @@
 {% set head_key = head_page|default('home') %}
 {% set head_title = (title ~ ' | SafeScan Admin') if head_key in ['admin', 'admin_table'] and title is defined else ((title ~ ' | SafeScan QR') if head_key == 'legal' and title is defined else page_titles.get(head_key, 'SafeScan QR')) %}
 {% set head_description = page_descriptions.get(head_key, 'SafeScan helps you review QR destinations and risk signals before you act.') %}
-{% set private_page = head_key in ['admin', 'admin_table', 'history', 'profile', 'login', 'age', 'data_request', 'username', 'logout', 'limited', 'error404', 'error500'] or request_path in ['/account/settings', '/legal/consent-log'] %}
+{% set private_page = head_key in ['admin', 'admin_table', 'history', 'profile', 'login', 'age', 'data_request', 'username', 'logout', 'limited', 'error404', 'error500'] or request_path in ['/account/settings', '/legal/consent-log', '/waitlist/confirm'] %}
 <title>{{ head_title }}</title>
 <meta name="description" content="{{ head_description }}">
 <link rel="canonical" href="{{ canonical_url }}">
