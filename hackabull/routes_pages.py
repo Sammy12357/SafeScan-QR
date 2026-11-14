@@ -64,6 +64,7 @@ from .config import ADMIN_EMAIL_GMAIL_COMPOSE_URL
 from .config import ALPHA_SOLANA_RECIPIENT
 from .config import APP_URL
 from .config import CLIENT_ID
+from .config import GO_GHOST_BROWSER_AUTOMATION_AVAILABLE
 from .config import LEGAL_LAST_UPDATED
 from .config import LEGAL_VERSION
 from .config import templates
@@ -126,6 +127,7 @@ async def go_ghost_page(request: Request):
         "request": request,
         "logged_in": bool(user),
         "email": user["email"] if user else "",
+        "browser_automation_available": GO_GHOST_BROWSER_AUTOMATION_AVAILABLE,
         "version": LEGAL_VERSION,
         **index_user_context(user),
     })
@@ -133,6 +135,11 @@ async def go_ghost_page(request: Request):
 @qr_app.post("/api/go-ghost/removals/{broker}")
 async def api_go_ghost_removal(request: Request, broker: str, payload: dict = Body(...)):
     user = require_user(request)
+    if not GO_GHOST_BROWSER_AUTOMATION_AVAILABLE:
+        raise SafeScanError(
+            "Assisted broker submissions are unavailable. Use Search, Opt out, and Copy details to complete the request in your browser.",
+            503,
+        )
     normalized_broker = (broker or "").strip().lower()
 
     from removals.engine import RemovalProfile, run_broker_removal, supported_broker

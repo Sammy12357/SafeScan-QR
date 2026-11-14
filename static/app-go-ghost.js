@@ -2,6 +2,7 @@
 // Split from app.js; the app-*.js files share one global scope and MUST
 // load in this order: app-core.js -> app-widgets.js -> app-go-ghost.js -> app-go-ghost-ui.js -> app-generate-qr.js.
 const goGhostWorkspace = document.getElementById("goGhostWorkspace");
+const GO_GHOST_BROWSER_AUTOMATION_AVAILABLE = goGhostWorkspace?.dataset.browserAutomationAvailable === "true";
 const goGhostConsentModal = document.getElementById("goGhostConsentModal");
 const startGoGhostButton = document.getElementById("startGoGhostButton");
 const goGhostProfileForm = document.getElementById("goGhostProfileForm");
@@ -342,7 +343,7 @@ const GHOST_CAPTCHA_BROKERS = new Set(["fastpeoplesearch", "truepeoplesearch", "
 // this afterwards. lane "auto" = backend submits and only an email click is
 // left; lane "step" = one short human action (CAPTCHA tick or listing pick).
 function ghostEffortLane(broker) {
-  if (!broker.automationEnabled) {
+  if (!GO_GHOST_BROWSER_AUTOMATION_AVAILABLE || !broker.automationEnabled) {
     return { key: "manual", label: "Manual", you: "You submit", lane: "step" };
   }
   const info = (broker.requiredInfo || []).join(" ").toLowerCase();
@@ -405,6 +406,9 @@ function ghostBrokerGoogleSearch(profile, brokerName, domain) {
 }
 
 function goGhostBrokerOptOutUrl(broker, profile) {
+  // The manual flow opens the broker's published URL. Personal details stay
+  // out of the URL and are copied only when the user requests that action.
+  if (!GO_GHOST_BROWSER_AUTOMATION_AVAILABLE) return broker.removalUrl;
   const entries = [
     ["name", profile.name],
     ["address", profile.address],
@@ -437,7 +441,7 @@ function goGhostCopyPacket(broker, profile, searchUrl) {
     `Search link: ${searchUrl}`,
     `Opt-out link: ${optOutUrl}`,
     `Needed: ${(broker.requiredInfo || []).join(", ")}`,
-    `Next step: ${broker.automationNote || "Open the matching profile and complete the broker opt-out form."}`,
+    `Next step: ${GO_GHOST_BROWSER_AUTOMATION_AVAILABLE ? (broker.automationNote || "Open the matching profile and complete the broker opt-out form.") : "Open the broker opt-out page and complete the request in your browser."}`,
   ].join("\n");
 }
 
@@ -496,9 +500,9 @@ function applyGoGhostDeviceFormatting() {
   document.body.classList.toggle("go-ghost-mobile", mobile);
   document.body.classList.toggle("go-ghost-desktop", !mobile);
   if (goGhostDeviceNotice) {
-    goGhostDeviceNotice.textContent = mobile
-      ? "Mobile layout detected. Go Ghost will stack actions, enlarge tap targets, and keep local automation fields easy to edit."
-      : "Desktop layout active. Automation scope is kept beside the broker workflow.";
+    goGhostDeviceNotice.textContent = GO_GHOST_BROWSER_AUTOMATION_AVAILABLE
+      ? (mobile ? "Mobile layout detected. Go Ghost will stack actions, enlarge tap targets, and keep local automation fields easy to edit." : "Desktop layout active. Automation scope is kept beside the broker workflow.")
+      : (mobile ? "Mobile layout active. Search and opt-out actions are ready below." : "Desktop layout active. Search and opt-out actions are ready below.");
   }
 }
 
@@ -513,6 +517,7 @@ const GHOST_MANUAL_STATUSES = ["captcha_required", "email_required", "needs_prof
 // recorded as checkpoints so you can finish them, while the queue keeps moving
 // through the rest so all 8 trackers are attempted in a single pass.
 async function startGhostAssistedQueue() {
+  if (!GO_GHOST_BROWSER_AUTOMATION_AVAILABLE) return;
   const profile = getGhostProfile();
   if (!hasGhostSearchProfile(profile)) {
     scrollToGhostProfile();

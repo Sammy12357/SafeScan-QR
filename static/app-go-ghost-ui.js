@@ -30,6 +30,7 @@ async function finishGhostBrokerAndOpenNext(broker) {
 }
 
 async function runGhostBrokerAutomation(broker, triggerButton) {
+  if (!GO_GHOST_BROWSER_AUTOMATION_AVAILABLE) return null;
   const activeController = goGhostAutomationControllers.get(broker.id);
   if (activeController) {
     activeController.abort();
@@ -141,10 +142,13 @@ function renderGoGhostAutomationScope() {
   const progress = getGhostProgress();
   goGhostAutomationRows.innerHTML = goGhostBrokers.slice(0, 8).map((broker) => {
     const lane = ghostEffortLane(broker);
-    const automation = progress[broker.id]?.automation;
-    const statusLabel = automation ? formatGhostAutomationStatus(automation.status) : "Not run";
+    const state = progress[broker.id] || {};
+    const automation = GO_GHOST_BROWSER_AUTOMATION_AVAILABLE ? state.automation : null;
+    const statusLabel = GO_GHOST_BROWSER_AUTOMATION_AVAILABLE
+      ? (automation ? formatGhostAutomationStatus(automation.status) : "Not run")
+      : (state.removed ? "Removed" : state.submitted ? "Submitted" : "Pending");
     return `
-      <button class="ghost-automation-row ghost-automation-site-row" type="button" data-ghost-scope="${broker.id}" aria-label="Open ${escapeHtml(broker.name)} automation details">
+      <button class="ghost-automation-row ghost-automation-site-row" type="button" data-ghost-scope="${broker.id}" aria-label="Open ${escapeHtml(broker.name)} opt-out details">
         <span>${escapeHtml(broker.name)}</span>
         <span><span class="ghost-effort ghost-effort-${lane.lane}">${escapeHtml(lane.label)}</span></span>
         <span>${escapeHtml(lane.you)}</span>
@@ -171,11 +175,11 @@ function renderGoGhostBrokers() {
         <div class="broker-actions">
           <a class="secondary-button" href="${searchUrl}" target="_blank" rel="noopener noreferrer">Search</a>
           <a class="primary-button" href="${optOutUrl}" target="_blank" rel="noopener noreferrer" data-ghost-optout="${broker.id}">Opt out</a>
-          ${broker.automationEnabled ? `<button class="primary-button" type="button" data-ghost-auto="${broker.id}">${goGhostAutomationControllers.has(broker.id) ? "Cancel run" : "Run auto fill"}</button>` : ""}
+          ${GO_GHOST_BROWSER_AUTOMATION_AVAILABLE && broker.automationEnabled ? `<button class="primary-button" type="button" data-ghost-auto="${broker.id}">${goGhostAutomationControllers.has(broker.id) ? "Cancel run" : "Run auto fill"}</button>` : ""}
           <button class="secondary-button" type="button" data-ghost-copy="${broker.id}">Copy details</button>
         </div>
         <div class="broker-requirements">${(broker.requiredInfo || []).map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
-        ${state.automation ? `<div class="broker-automation-status"><strong>${escapeHtml(formatGhostAutomationStatus(state.automation.status))}</strong><span>${escapeHtml(state.automation.detail || "")}</span></div>` : ""}
+        ${GO_GHOST_BROWSER_AUTOMATION_AVAILABLE && state.automation ? `<div class="broker-automation-status"><strong>${escapeHtml(formatGhostAutomationStatus(state.automation.status))}</strong><span>${escapeHtml(state.automation.detail || "")}</span></div>` : ""}
         <div class="broker-checks">
           <label><input type="checkbox" data-ghost-site="${broker.id}" data-ghost-field="submitted" ${state.submitted ? "checked" : ""}> Submitted</label>
           <label><input type="checkbox" data-ghost-site="${broker.id}" data-ghost-field="removed" ${state.removed ? "checked" : ""}> Removed</label>
@@ -214,18 +218,20 @@ function openGoGhostScopeModal(siteId) {
   const profile = getGhostProfile();
   const scope = goGhostAutomationScope(broker);
   const state = getGhostProgress()[broker.id] || {};
-  const automation = state.automation;
+  const automation = GO_GHOST_BROWSER_AUTOMATION_AVAILABLE ? state.automation : null;
   activeGhostScopeBrokerId = broker.id;
   if (goGhostScopeTitle) goGhostScopeTitle.textContent = broker.name;
   if (goGhostScopePriority) goGhostScopePriority.textContent = broker.priority;
-  if (goGhostScopeDescription) goGhostScopeDescription.textContent = broker.automationNote || broker.priorityDescription || "";
+  if (goGhostScopeDescription) goGhostScopeDescription.textContent = GO_GHOST_BROWSER_AUTOMATION_AVAILABLE
+    ? (broker.automationNote || broker.priorityDescription || "")
+    : "Find your matching listing, then open the broker opt-out page and submit the request in your browser.";
   renderGhostScopeKeywords(profile);
   const lane = ghostEffortLane(broker);
   const guidance = automation ? ghostStatusGuidance(automation.status) : null;
   if (goGhostScopeDetails) {
     goGhostScopeDetails.innerHTML = `
-      <div class="ghost-scope-detail"><span>Backend does</span><strong>Fills the whole form</strong></div>
-      <div class="ghost-scope-detail"><span>You do</span><strong>${escapeHtml(lane.label === "Auto" ? "Just check email" : lane.label)}</strong></div>
+      ${GO_GHOST_BROWSER_AUTOMATION_AVAILABLE ? `<div class="ghost-scope-detail"><span>Backend does</span><strong>Fills the whole form</strong></div>` : `<div class="ghost-scope-detail"><span>Search</span><strong>Find your matching listing</strong></div>`}
+      <div class="ghost-scope-detail"><span>You do</span><strong>${escapeHtml(GO_GHOST_BROWSER_AUTOMATION_AVAILABLE && lane.label === "Auto" ? "Just check email" : "Submit the request")}</strong></div>
       <div class="ghost-scope-detail ghost-scope-detail-wide"><span>Needed</span><strong>${escapeHtml((broker.requiredInfo || []).join(", "))}</strong></div>
       ${guidance && guidance.text ? `<div class="ghost-scope-detail ghost-scope-detail-wide ghost-scope-guidance ghost-scope-guidance-${guidance.tone}"><span>Next step</span><strong>${escapeHtml(guidance.text)}</strong></div>` : ""}
       ${state.finishReason ? `<div class="ghost-scope-detail ghost-scope-detail-wide"><span>Finished as</span><strong>${escapeHtml(state.finishReason)}</strong></div>` : ""}
@@ -233,7 +239,7 @@ function openGoGhostScopeModal(siteId) {
     `;
   }
   if (goGhostScopeAutoFillButton) {
-    goGhostScopeAutoFillButton.hidden = !broker.automationEnabled;
+    goGhostScopeAutoFillButton.hidden = !GO_GHOST_BROWSER_AUTOMATION_AVAILABLE || !broker.automationEnabled;
     goGhostScopeAutoFillButton.textContent = goGhostAutomationControllers.has(broker.id) ? "Cancel run" : "Run auto fill";
     if (goGhostAutomationControllers.has(broker.id)) goGhostScopeAutoFillButton.setAttribute("aria-pressed", "true");
     else goGhostScopeAutoFillButton.removeAttribute("aria-pressed");
@@ -319,7 +325,7 @@ if (goGhostWorkspace) {
     writeJsonStorage(GO_GHOST_PROFILE_KEY, getGhostFormProfile());
     renderGoGhostAutomationScope();
     renderGoGhostProgress();
-    showCopyToast("Automation scope updated");
+    showCopyToast(GO_GHOST_BROWSER_AUTOMATION_AVAILABLE ? "Automation scope updated" : "Search details updated");
   });
 
   [ghostNameInput, ghostLocationInput, ghostAddressInput, ghostPhoneInput, ghostEmailInput].forEach((input) => {
