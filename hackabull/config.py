@@ -195,7 +195,10 @@ ML_AGGREGATE_WEIGHT = max(0.0, min(0.85, float(os.getenv("SAFESCAN_ML_WEIGHT", "
 # but we don't expose model field names ("url_classifier.joblib") in the
 # user-facing UI. Flip to "true" if you need ML row visible for debugging.
 ML_SIGNAL_VISIBLE = os.getenv("SAFESCAN_ML_SIGNAL_VISIBLE", "false").lower() in ("1", "true", "yes", "on")
-LOCAL_AUTH_ENABLED = MOCK_MODE or APP_URL.startswith("http://127.0.0.1") or APP_URL.startswith("http://localhost")
+_PRODUCTION_RUNTIME = bool(os.getenv("RENDER")) or os.getenv("ENVIRONMENT", "").strip().lower() in ("prod", "production")
+LOCAL_AUTH_ENABLED = not _PRODUCTION_RUNTIME and (
+    MOCK_MODE or APP_URL.startswith("http://127.0.0.1") or APP_URL.startswith("http://localhost")
+)
 APP_STARTED_AT = datetime.utcnow()
 REQUEST_COUNT = build_metric(Counter, "safescan_requests_total", "Total HTTP requests", ["method", "path", "status"])
 REQUEST_LATENCY = build_metric(

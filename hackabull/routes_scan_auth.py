@@ -21,7 +21,7 @@ from urllib.parse import quote, urlencode, urljoin, urlparse, parse_qsl
 from datetime import datetime, timedelta, timezone
 from xml.etree import ElementTree
 
-from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body, HTTPException
+from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body, HTTPException, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
@@ -488,7 +488,12 @@ async def login_page(request: Request, error: str = Query(""), tab: str = Query(
     auth_google_url = f"{APP_URL}/auth/google"
     return templates.TemplateResponse("login.html", {"request": request, "error": error, "tab": tab, "next_url": return_to, "local_auth_enabled": LOCAL_AUTH_ENABLED, "google_client_id": CLIENT_ID or "", "auth_google_url": auth_google_url})
 
-@qr_app.post("/auth/register", response_class=HTMLResponse)
+def require_local_auth_enabled():
+    if not LOCAL_AUTH_ENABLED:
+        raise HTTPException(status_code=404, detail="Not found.")
+
+
+@qr_app.post("/auth/register", response_class=HTMLResponse, dependencies=[Depends(require_local_auth_enabled)])
 async def auth_register(request: Request, email: str = Form(...), password: str = Form(...), remember_me: str = Form("1"), next_url: str = Form("/", alias="next")):
     rate_limited = enforce_rate_limit(request, "register", 5, 3600)
     if rate_limited:
@@ -520,7 +525,7 @@ async def auth_register(request: Request, email: str = Form(...), password: str 
         issue_remember_me_cookie(response, lid, request)
     return response
 
-@qr_app.post("/auth/login", response_class=HTMLResponse)
+@qr_app.post("/auth/login", response_class=HTMLResponse, dependencies=[Depends(require_local_auth_enabled)])
 async def auth_login_local(request: Request, email: str = Form(...), password: str = Form(...), remember_me: str = Form("1"), next_url: str = Form("/", alias="next")):
     rate_limited = enforce_rate_limit(request, "login_local", 10, 600)
     if rate_limited:
