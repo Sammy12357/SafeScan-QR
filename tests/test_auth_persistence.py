@@ -35,6 +35,7 @@ def auth_app(tmp_path, monkeypatch):
     monkeypatch.setenv("APP_URL", "https://testserver")
     monkeypatch.setenv("GOOGLE_CLIENT_ID", "test-client")
     monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test_secret")
+    monkeypatch.setenv("ALPHA_STRIPE_PAYMENT_LINK_ID", "plink_alpha_test")
     monkeypatch.setenv("ALPHA_SOLANA_RECIPIENT", "11111111111111111111111111111111")
     monkeypatch.setenv("ALPHA_SOLANA_AMOUNT_SOL", "0.01")
     monkeypatch.setenv("ALPHA_SOLANA_PRICE_USD", "1.00")
@@ -97,7 +98,7 @@ def test_email_registration_persists_user_credentials_and_session(auth_app):
     assert sessions[0]["google_id"] == users[0]["google_id"]
 
 
-def test_alpha_payment_uses_stripe_link_and_records_purchase_date(auth_app):
+def test_alpha_payment_uses_stripe_link_and_waits_for_verified_payment(auth_app):
     _, client, db_path = auth_app
     register(client, "alpha@example.com")
 
@@ -109,17 +110,13 @@ def test_alpha_payment_uses_stripe_link_and_records_purchase_date(auth_app):
     assert "https://testserver/pay/alpha/success" not in payment.text
     assert "prefilled_email=alpha%40example.com" in payment.text
     assert success.status_code == 200
-    assert "Subscription start saved for alpha@example.com" in success.text
+    assert "pending" in success.text.lower()
     rows = db_rows(
         db_path,
         "SELECT email, tier, provider, status, purchased_at FROM alpha_subscriptions WHERE email = ?",
         ("alpha@example.com",),
     )
-    assert len(rows) == 1
-    assert rows[0]["tier"] == "alpha_premium"
-    assert rows[0]["provider"] == "stripe"
-    assert rows[0]["status"] == "active"
-    assert rows[0]["purchased_at"].endswith("Z")
+    assert rows == []
 
 
 def test_stripe_webhook_stores_and_cancels_subscription(auth_app):
@@ -140,6 +137,10 @@ def test_stripe_webhook_stores_and_cancels_subscription(auth_app):
                 "customer_details": {"email": "stripe@example.com"},
                 "client_reference_id": user_id,
                 "payment_status": "paid",
+                "payment_link": "plink_alpha_test",
+                "mode": "subscription",
+                "amount_total": 100,
+                "currency": "usd",
                 "created": 1780000000,
             }
         },

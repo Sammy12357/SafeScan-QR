@@ -80,7 +80,6 @@ from .payments_solana import record_alpha_solana_subscription
 from .payments_solana import verify_alpha_solana_payment
 from .payments_stripe import alpha_stripe_checkout_url
 from .payments_stripe import process_stripe_webhook_event
-from .payments_stripe import record_alpha_subscription_purchase
 from .payments_stripe import verify_stripe_webhook_signature
 from .referrals import get_scan_count
 from .request_helpers import hash_ip
@@ -429,6 +428,8 @@ async def alpha_payment_page(request: Request):
     stripe_button = (
         f"<a class='primary-button payment-button stripe-payment-button' style='color:#000 !important;-webkit-text-fill-color:#000;text-shadow:none;' href='{stripe_url}' target='_blank' rel='noopener noreferrer'>Pay by card with Stripe</a>"
         if stripe_url else
+        "<a class='secondary-button payment-button' href='/login?next=%2Fpay%2Falpha'>Sign in to pay by card</a>"
+        if not user else
         "<span class='secondary-button payment-button payment-disabled'>Stripe checkout not configured</span>"
     )
     solana_url = alpha_solana_pay_url(request)
@@ -488,7 +489,7 @@ async def alpha_solana_payment_verify(request: Request):
         if not signature:
             body = """
             <h2>Solana payment not found yet</h2>
-            <p>SafeScan could not find a confirmed Solana payment for your payment reference yet. If you just paid, wait a few seconds and try verification again.</p>
+            <p>SafeScan could not find a finalized Solana payment for your payment reference yet. If you just paid, wait a moment and try verification again.</p>
             <p><a class="primary-button payment-button" href="/pay/alpha">Back to Alpha payment</a></p>
             """
             return templates.TemplateResponse("legal_page.html", legal_context(request, "Solana Payment Pending", body), status_code=202)
@@ -519,15 +520,9 @@ async def stripe_webhook(request: Request):
 @qr_app.get("/pay/alpha/success", response_class=HTMLResponse)
 async def alpha_payment_success_page(request: Request):
     expire_alpha_subscriptions()
-    recorded_purchase = record_alpha_subscription_purchase(request)
-    storage_note = (
-        f"<p class='payment-note'>Subscription start saved for {recorded_purchase['email']} on {recorded_purchase['purchased_at']}.</p>"
-        if recorded_purchase else
-        "<p class='payment-note'>Sign in to SafeScan, then revisit this success page so your subscription start date can be saved to your account.</p>"
-    )
     body = f"""
-    <h2>Alpha payment received</h2>
-    <p>Thanks for subscribing to SafeScan Alpha Premium. Your payment processor has accepted the checkout session.</p>
+    <h2>Alpha payment pending</h2>
+    <p>SafeScan is waiting for payment confirmation from Stripe. Visiting this page does not activate access.</p>
     <div class="payment-panel">
       <div>
         <p class="eyebrow">Next step</p>
@@ -541,8 +536,7 @@ async def alpha_payment_success_page(request: Request):
         <a class="primary-button payment-button" href="/resources/docs">Open docs</a>
       </div>
     </div>
-    {storage_note}
-    <p class="payment-note">Stripe webhook events update subscription access automatically after checkout, renewal, cancellation, or period-end expiration.</p>
+    <p class="payment-note">A verified Stripe webhook updates subscription access after payment, renewal, cancellation, or period-end expiration.</p>
     """
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Alpha Payment Success", body))
 

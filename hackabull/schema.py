@@ -213,6 +213,10 @@ def init_db():
                          client_reference_id TEXT, metadata TEXT,
                          created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
                          UNIQUE(user_id, tier, provider))''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS stripe_events
+                        (event_id TEXT PRIMARY KEY, object_id TEXT NOT NULL,
+                         event_type TEXT NOT NULL, dedupe_key TEXT UNIQUE,
+                         processed_at TEXT NOT NULL, outcome TEXT NOT NULL)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS alpha_solana_payment_references
                         (id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
                          email TEXT NOT NULL, reference TEXT NOT NULL UNIQUE,
@@ -251,6 +255,7 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_alpha_subscriptions_purchased ON alpha_subscriptions(purchased_at)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_alpha_solana_reference ON alpha_solana_payment_references(reference)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_alpha_solana_user ON alpha_solana_payment_references(user_id)")
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_alpha_solana_signature ON alpha_solana_payment_references(signature) WHERE signature IS NOT NULL")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_go_ghost_jobs_user ON go_ghost_removal_jobs(user_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_go_ghost_jobs_broker ON go_ghost_removal_jobs(broker)")
     cursor.execute("PRAGMA table_info(users)")
