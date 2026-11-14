@@ -57,7 +57,7 @@ jobs:
           print("Runtime imports passed")
           PY
       - name: Syntax check
-        run: python -m py_compile hackabull/*.py db.py distribute.py scrop.py storage.py ml_model_final.py
+        run: python -m py_compile hackabull/*.py scripts/security/identity_dry_run.py db.py distribute.py scrop.py storage.py ml_model_final.py
       - name: Run tests
         run: python -m pytest tests -q
       - name: Check browser worker against the QR corpus
