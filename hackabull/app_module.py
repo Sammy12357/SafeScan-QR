@@ -369,8 +369,11 @@ async def metrics_middleware(request: Request, call_next):
     finally:
         duration = time.monotonic() - start
         status = getattr(locals().get("response", None), "status_code", 500)
-        REQUEST_COUNT.labels(method=request.method, path=request.url.path, status=str(status)).inc()
-        REQUEST_LATENCY.labels(path=request.url.path).observe(duration)
+        matched_route = request.scope.get("route")
+        route_path = getattr(matched_route, "path", None)
+        metric_path = route_path if isinstance(route_path, str) and route_path.startswith("/") else "unmatched"
+        REQUEST_COUNT.labels(method=request.method, path=metric_path, status=str(status)).inc()
+        REQUEST_LATENCY.labels(path=metric_path).observe(duration)
         if request.url.path in ("/api/scan", "/api/scan/file", "/search_qr_api"):
             ACTIVE_SCANS.dec()
 

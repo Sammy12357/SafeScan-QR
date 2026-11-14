@@ -63,21 +63,32 @@ from requests.structures import CaseInsensitiveDict
 # =============================================================================
 # RATE LIMITING, PAYLOAD VALIDATION & SSRF GUARDS
 # =============================================================================
-def enforce_rate_limit(request, bucket, limit, window_seconds, user_key=None):
-    identity = user_key or rate_limit_identity(request)
-    key = f"{bucket}:{identity}"
-    now = time.time()
-    hits = [stamp for stamp in RATE_LIMITS.get(key, []) if now - stamp < window_seconds]
-    if len(hits) >= limit:
-        retry_after = max(1, int(window_seconds - (now - hits[0])))
+def enforce_rate_limit(request, bucket, limit, window_seconds, user_key=None, ip_limit=None):
+    def bounded_identity(value):
+        identity = str(value or "unverified")
+        if len(identity) > 256:
+            identity = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+        return identity
+
+    ip_identity = bounded_identity(rate_limit_identity(request))
+    if user_key:
+        # Keep the established per-account budget while separately bounding
+        # traffic from a shared address. Give NATs a larger IP budget so one
+        # household's users do not share a single 30-scan quota.
+        budgets = [
+            (f"{bucket}:user:{bounded_identity(user_key)}", limit),
+            (f"{bucket}:ip:{ip_identity}", ip_limit if ip_limit is not None else max(100, limit * 10)),
+        ]
+    else:
+        budgets = [(f"{bucket}:{ip_identity}", limit)]
+    retry_after = RATE_LIMITS.check_and_record(budgets, window_seconds, time.time())
+    if retry_after is not None:
         audit_log("auth.rate_limited", request=request, metadata={"bucket": bucket, "retryAfter": retry_after})
         return JSONResponse(
             {"error": "Too many requests", "retryAfter": retry_after},
             status_code=429,
             headers={"Retry-After": str(retry_after)}
         )
-    hits.append(now)
-    RATE_LIMITS[key] = hits
     return None
 
 def validate_strict_payload(payload, allowed_fields):
