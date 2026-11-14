@@ -34,3 +34,27 @@ Google login events do not record a provider, so those rows are marked
 `provider_unconfirmed` unless other reliable evidence exists. The supplied
 Auth0 issuer must be checked against actual verified tokens; the database
 does not prove it.
+
+## Phase 2 release gate
+
+The candidate application code now adds `user_identities` and accepts a
+federated sign-in only when its exact `(issuer, subject)` is mapped to an
+existing account, or when there is no account with that email. It deliberately
+refuses to guess a mapping from an email address. Deploying that code before
+reviewing and applying legacy mappings would make some returning users unable
+to sign in again, although existing sessions would continue until expiry.
+
+Before release, obtain a consistent offline SQLite backup, run this inventory,
+review every owner/admin and local-credential conflict privately, and prepare
+an explicit mapping backed by provider subject proof. Never infer a missing
+Auth0 connection prefix from the old `google_id`. Decide with the owner whether
+to revoke existing sessions and when. No migration or session revocation has
+been run as part of this branch.
+
+For Auth0, inspect the enabled application connections and configure the
+post-login Action in `docs/security/auth0-post-login-action.js` for the actual
+SafeScan client IDs. The server checks `email_verified` independently.
+
+This mapping follows [Google's requirement to identify users by `sub`](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token),
+[Auth0's requirement to authenticate both accounts before linking](https://auth0.com/docs/manage-users/user-accounts/user-account-linking/link-user-accounts),
+and [Auth0's post-login verification guidance](https://support.auth0.com/center/s/article/implement-email-verification-to-prevent-access-with-unverified-emails-in-auth0).
