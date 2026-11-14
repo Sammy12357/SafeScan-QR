@@ -105,3 +105,35 @@ def test_metrics_use_route_template_and_single_unmatched_label(app_modules, monk
     asyncio.run(probe_unmatched_cardinality())
 
     assert set(paths) == {"/admin/users/{email}/drawer", "unmatched"}
+
+
+def test_metrics_normalize_unusual_method_tokens(app_modules, monkeypatch):
+    _, _, app_module = app_modules
+    methods = []
+
+    class Metric:
+        def labels(self, **kwargs):
+            if "method" in kwargs:
+                methods.append(kwargs["method"])
+            return self
+
+        def inc(self):
+            pass
+
+        def observe(self, duration):
+            pass
+
+    monkeypatch.setattr(app_module, "REQUEST_COUNT", Metric())
+    monkeypatch.setattr(app_module, "REQUEST_LATENCY", Metric())
+
+    async def probe():
+        async def not_found(request):
+            return Response(status_code=404)
+
+        for index in range(100):
+            request = _request("198.51.100.42")
+            request.scope["method"] = f"UNUSUAL{index}"
+            await app_module.metrics_middleware(request, not_found)
+
+    asyncio.run(probe())
+    assert set(methods) == {"OTHER"}
