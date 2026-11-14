@@ -87,6 +87,35 @@ def test_confirmation_is_one_time_and_only_it_adds_a_signup(waitlist_app):
     assert len(sent) == 1
 
 
+def test_turnstile_blocks_waitlist_until_matching_token_is_verified(waitlist_app, monkeypatch):
+    _, browser, db_path, sent, _ = waitlist_app
+    turnstile = importlib.import_module("hackabull.turnstile")
+    monkeypatch.setattr(turnstile, "TURNSTILE_ENABLED", True)
+    monkeypatch.setattr(turnstile, "TURNSTILE_SITE_KEY", "site-key")
+    monkeypatch.setattr(turnstile, "TURNSTILE_SECRET_KEY", "secret-key")
+    monkeypatch.setattr(turnstile, "TURNSTILE_HOSTNAMES", {"testserver"})
+    checked = []
+
+    def verify(token):
+        checked.append(token)
+        return {"success": True, "hostname": "testserver", "action": "waitlist"}
+
+    monkeypatch.setattr(turnstile, "_siteverify", verify)
+    missing = browser.post("/waitlist", data={"email": "person@example.com"})
+    assert missing.status_code == 400
+    assert checked == []
+    assert sent == []
+    assert _rows(db_path, "SELECT count(*) FROM waitlist_confirmation_tokens") == [(0,)]
+
+    accepted = browser.post("/waitlist", data={
+        "email": "person@example.com", "cf-turnstile-response": "verified-token",
+    })
+    assert accepted.status_code == 200
+    assert checked == ["verified-token"]
+    assert len(sent) == 1
+    assert _rows(db_path, "SELECT count(*) FROM waitlist_confirmation_tokens") == [(1,)]
+
+
 def test_missing_smtp_or_send_failure_never_adds_pending_or_confirmed(waitlist_app, monkeypatch):
     app, browser, db_path, sent, pages = waitlist_app
     monkeypatch.setattr(pages, "email_sending_configured", lambda: False)

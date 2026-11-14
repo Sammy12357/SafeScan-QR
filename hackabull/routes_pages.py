@@ -301,7 +301,11 @@ async def privacy_policy(request: Request):
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Privacy Policy", Markup(PRIVACY_POLICY_HTML)))
 
 @qr_app.post("/waitlist", response_class=HTMLResponse, dependencies=[Depends(require_csrf_form)])
-async def waitlist_signup(request: Request, email: str = Form(...)):
+async def waitlist_signup(
+    request: Request,
+    email: str = Form(...),
+    cf_turnstile_response: str | None = Form(None, alias="cf-turnstile-response"),
+):
     normalized_email = bounded_text(email, "email", 254, required=True, strip=True).lower()
     if not re.fullmatch(r"[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+", normalized_email):
         raise SafeScanError("Invalid email address.", 400)
@@ -310,6 +314,9 @@ async def waitlist_signup(request: Request, email: str = Form(...)):
     ip_rate_limit = enforce_rate_limit(request, "waitlist_ip", 3, 60 * 60)
     if ip_rate_limit:
         return html_rate_limit_response(request, ip_rate_limit)
+    # A failed challenge may be retried without spending the one-per-day
+    # address budget, while the short IP budget still bounds verification calls.
+    await verify_turnstile(request, cf_turnstile_response, action="waitlist")
     # The per-address budget uses a separate 24-hour window. Its extra
     # generous IP cap in enforce_rate_limit does not narrow the 3/hour cap.
     address_key = hashlib.sha256(normalized_email.encode("utf-8")).hexdigest()

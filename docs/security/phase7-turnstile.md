@@ -55,12 +55,12 @@ leaves the guest submission blocked until the user allows the challenge.
 
 ## Static-analysis baseline review
 
-The Phase 7 route import shifts 18 existing `markupsafe.Markup(...)` calls in
-`hackabull/routes_pages.py` by one line. Comparing the prior revision with
-this change shows the 18 call expressions are identical, and Bandit still
-reports the same 26 medium/high findings across the repository (18 B704
-calls and eight B608 SQL construction findings). Their surrounding-code
-digests changed because the exact baseline includes line context. The
-`.github/security/bandit-baseline.json` entries were refreshed only after
-that comparison. See [the Phase 4 B704 review](phase4-bandit-review.md)
-for the underlying output-encoding rationale.
+In the integrated Phase 7 branch, the Go Ghost route no longer calls
+`Markup(body)`. An AST comparison against Phase 6 found no new `Markup`
+calls and one removed call. The other 17 B704 call expressions are unchanged;
+their line numbers and surrounding-code digests shifted as routes were added.
+The eight B608 SQL construction findings are unchanged in substance; their
+context also shifted with the waitlist schema and admin query edits. The
+exact baseline now records 25 medium/high findings (17 B704, eight B608).
+See [the Phase 4 B704 review](phase4-bandit-review.md) for the underlying
+output-encoding rationale.
