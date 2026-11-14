@@ -50,6 +50,7 @@ from storage import upload_bytes as storage_upload_bytes
 from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party
 import safescan_model_calibration as sm_calibration
 from .config import AIRDROP_ADMIN_SECRET
+from .client_ip import request_ip
 
 # =============================================================================
 # RESULT CACHE & REQUEST HELPERS (IP, locale, ids)
@@ -76,12 +77,6 @@ def make_id(prefix):
 def hash_ip(ip_value):
     salt = os.getenv("PRIVACY_HASH_SALT", "safescan-dev-salt")
     return hashlib.sha256(f"{salt}:{ip_value or 'unknown'}".encode("utf-8")).hexdigest()
-
-def request_ip(request: Request):
-    forwarded = request.headers.get("x-forwarded-for", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
 
 def locale_from_request(request: Request):
     return (request.headers.get("accept-language") or "en-US").split(",")[0].strip()
