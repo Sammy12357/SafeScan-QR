@@ -55,8 +55,18 @@ def test_security_headers_are_present_on_health_response(security_app):
     assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
     assert "frame-src https://accounts.google.com" in response.headers["Content-Security-Policy"]
     assert "youtube.com" not in response.headers["Content-Security-Policy"]
+    assert "https://cdn.jsdelivr.net" not in response.headers["Content-Security-Policy"]
+    assert "'wasm-unsafe-eval'" in response.headers["Content-Security-Policy"]
+    assert "worker-src 'self'" in response.headers["Content-Security-Policy"]
     assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
     assert "Server" not in response.headers
+
+
+def test_vendored_qr_wasm_has_correct_media_type(security_app):
+    _, client, _ = security_app
+    response = client.get("/static/vendor/zxing-wasm/3.1.6/reader/zxing_reader.wasm")
+    assert response.status_code == 200
+    assert response.headers["Content-Type"].startswith("application/wasm")
 
 
 def test_api_responses_are_no_store(security_app):

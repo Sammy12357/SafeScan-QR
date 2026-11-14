@@ -1,196 +1,159 @@
-// SafeScan live QR scanner.
-//
-// Architecture:
-//   1. getUserMedia → live <video> stream (rear camera preferred) so the
-//      user can aim, but we never decode on our own.
-//   2. The user presses "Take picture" and we decode that single frame —
-//      nothing is read until they deliberately capture.
-//   3. Decoder is BarcodeDetector when available (native, ~free CPU on
-//      Chrome Android / Edge), else jsQR loaded lazily from the
-//      CSP-allowed jsdelivr CDN as a fallback for iOS Safari / Firefox.
-//
-// Notes on mobile gotchas:
-//   • <video playsinline muted> is required for iOS — without playsinline
-//     iOS Safari fullscreens the video and the rAF loop pauses.
-//   • getUserMedia must be called from a user gesture (we only call from
-//     the click handler).
-//   • The page must be HTTPS (or localhost) — Render's domain already is.
-//   • Permissions-Policy: camera=(self) must be set server-side, otherwise
-//     getUserMedia rejects with NotAllowedError before the user even sees
-//     the prompt. See hackabull.py middleware.
-
+// SafeScan web camera scanner. QR decoding starts only after "Take picture".
+// The native detector is a fast first pass; the self-hosted ZXing worker checks
+// the full-resolution frame and protects the multi-code refusal on every browser.
 (function () {
-  const JS_QR_CDN = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js";
-  const FALLBACK_MAX_DIM = 720; // downsample for jsQR to keep mobile CPU happy.
-  const ENHANCED_SCAN_EVERY_N_FRAMES = 3;
-  const STYLIZED_THRESHOLDS = [55, 70, 85, 95, 115, 135, 155, 185];
+  const WORKER_URL = "/static/qr-worker.js?v=scanner-phase-2";
+  const WORKER_START_TIMEOUT_MS = 8000;
+  const DECODE_TIMEOUT_MS = 6000;
 
-  let jsQRLoader = null;
-  let fallbackFrameCount = 0;
-  function loadJsQR() {
-    if (typeof window.jsQR === "function") return Promise.resolve(window.jsQR);
-    if (jsQRLoader) return jsQRLoader;
-    jsQRLoader = new Promise((resolve, reject) => {
-      const script = document.createElement("script");
-      script.src = JS_QR_CDN;
-      script.async = true;
-      script.crossOrigin = "anonymous";
-      script.referrerPolicy = "no-referrer";
-      script.onload = () => {
-        if (typeof window.jsQR === "function") resolve(window.jsQR);
-        else reject(new Error("jsQR did not load."));
-      };
-      script.onerror = () => reject(new Error("Could not load the QR fallback decoder."));
-      document.head.appendChild(script);
-    });
-    return jsQRLoader;
+  function validPayloads(values) {
+    return [...new Set(values.filter((value) =>
+      typeof value === "string" && value.trim() && value.length <= 4096
+    ))];
   }
 
-  function drawVideoFrame(video, canvas, ctx) {
-    const vw = video.videoWidth;
-    const vh = video.videoHeight;
-    if (!vw || !vh) return null;
-    const scale = Math.min(1, FALLBACK_MAX_DIM / Math.max(vw, vh));
-    const w = Math.max(1, Math.round(vw * scale));
-    const h = Math.max(1, Math.round(vh * scale));
-    if (canvas.width !== w) canvas.width = w;
-    if (canvas.height !== h) canvas.height = h;
-    ctx.drawImage(video, 0, 0, w, h);
-    return ctx.getImageData(0, 0, w, h);
+  async function createNativeDetector() {
+    if (typeof window.BarcodeDetector !== "function") return null;
+    try {
+      const supported = await window.BarcodeDetector.getSupportedFormats();
+      if (!supported.includes("qr_code")) return null;
+      return new window.BarcodeDetector({ formats: ["qr_code"] });
+    } catch (_err) {
+      return null;
+    }
   }
 
-  function decodeWithJsQRPasses(jsQR, imageData, w, h, includeEnhanced) {
-    function oneOrAmbiguous(pixels) {
-      const first = jsQR(pixels, w, h, { inversionAttempts: "attemptBoth" });
-      if (!first || !first.data) return null;
-      // jsQR returns only one code. Mask the first code and make one bounded
-      // second pass so a competing QR is not silently ignored on fallback
-      // browsers. Native BarcodeDetector can report all visible codes.
-      const corners = first.location && [
-        first.location.topLeftCorner, first.location.topRightCorner,
-        first.location.bottomLeftCorner, first.location.bottomRightCorner
-      ];
-      if (corners && corners.every((point) => point && Number.isFinite(point.x) && Number.isFinite(point.y))) {
-        const masked = new Uint8ClampedArray(pixels);
-        const x0 = Math.max(0, Math.floor(Math.min(...corners.map((point) => point.x)) - 8));
-        const x1 = Math.min(w, Math.ceil(Math.max(...corners.map((point) => point.x)) + 8));
-        const y0 = Math.max(0, Math.floor(Math.min(...corners.map((point) => point.y)) - 8));
-        const y1 = Math.min(h, Math.ceil(Math.max(...corners.map((point) => point.y)) + 8));
-        for (let y = y0; y < y1; y += 1) {
-          for (let x = x0; x < x1; x += 1) {
-            const offset = (y * w + x) * 4;
-            masked[offset] = 255;
-            masked[offset + 1] = 255;
-            masked[offset + 2] = 255;
-            masked[offset + 3] = 255;
-          }
+  async function captureFrame(video, canvas, ctx) {
+    if (!video.videoWidth || !video.videoHeight) throw new Error("No camera frame is ready.");
+    // Transferring a bitmap avoids a large readback on browsers with worker
+    // OffscreenCanvas. ImageData is the compatibility path for other browsers.
+    if (typeof createImageBitmap === "function" && typeof OffscreenCanvas === "function") {
+      try {
+        const bitmap = await createImageBitmap(video);
+        return { bitmap, transfer: [bitmap] };
+      } catch (_err) {
+        // Safari and some camera drivers cannot snapshot video to ImageBitmap.
+      }
+    }
+    if (!ctx) throw new Error("Canvas is unavailable in this browser.");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    return { imageData, transfer: [imageData.data.buffer] };
+  }
+
+  function createWorkerBridge() {
+    return new Promise((resolve, reject) => {
+      if (typeof Worker !== "function") {
+        reject(new Error("Web Workers are unavailable."));
+        return;
+      }
+      let worker;
+      try {
+        worker = new Worker(WORKER_URL);
+      } catch (err) {
+        reject(err);
+        return;
+      }
+      let closed = false;
+      let ready = false;
+      let nextId = 0;
+      const pending = new Map();
+      const startupTimer = setTimeout(() => fail(new Error("QR decoder took too long to start.")), WORKER_START_TIMEOUT_MS);
+
+      function fail(error) {
+        if (closed) return;
+        closed = true;
+        clearTimeout(startupTimer);
+        worker.terminate();
+        for (const request of pending.values()) {
+          clearTimeout(request.timer);
+          request.reject(error);
         }
-        const second = jsQR(masked, w, h, { inversionAttempts: "attemptBoth" });
-        if (second && second.data && second.data !== first.data) return { ambiguous: true };
+        pending.clear();
+        if (!ready) reject(error);
       }
-      return first.data;
-    }
 
-    const raw = oneOrAmbiguous(imageData.data);
-    if (raw) return raw;
-    if (!includeEnhanced) return null;
-
-    const source = imageData.data;
-    const pixels = w * h;
-    const gray = new Uint8ClampedArray(pixels);
-    let min = 255;
-    let max = 0;
-
-    for (let index = 0, pixel = 0; pixel < pixels; index += 4, pixel += 1) {
-      const luminance = Math.round(source[index] * 0.299 + source[index + 1] * 0.587 + source[index + 2] * 0.114);
-      gray[pixel] = luminance;
-      if (luminance < min) min = luminance;
-      if (luminance > max) max = luminance;
-    }
-
-    const span = Math.max(1, max - min);
-    const enhanced = new Uint8ClampedArray(source.length);
-    for (const threshold of STYLIZED_THRESHOLDS) {
-      for (let pixel = 0, index = 0; pixel < pixels; pixel += 1, index += 4) {
-        const normalized = Math.round(((gray[pixel] - min) * 255) / span);
-        const value = normalized > threshold ? 255 : 0;
-        enhanced[index] = value;
-        enhanced[index + 1] = value;
-        enhanced[index + 2] = value;
-        enhanced[index + 3] = 255;
+      async function decode(video, canvas, ctx) {
+        if (closed) throw new Error("QR decoder is unavailable.");
+        const frame = await captureFrame(video, canvas, ctx);
+        const id = ++nextId;
+        return new Promise((resolveResult, rejectResult) => {
+          const timer = setTimeout(() => {
+            pending.delete(id);
+            rejectResult(new Error("QR decode timed out."));
+          }, DECODE_TIMEOUT_MS);
+          pending.set(id, { resolve: resolveResult, reject: rejectResult, timer });
+          try {
+            worker.postMessage({
+              type: "decode", id, mode: "capture",
+              ...(frame.bitmap ? { bitmap: frame.bitmap } : { imageData: frame.imageData }),
+            }, frame.transfer);
+          } catch (error) {
+            clearTimeout(timer);
+            pending.delete(id);
+            rejectResult(error);
+          }
+        });
       }
-      const code = oneOrAmbiguous(enhanced);
-      if (code) return code;
-    }
-    return null;
-  }
 
-  async function decodeWithJsQRFallback(video, canvas, ctx, includeEnhanced) {
-    const jsQR = await loadJsQR();
-    const imageData = drawVideoFrame(video, canvas, ctx);
-    if (!imageData) return null;
-    return decodeWithJsQRPasses(jsQR, imageData, canvas.width, canvas.height, includeEnhanced);
+      worker.onmessage = (event) => {
+        const result = event.data || {};
+        if (result.type === "ready") {
+          if (closed || ready) return;
+          ready = true;
+          clearTimeout(startupTimer);
+          resolve({ decode, close: () => fail(new Error("QR scanner closed.")) });
+          return;
+        }
+        if (result.type === "init-error") {
+          fail(new Error("Local QR decoder failed to start."));
+          return;
+        }
+        const request = pending.get(result.id);
+        if (!request) return;
+        clearTimeout(request.timer);
+        pending.delete(result.id);
+        if (result.error) request.reject(new Error("Local QR decoder failed."));
+        else request.resolve(result);
+      };
+      worker.onerror = () => fail(new Error("Local QR decoder stopped."));
+    });
   }
 
   async function buildDecoder() {
-    const hasNativeDetector = "BarcodeDetector" in window;
-    if (hasNativeDetector) {
-      try {
-        const supported = await window.BarcodeDetector.getSupportedFormats();
-        if (supported.indexOf("qr_code") !== -1) {
-          const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
-          return {
-            kind: "BarcodeDetector",
-            decode: async (video, canvas, ctx, forceEnhanced) => {
-              const codes = await detector.detect(video);
-              const values = [...new Set((codes || []).map((code) => code.rawValue).filter(Boolean))];
-              if (values.length > 1) return { ambiguous: true };
-              if (values.length === 1) return values[0];
-              // On an explicit capture, spend the extra effort: load jsQR (if
-              // it isn't already) and run the stylized-threshold enhancement
-              // pass so a single press has the best possible chance of reading
-              // a tricky code.
-              if (forceEnhanced) {
-                try {
-                  return await decodeWithJsQRFallback(video, canvas, ctx, true);
-                } catch (_e) {
-                  return null;
-                }
-              }
-              if (typeof window.jsQR !== "function") return null;
-              fallbackFrameCount += 1;
-              return decodeWithJsQRFallback(video, canvas, ctx, fallbackFrameCount % ENHANCED_SCAN_EVERY_N_FRAMES === 0);
-            }
-          };
-        }
-      } catch (err) {
-        // Some Android builds throw on getSupportedFormats — fall through.
-      }
-    }
-    // No native detector available (iOS Safari < 17, older browsers). Load
-    // jsQR from the CDN; surface a clear, actionable message if it fails so
-    // the user can switch to the upload path instead of staring at a frozen
-    // viewfinder.
-    let jsQR;
-    try {
-      jsQR = await loadJsQR();
-    } catch (err) {
-      const reason = hasNativeDetector
-        ? "Live scanning isn't supported in this browser and the fallback decoder failed to load."
-        : "Live scanning isn't supported in this browser, and the fallback decoder could not be reached (check your connection).";
-      const richError = new Error(reason + " Use \"Upload QR file/photo\" instead.");
-      richError.code = "qr_decoder_unavailable";
-      throw richError;
+    const [nativeDetector, workerBridge] = await Promise.all([
+      createNativeDetector(), createWorkerBridge().catch(() => null),
+    ]);
+    if (!workerBridge) {
+      throw new Error('This browser cannot start the local QR decoder. Use "Upload QR file/photo" instead.');
     }
     return {
-      kind: "jsQR",
-      decode: (video, canvas, ctx, forceEnhanced) => {
-        const imageData = drawVideoFrame(video, canvas, ctx);
-        if (!imageData) return null;
-        fallbackFrameCount += 1;
-        const includeEnhanced = forceEnhanced || fallbackFrameCount % ENHANCED_SCAN_EVERY_N_FRAMES === 0;
-        return decodeWithJsQRPasses(jsQR, imageData, canvas.width, canvas.height, includeEnhanced);
-      }
+      kind: nativeDetector ? "BarcodeDetector + local ZXing" : "local ZXing",
+      close: () => workerBridge?.close(),
+      decode: async (video, canvas, ctx) => {
+        let nativeValues = [];
+        if (nativeDetector) {
+          try {
+            const codes = await nativeDetector.detect(video);
+            nativeValues = validPayloads((codes || []).map((code) => code.rawValue));
+          } catch (_err) {
+            // Worker decode remains available if native detection fails.
+          }
+        }
+        if (nativeValues.length > 1) return { ambiguous: true };
+        // A native-only result cannot establish that the complete frame has
+        // been checked for a competing code. Fail closed if the worker fails.
+        const result = await workerBridge.decode(video, canvas, ctx);
+        if (result.multipleCodes === true) return { ambiguous: true };
+        const workerValues = validPayloads((result.symbols || [])
+          .filter((symbol) => symbol.valid === true)
+          .map((symbol) => symbol.text));
+        const values = validPayloads([...nativeValues, ...workerValues]);
+        if (values.length > 1) return { ambiguous: true };
+        return values[0] || null;
+      },
     };
   }
 
@@ -239,6 +202,7 @@
     function cleanup() {
       if (!active) return;
       active = false;
+      if (decoder) decoder.close();
       if (stream) {
         stream.getTracks().forEach((track) => {
           try { track.stop(); } catch (_e) {}
@@ -285,6 +249,10 @@
           },
           audio: false
         });
+        if (!active) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
       } catch (err) {
         if (err && err.name === "NotAllowedError") {
           reportError("Camera access was blocked. Allow it in your browser to scan.");
@@ -300,12 +268,15 @@
       try {
         await video.play();
       } catch (_e) {
-        // Some Safari builds need a tick before play() resolves; the rAF
-        // loop will pick up frames once HAVE_ENOUGH_DATA is reached.
+        // Some Safari builds need a moment before the first frame is ready.
       }
 
       try {
         decoder = await buildDecoder();
+        if (!active) {
+          decoder.close();
+          return;
+        }
       } catch (err) {
         reportError((err && err.message) || "Could not initialise the QR decoder.");
         return;
@@ -313,9 +284,8 @@
 
       // The preview is live so the user can aim, but we never decode on our
       // own — a QR is only read when the user presses "Take picture".
-      status.textContent = decoder.kind === "BarcodeDetector"
-        ? "Line up the QR code, then take a picture."
-        : "Line up the QR code, then take a picture. (using fallback decoder)";
+      status.textContent = "Aim at one QR code, then take a picture. " +
+        (decoder.kind === "local ZXing" ? "Using the local QR decoder." : "");
       captureBtn.disabled = false;
     })();
 
@@ -333,10 +303,11 @@
       status.textContent = "Reading the QR code…";
 
       let value = null;
+      let scanError = null;
       try {
-        value = await decoder.decode(video, canvas, ctx, true);
-      } catch (_e) {
-        value = null;
+        value = await decoder.decode(video, canvas, ctx);
+      } catch (error) {
+        scanError = error;
       }
 
       if (!active) return;
@@ -355,7 +326,9 @@
         return;
       }
 
-      status.textContent = "No QR code found in that picture. Line it up and take another.";
+      status.textContent = scanError
+        ? 'The local QR decoder could not read this picture. Go back and use "Upload QR file/photo".'
+        : "No QR code found in that picture. Line it up and take another.";
       captureBtn.disabled = false;
       scanning = false;
     }
