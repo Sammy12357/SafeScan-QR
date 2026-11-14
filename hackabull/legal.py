@@ -80,10 +80,33 @@ def get_user_export(email):
         opt_outs = [dict(row) for row in conn.execute("SELECT * FROM privacy_opt_outs WHERE email = ?", (email,))]
     return {"email": email, "scans": scans, "scanEvents": events, "dataRequests": requests_, "ageConfirmations": age, "privacyOptOuts": opt_outs}
 
-def delete_user_data(email):
+def delete_user_data(email, user_id):
+    """Erase only a uniquely identified account while preserving an active owner."""
     with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        target = conn.execute(
+            "SELECT google_id, email, role FROM users WHERE google_id = ?", (user_id,)
+        ).fetchone()
+        if not target or not target["email"] or target["email"].casefold() != email.casefold():
+            return False
+        # Legacy data can contain accounts with the same email. Never erase a
+        # different identity or their email-scoped data in that state.
+        same_email = sum(
+            1 for row in conn.execute("SELECT email FROM users WHERE email IS NOT NULL")
+            if row["email"].casefold() == email.casefold()
+        )
+        if same_email != 1:
+            return False
+        if target["role"] == "owner":
+            active_owners = conn.execute(
+                "SELECT COUNT(*) FROM users WHERE role = 'owner' AND status = 'active' AND google_id != ?",
+                (user_id,),
+            ).fetchone()[0]
+            if not active_owners:
+                return False
         conn.execute("DELETE FROM scans WHERE email = ?", (email,))
         conn.execute("DELETE FROM scan_events WHERE email = ?", (email,))
-        conn.execute("DELETE FROM users WHERE email = ?", (email,))
+        conn.execute("DELETE FROM users WHERE google_id = ?", (user_id,))
         conn.execute("DELETE FROM age_confirmations WHERE email = ?", (email,))
+    return True
 

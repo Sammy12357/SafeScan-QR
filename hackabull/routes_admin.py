@@ -76,21 +76,74 @@ from .request_helpers import make_id
 # =============================================================================
 # ROUTES — ADMIN CONSOLE (/admin/*)  [staff only]
 # =============================================================================
+_ROLE_LEVEL = {"user": 1, "admin": 2, "owner": 3}
+
+
+def _current_admin_actor(conn, user_id, minimum_role):
+    """Recheck the actor under the write lock, so a demotion cannot race an action."""
+    actor = conn.execute(
+        "SELECT google_id, role, status FROM users WHERE google_id = ?", (user_id,)
+    ).fetchone()
+    if not actor or actor["status"] != "active" or _ROLE_LEVEL.get(actor["role"], 0) < _ROLE_LEVEL[minimum_role]:
+        raise HTTPException(status_code=403, detail="You do not have permission to do this.")
+    return actor
+
+
+def _admin_target(conn, identifier):
+    """Resolve an email or account ID to exactly one immutable account ID."""
+    matches = conn.execute(
+        "SELECT google_id, role, status FROM users WHERE email = ? OR google_id = ?",
+        (identifier, identifier),
+    ).fetchall()
+    if not matches:
+        raise HTTPException(status_code=404, detail="Not found.")
+    if len(matches) != 1:
+        raise HTTPException(status_code=409, detail="Select one account by its ID.")
+    return matches[0]
+
+
+def _require_lower_role(actor, target):
+    if _ROLE_LEVEL.get(target["role"], 0) >= _ROLE_LEVEL[actor["role"]]:
+        raise HTTPException(status_code=403, detail="You cannot change an account with an equal or higher role.")
+
+
+def _require_another_active_owner(conn, target_id):
+    remaining = conn.execute(
+        "SELECT COUNT(*) FROM users WHERE role = 'owner' AND status = 'active' AND google_id != ?",
+        (target_id,),
+    ).fetchone()[0]
+    if not remaining:
+        raise HTTPException(status_code=409, detail="At least one active owner must remain.")
+
+
+def _safe_csv_cell(value):
+    """Keep untrusted export fields from being interpreted as spreadsheet formulas."""
+    if value is None:
+        return ""
+    cell = str(value)
+    if cell.startswith(("\t", "\r", "\n")) or cell.lstrip().startswith(("=", "+", "-", "@")):
+        return "'" + cell
+    return cell
+
+
 @qr_app.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(request: Request):
-    return admin_context(request, "Dashboard", "dashboard", dashboard_data())
+    return admin_context(request, "Dashboard", "dashboard", dashboard_data)
 
 @qr_app.get("/admin/activity", response_class=HTMLResponse)
 async def admin_activity(request: Request):
-    return admin_context(request, "Activity Feed", "logs", fetch_audit_logs())
+    return admin_context(request, "Activity Feed", "logs", fetch_audit_logs)
 
 @qr_app.get("/admin/users", response_class=HTMLResponse)
 async def admin_users(request: Request, search: str = Query(""), status: str = Query(""), role: str = Query(""), tier: str = Query(""), page: int = Query(1), flag: str = Query("")):
-    data = fetch_admin_users(search=search, status=status, role=role, tier=tier, page=page)
-    data.update({"filters": {"search": search, "status": status, "role": role, "tier": tier, "flag": flag}})
-    if flag == "review":
-        data["rows"] = [row for row in data["rows"] if row.get("fraud_flags")]
-    return admin_context(request, "All Users", "users", data)
+    def load_data():
+        data = fetch_admin_users(search=search, status=status, role=role, tier=tier, page=page)
+        data.update({"filters": {"search": search, "status": status, "role": role, "tier": tier, "flag": flag}})
+        if flag == "review":
+            data["rows"] = [row for row in data["rows"] if row.get("fraud_flags")]
+        return data
+
+    return admin_context(request, "All Users", "users", load_data)
 
 @qr_app.get("/admin/users/{email}/drawer", response_class=HTMLResponse)
 async def admin_user_drawer(request: Request, email: str):
@@ -103,10 +156,18 @@ async def admin_user_drawer(request: Request, email: str):
 @qr_app.post("/admin/users/{email}/suspend", dependencies=[Depends(require_csrf_form)])
 async def admin_suspend_user(request: Request, email: str, action: str = Form("suspend")):
     admin_user = require_role_user(request, "admin")
+    if action not in ("suspend", "unsuspend"):
+        raise HTTPException(status_code=400, detail="Invalid request.")
     new_status = "active" if action == "unsuspend" else "suspended"
     with get_conn() as conn:
-        conn.execute("UPDATE users SET status = ? WHERE email = ?", (new_status, email))
-    audit_log("admin.user_unsuspended" if new_status == "active" else "admin.user_suspended", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=email)
+        conn.execute("BEGIN IMMEDIATE")
+        actor = _current_admin_actor(conn, admin_user["google_id"], "admin")
+        target = _admin_target(conn, email)
+        _require_lower_role(actor, target)
+        if target["status"] == "deleted":
+            raise HTTPException(status_code=409, detail="Deleted accounts cannot be restored here.")
+        conn.execute("UPDATE users SET status = ? WHERE google_id = ?", (new_status, target["google_id"]))
+    audit_log("admin.user_unsuspended" if new_status == "active" else "admin.user_suspended", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=target["google_id"])
     return RedirectResponse("/admin/users", status_code=303)
 
 @qr_app.post("/admin/users/{email}/role", dependencies=[Depends(require_csrf_form)])
@@ -115,12 +176,17 @@ async def admin_change_role(request: Request, email: str, role: str = Form(...))
     if role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="Invalid request.")
     with get_conn() as conn:
-        matches = conn.execute(
-            "SELECT google_id FROM users WHERE email = ? OR google_id = ?", (email, email)
-        ).fetchall()
-        if len(matches) != 1:
-            raise HTTPException(status_code=409, detail="Select one account by its ID.")
-        target_user_id = matches[0]["google_id"]
+        conn.execute("BEGIN IMMEDIATE")
+        actor = _current_admin_actor(conn, admin_user["google_id"], "owner")
+        target = _admin_target(conn, email)
+        target_user_id = target["google_id"]
+        if target["status"] == "deleted":
+            raise HTTPException(status_code=409, detail="Deleted accounts cannot be changed here.")
+        if target["role"] == "owner" and role != "owner":
+            if target_user_id != actor["google_id"]:
+                raise HTTPException(status_code=403, detail="An owner cannot demote another owner.")
+            if target["status"] == "active":
+                _require_another_active_owner(conn, target_user_id)
         conn.execute("UPDATE users SET role = ? WHERE google_id = ?", (role, target_user_id))
     audit_log("admin.role_changed", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=target_user_id, metadata={"role": role})
     return RedirectResponse("/admin/users", status_code=303)
@@ -131,8 +197,12 @@ async def admin_delete_user(request: Request, email: str, confirm: str = Form(""
     if confirm != "DELETE":
         raise HTTPException(status_code=400, detail="Invalid request.")
     with get_conn() as conn:
-        conn.execute("UPDATE users SET status = 'deleted', deleted_at = ?, airdrop_status = 'disqualified' WHERE email = ?", (now_iso(), email))
-    audit_log("admin.user_deleted", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=email)
+        conn.execute("BEGIN IMMEDIATE")
+        actor = _current_admin_actor(conn, admin_user["google_id"], "owner")
+        target = _admin_target(conn, email)
+        _require_lower_role(actor, target)
+        conn.execute("UPDATE users SET status = 'deleted', deleted_at = ?, airdrop_status = 'disqualified' WHERE google_id = ?", (now_iso(), target["google_id"]))
+    audit_log("admin.user_deleted", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=target["google_id"])
     return RedirectResponse("/admin/users", status_code=303)
 
 @qr_app.get("/admin/export/users")
@@ -143,17 +213,17 @@ async def admin_export_users(request: Request):
     writer = csv.DictWriter(out, fieldnames=["email", "role", "status", "tier", "scan_count", "referral_count", "wallet_address", "created_at", "last_login_at"])
     writer.writeheader()
     for row in users:
-        writer.writerow({key: row.get(key, "") for key in writer.fieldnames})
+        writer.writerow({key: _safe_csv_cell(row.get(key, "")) for key in writer.fieldnames})
     audit_log("admin.export", request=request, actor_user_id=admin_user.get("google_id"), target_type="users")
     return Response(out.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=safescan-users.csv"})
 
 @qr_app.get("/admin/scans", response_class=HTMLResponse)
 async def admin_scans(request: Request, search: str = Query(""), verdict: str = Query(""), user: str = Query("")):
-    return admin_context(request, "All Scans", "scans", fetch_scans(search=search, verdict=verdict, user=user))
+    return admin_context(request, "All Scans", "scans", lambda: fetch_scans(search=search, verdict=verdict, user=user))
 
 @qr_app.get("/admin/waitlist", response_class=HTMLResponse)
 async def admin_waitlist(request: Request, search: str = Query("")):
-    return admin_context(request, "Waitlist", "waitlist", fetch_waitlist(search=search))
+    return admin_context(request, "Waitlist", "waitlist", lambda: fetch_waitlist(search=search))
 
 @qr_app.get("/admin/export/waitlist")
 async def admin_export_waitlist(request: Request):
@@ -163,7 +233,7 @@ async def admin_export_waitlist(request: Request):
     writer = csv.DictWriter(out, fieldnames=["email", "source", "created_at"])
     writer.writeheader()
     for row in rows:
-        writer.writerow({key: row.get(key, "") for key in writer.fieldnames})
+        writer.writerow({key: _safe_csv_cell(row.get(key, "")) for key in writer.fieldnames})
     audit_log("admin.export", request=request, actor_user_id=owner.get("google_id"), target_type="waitlist")
     return Response(out.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=safescan-waitlist.csv"})
 
@@ -185,7 +255,7 @@ async def admin_flag_scan(request: Request, scan_id: str):
 
 @qr_app.get("/admin/reports", response_class=HTMLResponse)
 async def admin_reports(request: Request, tab: str = Query("reports")):
-    return admin_context(request, "Reported URLs", "reports", fetch_reports(tab=tab))
+    return admin_context(request, "Reported URLs", "reports", lambda: fetch_reports(tab=tab))
 
 @qr_app.post("/admin/reports/{report_id}/action", dependencies=[Depends(require_csrf_form)])
 async def admin_report_action(request: Request, report_id: str, action: str = Form(...)):
@@ -220,11 +290,11 @@ async def admin_remove_block(request: Request, block_id: str):
 
 @qr_app.get("/admin/risk-logs", response_class=HTMLResponse)
 async def admin_risk_logs(request: Request):
-    return admin_context(request, "Risk Engine Logs", "scans", fetch_scans(verdict="MALICIOUS"))
+    return admin_context(request, "Risk Engine Logs", "scans", lambda: fetch_scans(verdict="MALICIOUS"))
 
 @qr_app.get("/admin/airdrop", response_class=HTMLResponse)
 async def admin_airdrop(request: Request):
-    return admin_context(request, "Tier Overview", "airdrop", fetch_airdrop_data())
+    return admin_context(request, "Tier Overview", "airdrop", fetch_airdrop_data)
 
 @qr_app.post("/admin/airdrop/distribute", response_class=HTMLResponse, dependencies=[Depends(require_csrf_form)])
 async def admin_airdrop_distribute(request: Request):
@@ -256,11 +326,11 @@ async def admin_airdrop_distribute(request: Request):
 
 @qr_app.get("/admin/airdrop/fraud", response_class=HTMLResponse)
 async def admin_airdrop_fraud(request: Request):
-    return admin_context(request, "Fraud Flags", "fraud", fetch_fraud_data())
+    return admin_context(request, "Fraud Flags", "fraud", fetch_fraud_data)
 
 @qr_app.get("/admin/airdrop/wallets", response_class=HTMLResponse)
 async def admin_airdrop_wallets(request: Request):
-    return admin_context(request, "Wallet Registry", "airdrop", fetch_airdrop_data())
+    return admin_context(request, "Wallet Registry", "airdrop", fetch_airdrop_data)
 
 @qr_app.post("/admin/airdrop/{email}/status", dependencies=[Depends(require_csrf_form)])
 async def admin_airdrop_status(request: Request, email: str, status: str = Form(...), reason: str = Form("")):
@@ -287,24 +357,27 @@ async def admin_fraud_review(request: Request, email: str, outcome: str = Form(.
 @qr_app.get("/admin/audit-logs", response_class=HTMLResponse)
 @qr_app.get("/admin/logs", response_class=HTMLResponse)
 async def admin_logs(request: Request, search: str = Query(""), action: str = Query(""), target_type: str = Query(""), export: str = Query("")):
-    data = fetch_audit_logs(search=search, action=action, target_type=target_type)
     if export == "csv":
         owner = require_role_user(request, "owner")
+        data = fetch_audit_logs(search=search, action=action, target_type=target_type)
         out = io.StringIO()
         writer = csv.DictWriter(out, fieldnames=["created_at", "actor_user_id", "action", "target_type", "target_id", "ip_address", "user_agent", "metadata"])
         writer.writeheader()
         for row in data["rows"]:
-            writer.writerow({key: row.get(key, "") for key in writer.fieldnames})
+            writer.writerow({key: _safe_csv_cell(row.get(key, "")) for key in writer.fieldnames})
         audit_log("admin.export", request=request, actor_user_id=owner.get("google_id"), target_type="audit_logs")
         return Response(out.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=safescan-audit-logs.csv"})
-    return admin_context(request, "Audit Logs", "logs", data)
+    return admin_context(request, "Audit Logs", "logs", lambda: fetch_audit_logs(search=search, action=action, target_type=target_type))
 
 @qr_app.get("/admin/api-keys", response_class=HTMLResponse)
 async def admin_api_keys(request: Request):
-    with get_conn() as conn:
-        conn.row_factory = sqlite3.Row
-        keys = [dict(row) for row in conn.execute("SELECT * FROM api_keys ORDER BY created_at DESC")]
-    return admin_context(request, "API Keys", "api_keys", {"keys": keys}, owner_only=True)
+    def load_data():
+        with get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            keys = [dict(row) for row in conn.execute("SELECT * FROM api_keys ORDER BY created_at DESC")]
+        return {"keys": keys}
+
+    return admin_context(request, "API Keys", "api_keys", load_data, owner_only=True)
 
 @qr_app.post("/admin/api-keys", dependencies=[Depends(require_csrf_form)])
 async def admin_create_api_key(request: Request, name: str = Form(...), scopes: list[str] = Form([]), expires_at: str = Form("")):
@@ -327,13 +400,16 @@ async def admin_revoke_api_key(request: Request, key_id: str):
 
 @qr_app.get("/admin/settings", response_class=HTMLResponse)
 async def admin_settings(request: Request):
-    with get_conn() as conn:
-        privileged = conn.execute(
-            "SELECT email, role FROM users WHERE status = 'active' AND role IN ('admin', 'owner') ORDER BY role, email"
-        ).fetchall()
-    return admin_context(request, "Settings", "settings", {
-        "app_url": APP_URL,
-        "admin_emails": [row["email"] for row in privileged if row["role"] == "admin"],
-        "owner_emails": [row["email"] for row in privileged if row["role"] == "owner"],
-    }, owner_only=True)
+    def load_data():
+        with get_conn() as conn:
+            privileged = conn.execute(
+                "SELECT email, role FROM users WHERE status = 'active' AND role IN ('admin', 'owner') ORDER BY role, email"
+            ).fetchall()
+        return {
+            "app_url": APP_URL,
+            "admin_emails": [row["email"] for row in privileged if row["role"] == "admin"],
+            "owner_emails": [row["email"] for row in privileged if row["role"] == "owner"],
+        }
+
+    return admin_context(request, "Settings", "settings", load_data, owner_only=True)
 
