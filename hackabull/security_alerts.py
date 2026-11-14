@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import os
 import queue
 import re
@@ -14,7 +13,7 @@ from urllib.parse import urlparse
 
 import requests
 
-LOG = logging.getLogger(__name__)
+from .observability import log_event
 
 # Fixed event names only. No route, account, IP, URL, token, or metadata is
 # stored in the alert counters or sent to a notification destination.
@@ -80,7 +79,7 @@ class SecurityAlertMonitor:
             with self._lock:
                 if self._last_alert[code] == now:
                     self._last_alert[code] = now - self.cooldown + QUEUE_RETRY_SECONDS
-            LOG.warning("Security alert enqueue failed: %s", type(exc).__name__)
+            log_event("security_alert.enqueue_failed", level="warning", error_type=type(exc).__name__)
             return None
         return alert
 
@@ -175,7 +174,7 @@ def _deliver_with_retries(alert: Alert, *, sleep=time.sleep) -> bool:
             return True
         except Exception as exc:
             error_type = type(exc).__name__
-    LOG.warning("Security alert delivery failed after retries: %s", error_type)
+    log_event("security_alert.delivery_failed", level="warning", error_type=error_type)
     return False
 
 
