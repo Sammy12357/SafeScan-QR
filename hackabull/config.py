@@ -282,7 +282,7 @@ _template_response = templates.TemplateResponse
 def format_time_only(value):
     if value in (None, ""):
         return ""
-    raw = str(value).strip()
+    raw = str(value)[:4096].strip()
     if not raw:
         return ""
     try:

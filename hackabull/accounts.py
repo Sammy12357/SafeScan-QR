@@ -68,11 +68,15 @@ def canonical_user_id(email):
     return "user_" + hashlib.sha256(email.strip().lower().encode()).hexdigest()[:24]
 
 def hash_password(password):
+    if not isinstance(password, str) or len(password) > 1024:
+        raise ValueError("Password is too long.")
     salt = os.urandom(32)
     dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 260000)
     return salt.hex() + ":" + dk.hex()
 
 def verify_password(password, stored):
+    if not isinstance(password, str) or len(password) > 1024:
+        return False
     try:
         salt_hex, dk_hex = stored.split(":", 1)
         salt = bytes.fromhex(salt_hex)

@@ -22,15 +22,16 @@ def is_web_url_payload(value: str, payload_type: str | None = None) -> bool:
     if payload_type:
         return payload_type == "URL"
     value = (value or "").strip()
-    return bool(re.match(r"^https?://", value, re.IGNORECASE))
+    return value[:8].lower().startswith(("http://", "https://"))
 
 
 def is_redacted_scan_reference(value: str) -> bool:
-    return bool(re.match(r"^\[[A-Za-z/ -]+ QR payload redacted(?:; ref [a-f0-9]{32})?\]$", value or ""))
+    value = value or ""
+    return len(value) <= 4096 and bool(re.match(r"^\[[A-Za-z/ -]+ QR payload redacted(?:; ref [a-f0-9]{32})?\]$", value))
 
 
 def _payload_label(payload_type: str | None) -> str:
-    label = re.sub(r"[^A-Za-z/ -]", "", payload_type or "Non-URL").strip()
+    label = re.sub(r"[^A-Za-z/ -]", "", (payload_type or "Non-URL")[:4096]).strip()
     return label[:32] or "Non-URL"
 
 

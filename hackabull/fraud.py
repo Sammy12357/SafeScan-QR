@@ -70,7 +70,7 @@ def register_ip_event(user_id, request, event_type):
 
 def register_device_fingerprint(user_id, fingerprint):
     clean = (fingerprint or "").strip()
-    if not re.fullmatch(r"[a-f0-9]{64}", clean):
+    if len(clean) != 64 or not re.fullmatch(r"[a-f0-9]{64}", clean):
         return
     with get_conn() as conn:
         conn.execute(

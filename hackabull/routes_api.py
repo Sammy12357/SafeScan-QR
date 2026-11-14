@@ -117,7 +117,7 @@ async def api_analyze(request: Request, payload: dict = Body(...)):
     if rate_limit:
         return rate_limit
     validate_strict_payload(payload, {"url"})
-    target_url = validate_public_url((payload.get("url") or "").strip())
+    target_url = validate_public_url(payload.get("url", ""))
     audit_log("qr.scanned", request=request, actor_user_id=user.get("google_id") if user else None, target_type="url", metadata={"url": target_url})
     return await analyze_full_pipeline(target_url)
 
@@ -187,7 +187,7 @@ async def api_qr_generate(request: Request, payload: dict = Body(...)):
         return rate_limit
 
     validate_strict_payload(payload, {"url"})
-    target_url = validate_public_url((payload.get("url") or "").strip())
+    target_url = validate_public_url(payload.get("url", ""))
 
     analysis = await analyze_full_pipeline(target_url)
     overall_risk = (analysis.get("overallRisk") or "").lower()
@@ -404,7 +404,7 @@ async def api_report_url(request: Request, payload: dict = Body(...)):
         return rate_limit
     validate_strict_payload(payload, {"url", "reason"})
     reason = payload.get("reason")
-    if reason not in ("phishing", "wallet_drain", "malware", "spam", "other"):
+    if not isinstance(reason, str) or reason not in ("phishing", "wallet_drain", "malware", "spam", "other"):
         raise SafeScanError("Invalid report reason.", 400)
     target_url = validate_public_url(payload.get("url", ""))
     analysis = await analyze_full_pipeline(target_url)
@@ -718,7 +718,7 @@ async def api_fraud_flags(request: Request):
 @qr_app.post("/api/check-reputation")
 async def api_check_reputation(payload: dict = Body(...)):
     validate_strict_payload(payload, {"url"})
-    normalized = validate_public_url((payload.get("url") or "").strip())
+    normalized = validate_public_url(payload.get("url", ""))
     google, phishtank = await asyncio.gather(
         asyncio.to_thread(google_reputation_signal, normalized),
         asyncio.to_thread(phishtank_signal, normalized),
@@ -737,21 +737,21 @@ async def api_check_reputation(payload: dict = Body(...)):
 @qr_app.post("/api/trace-redirects")
 async def api_trace_redirects(payload: dict = Body(...)):
     validate_strict_payload(payload, {"url"})
-    normalized = validate_public_url((payload.get("url") or "").strip())
+    normalized = validate_public_url(payload.get("url", ""))
     result = await asyncio.to_thread(trace_redirect_chain, normalized)
     return {"url": normalized, **result, "scannedAt": datetime.utcnow().isoformat() + "Z"}
 
 @qr_app.post("/api/check-domain")
 async def api_check_domain(payload: dict = Body(...)):
     validate_strict_payload(payload, {"url"})
-    normalized = validate_public_url((payload.get("url") or "").strip())
+    normalized = validate_public_url(payload.get("url", ""))
     signals = await asyncio.to_thread(check_domain_intelligence, normalized)
     return {"url": normalized, "signals": signals, "scannedAt": datetime.utcnow().isoformat() + "Z"}
 
 @qr_app.post("/api/check-crypto-patterns")
 async def api_check_crypto_patterns(payload: dict = Body(...)):
     validate_strict_payload(payload, {"url"})
-    normalized = validate_public_url((payload.get("url") or "").strip())
+    normalized = validate_public_url(payload.get("url", ""))
     signals = await asyncio.to_thread(check_crypto_pattern_signals, normalized)
     return {"url": normalized, "signals": signals, "scannedAt": datetime.utcnow().isoformat() + "Z"}
 

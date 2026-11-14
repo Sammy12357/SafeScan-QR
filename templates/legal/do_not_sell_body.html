@@ -4,7 +4,7 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
   <input type="hidden" name="request_type" value="do_not_sell">
   <input type="hidden" name="region" value="California">
-  <label>Email <input type="email" name="email" required placeholder="you@example.com"></label>
-  <label>Details <textarea name="details" rows="4">I opt out of sale or sharing of my personal information.</textarea></label>
+  <label>Email <input type="email" name="email" required maxlength="254" placeholder="you@example.com"></label>
+  <label>Details <textarea name="details" rows="4" maxlength="4000">I opt out of sale or sharing of my personal information.</textarea></label>
   <button class="primary-button" type="submit">Submit opt-out</button>
 </form>

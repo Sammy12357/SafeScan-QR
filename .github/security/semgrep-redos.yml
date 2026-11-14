@@ -1,0 +1,30 @@
+rules:
+  - id: safescan-python-nested-regex-quantifiers
+    languages: [python]
+    severity: ERROR
+    message: Nested regex quantifiers can cause catastrophic backtracking on QR or request data; use a linear pattern and bound the input.
+    patterns:
+      - pattern-either:
+          - pattern: re.compile($REGEX, ...)
+          - pattern: re.search($REGEX, ...)
+          - pattern: re.match($REGEX, ...)
+          - pattern: re.fullmatch($REGEX, ...)
+          - pattern: re.findall($REGEX, ...)
+          - pattern: re.finditer($REGEX, ...)
+          - pattern: re.sub($REGEX, ...)
+          - pattern: re.split($REGEX, ...)
+      - metavariable-regex:
+          metavariable: $REGEX
+          regex: '.*\([^)]*[*+][^)]*\)[*+{].*'
+
+  - id: safescan-js-dynamic-regexp
+    languages: [javascript]
+    severity: ERROR
+    message: Do not build a regular expression from dynamic QR, URL, or API data; use fixed patterns.
+    patterns:
+      - pattern-either:
+          - pattern: new RegExp($REGEX, ...)
+          - pattern: RegExp($REGEX, ...)
+      - metavariable-regex:
+          metavariable: $REGEX
+          regex: '^[A-Za-z_$][A-Za-z0-9_$.]*$'

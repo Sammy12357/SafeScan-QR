@@ -99,7 +99,7 @@ def encode_base58(data):
 
 def is_valid_solana_address(address):
     clean = (address or "").strip()
-    if not re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{32,44}", clean):
+    if not 32 <= len(clean) <= 44 or not re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{32,44}", clean):
         return False
     try:
         return len(decode_base58(clean)) == 32

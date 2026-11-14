@@ -25,6 +25,8 @@ from urllib.parse import quote, urlencode, urljoin, urlparse, parse_qsl
 from datetime import datetime, timedelta, timezone
 from xml.etree import ElementTree
 
+from defusedxml import ElementTree as SafeElementTree
+from defusedxml.common import DefusedXmlException
 from PIL import Image as PILImage
 
 from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body, HTTPException
@@ -72,7 +74,14 @@ class QRDecodeSafetyError(ValueError):
 
 
 MAX_QR_IMAGE_PIXELS = 40_000_000
+MAX_QR_PDF_RENDER_PIXELS = 12_000_000
 MAX_QR_PAYLOAD_LENGTH = 4096
+MAX_QR_SVG_ELEMENTS = 40_000
+MAX_QR_SVG_DEPTH = 64
+MAX_QR_SVG_ATTRIBUTES = 60_000
+MAX_QR_SVG_ATTRIBUTE_LENGTH = 4096
+QR_SVG_PARSED_ATTRIBUTES = frozenset({"viewBox", "viewbox", "width", "height", "x", "y", "points", "fill"})
+ALLOWED_QR_RASTER_FORMATS = frozenset({"PNG", "JPEG", "WEBP"})
 PILImage.MAX_IMAGE_PIXELS = MAX_QR_IMAGE_PIXELS
 
 
@@ -118,6 +127,53 @@ def _qr_image_libs():
 def _assert_safe_dimensions(image):
     if image.width * image.height > MAX_QR_IMAGE_PIXELS:
         raise QRDecodeSafetyError("QR image dimensions exceed the 40 megapixel limit.")
+
+
+def _assert_supported_raster(image):
+    if image.format not in ALLOWED_QR_RASTER_FORMATS:
+        raise QRDecodeSafetyError("Unsupported QR image format. Upload PNG, JPEG, or WebP.")
+    if getattr(image, "n_frames", 1) != 1:
+        raise QRDecodeSafetyError("Animated or multi-frame QR images are not supported. Upload one still image.")
+    _assert_safe_dimensions(image)
+
+
+def _parse_safe_svg(contents):
+    try:
+        root = None
+        depth = 0
+        elements = 0
+        attributes = 0
+        # iterparse lets us reject excessive structure as it arrives, before
+        # an attacker-controlled SVG can build a very large in-memory tree.
+        for event, element in SafeElementTree.iterparse(
+            io.BytesIO(contents), events=("start", "end"),
+            forbid_dtd=True, forbid_entities=True, forbid_external=True,
+        ):
+            if event == "end":
+                depth -= 1
+                continue
+            if root is None:
+                if str(element.tag).split("}", 1)[-1] != "svg":
+                    raise QRDecodeSafetyError("Upload an SVG document containing one QR code.")
+                root = element
+            depth += 1
+            elements += 1
+            if elements > MAX_QR_SVG_ELEMENTS or depth > MAX_QR_SVG_DEPTH:
+                raise QRDecodeSafetyError("SVG structure exceeds the QR parser limit.")
+            attributes += len(element.attrib)
+            if attributes > MAX_QR_SVG_ATTRIBUTES or any(
+                len(value) > MAX_QR_SVG_ATTRIBUTE_LENGTH
+                for name, value in element.attrib.items()
+                if str(name).split("}", 1)[-1] in QR_SVG_PARSED_ATTRIBUTES
+            ):
+                raise QRDecodeSafetyError("SVG attributes exceed the QR parser limit.")
+    except DefusedXmlException as exc:
+        raise QRDecodeSafetyError("SVG contains prohibited XML declarations or entities.") from exc
+    except ElementTree.ParseError as exc:
+        raise QRDecodeSafetyError("SVG could not be parsed safely.") from exc
+    if root is None:
+        raise QRDecodeSafetyError("Upload an SVG document containing one QR code.")
+    return root
 
 
 def _barcode_from_result(result, scale_x=1.0, scale_y=1.0):
@@ -427,16 +483,13 @@ def _looks_like_pdf(contents, filename="", content_type=""):
 
 def _svg_candidates(contents):
     candidates = [contents]
-    try:
-        root = ElementTree.fromstring(contents)
-        namespace = {"svg": "http://www.w3.org/2000/svg"}
-        nested_svgs = root.findall(".//svg:svg", namespace)
-        if not nested_svgs:
-            nested_svgs = [node for node in root.iter() if str(node.tag).endswith("svg") and node is not root]
-        for nested in nested_svgs[:3]:
-            candidates.append(ElementTree.tostring(nested, encoding="utf-8"))
-    except Exception:
-        pass
+    root = _parse_safe_svg(contents)
+    namespace = {"svg": "http://www.w3.org/2000/svg"}
+    nested_svgs = root.findall(".//svg:svg", namespace)
+    if not nested_svgs:
+        nested_svgs = [node for node in root.iter() if str(node.tag).endswith("svg") and node is not root]
+    for nested in nested_svgs[:3]:
+        candidates.append(ElementTree.tostring(nested, encoding="utf-8"))
     return candidates
 
 def _local_name(tag):
@@ -459,10 +512,7 @@ def _parse_viewbox(element, fallback_width=100.0, fallback_height=100.0):
 
 def _render_basic_svg_qr(svg_bytes):
     Image, _, _, _, _ = _qr_image_libs()
-    try:
-        root = ElementTree.fromstring(svg_bytes)
-    except Exception:
-        return None
+    root = _parse_safe_svg(svg_bytes)
 
     root_width = _float_attr(root, "width", 2000.0)
     root_height = _float_attr(root, "height", 2000.0)
@@ -563,11 +613,14 @@ def _decode_qr_upload_inprocess(contents, filename="", content_type=""):
             qr_image.close()
 
     try:
-        with Image.open(io.BytesIO(contents)) as image:
-            payload, qr_image = _decode_qr_from_pil_image(image)
-            if payload:
-                return payload, qr_image
-    except Image.DecompressionBombError as exc:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", PILImage.DecompressionBombWarning)
+            with Image.open(io.BytesIO(contents)) as image:
+                _assert_supported_raster(image)
+                payload, qr_image = _decode_qr_from_pil_image(image)
+                if payload:
+                    return payload, qr_image
+    except (PILImage.DecompressionBombWarning, PILImage.DecompressionBombError) as exc:
         raise QRDecodeSafetyError("QR image dimensions exceed the 40 megapixel limit.") from exc
     except (QRDecodeAmbiguityError, QRDecodeSafetyError):
         raise
@@ -598,10 +651,18 @@ def _decode_qr_upload_inprocess(contents, filename="", content_type=""):
                     )
                 for page_index in range(min(document.page_count, MAX_QR_PDF_PAGES)):
                     page = document.load_page(page_index)
-                    if page.rect.width * page.rect.height * 2.5 * 2.5 > MAX_QR_IMAGE_PIXELS:
-                        raise QRDecodeSafetyError("Rendered PDF page exceeds the 40 megapixel QR image limit.")
-                    pixmap = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5), alpha=False)
-                    with Image.open(io.BytesIO(pixmap.tobytes("png"))) as image:
+                    rendered_width = page.rect.width * 2.5
+                    rendered_height = page.rect.height * 2.5
+                    if (not math.isfinite(rendered_width) or not math.isfinite(rendered_height)
+                            or rendered_width <= 0 or rendered_height <= 0
+                            or rendered_width * rendered_height > MAX_QR_PDF_RENDER_PIXELS):
+                        raise QRDecodeSafetyError("Rendered PDF page exceeds the 12 megapixel QR limit.")
+                    pixmap = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5),
+                                             colorspace=fitz.csRGB, alpha=False)
+                    if pixmap.width * pixmap.height > MAX_QR_PDF_RENDER_PIXELS:
+                        raise QRDecodeSafetyError("Rendered PDF page exceeds the 12 megapixel QR limit.")
+                    with Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples,
+                                         "raw", "RGB", pixmap.stride, 1) as image:
                         payload, qr_image = _decode_qr_from_pil_image(image, is_pure=True)
                         remember(payload, qr_image, distinct_source=True)
             finally:
@@ -686,12 +747,15 @@ def decode_qr_upload(contents, filename="", content_type=""):
     encoded_image = result.get("image")
     try:
         image_bytes = base64.b64decode(encoded_image, validate=True) if encoded_image else contents
-        with PILImage.open(io.BytesIO(image_bytes)) as image:
-            _assert_safe_dimensions(image)
-            copied = image.copy()
-            _record_qr_tier("worker", "hit")
-            return payload, copied
-    except (OSError, ValueError, PILImage.DecompressionBombError) as exc:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", PILImage.DecompressionBombWarning)
+            with PILImage.open(io.BytesIO(image_bytes)) as image:
+                _assert_supported_raster(image)
+                copied = image.copy()
+                _record_qr_tier("worker", "hit")
+                return payload, copied
+    except (OSError, ValueError, PILImage.DecompressionBombWarning,
+            PILImage.DecompressionBombError) as exc:
         _record_qr_tier("worker", "error")
         raise QRDecodeSafetyError("QR decoder could not inspect this image.") from exc
 

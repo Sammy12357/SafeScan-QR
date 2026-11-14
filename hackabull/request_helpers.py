@@ -56,7 +56,9 @@ from .client_ip import request_ip
 # REQUEST HELPERS (IP, locale, ids)
 # =============================================================================
 def make_id(prefix):
-    return f"{prefix}_{hashlib.sha256(f'{prefix}:{datetime.utcnow().isoformat()}:{os.urandom(8)}'.encode('utf-8')).hexdigest()[:24]}"
+    # A URL-safe 128-bit random suffix keeps externally visible scan, report,
+    # and data-request identifiers unguessable without changing their prefix.
+    return f"{prefix}_{secrets.token_urlsafe(16)}"
 
 def hash_ip(ip_value):
     salt = os.getenv("PRIVACY_HASH_SALT", "safescan-dev-salt")

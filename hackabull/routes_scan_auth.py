@@ -554,10 +554,14 @@ async def auth_register(request: Request, email: str = Form(...), password: str 
     if get_session_user(request):
         return duplicate_account_response(request, "You are already signed in. Sign out before creating a new account.")
     email = email.strip().lower()
+    if len(email) > 254:
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid email address.", "tab": "register"})
     if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
         return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid email address.", "tab": "register"})
     if len(password) < 8:
         return templates.TemplateResponse("login.html", {"request": request, "error": "Password must be at least 8 characters.", "tab": "register"})
+    if len(password) > 1024:
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Password is too long.", "tab": "register"})
     if email_account_exists(email):
         return duplicate_account_response(request)
     lid = save_local_user(email, request)
@@ -584,6 +588,8 @@ async def auth_login_local(request: Request, email: str = Form(...), password: s
     if rate_limited:
         return html_rate_limit_response(request, rate_limited)
     email = email.strip().lower()
+    if len(email) > 254 or len(password) > 1024:
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid email or password.", "tab": "login"})
     account_key = "local:" + hashlib.sha256(email.encode("utf-8")).hexdigest()
     account_rate_limit = enforce_rate_limit(request, "login_account", 10, 15 * 60, user_key=account_key)
     if account_rate_limit:

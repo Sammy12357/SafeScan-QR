@@ -1,5 +1,80 @@
 # Identity migration inventory
 
+## Phase 5 email and ownership collision audit
+
+Run `email_ownership_dry_run.py` against a **consistent standalone offline
+SQLite backup** before changing email matching, uniqueness, child ownership,
+or paid/wallet entitlements. It refuses Render/production runtimes, configured
+live database paths, symlinks, and backups with SQLite journal/WAL sidecars.
+The SQLite connection is `mode=ro&immutable=1` with `query_only=ON`; the source
+SHA-256 is checked before and after the inventory. The script does not write
+to the database or propose account merges.
+
+```sh
+python scripts/security/email_ownership_dry_run.py \
+  --database /secure/path/standalone-backup.db \
+  --private-report /secure/path/email-ownership-review.json
+```
+
+Stdout contains **aggregate counts only**. The optional JSON report is
+created exclusively with mode `0600`; an existing file is never overwritten.
+It contains email addresses, account IDs, exact `(issuer, full subject)`
+identity keys for collision review, and offline row IDs. Keep it outside the
+repository, share it only with the reviewers, and delete it after the release
+decision. QR URLs, payload hashes, password hashes, wallet addresses, IPs,
+tokens, and payment metadata are never copied into the report. The report's
+`database_sha256` binds its row IDs to the audited backup.
+
+The review key applies NFKC and casefold to the local part, then IDNA UTS #46
+to the domain. It does **not** remove plus tags or dots. This is a conservative
+collision search, not proof that two addresses belong to one mailbox: SMTP
+local parts can be case sensitive, and provider alias rules vary. A matching
+email never links two federated identities. The exact issuer and **full**
+subject remain the identity key; an Auth0 `google-oauth2|123` subject is not
+equivalent to Google subject `123`.
+
+The summary separates invalid or duplicate account IDs, collision groups,
+privileged/paid/wallet groups, ambiguous scan **rows**, ambiguous email
+**references**, orphaned email and user ID references, missing user IDs, and
+email/user ID mismatches. One row with two email columns can contribute two
+reference counts. Mixed-format owner fields in `wallets`, `wallet_nonces`,
+fraud, velocity, device, admin, and audit tables are resolved by exact
+`users.google_id` first. Only a value that is not a known account ID is
+examined as a possible legacy email; unknown IDs, ambiguous legacy emails,
+and malformed values are reported separately. A stable ID that happens to
+look like an email still remains an ID. Even a legacy email with just one
+current user is listed for review and is never linked automatically. Public
+submissions, such as waitlist signups, may have no SafeScan user; they count
+toward ambiguous references but not orphaned owned rows. `coverage` in the
+private report lists absent tables or columns, which may be expected for older
+backups. Review that coverage before interpreting zero counts.
+
+### Phase 5 release gates
+
+1. Obtain a consistent offline backup and retain its hash. Run both identity
+   inventories against the **same** backup. Keep their private reports out of
+   the repository. Do not run either audit against the live Render database.
+2. Manually resolve or quarantine every canonical collision, especially
+   groups involving owner/admin roles, active subscriptions, or wallet
+   evidence. Review every ambiguous `scan_history`, `scans`, and `scan_events`
+   row, legacy email owner reference, orphan, missing owner ID,
+   invalid/duplicate account ID, and email/user ID mismatch. Zero counts are
+   required for unattended migration; an exception needs a documented owner
+   disposition and fail-closed handling. Audit findings alone authorize no
+   merge or transfer.
+3. Migrate email-keyed ownership paths to immutable user IDs or make each
+   affected path fail closed before changing uniqueness or normalization.
+   This includes scans, wallets, rewards, fraud, referrals, paid access,
+   admin reports, and privacy/deletion flows. Remove the startup backfills in
+   `hackabull/schema.py` that select a user with `lower(email)` and `LIMIT 1`
+   until ownership has been reviewed and mapped.
+4. Preserve every `(issuer, full subject)` mapping exactly. Require verified
+   dual-account proof for any later explicit account link; neither casefold,
+   IDNA, nor a verified email alone is ownership proof. Rehearse migrations
+   and rollback on a new offline copy, then decide session treatment and
+   production cutover separately with the owner.
+
+
 This tool is a **dry run only**. It opens a SQLite backup read only and proposes
 provider-scoped `(provider, issuer, subject)` identities for manual review. It
 does not change accounts, sign-in, sessions, or the database. Do not run it

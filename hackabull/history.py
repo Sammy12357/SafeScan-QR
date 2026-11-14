@@ -102,7 +102,9 @@ def scan_classification_from_row(row):
     return scan_classification(verdict, risk_score)
 
 def compact_text(value, limit=SCAN_HISTORY_MAX_SIGNAL_TEXT):
-    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    # This is display text only; the final output is shorter still. Bound the
+    # regex input even when reading oversized legacy database values.
+    text = re.sub(r"\s+", " ", str(value or "")[:4096]).strip()
     if len(text) <= limit:
         return text
     return text[: max(0, limit - 1)].rstrip() + "..."
