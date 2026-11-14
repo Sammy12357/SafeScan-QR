@@ -364,11 +364,24 @@ async function decodeCapture(image, hint) {
   const collection = { valid: new Map(), validLocations: [], invalid: [] };
   const identity = { x: 0, y: 0, scale: 1 };
   let stage = "none";
+  let maskedFirst = false;
+
+  async function secondCodeFound() {
+    if (hasMultipleCodes(collection)) return true;
+    // A code first found in a tile may not have been visible in the earlier
+    // full-frame read. Mask it once when its position becomes available.
+    if (!maskedFirst && collection.valid.size === 1) {
+      maskedFirst = await checkSecondWithMask(image, collection);
+    }
+    return hasMultipleCodes(collection);
+  }
 
   collectSymbols(collection, await read(image, decodeOptions.capture), identity);
   if (collection.valid.size) stage = "full";
-  if (hasMultipleCodes(collection)) return captureResult(collection, stage);
-  if (await checkSecondWithMask(image, collection)) return captureResult(collection, stage);
+  // Masking the first readable code makes a second one easier to see, but a
+  // negative full-frame mask read is not proof that no small second code is
+  // present. Continue through the bounded ROI and tile passes below.
+  if (await secondCodeFound()) return captureResult(collection, stage);
 
   let sourceCanvas = null;
   if (typeof OffscreenCanvas === "function") {
@@ -392,8 +405,7 @@ async function decodeCapture(image, hint) {
       if (box && !boxes.some((existing) => Math.hypot(existing.x - box.x, existing.y - box.y) < 24)) boxes.push(box);
     }
   }
-  if (hasMultipleCodes(collection)) return captureResult(collection, stage);
-  if (await checkSecondWithMask(image, collection)) return captureResult(collection, stage);
+  if (await secondCodeFound()) return captureResult(collection, stage);
 
   for (const box of boxes.slice(0, 4)) {
     const rect = expandedRect(box, image.width, image.height);
@@ -401,17 +413,17 @@ async function decodeCapture(image, hint) {
     const crop = cropAndScale(image, rect, scale, sourceCanvas);
     collectSymbols(collection, await read(crop.image, decodeOptions.capture), crop.transform);
     if (collection.valid.size) stage = "roi";
-    if (hasMultipleCodes(collection)) return captureResult(collection, stage);
+    if (await secondCodeFound()) return captureResult(collection, stage);
   }
-  if (await checkSecondWithMask(image, collection)) return captureResult(collection, stage);
 
-  // Search every tile before returning a tile-found code. Returning after the
-  // first successful tile could silently miss another QR elsewhere.
+  // Search every tile, even after a full-frame hit. Returning the first
+  // readable code could silently miss a smaller QR elsewhere in the frame.
   for (const rect of tileRects(image.width, image.height)) {
     const crop = cropAndScale(image, rect, 2, sourceCanvas);
+    const knownCodes = collection.valid.size + collection.validLocations.length;
     collectSymbols(collection, await read(crop.image, decodeOptions.capture), crop.transform);
-    if (collection.valid.size) stage = "tiles";
-    if (hasMultipleCodes(collection)) return captureResult(collection, stage);
+    if (collection.valid.size + collection.validLocations.length > knownCodes) stage = "tiles";
+    if (await secondCodeFound()) return captureResult(collection, stage);
   }
 
   if (collection.valid.size === 0) {
