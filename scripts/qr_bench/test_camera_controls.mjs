@@ -49,7 +49,7 @@ class FakeElement extends Emitter {
 
 const elements = Object.fromEntries([
   "video", ".qr-camera-status", ".qr-camera-close", ".qr-camera-capture",
-  ".qr-camera-controls", ".qr-camera-switch", ".qr-camera-zoom",
+  ".qr-camera-controls",
   ".qr-camera-torch", ".qr-camera-retry",
   ".qr-camera-auto", ".qr-camera-server-offer", ".qr-camera-server-send",
   ".qr-camera-overlay", ".qr-camera-stage",
@@ -85,6 +85,9 @@ document.createElement = (tag) => tag === "div" ? modal : {
 
 const localValues = new Map();
 localValues.set("safeScanConsent", JSON.stringify({ consentType: "all", timestamp: new Date().toISOString() }));
+// A prior release could remember a different lens. The simplified scanner
+// always asks the browser for its default rear camera instead.
+localValues.set("safescan-qr-camera-device:https://sqafe.com", "front");
 const window = new Emitter();
 window.location = { origin: "https://sqafe.com" };
 window.isSecureContext = true;
@@ -184,43 +187,36 @@ await eventually(() => !elements[".qr-camera-capture"].disabled, "camera preview
 assert.equal(cameraCalls[0].video.width.ideal, 1920);
 assert.equal(cameraCalls[1].video.width.ideal, 1280);
 assert.equal(cameraCalls[0].video.frameRate.ideal, 30);
-assert.equal(elements[".qr-camera-switch"].hidden, false);
-assert.equal(elements[".qr-camera-zoom"].hidden, false);
+assert.equal(cameraCalls[0].video.facingMode.ideal, "environment");
+assert.equal(cameraCalls[1].video.facingMode.ideal, "environment");
+assert.equal(tracks.at(-1).id, "rear-1", "ignore an old saved camera preference");
+assert.equal(modal.innerHTML.includes("qr-camera-switch"), false);
+assert.equal(modal.innerHTML.includes("qr-camera-zoom"), false);
 assert.equal(elements[".qr-camera-torch"].hidden, false);
 assert.equal(video.classList.contains("is-mirrored"), false);
 assert.equal(results.length, 0, "preview must not submit a QR payload");
 
-await elements[".qr-camera-zoom"].dispatch("click");
-assert.equal(tracks.at(-1).applied.at(-1).advanced[0].zoom, 2);
 await elements[".qr-camera-torch"].dispatch("click");
 assert.equal(tracks.at(-1).applied.at(-1).advanced[0].torch, true);
 await video.dispatch("click", { clientX: 400, clientY: 240 });
 assert.equal(tracks.at(-1).applied.at(-1).advanced[0].focusMode, "single-shot");
+assert.equal(tracks.at(-1).applied.some((value) => value.advanced?.[0]?.zoom !== undefined), false);
 
 const firstTrack = tracks.at(-1);
-await elements[".qr-camera-switch"].dispatch("click");
-await eventually(() => tracks.at(-1).id === "rear-2" && !elements[".qr-camera-capture"].disabled, "camera switch");
-assert.equal(firstTrack.readyState, "ended");
-assert.equal(localValues.get("safescan-qr-camera-device:https://sqafe.com"), "rear-2");
-
-const secondTrack = tracks.at(-1);
 document.hidden = true;
 await document.dispatch("visibilitychange");
-assert.equal(secondTrack.readyState, "ended");
+assert.equal(firstTrack.readyState, "ended");
 assert.equal(elements[".qr-camera-capture"].disabled, true);
 document.hidden = false;
 await document.dispatch("visibilitychange");
 await eventually(() => !elements[".qr-camera-capture"].disabled, "camera resume");
-assert.equal(tracks.at(-1).id, "rear-2");
+assert.equal(tracks.at(-1).id, "rear-1");
+assert.equal(cameraCalls.at(-1).video.facingMode.ideal, "environment");
 
 tracks.at(-1).onended();
 assert.equal(elements[".qr-camera-retry"].hidden, false);
 await elements[".qr-camera-retry"].dispatch("click");
 await eventually(() => !elements[".qr-camera-capture"].disabled, "camera retry");
-
-await elements[".qr-camera-switch"].dispatch("click");
-await eventually(() => tracks.at(-1).id === "front" && !elements[".qr-camera-capture"].disabled, "front camera switch");
-assert.equal(video.classList.contains("is-mirrored"), true, "only the preview is mirrored");
 
 await elements[".qr-camera-capture"].dispatch("click");
 await eventually(() => results.length === 1, "deliberate capture result");
@@ -295,4 +291,4 @@ for (const event of telemetryEvents) {
   assert.equal(JSON.stringify(event).includes("https://example.com"), false, "never transmit QR text");
   assert.ok(event.guidance_shown.every((category) => typeof category === "string" && category.length < 16));
 }
-console.log("Camera controls, burst consensus, consented fallback, and opt-in auto-capture: pass");
+console.log("Camera acquisition, burst consensus, consented fallback, and opt-in auto-capture: pass");
