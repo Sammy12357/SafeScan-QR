@@ -228,7 +228,8 @@ async def waitlist_signup(request: Request, email: str = Form(...)):
         return html_rate_limit_response(request, ip_rate_limit)
     # The per-address budget uses a separate 24-hour window. Its extra
     # generous IP cap in enforce_rate_limit does not narrow the 3/hour cap.
-    address_rate_limit = enforce_rate_limit(request, "waitlist_address", 1, 24 * 60 * 60, user_key=normalized_email)
+    address_key = hashlib.sha256(normalized_email.encode("utf-8")).hexdigest()
+    address_rate_limit = enforce_rate_limit(request, "waitlist_address", 1, 24 * 60 * 60, user_key=address_key)
     if address_rate_limit:
         return html_rate_limit_response(request, address_rate_limit)
     with get_conn() as conn:

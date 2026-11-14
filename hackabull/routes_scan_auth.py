@@ -140,10 +140,12 @@ async def scan_qr(
     if manual_url is not None and len(manual_url) > 4096:
         raise SafeScanError("QR payload is too large.", 400)
     user = get_session_user(request)
-    if not user:
-        rate_limited = enforce_rate_limit(request, "anonymous_scan", 10, 60 * 60)
-        if rate_limited:
-            return html_rate_limit_response(request, rate_limited)
+    rate_limited = (
+        enforce_rate_limit(request, "scan", 30, 60 * 60, user_key=user.get("google_id"))
+        if user else enforce_rate_limit(request, "anonymous_scan", 10, 60 * 60)
+    )
+    if rate_limited:
+        return html_rate_limit_response(request, rate_limited)
     user_email = user["email"] if user else ""
     test_site = template_variant in ("main_site", "test_site")
     test_site_path = template_variant == "test_site"
@@ -548,7 +550,8 @@ async def auth_login_local(request: Request, email: str = Form(...), password: s
     if rate_limited:
         return html_rate_limit_response(request, rate_limited)
     email = email.strip().lower()
-    account_rate_limit = enforce_rate_limit(request, "login_account", 10, 15 * 60, user_key=f"local:{email}")
+    account_key = "local:" + hashlib.sha256(email.encode("utf-8")).hexdigest()
+    account_rate_limit = enforce_rate_limit(request, "login_account", 10, 15 * 60, user_key=account_key)
     if account_rate_limit:
         return html_rate_limit_response(request, account_rate_limit)
     with get_conn() as conn:

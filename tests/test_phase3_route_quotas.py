@@ -63,6 +63,16 @@ def test_signed_in_scan_budget_is_shared_by_text_and_file(quota_app):
     assert_limited(client.post("/api/scan/file", files={"file": ("qr.png", b"not-an-image", "image/png")}))
 
 
+def test_signed_in_scan_budget_covers_legacy_html_and_analyze_routes(quota_app):
+    _, client, _, _ = quota_app
+    assert client.post("/auth/register", data={"email": "scanner@example.com", "password": "password123"}).status_code == 200
+    for _ in range(30):
+        assert client.post("/api/scan", json={"payload": "A" * 4097}).status_code == 400
+
+    assert_html_limited(client.post("/search_qr_api", data={"manual_url": "WIFI:T:WPA;S:Cafe;P:test;;"}))
+    assert_limited(client.post("/api/analyze", json={"url": "https://example.com"}))
+
+
 def test_consent_budget_limits_database_writes(quota_app):
     _, client, db_path, _ = quota_app
     for _ in range(10):

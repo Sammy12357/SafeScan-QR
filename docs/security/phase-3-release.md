@@ -19,10 +19,11 @@ complete.
    resolver trusts only Render's validated, edge-authored
    `CF-Connecting-IP`; missing or malformed values share an unverified-ingress
    rate-limit bucket.
-3. Check `WEB_CONCURRENCY` and document the operational rate-limit guarantee.
-   The 4,096-bucket store is process-local: multiple workers do not share a
-   budget, and eviction can reset a bucket under high-cardinality traffic.
-   A shared Redis or SQLite budget is needed before claiming a global limit.
+3. The owner chose bounded in-memory limits for now. Confirm production
+   `WEB_CONCURRENCY=1` and one Render instance before release. The 4,096-bucket
+   store is process-local: multiple workers do not share a budget, and eviction
+   can reset a bucket under high-cardinality traffic. A shared Redis or SQLite
+   budget is needed before claiming a global limit or scaling out.
 4. Verify a signed-in scan and a guest camera upload on both hostnames, then
    confirm dynamic HTML has `Cache-Control: private, no-store` and
    `Vary: Cookie`. The legacy `scan_results` shortcut is gone; the public

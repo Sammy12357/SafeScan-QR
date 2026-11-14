@@ -110,7 +110,7 @@ async def api_analyze(request: Request, payload: dict = Body(...)):
     # Share the anonymous budget with the HTML scanner, so switching entry
     # points does not grant a second set of guest scans.
     rate_limit = (
-        enforce_rate_limit(request, "analyze", 30, 60 * 60, user_key=user.get("google_id"))
+        enforce_rate_limit(request, "scan", 30, 60 * 60, user_key=user.get("google_id"))
         if user else enforce_rate_limit(request, "anonymous_scan", 10, 60 * 60)
     )
     if rate_limit:
