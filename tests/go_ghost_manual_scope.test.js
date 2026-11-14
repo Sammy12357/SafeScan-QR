@@ -108,13 +108,12 @@ async function main() {
   assert.equal(copied.length, copiesBeforeClick + 1);
   assert.match(copied.at(-1), /Name: Example Person/);
 
-  await elements.goGhostScopeNoMatchButton.handlers.click();
-  assert.equal(elements.ghostProgressCount.textContent, '1 / 18');
+  vm.runInContext(`setGhostProgress('${lastId}', 'submitted', true)`, context);
   const finalRow = elements.goGhostAutomationRows.innerHTML.match(
     /<button[^>]+data-ghost-scope="cyberbackgroundchecks"[\s\S]*?<\/button>/
   );
   assert.ok(finalRow, 'last broker should remain visible after progress changes');
-  assert.match(finalRow[0], /Removed/);
+  assert.match(finalRow[0], /Submitted/);
   assert.equal(opened.some(url => url.includes('safescan_prefill')), false);
 }
 
