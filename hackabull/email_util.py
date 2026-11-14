@@ -53,9 +53,9 @@ import safescan_model_calibration as sm_calibration
 # =============================================================================
 # OUTBOUND EMAIL (SMTP)
 # Optional: configure SMTP_HOST / SMTP_USERNAME / SMTP_PASSWORD (and EMAIL_FROM)
-# to enable transactional email such as the newsletter welcome message. When
-# the variables are absent every send is a silent no-op, so the app runs fine
-# without any email provider. Uses the standard library only — works with any
+# to enable transactional email such as waitlist confirmation. When the
+# variables are absent, send_email returns False; callers decide how to show
+# unavailable delivery. Uses the standard library only — works with any
 # SMTP service (Resend, SendGrid, Mailgun, Brevo, Gmail app password, ...).
 # =============================================================================
 SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
@@ -96,7 +96,8 @@ def send_email(to_address, subject, html_body, text_body=None):
             server.sendmail(EMAIL_FROM, [to_address.strip()], message.as_string())
         return True
     except Exception as exc:
-        print({"warning": "email send failed", "to": to_address, "error": f"{type(exc).__name__}: {exc}"})
+        # SMTP error strings can echo recipient addresses or provider details.
+        print({"warning": "email send failed", "error_type": type(exc).__name__})
         return False
 
 

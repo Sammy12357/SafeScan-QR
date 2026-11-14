@@ -89,6 +89,12 @@ from .request_helpers import locale_from_request
 from .request_helpers import make_id
 from .request_helpers import request_ip
 from .security import enforce_rate_limit
+from .waitlist import CONFIRM_COOKIE
+from .waitlist import CONFIRM_SECONDS
+from .waitlist import confirm_waitlist
+from .waitlist import issue_confirmation
+from .waitlist import revoke_unsent_confirmation
+from .waitlist import valid_token
 from .security import html_rate_limit_response
 from .security import validate_strict_payload
 from .wallet import expire_alpha_subscriptions
@@ -296,6 +302,10 @@ async def privacy_policy(request: Request):
 @qr_app.post("/waitlist", response_class=HTMLResponse, dependencies=[Depends(require_csrf_form)])
 async def waitlist_signup(request: Request, email: str = Form(...)):
     normalized_email = bounded_text(email, "email", 254, required=True, strip=True).lower()
+    if not re.fullmatch(r"[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+", normalized_email):
+        raise SafeScanError("Invalid email address.", 400)
+    if not email_sending_configured():
+        return _waitlist_page(request, "unavailable", 503)
     ip_rate_limit = enforce_rate_limit(request, "waitlist_ip", 3, 60 * 60)
     if ip_rate_limit:
         return html_rate_limit_response(request, ip_rate_limit)
@@ -305,21 +315,65 @@ async def waitlist_signup(request: Request, email: str = Form(...)):
     address_rate_limit = enforce_rate_limit(request, "waitlist_address", 1, 24 * 60 * 60, user_key=address_key)
     if address_rate_limit:
         return html_rate_limit_response(request, address_rate_limit)
-    with get_conn() as conn:
-        conn.execute(
-            "INSERT OR REPLACE INTO waitlist_signups VALUES (?, ?, ?)",
-            (normalized_email, "footer", datetime.utcnow().isoformat() + "Z")
-        )
-    # Best-effort welcome email; a no-op unless SMTP_* env vars are configured.
-    if email_sending_configured():
-        await asyncio.to_thread(
+    token = issue_confirmation(normalized_email)
+    if token is not None:
+        confirm_url = APP_URL.rstrip("/") + "/waitlist/confirm?token=" + quote(token)
+        sent = await asyncio.to_thread(
             send_email,
             normalized_email,
-            "You're on the SafeScan QR list",
-            templates.env.get_template("email/waitlist_welcome.html").render(app_url=APP_URL),
+            "Confirm your SafeScan QR waitlist request",
+            templates.env.get_template("email/waitlist_confirm.html").render(confirm_url=confirm_url),
+            f"Confirm your SafeScan QR waitlist request within 30 minutes: {confirm_url}\n"
+            "If you did not request this, ignore this email.",
         )
-    body = "<h2>You're on the list</h2><p>Thanks for joining the SafeScan QR waitlist. We'll send only major product updates.</p><p><a href='/'>Return to SafeScan QR</a></p>"
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Waitlist", Markup(body)))
+        if not sent:
+            revoke_unsent_confirmation(normalized_email, token)
+            return _waitlist_page(request, "unavailable", 503)
+    # The same response for confirmed and unconfirmed addresses avoids an
+    # account-existence signal. Only confirmation adds a deliverable signup.
+    return _waitlist_page(request, "pending")
+
+
+def _waitlist_page(request: Request, state: str, status_code: int = 200):
+    response = templates.TemplateResponse(
+        "legal_page.html",
+        legal_context(request, "Waitlist", content_template="legal/waitlist_status_body.html", waitlist_state=state),
+        status_code=status_code,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Robots-Tag"] = "noindex"
+    return response
+
+
+@qr_app.get("/waitlist/confirm", response_class=HTMLResponse)
+async def waitlist_confirm_page(request: Request, token: str | None = Query(None, max_length=128)):
+    if token is not None:
+        if not valid_token(token):
+            return _waitlist_page(request, "expired", 400)
+        response = RedirectResponse("/waitlist/confirm", status_code=303)
+        response.set_cookie(
+            CONFIRM_COOKIE, token, max_age=CONFIRM_SECONDS,
+            secure=True, httponly=True, samesite="lax", path="/",
+        )
+        response.headers["Cache-Control"] = "private, no-store"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+    if not valid_token(request.cookies.get(CONFIRM_COOKIE)):
+        return _waitlist_page(request, "expired", 400)
+    return _waitlist_page(request, "confirm")
+
+
+@qr_app.post("/waitlist/confirm", response_class=HTMLResponse, dependencies=[Depends(require_csrf_form)])
+async def waitlist_confirm_submit(request: Request):
+    rate_limited = enforce_rate_limit(request, "waitlist_confirm", 20, 60)
+    if rate_limited:
+        return html_rate_limit_response(request, rate_limited)
+    token = request.cookies.get(CONFIRM_COOKIE)
+    confirmed = confirm_waitlist(token)
+    response = _waitlist_page(request, "confirmed" if confirmed else "expired", 200 if confirmed else 400)
+    response.delete_cookie(CONFIRM_COOKIE, path="/", httponly=True, secure=True, samesite="lax")
+    return response
 
 @qr_app.get("/legal/terms-of-use", response_class=HTMLResponse)
 async def terms_of_use(request: Request):

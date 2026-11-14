@@ -122,7 +122,10 @@ def test_reports_share_ten_per_hour_ip_budget_across_accounts(quota_app):
 
 
 def test_waitlist_has_address_and_ip_budgets(quota_app):
-    app, client, db_path, _ = quota_app
+    app, client, db_path, monkeypatch = quota_app
+    pages = importlib.import_module("hackabull.routes_pages")
+    monkeypatch.setattr(pages, "email_sending_configured", lambda: True)
+    monkeypatch.setattr(pages, "send_email", lambda *_args: True)
     assert client.post("/waitlist", data={"email": "Person@Example.com"}).status_code == 200
     assert_html_limited(client.post("/waitlist", data={"email": "person@example.com"}))
     app.RATE_LIMITS.clear()
@@ -130,7 +133,8 @@ def test_waitlist_has_address_and_ip_budgets(quota_app):
         assert client.post("/waitlist", data={"email": f"person{index}@example.com"}).status_code == 200
     assert_html_limited(client.post("/waitlist", data={"email": "person4@example.com"}))
     with sqlite3.connect(db_path) as conn:
-        assert conn.execute("SELECT count(*) FROM waitlist_signups").fetchone()[0] == 4
+        assert conn.execute("SELECT count(*) FROM waitlist_confirmation_tokens").fetchone()[0] == 4
+        assert conn.execute("SELECT count(*) FROM waitlist_signups").fetchone()[0] == 0
 
 
 def test_go_ghost_budget_per_signed_in_user(quota_app):

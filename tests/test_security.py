@@ -172,8 +172,8 @@ def test_waitlist_admin_page_requires_admin(security_app):
     register(client, "user@example.com")
     with sqlite3.connect(db_path) as conn:
         conn.execute(
-            "INSERT INTO waitlist_signups VALUES (?, ?, ?)",
-            ("lead@example.com", "footer", "2026-05-11T12:00:00Z"),
+            "INSERT INTO waitlist_signups (email, source, created_at, confirmed_at) VALUES (?, ?, ?, ?)",
+            ("lead@example.com", "footer", "2026-05-11T12:00:00Z", "2026-05-11T12:01:00Z"),
         )
 
     response = client.get("/admin/waitlist", follow_redirects=False)
@@ -188,8 +188,8 @@ def test_admin_can_view_waitlist_signups(security_app):
     grant_test_role(db_path, "admin@example.com", "admin")
     with sqlite3.connect(db_path) as conn:
         conn.execute(
-            "INSERT INTO waitlist_signups VALUES (?, ?, ?)",
-            ("lead@example.com", "footer", "2026-05-11T12:00:00Z"),
+            "INSERT INTO waitlist_signups (email, source, created_at, confirmed_at) VALUES (?, ?, ?, ?)",
+            ("lead@example.com", "footer", "2026-05-11T12:00:00Z", "2026-05-11T12:01:00Z"),
         )
 
     response = client.get("/admin/waitlist")
@@ -217,8 +217,8 @@ def test_waitlist_export_requires_owner(security_app):
     grant_test_role(db_path, "admin@example.com", "admin")
     with sqlite3.connect(db_path) as conn:
         conn.execute(
-            "INSERT INTO waitlist_signups VALUES (?, ?, ?)",
-            ("lead@example.com", "footer", "2026-05-11T12:00:00Z"),
+            "INSERT INTO waitlist_signups (email, source, created_at, confirmed_at) VALUES (?, ?, ?, ?)",
+            ("lead@example.com", "footer", "2026-05-11T12:00:00Z", "2026-05-11T12:01:00Z"),
         )
 
     denied = admin_client.get("/admin/export/waitlist", follow_redirects=False)

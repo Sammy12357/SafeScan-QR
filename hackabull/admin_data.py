@@ -251,8 +251,11 @@ def fetch_waitlist(search="", limit=500):
                 ).fetchone()
                 if not table:
                     continue
+                columns = {row[1] for row in conn.execute("PRAGMA table_info(waitlist_signups)")}
+                if "confirmed_at" not in columns:
+                    continue
                 rows = conn.execute(
-                    "SELECT email, source, created_at FROM waitlist_signups ORDER BY created_at DESC LIMIT ?",
+                    "SELECT email, source, created_at FROM waitlist_signups WHERE confirmed_at IS NOT NULL ORDER BY confirmed_at DESC LIMIT ?",
                     (bounded_limit,),
                 ).fetchall()
         except sqlite3.Error:

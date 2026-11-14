@@ -132,7 +132,17 @@ def init_db():
                         (id TEXT PRIMARY KEY, email TEXT NOT NULL, region TEXT,
                          opt_out_type TEXT NOT NULL, timestamp TEXT NOT NULL)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS waitlist_signups
-                        (email TEXT PRIMARY KEY, source TEXT, created_at TEXT NOT NULL)''')
+                        (email TEXT PRIMARY KEY, source TEXT, created_at TEXT NOT NULL,
+                         confirmed_at TEXT)''')
+    cursor.execute("PRAGMA table_info(waitlist_signups)")
+    if "confirmed_at" not in {row[1] for row in cursor.fetchall()}:
+        # Existing rows were collected before email ownership was verified.
+        # Preserve them for review, but do not treat them as confirmed.
+        cursor.execute("ALTER TABLE waitlist_signups ADD COLUMN confirmed_at TEXT")
+    cursor.execute('''CREATE TABLE IF NOT EXISTS waitlist_confirmation_tokens
+                        (email TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE,
+                         created_at TEXT NOT NULL, expires_at TEXT NOT NULL)''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_waitlist_confirmation_expires ON waitlist_confirmation_tokens(expires_at)")
     cursor.execute('''CREATE TABLE IF NOT EXISTS sessions
                         (id TEXT PRIMARY KEY, google_id TEXT NOT NULL,
                          created_at TEXT NOT NULL, expires_at TEXT NOT NULL,

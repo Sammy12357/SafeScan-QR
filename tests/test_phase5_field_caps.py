@@ -68,14 +68,18 @@ def test_data_request_accepts_full_length_details_without_truncation(field_app):
 
 
 def test_waitlist_rejects_long_email_before_rate_keys_or_storage(field_app):
-    client, db_path, _ = field_app
+    client, db_path, monkeypatch = field_app
 
     assert client.post("/waitlist", data={"email": "a" * 255}).status_code == 400
     assert _rows(db_path, "waitlist_signups") == 0
+    pages = importlib.import_module("hackabull.routes_pages")
+    monkeypatch.setattr(pages, "email_sending_configured", lambda: True)
+    monkeypatch.setattr(pages, "send_email", lambda *_args: True)
     assert client.post("/waitlist", data={"email": " Person@Example.com "}).status_code == 200
     with sqlite3.connect(db_path) as conn:
-        stored = conn.execute("SELECT email FROM waitlist_signups").fetchone()[0]
+        stored = conn.execute("SELECT email FROM waitlist_confirmation_tokens").fetchone()[0]
     assert stored == "person@example.com"
+    assert _rows(db_path, "waitlist_signups") == 0
 
 
 @pytest.mark.parametrize("field,invalid", [

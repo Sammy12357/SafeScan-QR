@@ -309,7 +309,8 @@ def apply_security_headers(request: Request, response):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
     response.headers["Content-Security-Policy"] = CSP_POLICY
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if "referrer-policy" not in response.headers:
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = PERMISSIONS_POLICY
     if "Server" in response.headers:
         del response.headers["Server"]
