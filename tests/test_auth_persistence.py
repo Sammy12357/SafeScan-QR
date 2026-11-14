@@ -35,6 +35,7 @@ def auth_app(tmp_path, monkeypatch):
     monkeypatch.setenv("APP_URL", "https://testserver")
     monkeypatch.setenv("GOOGLE_CLIENT_ID", "test-client")
     monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test_secret")
+    monkeypatch.setenv("ALPHA_STRIPE_PAYMENT_LINK_ID", "plink_alpha_test")
     monkeypatch.setenv("ALPHA_SOLANA_RECIPIENT", "11111111111111111111111111111111")
     monkeypatch.setenv("ALPHA_SOLANA_AMOUNT_SOL", "0.01")
     monkeypatch.setenv("ALPHA_SOLANA_PRICE_USD", "1.00")
@@ -71,6 +72,14 @@ def login(client, email="person@example.com", password="password123"):
     return client.post("/auth/login", data={"email": email, "password": password})
 
 
+def google_nonce_for_test(client):
+    page = client.get("/login")
+    nonce = re.search(r'data-nonce="([A-Za-z0-9_-]+)"', page.text)
+    assert nonce
+    client.cookies.set("g_csrf_token", "test-google-csrf")
+    return nonce.group(1)
+
+
 def stripe_signature(payload, secret="whsec_test_secret"):
     timestamp = str(int(time.time()))
     signature = hmac.new(secret.encode("utf-8"), f"{timestamp}.{payload}".encode("utf-8"), hashlib.sha256).hexdigest()
@@ -97,7 +106,7 @@ def test_email_registration_persists_user_credentials_and_session(auth_app):
     assert sessions[0]["google_id"] == users[0]["google_id"]
 
 
-def test_alpha_payment_uses_stripe_link_and_records_purchase_date(auth_app):
+def test_alpha_payment_uses_stripe_link_and_waits_for_verified_payment(auth_app):
     _, client, db_path = auth_app
     register(client, "alpha@example.com")
 
@@ -109,17 +118,13 @@ def test_alpha_payment_uses_stripe_link_and_records_purchase_date(auth_app):
     assert "https://testserver/pay/alpha/success" not in payment.text
     assert "prefilled_email=alpha%40example.com" in payment.text
     assert success.status_code == 200
-    assert "Subscription start saved for alpha@example.com" in success.text
+    assert "pending" in success.text.lower()
     rows = db_rows(
         db_path,
         "SELECT email, tier, provider, status, purchased_at FROM alpha_subscriptions WHERE email = ?",
         ("alpha@example.com",),
     )
-    assert len(rows) == 1
-    assert rows[0]["tier"] == "alpha_premium"
-    assert rows[0]["provider"] == "stripe"
-    assert rows[0]["status"] == "active"
-    assert rows[0]["purchased_at"].endswith("Z")
+    assert rows == []
 
 
 def test_stripe_webhook_stores_and_cancels_subscription(auth_app):
@@ -127,6 +132,10 @@ def test_stripe_webhook_stores_and_cancels_subscription(auth_app):
     register(client, "stripe@example.com")
     users = db_rows(db_path, "SELECT google_id FROM users WHERE email = ?", ("stripe@example.com",))
     user_id = users[0]["google_id"]
+    assert client.get("/pay/alpha").status_code == 200
+    checkout_reference = db_rows(
+        db_path, "SELECT reference FROM alpha_checkout_references WHERE user_id = ?", (user_id,)
+    )[0]["reference"]
 
     checkout_event = {
         "id": "evt_checkout",
@@ -138,8 +147,12 @@ def test_stripe_webhook_stores_and_cancels_subscription(auth_app):
                 "customer": "cus_123",
                 "subscription": "sub_123",
                 "customer_details": {"email": "stripe@example.com"},
-                "client_reference_id": user_id,
+                "client_reference_id": checkout_reference,
                 "payment_status": "paid",
+                "payment_link": "plink_alpha_test",
+                "mode": "subscription",
+                "amount_total": 100,
+                "currency": "usd",
                 "created": 1780000000,
             }
         },
@@ -315,6 +328,9 @@ def test_invalid_credentials_do_not_create_session(auth_app):
 
 def test_google_login_persists_provider_user_and_session(auth_app, monkeypatch):
     module, client, db_path = auth_app
+    routes = importlib.import_module("hackabull.routes_scan_auth")
+    monkeypatch.setattr(routes, "LOCAL_AUTH_ENABLED", False)
+    nonce = google_nonce_for_test(client)
 
     monkeypatch.setattr(
         module.id_token,
@@ -322,11 +338,13 @@ def test_google_login_persists_provider_user_and_session(auth_app, monkeypatch):
         lambda credential, request, client_id: {
             "sub": "google-sub-1",
             "email": "google@example.com",
+            "email_verified": True,
             "name": "Google User",
             "picture": "https://example.com/avatar.png",
+            "nonce": nonce,
         },
     )
-    response = client.post("/auth/google", data={"credential": "valid-token"})
+    response = client.post("/auth/google", data={"credential": "valid-token", "g_csrf_token": "test-google-csrf"})
 
     assert response.status_code == 200
     assert module.SESSION_COOKIE_NAME in client.cookies
@@ -340,16 +358,22 @@ def test_google_login_persists_provider_user_and_session(auth_app, monkeypatch):
 
 def test_google_then_local_registration_blocks_duplicate_email(auth_app, monkeypatch):
     module, client, db_path = auth_app
+    routes = importlib.import_module("hackabull.routes_scan_auth")
+    monkeypatch.setattr(routes, "LOCAL_AUTH_ENABLED", False)
+    nonce = google_nonce_for_test(client)
     monkeypatch.setattr(
         module.id_token,
         "verify_oauth2_token",
         lambda credential, request, client_id: {
             "sub": "google-sub-2",
             "email": "shared@example.com",
+            "email_verified": True,
+            "nonce": nonce,
         },
     )
 
-    google_response = client.post("/auth/google", data={"credential": "valid-token"})
+    google_response = client.post("/auth/google", data={"credential": "valid-token", "g_csrf_token": "test-google-csrf"})
+    monkeypatch.setattr(routes, "LOCAL_AUTH_ENABLED", True)
     local_response = register(TestClient(module.qr_app, base_url="https://testserver"), "shared@example.com")
 
     assert google_response.status_code == 200
@@ -370,6 +394,7 @@ def test_mobile_sign_in_then_local_registration_blocks_duplicate_email(auth_app,
         lambda credential, request, client_id: {
             "sub": "mobile-sub-1",
             "email": "mobile-shared@example.com",
+            "email_verified": True,
             "name": "Mobile User",
         },
     )

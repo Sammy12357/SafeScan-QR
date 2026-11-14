@@ -109,21 +109,12 @@ CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID") or os.getenv("googe_client_id")
 AUTH0_DOMAIN = (os.getenv("AUTH0_DOMAIN") or "dev-vnllaqnkkegs4xni.us.auth0.com").strip().rstrip("/")
 AUTH0_AUDIENCES = {audience.strip() for audience in (os.getenv("AUTH0_CLIENT_IDS") or os.getenv("AUTH0_CLIENT_ID") or "1XfWxWOtDtN18JCCztRehzcJ1jOSBBic").split(",") if audience.strip()}
 AUTH0_ISSUER = f"https://{AUTH0_DOMAIN}/"
-_AUTH0_JWKS_CACHE = {"keys": None, "fetched_at": 0.0}
-_AUTH0_JWKS_TTL_SECONDS = 60 * 60
+_AUTH0_JWKS_CACHE = {"keys": None, "fetched_at": 0.0, "last_attempt_at": 0.0}
+_AUTH0_JWKS_TTL_SECONDS = 5 * 60
 AIRDROP_ADMIN_SECRET = os.getenv("AIRDROP_ADMIN_SECRET")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "safescanqr@gmail.com")
 ADMIN_EMAIL_GMAIL_COMPOSE_URL = f"https://mail.google.com/mail/?view=cm&fs=1&to={quote(ADMIN_EMAIL)}"
-DEFAULT_ADMIN_EMAILS = {"homzajoe@gmail.com", "restreposamuel2004@gmail.com"}
 ADMIN_ACCESS_DENYLIST = {email.strip().lower() for email in os.getenv("ADMIN_ACCESS_DENYLIST", "safescanqr@gmail.com").split(",") if email.strip()}
-ADMIN_EMAILS = (
-    DEFAULT_ADMIN_EMAILS
-    | {email.strip().lower() for email in os.getenv("ADMIN_EMAILS", ADMIN_EMAIL).split(",") if email.strip()}
-) - ADMIN_ACCESS_DENYLIST
-OWNER_EMAILS = (
-    {email.strip().lower() for email in os.getenv("OWNER_EMAILS", "").split(",") if email.strip()}
-    or {ADMIN_EMAIL.strip().lower()}
-) - ADMIN_ACCESS_DENYLIST
 APP_URL = os.getenv("APP_URL", "https://safescan-qr.onrender.com").rstrip("/")
 APP_ORIGIN = "{uri.scheme}://{uri.netloc}".format(uri=urlparse(APP_URL)) if urlparse(APP_URL).scheme and urlparse(APP_URL).netloc else APP_URL
 ALLOWED_ORIGINS = sorted({
@@ -162,6 +153,7 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SOLANA_RPC_URL = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
 ALPHA_STRIPE_PAYMENT_LINK = os.getenv("ALPHA_STRIPE_PAYMENT_LINK", "https://buy.stripe.com/00w3cxfdAb7OcKB4sC87K01").strip()
+ALPHA_STRIPE_PAYMENT_LINK_ID = os.getenv("ALPHA_STRIPE_PAYMENT_LINK_ID", "").strip()
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()
 ALPHA_SOLANA_RECIPIENT = os.getenv("ALPHA_SOLANA_RECIPIENT", "").strip()
 ALPHA_SOLANA_AMOUNT_SOL = os.getenv("ALPHA_SOLANA_AMOUNT_SOL", "").strip()

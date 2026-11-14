@@ -316,9 +316,10 @@ def test_legacy_private_history_is_hidden_in_normal_api_and_admin_data(tmp_path,
 
 
 def test_admin_fraud_flags_api_redacts_legacy_private_qr_metadata(tmp_path, monkeypatch):
-    monkeypatch.setenv("ADMIN_EMAILS", "admin@example.com")
     _, client, db_path = load_app(tmp_path, monkeypatch)
     assert client.post("/auth/register", data={"email": "admin@example.com", "password": "password123"}).status_code == 200
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("UPDATE users SET role = 'admin' WHERE email = ?", ("admin@example.com",))
     secret = "LEGACY_OTP_SEED_IN_FRAUD_FLAG"
     private_payload = f"otpauth://totp/Alice?secret={secret}"
     web_url = "https://example.com/known-threat"

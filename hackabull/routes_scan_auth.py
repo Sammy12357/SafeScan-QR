@@ -56,7 +56,9 @@ from .accounts import hash_password
 from .accounts import response_after_login
 from .accounts import safe_next_url
 from .accounts import save_local_user
+from .accounts import save_federated_user_to_db
 from .accounts import save_user_to_db
+from .accounts import verified_email_claim
 from .accounts import set_user_username
 from .accounts import verify_password
 from .app_module import qr_app
@@ -91,6 +93,9 @@ from .discord_link import discord_state_for_user
 from .discord_link import get_discord_link
 from .discord_link import verify_discord_state
 from .fraud import run_fraud_checks
+from .google_login import clear_google_login_cookie
+from .google_login import consume_google_login_challenge
+from .google_login import validate_google_csrf
 from .history import index_user_context
 from .payload_privacy import scan_storage_reference
 from .history import save_scan_history
@@ -264,6 +269,7 @@ async def scan_qr(
 async def auth_google(
     request: Request,
     credential: str = Form(None),
+    g_csrf_token: str = Form(None),
     remember_me: str = Form("1"),
     next_url: str = Form("", alias="next"),
     next_query: str = Query("", alias="next"),
@@ -281,14 +287,25 @@ async def auth_google(
             **index_user_context(None)
         })
     try:
+        validate_google_csrf(request, g_csrf_token)
+        if len(credential) > 16_384:
+            raise ValueError("Google ID token too large.")
         idinfo = id_token.verify_oauth2_token(credential, google_requests.Request(), CLIENT_ID)
-        google_id = idinfo["sub"]
-        user_email = idinfo["email"].strip().lower()
+        if not verified_email_claim(idinfo.get("email_verified")):
+            raise ValueError("Google email is not verified.")
+        google_id = idinfo.get("sub")
+        email = idinfo.get("email")
+        if not isinstance(google_id, str) or not google_id or not isinstance(email, str) or not email.strip():
+            raise ValueError("Google ID token missing identity claims.")
+        user_email = email.strip().lower()
+        consume_google_login_challenge(request, idinfo.get("nonce"), g_csrf_token)
     except ValueError:
         audit_log("auth.failed", request=request, metadata={"provider": "google"})
         raise HTTPException(status_code=401, detail="Authentication required.")
 
-    google_id = save_user_to_db(google_id, user_email, request, idinfo.get("name") or "", idinfo.get("picture") or "")
+    google_id = save_federated_user_to_db("google", "https://accounts.google.com", google_id,
+                                          user_email, request, idinfo.get("name") or "",
+                                          idinfo.get("picture") or "")
     user = require_user_from_google_id(google_id)
     if user["status"] != "active":
         raise HTTPException(status_code=401, detail="Authentication required.")
@@ -298,6 +315,7 @@ async def auth_google(
     if return_to != "/":
         response = RedirectResponse(return_to, status_code=303)
         set_session_cookie(response, session_id)
+        clear_google_login_cookie(response)
         if wants_remember_me(remember_me):
             issue_remember_me_cookie(response, google_id, request)
         return response
@@ -310,6 +328,7 @@ async def auth_google(
         **index_user_context(user)
     })
     set_session_cookie(response, session_id)
+    clear_google_login_cookie(response)
     if wants_remember_me(remember_me):
         issue_remember_me_cookie(response, google_id, request)
     return response
@@ -343,26 +362,32 @@ async def auth_verify(request: Request, payload: dict = Body(...)):
         if issuer == AUTH0_ISSUER.rstrip("/"):
             provider = "auth0_mobile"
             idinfo = verify_auth0_id_token(credential)
-            # Auth0 user_id format for Google connection: "google-oauth2|<sub>".
-            raw_sub = idinfo.get("sub") or ""
-            if "|" in raw_sub:
-                google_id = raw_sub.split("|", 1)[1]
-            else:
-                google_id = raw_sub
-            if not google_id:
+            if not verified_email_claim(idinfo.get("email_verified")):
+                raise ValueError("Auth0 email is not verified.")
+            # Keep the full Auth0 subject, including its connection prefix.
+            subject = idinfo.get("sub") or ""
+            if not subject:
                 raise ValueError("Auth0 token missing subject.")
             user_email = (idinfo.get("email") or "").strip().lower()
             if not user_email:
                 raise ValueError("Auth0 token missing email.")
+            identity_provider = "auth0"
+            identity_issuer = AUTH0_ISSUER
         else:
             idinfo = id_token.verify_oauth2_token(credential, google_requests.Request(), CLIENT_ID)
-            google_id = idinfo["sub"]
+            if not verified_email_claim(idinfo.get("email_verified")):
+                raise ValueError("Google email is not verified.")
+            subject = idinfo["sub"]
             user_email = idinfo["email"].strip().lower()
+            identity_provider = "google"
+            identity_issuer = "https://accounts.google.com"
     except ValueError:
         audit_log("auth.failed", request=request, metadata={"provider": provider})
         raise HTTPException(status_code=401, detail="Authentication required.")
 
-    google_id = save_user_to_db(google_id, user_email, request, idinfo.get("name") or "", idinfo.get("picture") or "")
+    google_id = save_federated_user_to_db(identity_provider, identity_issuer, subject,
+                                          user_email, request, idinfo.get("name") or "",
+                                          idinfo.get("picture") or "")
     user = require_user_from_google_id(google_id)
     if user["status"] != "active":
         raise HTTPException(status_code=401, detail="Authentication required.")

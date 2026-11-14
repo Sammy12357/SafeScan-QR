@@ -14,6 +14,10 @@ def qr_modules(tmp_path, monkeypatch):
     # The package creates SQLite on import. CI's default relative URL can
     # resolve to an unwritable root path before any test fixtures run.
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{(tmp_path / 'qr_edges.db').as_posix()}")
+    # These corpus tests check decode correctness, not the production timeout.
+    # Hosted runners can spend several seconds starting a fresh Python worker;
+    # deadline behavior is tested separately in test_qr_decode_tiers.py.
+    monkeypatch.setenv("QR_DECODE_BUDGET_S", "5.0")
     return importlib.import_module("hackabull.qr_decode"), importlib.import_module("hackabull.qr_detect")
 
 

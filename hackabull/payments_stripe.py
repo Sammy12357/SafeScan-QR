@@ -53,10 +53,13 @@ from .audit import iso_from_unix_timestamp
 from .audit import now_iso
 from .auth import get_session_user
 from .config import ALPHA_STRIPE_PAYMENT_LINK
+from .config import ALPHA_STRIPE_PAYMENT_LINK_ID
 from .config import STRIPE_WEBHOOK_SECRET
-from .request_helpers import hash_ip
 from .request_helpers import make_id
-from .request_helpers import request_ip
+import logging
+
+_log = logging.getLogger(__name__)
+STRIPE_WEBHOOK_TOLERANCE_SECONDS = 300
 
 # =============================================================================
 # STRIPE SUBSCRIPTION PAYMENTS & WEBHOOKS
@@ -66,59 +69,33 @@ def alpha_stripe_checkout_url(request: Request):
         return ""
 
     user = get_session_user(request)
+    if not user or not user.get("google_id"):
+        return ""
+    user_id = user["google_id"]
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            """SELECT reference FROM alpha_checkout_references
+               WHERE user_id = ? AND checkout_session_id IS NULL
+               ORDER BY created_at DESC LIMIT 1""",
+            (user_id,),
+        ).fetchone()
+        if row:
+            checkout_reference = row["reference"]
+        else:
+            checkout_reference = "sq_" + secrets.token_urlsafe(24)
+            conn.execute(
+                """INSERT INTO alpha_checkout_references (user_id, reference, created_at)
+                   VALUES (?, ?, ?)""",
+                (user_id, checkout_reference, now_iso()),
+            )
     params = []
-    if user:
-        if user.get("email"):
-            params.append(("prefilled_email", user["email"]))
-        if user.get("google_id"):
-            params.append(("client_reference_id", user["google_id"]))
-
-    if not params:
-        return ALPHA_STRIPE_PAYMENT_LINK
+    if user.get("email"):
+        params.append(("prefilled_email", user["email"]))
+    params.append(("client_reference_id", checkout_reference))
 
     separator = "&" if "?" in ALPHA_STRIPE_PAYMENT_LINK else "?"
     return f"{ALPHA_STRIPE_PAYMENT_LINK}{separator}{urlencode(params)}"
-
-def record_alpha_subscription_purchase(request: Request, provider="stripe"):
-    user = get_session_user(request)
-    if not user:
-        return None
-
-    purchased_at = now_iso()
-    metadata = {
-        "source": "alpha_success_page",
-        "ipHash": hash_ip(request_ip(request)),
-        "userAgent": request.headers.get("user-agent", ""),
-    }
-    with get_conn() as conn:
-        conn.execute(
-            """
-            INSERT INTO alpha_subscriptions
-                (id, user_id, email, tier, provider, status, purchased_at,
-                 stripe_payment_link, client_reference_id, metadata, created_at, updated_at)
-            VALUES (?, ?, ?, 'alpha_premium', ?, 'active', ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(user_id, tier, provider) DO UPDATE SET
-                email = excluded.email,
-                status = 'active',
-                stripe_payment_link = excluded.stripe_payment_link,
-                client_reference_id = excluded.client_reference_id,
-                metadata = excluded.metadata,
-                updated_at = excluded.updated_at
-            """,
-            (
-                make_id("sub"),
-                user["google_id"],
-                user["email"],
-                provider,
-                purchased_at,
-                ALPHA_STRIPE_PAYMENT_LINK if provider == "stripe" else None,
-                user["google_id"],
-                json.dumps(metadata),
-                purchased_at,
-                purchased_at,
-            ),
-        )
-    return {**user, "purchased_at": purchased_at}
 
 def verify_stripe_webhook_signature(payload: bytes, signature_header: str):
     if not STRIPE_WEBHOOK_SECRET:
@@ -128,11 +105,17 @@ def verify_stripe_webhook_signature(payload: bytes, signature_header: str):
         if "=" not in item:
             continue
         key, value = item.split("=", 1)
-        parts.setdefault(key, []).append(value)
+        parts.setdefault(key.strip(), []).append(value.strip())
     timestamp = (parts.get("t") or [""])[0]
     signatures = parts.get("v1") or []
-    if not timestamp or not signatures:
+    if not timestamp or not signatures or len(parts.get("t", [])) != 1:
         raise HTTPException(status_code=400, detail="Invalid Stripe signature header.")
+    try:
+        signed_at = int(timestamp)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid Stripe signature timestamp.") from exc
+    if abs(time.time() - signed_at) > STRIPE_WEBHOOK_TOLERANCE_SECONDS:
+        raise HTTPException(status_code=400, detail="Stripe signature timestamp is outside the allowed window.")
     try:
         signed_payload = timestamp.encode("utf-8") + b"." + payload
         expected = hmac.new(STRIPE_WEBHOOK_SECRET.encode("utf-8"), signed_payload, hashlib.sha256).hexdigest()
@@ -141,56 +124,145 @@ def verify_stripe_webhook_signature(payload: bytes, signature_header: str):
     if not any(hmac.compare_digest(expected, signature) for signature in signatures):
         raise HTTPException(status_code=400, detail="Invalid Stripe signature.")
 
-def stripe_event_email(obj):
-    return (
-        obj.get("customer_email")
-        or (obj.get("customer_details") or {}).get("email")
-        or (obj.get("metadata") or {}).get("email")
-        or ""
-    ).strip().lower()
+def stripe_user_identity(conn, client_reference_id, checkout_session_id):
+    """Resolve a signed checkout reference to an existing user, never by email."""
+    if (not isinstance(client_reference_id, str) or not client_reference_id
+            or not isinstance(checkout_session_id, str) or not checkout_session_id):
+        return None
+    row = conn.execute(
+        """SELECT u.google_id, u.email, r.checkout_session_id
+           FROM alpha_checkout_references AS r
+           JOIN users AS u ON u.google_id = r.user_id
+           WHERE r.reference = ? AND u.status = 'active'""",
+        (client_reference_id,),
+    ).fetchone()
+    if not row or (row["checkout_session_id"] and row["checkout_session_id"] != checkout_session_id):
+        return None
+    if row["checkout_session_id"] is None:
+        already_bound = conn.execute(
+            "SELECT 1 FROM alpha_checkout_references WHERE checkout_session_id = ?",
+            (checkout_session_id,),
+        ).fetchone()
+        if already_bound:
+            return None
+        conn.execute(
+            """UPDATE alpha_checkout_references SET checkout_session_id = ?
+               WHERE reference = ? AND checkout_session_id IS NULL""",
+            (checkout_session_id, client_reference_id),
+        )
+    return row
 
-def stripe_user_identity(email, client_reference_id=None):
-    normalized_email = (email or "").strip().lower()
-    with get_conn() as conn:
-        row = None
-        if client_reference_id:
-            row = conn.execute("SELECT google_id, email FROM users WHERE google_id = ?", (client_reference_id,)).fetchone()
-        if not row and normalized_email:
-            row = conn.execute("SELECT google_id, email FROM users WHERE lower(email) = ?", (normalized_email,)).fetchone()
-    if row:
-        return row["google_id"], (row["email"] or normalized_email)
-    fallback_id = client_reference_id or normalized_email or "stripe_unknown"
-    return fallback_id, normalized_email
 
-def upsert_alpha_subscription_from_stripe(obj, event_type):
+def stripe_invoice_subscription_and_period(obj):
+    """Read both legacy and current Stripe invoice subscription line shapes."""
+    subscription_id = obj.get("subscription")
+    lines = obj.get("lines") or {}
+    entries = (lines.get("data") or []) if isinstance(lines, dict) else []
+    matching_periods = []
+    seen_subscription_ids = set()
+    for line in entries:
+        if not isinstance(line, dict):
+            continue
+        parent = line.get("parent") or {}
+        details = (parent.get("subscription_item_details") or {}) if isinstance(parent, dict) else {}
+        if not isinstance(details, dict):
+            details = {}
+        line_subscription = details.get("subscription") or line.get("subscription")
+        if not isinstance(line_subscription, str) or not line_subscription:
+            continue
+        seen_subscription_ids.add(line_subscription)
+        period = line.get("period") or {}
+        end = period.get("end") if isinstance(period, dict) else None
+        if isinstance(end, int) and not isinstance(end, bool):
+            matching_periods.append((line_subscription, end))
+    if not subscription_id and len(seen_subscription_ids) == 1:
+        subscription_id = next(iter(seen_subscription_ids))
+    if not isinstance(subscription_id, str) or not subscription_id:
+        return None, None
+    end = max((end for line_id, end in matching_periods if line_id == subscription_id), default=None)
+    return subscription_id, end
+
+
+def upsert_alpha_subscription_from_stripe(conn, obj, event_type):
     metadata = obj.get("metadata") or {}
-    email = stripe_event_email(obj)
+    if not isinstance(metadata, dict):
+        metadata = {}
     client_reference_id = obj.get("client_reference_id") or metadata.get("client_reference_id")
     stripe_customer_id = obj.get("customer")
-    stripe_subscription_id = obj.get("subscription") or obj.get("id")
-    existing_identity = None
-    if not email and (stripe_subscription_id or stripe_customer_id):
-        with get_conn() as conn:
-            existing_identity = conn.execute(
-                """SELECT user_id, email FROM alpha_subscriptions
-                   WHERE (stripe_subscription_id = ? AND ? IS NOT NULL)
-                      OR (stripe_customer_id = ? AND ? IS NOT NULL)
-                   ORDER BY updated_at DESC LIMIT 1""",
-                (stripe_subscription_id, stripe_subscription_id, stripe_customer_id, stripe_customer_id),
-            ).fetchone()
-    if existing_identity:
-        user_id, stored_email = existing_identity["user_id"], existing_identity["email"]
+    if event_type == "invoice.paid":
+        stripe_subscription_id, invoice_period_end = stripe_invoice_subscription_and_period(obj)
+        amount_paid = obj.get("amount_paid")
+        if (
+            obj.get("status") != "paid"
+            or not isinstance(amount_paid, int) or isinstance(amount_paid, bool) or amount_paid <= 0
+            or not stripe_subscription_id
+        ):
+            return {"ignored": True, "reason": "invoice_not_paid_for_alpha"}
     else:
-        user_id, stored_email = stripe_user_identity(email, client_reference_id)
+        invoice_period_end = None
+        stripe_subscription_id = obj.get("subscription") or (
+            obj.get("id") if event_type.startswith("customer.subscription.") else None
+        )
+    if event_type != "customer.subscription.deleted" and isinstance(stripe_subscription_id, str):
+        # Deletion is terminal for this subscription ID. Late checkout, invoice,
+        # and update deliveries must not reactivate it.
+        deleted = conn.execute(
+            """SELECT 1 FROM stripe_events
+               WHERE event_type = 'customer.subscription.deleted' AND object_id = ?
+               LIMIT 1""",
+            (stripe_subscription_id,),
+        ).fetchone()
+        if deleted:
+            return {"ignored": True, "reason": "subscription_deleted"}
+    if event_type.startswith("checkout.session."):
+        if obj.get("payment_status") != "paid":
+            return {"ignored": True, "reason": "payment_not_paid"}
+        amount = obj.get("amount_total")
+        if (
+            not ALPHA_STRIPE_PAYMENT_LINK_ID
+            or obj.get("payment_link") != ALPHA_STRIPE_PAYMENT_LINK_ID
+            or obj.get("mode") != "subscription"
+            or not isinstance(amount, int) or isinstance(amount, bool) or amount <= 0
+            or not isinstance(stripe_subscription_id, str) or not stripe_subscription_id
+        ):
+            return {"ignored": True, "reason": "not_alpha_checkout"}
+        identity = stripe_user_identity(conn, client_reference_id, obj.get("id"))
+    else:
+        # Later lifecycle events can only update a checkout already attached to
+        # a user by this version's product-verified checkout. Older webhook
+        # rows did not verify the Payment Link and cannot establish entitlement.
+        # Invoice metadata and customer email never establish identity.
+        identity = None
+        if isinstance(stripe_subscription_id, str) and stripe_subscription_id:
+            rows = conn.execute(
+                """SELECT u.google_id, u.email, a.metadata FROM alpha_subscriptions AS a
+                   JOIN users AS u ON u.google_id = a.user_id AND u.status = 'active'
+                   WHERE a.provider = 'stripe' AND a.checkout_session_id IS NOT NULL
+                     AND a.stripe_subscription_id = ?""",
+                (stripe_subscription_id,),
+            ).fetchall()
+            verified_rows = []
+            for row in rows:
+                try:
+                    metadata = json.loads(row["metadata"] or "{}")
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(metadata, dict) and metadata.get("verifiedAlphaCheckout") is True:
+                    verified_rows.append(row)
+            if len(verified_rows) == 1:
+                identity = verified_rows[0]
+    if identity is None:
+        return {"unmatched": True, "type": event_type}
+    user_id, stored_email = identity["google_id"], identity["email"]
     event_status = obj.get("status") or "active"
     cancel_at_period_end = 1 if obj.get("cancel_at_period_end") else 0
     current_period_start = iso_from_unix_timestamp(obj.get("current_period_start"))
-    current_period_end = iso_from_unix_timestamp(obj.get("current_period_end"))
+    current_period_end = iso_from_unix_timestamp(invoice_period_end or obj.get("current_period_end"))
     canceled_at = iso_from_unix_timestamp(obj.get("canceled_at"))
     purchased_at = iso_from_unix_timestamp(obj.get("created")) or now_iso()
 
-    if event_type == "checkout.session.completed":
-        event_status = "active" if obj.get("payment_status") in ("paid", "no_payment_required", None) else event_status
+    if event_type in {"checkout.session.completed", "checkout.session.async_payment_succeeded"}:
+        event_status = "active"
     elif event_type == "invoice.paid":
         event_status = "active"
     elif event_type == "customer.subscription.deleted":
@@ -199,18 +271,24 @@ def upsert_alpha_subscription_from_stripe(obj, event_type):
     elif event_type == "customer.subscription.updated" and event_status == "canceled":
         canceled_at = canceled_at or now_iso()
 
-    expires_at = canceled_at if event_status == "canceled" else current_period_end
+    # Only a verified paid event can extend the entitlement. Subscription
+    # lifecycle updates may report a future period before its invoice is paid.
+    expires_at = canceled_at if event_status == "canceled" else (
+        current_period_end if event_type in {
+            "checkout.session.completed", "checkout.session.async_payment_succeeded", "invoice.paid"
+        } else None
+    )
     updated_at = now_iso()
     webhook_metadata = {
         "source": "stripe_webhook",
+        "verifiedAlphaCheckout": True,
         "eventType": event_type,
         "stripeObjectId": obj.get("id"),
         "rawStatus": obj.get("status"),
     }
 
-    with get_conn() as conn:
-        conn.execute(
-            """
+    conn.execute(
+        """
             INSERT INTO alpha_subscriptions
                 (id, user_id, email, tier, provider, status, purchased_at,
                  checkout_session_id, stripe_payment_link, client_reference_id, metadata,
@@ -234,38 +312,95 @@ def upsert_alpha_subscription_from_stripe(obj, event_type):
                 expires_at = COALESCE(excluded.expires_at, alpha_subscriptions.expires_at),
                 updated_at = excluded.updated_at
             """,
-            (
-                make_id("sub"),
-                user_id,
-                stored_email,
-                event_status,
-                purchased_at,
-                obj.get("id") if obj.get("object") == "checkout.session" else None,
-                ALPHA_STRIPE_PAYMENT_LINK,
-                client_reference_id or user_id,
-                json.dumps(webhook_metadata),
-                stripe_customer_id,
-                stripe_subscription_id,
-                current_period_start,
-                current_period_end,
-                cancel_at_period_end,
-                canceled_at,
-                expires_at,
-                updated_at,
-                updated_at,
-            ),
-        )
+        (
+            make_id("sub"),
+            user_id,
+            stored_email,
+            event_status,
+            purchased_at,
+            obj.get("id") if obj.get("object") == "checkout.session" else None,
+            ALPHA_STRIPE_PAYMENT_LINK,
+            client_reference_id or user_id,
+            json.dumps(webhook_metadata),
+            stripe_customer_id,
+            stripe_subscription_id,
+            current_period_start,
+            current_period_end,
+            cancel_at_period_end,
+            canceled_at,
+            expires_at,
+            updated_at,
+            updated_at,
+        ),
+    )
     return {"email": stored_email, "status": event_status, "stripeSubscriptionId": stripe_subscription_id}
 
 def process_stripe_webhook_event(event):
+    if not isinstance(event, dict):
+        raise HTTPException(status_code=400, detail="Invalid Stripe webhook event.")
     event_type = event.get("type")
-    obj = (event.get("data") or {}).get("object") or {}
-    if event_type in {
+    data = event.get("data")
+    if not isinstance(event_type, str) or not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="Invalid Stripe webhook event.")
+    obj = data.get("object")
+    if not isinstance(obj, dict):
+        raise HTTPException(status_code=400, detail="Invalid Stripe webhook object.")
+    supported_types = {
         "checkout.session.completed",
+        "checkout.session.async_payment_succeeded",
         "customer.subscription.updated",
         "customer.subscription.deleted",
         "invoice.paid",
-    }:
-        return upsert_alpha_subscription_from_stripe(obj, event_type)
-    return {"ignored": True, "type": event_type}
+    }
+    if event_type not in supported_types:
+        return {"ignored": True, "type": event_type}
+    if event_type.startswith("checkout.session.") and not ALPHA_STRIPE_PAYMENT_LINK_ID:
+        raise HTTPException(status_code=503, detail="Alpha payment link is not configured.")
+    event_id = event.get("id")
+    object_id = obj.get("id") if isinstance(obj, dict) else None
+    if not isinstance(event_id, str) or not event_id or not isinstance(object_id, str) or not object_id:
+        raise HTTPException(status_code=400, detail="Stripe event is missing an ID or object.")
+    # Subscription.updated is repeatable for one subscription, so only the
+    # immutable payment and terminal events get object-and-type deduplication.
+    dedupe_key = f"{event_type}:{object_id}" if event_type != "customer.subscription.updated" else None
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute(
+                """INSERT INTO stripe_events
+                   (event_id, object_id, event_type, dedupe_key, processed_at, outcome)
+                   VALUES (?, ?, ?, ?, ?, 'processing')""",
+                (event_id, object_id, event_type, dedupe_key, now_iso()),
+            )
+        except sqlite3.IntegrityError:
+            return {"duplicate": True, "type": event_type}
+        result = upsert_alpha_subscription_from_stripe(conn, obj, event_type)
+        outcome = "unmatched" if result.get("unmatched") else "ignored" if result.get("ignored") else "processed"
+        conn.execute("UPDATE stripe_events SET outcome = ? WHERE event_id = ?", (outcome, event_id))
+        if outcome == "unmatched":
+            _log.warning("Stripe payment event needs manual account review: type=%s, event=%s", event_type, event_id)
+        return result
+
+
+def has_active_alpha(user):
+    """True only for a current Stripe subscription activated by a webhook."""
+    user_id = user.get("google_id") if isinstance(user, dict) else user
+    if not user_id:
+        return False
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT metadata FROM alpha_subscriptions
+               WHERE user_id = ? AND provider = 'stripe' AND status = 'active'
+                 AND expires_at IS NOT NULL AND expires_at > ?""",
+            (user_id, now_iso()),
+        ).fetchall()
+    for row in rows:
+        try:
+            metadata = json.loads(row["metadata"] or "{}")
+            if (isinstance(metadata, dict) and metadata.get("source") == "stripe_webhook"
+                    and metadata.get("verifiedAlphaCheckout") is True):
+                return True
+        except (TypeError, ValueError):
+            pass
+    return False
 
