@@ -10,6 +10,7 @@ import httpx
 import pytest
 from browser_client import BrowserTestClient as TestClient
 
+from hackabull import body_limits
 from hackabull.body_limits import BodySizeLimitMiddleware
 
 
@@ -88,6 +89,26 @@ def test_body_within_limit_reaches_parser_unchanged():
     assert events[0]["status"] == 200
     assert reads == 2
     assert downstream[0]["body"] == b'{"payload":"safe"}'
+
+
+def test_slow_streaming_body_is_rejected_before_parser(monkeypatch):
+    monkeypatch.setattr(body_limits, "BODY_READ_TIMEOUT_SECONDS", 0.01)
+    events = []
+
+    async def app(_scope, _receive, _send):
+        pytest.fail("A timed-out body must never reach the parser")
+
+    async def receive():
+        await asyncio.Event().wait()
+
+    async def send(message):
+        events.append(message)
+
+    asyncio.run(BodySizeLimitMiddleware(app, lambda _request, response: response)(
+        _scope("/api/scan", "application/json"), receive, send,
+    ))
+    assert events[0]["status"] == 408
+    assert b"Request body timed out" in events[1]["body"]
 
 
 @pytest.fixture()

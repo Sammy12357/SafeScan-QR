@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 
 from starlette.requests import Request
@@ -11,6 +12,7 @@ from starlette.responses import JSONResponse
 UPLOAD_BODY_LIMIT = 10 * 1024 * 1024
 JSON_BODY_LIMIT = 64 * 1024
 DEFAULT_BODY_LIMIT = 16 * 1024
+BODY_READ_TIMEOUT_SECONDS = 15
 UPLOAD_PATHS = frozenset({"/search_qr_api", "/api/scan/file"})
 
 
@@ -62,18 +64,27 @@ class BodySizeLimitMiddleware:
         # Streaming HTTP clients may omit Content-Length. Stop reading at the
         # first chunk that exceeds the selected route budget.
         body = bytearray()
-        while True:
-            message = await receive()
-            if message["type"] == "http.disconnect":
-                return
-            if message["type"] != "http.request":
-                return await self._reject(scope, receive, send, 400, "Invalid request body.")
-            chunk = message.get("body", b"")
-            if len(body) + len(chunk) > limit:
-                return await self._reject(scope, receive, send, 413, "Request body is too large.")
-            body.extend(chunk)
-            if not message.get("more_body", False):
-                break
+        rejection = None
+        try:
+            async with asyncio.timeout(BODY_READ_TIMEOUT_SECONDS):
+                while True:
+                    message = await receive()
+                    if message["type"] == "http.disconnect":
+                        return
+                    if message["type"] != "http.request":
+                        rejection = (400, "Invalid request body.")
+                        break
+                    chunk = message.get("body", b"")
+                    if len(body) + len(chunk) > limit:
+                        rejection = (413, "Request body is too large.")
+                        break
+                    body.extend(chunk)
+                    if not message.get("more_body", False):
+                        break
+        except TimeoutError:
+            return await self._reject(scope, receive, send, 408, "Request body timed out.")
+        if rejection is not None:
+            return await self._reject(scope, receive, send, *rejection)
 
         first = True
 
