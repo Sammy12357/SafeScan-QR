@@ -4,6 +4,7 @@ import json
 import warnings
 import io
 import sqlite3
+import logging
 import hashlib
 import hmac
 import math
@@ -41,6 +42,7 @@ from db import (
     rls_user_id,
     set_rls_context,
     user_scoped_select,
+    unique_email_owner,
 )
 from storage import backend_status as storage_backend_status
 from storage import download_file as storage_download_file
@@ -68,20 +70,38 @@ def legal_context(request: Request, title, body_html):
         "google_client_id": CLIENT_ID
     }
 
-def get_user_export(email):
+def get_user_export(email, user_id):
     with get_conn() as conn:
         conn.row_factory = sqlite3.Row
-        scans = [dict(row) for row in conn.execute("SELECT * FROM scans WHERE email = ?", (email,))]
-        events = [dict(row) for row in conn.execute("SELECT * FROM scan_events WHERE email = ?", (email,))]
+        conn.execute("BEGIN")
+        if not unique_email_owner(conn, email, user_id):
+            count = sum(conn.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE user_id = ? OR lower(email) = lower(?)",
+                (user_id, email),
+            ).fetchone()[0] for table in ("scans", "scan_events", "scan_history"))
+            if count:
+                logging.getLogger(__name__).warning(
+                    "Withheld %d scan rows from ambiguous privacy export pending ownership review", count
+                )
+            return None
+        owner_where = "user_id = ? OR ((user_id IS NULL OR user_id = '') AND lower(email) = lower(?))"
+        scans = [dict(row) for row in conn.execute(f"SELECT * FROM scans WHERE {owner_where}", (user_id, email))]
+        events = [dict(row) for row in conn.execute(f"SELECT * FROM scan_events WHERE {owner_where}", (user_id, email))]
         requests_ = [dict(row) for row in conn.execute("SELECT * FROM data_requests WHERE email = ?", (email,))]
         age = [dict(row) for row in conn.execute("SELECT * FROM age_confirmations WHERE email = ?", (email,))]
         opt_outs = [dict(row) for row in conn.execute("SELECT * FROM privacy_opt_outs WHERE email = ?", (email,))]
     return {"email": email, "scans": scans, "scanEvents": events, "dataRequests": requests_, "ageConfirmations": age, "privacyOptOuts": opt_outs}
 
-def delete_user_data(email):
+def delete_user_data(email, user_id):
     with get_conn() as conn:
-        conn.execute("DELETE FROM scans WHERE email = ?", (email,))
-        conn.execute("DELETE FROM scan_events WHERE email = ?", (email,))
-        conn.execute("DELETE FROM users WHERE email = ?", (email,))
+        conn.execute("BEGIN IMMEDIATE")
+        if not unique_email_owner(conn, email, user_id):
+            return False
+        owner_where = "user_id = ? OR ((user_id IS NULL OR user_id = '') AND lower(email) = lower(?))"
+        conn.execute(f"DELETE FROM scans WHERE {owner_where}", (user_id, email))
+        conn.execute(f"DELETE FROM scan_events WHERE {owner_where}", (user_id, email))
+        conn.execute(f"DELETE FROM scan_history WHERE {owner_where}", (user_id, email))
+        conn.execute("DELETE FROM users WHERE google_id = ?", (user_id,))
         conn.execute("DELETE FROM age_confirmations WHERE email = ?", (email,))
+    return True
 

@@ -9,6 +9,7 @@ requests==2.34.2
 h11==0.16.0
 urllib3>=2.2,<3
 certifi>=2024.2.2
+idna==3.20
 python-whois>=0.9.4
 tldextract>=5.1.1
 google-auth==2.49.2

@@ -41,6 +41,8 @@ from db import (
     rls_user_id,
     set_rls_context,
     user_scoped_select,
+    unique_email_owner,
+    rls_email,
 )
 from storage import backend_status as storage_backend_status
 from storage import download_file as storage_download_file
@@ -189,14 +191,22 @@ def run_fraud_checks(event_type, user_id, request=None, metadata=None):
 
     if signals:
         new_points = sum(severity_points(item["severity"]) for item in signals)
+        account_id = rls_user_id() if user_id == rls_email() else None
+        if not account_id:
+            with get_conn() as conn:
+                direct = conn.execute("SELECT google_id FROM users WHERE google_id = ?", (user_id,)).fetchone()
+                account_id = direct[0] if direct else None
+        if not account_id:
+            account_id = lookup_user_id_by_email(user_id)
         with get_conn() as conn:
             for item in signals:
                 conn.execute(
                     "INSERT INTO fraud_flags VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, NULL, ?)",
                     (make_id("fraud"), user_id, item["checkName"], item["severity"], item["reason"], json.dumps(item["metadata"]), int(item["autoDisqualify"]), now_iso())
                 )
-            conn.execute("UPDATE users SET fraud_score = COALESCE(fraud_score, 0) + ?, airdrop_status = CASE WHEN COALESCE(fraud_score, 0) + ? >= 40 THEN 'flagged' ELSE airdrop_status END WHERE email = ? OR google_id = ?", (new_points, new_points, user_id, user_id))
-        audit_log("fraud.flags_added", request=request, actor_user_id=user_id, target_type="user", target_id=user_id, metadata={"signalCount": len(signals), "points": new_points})
+            if account_id:
+                conn.execute("UPDATE users SET fraud_score = COALESCE(fraud_score, 0) + ?, airdrop_status = CASE WHEN COALESCE(fraud_score, 0) + ? >= 40 THEN 'flagged' ELSE airdrop_status END WHERE google_id = ?", (new_points, new_points, account_id))
+        audit_log("fraud.flags_added", request=request, actor_user_id=account_id, target_type="user", target_id=account_id, metadata={"signalCount": len(signals), "points": new_points})
     return signals
 
 def lookup_user_id_by_email(email):
@@ -204,11 +214,13 @@ def lookup_user_id_by_email(email):
     if not normalized_email:
         return None
     with get_conn() as conn:
-        row = conn.execute(
-            "SELECT google_id FROM users WHERE lower(email) = ? AND status != 'deleted' ORDER BY created_at LIMIT 1",
+        rows = conn.execute(
+            "SELECT google_id FROM users WHERE lower(email) = ? AND status != 'deleted'",
             (normalized_email,),
-        ).fetchone()
-    return row["google_id"] if row else None
+        ).fetchall()
+        if len(rows) == 1 and unique_email_owner(conn, email, rows[0]["google_id"]):
+            return rows[0]["google_id"]
+    return None
 
 SCAN_CLASSIFICATIONS = (
     ("MALICIOUS", "Dangerous"),

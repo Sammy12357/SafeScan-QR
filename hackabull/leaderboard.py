@@ -41,6 +41,7 @@ from db import (
     rls_user_id,
     set_rls_context,
     user_scoped_select,
+    canonical_email_key,
 )
 from storage import backend_status as storage_backend_status
 from storage import download_file as storage_download_file
@@ -71,6 +72,7 @@ def get_global_leaderboard(limit=50):
     bounded_limit = max(1, min(int(limit or 50), 100))
     with get_conn() as conn:
         conn.row_factory = sqlite3.Row
+        conn.execute("BEGIN")
         rows = conn.execute(
             """
             SELECT
@@ -82,28 +84,41 @@ def get_global_leaderboard(limit=50):
                 COALESCE(h.total_saved_scans, 0) AS total_saved_scans,
                 COALESCE(h.last_history_at, se.last_event_at) AS last_scanned_at
             FROM users u
-            LEFT JOIN scans s ON s.user_id = u.google_id OR lower(s.email) = lower(u.email)
             LEFT JOIN (
-                SELECT user_id, lower(email) AS email_key, COUNT(*) AS total_saved_scans,
-                       COUNT(DISTINCT url) AS unique_saved_scans, MAX(created_at) AS last_history_at
-                FROM scan_history
-                GROUP BY user_id, lower(email)
-            ) h ON h.user_id = u.google_id OR h.email_key = lower(u.email)
+                SELECT user_id, MAX(scan_count) AS scan_count
+                FROM scans WHERE user_id IS NOT NULL AND user_id != ''
+                GROUP BY user_id
+            ) s ON s.user_id = u.google_id
             LEFT JOIN (
-                SELECT lower(email) AS email_key, COUNT(DISTINCT payload_hash) AS unique_events, MAX(first_scanned_at) AS last_event_at
-                FROM scan_events
-                GROUP BY lower(email)
-            ) se ON se.email_key = lower(u.email)
+                SELECT user_id, COUNT(*) AS total_saved_scans, MAX(created_at) AS last_history_at
+                FROM scan_history WHERE user_id IS NOT NULL AND user_id != ''
+                GROUP BY user_id
+            ) h ON h.user_id = u.google_id
+            LEFT JOIN (
+                SELECT user_id, COUNT(DISTINCT payload_hash) AS unique_events, MAX(first_scanned_at) AS last_event_at
+                FROM scan_events WHERE user_id IS NOT NULL AND user_id != ''
+                GROUP BY user_id
+            ) se ON se.user_id = u.google_id
             WHERE u.status != 'deleted'
-            GROUP BY u.google_id, u.email, u.username, u.display_name, s.scan_count, h.total_saved_scans, h.unique_saved_scans, h.last_history_at, se.unique_events, se.last_event_at
-            HAVING MAX(COALESCE(s.scan_count, 0), COALESCE(se.unique_events, 0), COALESCE(h.total_saved_scans, 0)) > 0
+              AND MAX(COALESCE(s.scan_count, 0), COALESCE(se.unique_events, 0), COALESCE(h.total_saved_scans, 0)) > 0
             ORDER BY scan_count DESC, total_saved_scans DESC, last_scanned_at DESC
-            LIMIT ?
             """,
-            (bounded_limit,)
         ).fetchall()
+        # Historical LIMIT 1 backfill makes ID-bound rows untrustworthy for
+        # colliding emails. Build the canonical owner map once per page.
+        canonical_owners = {}
+        for account in conn.execute("SELECT google_id, email FROM users WHERE email IS NOT NULL"):
+            key = canonical_email_key(account["email"])
+            if key:
+                canonical_owners[key] = account["google_id"] if key not in canonical_owners else None
+        eligible_rows = []
+        for row in rows:
+            key = canonical_email_key(row["email"])
+            if key and canonical_owners.get(key) == row["user_id"]:
+                eligible_rows.append(row)
+        rows = eligible_rows
     leaders = []
-    for index, row in enumerate(rows, start=1):
+    for index, row in enumerate(rows[:bounded_limit], start=1):
         item = dict(row)
         item["rank"] = index
         item["public_name"] = public_leaderboard_name(item)

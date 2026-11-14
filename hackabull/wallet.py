@@ -41,6 +41,8 @@ from db import (
     rls_user_id,
     set_rls_context,
     user_scoped_select,
+    unique_email_owner,
+    rls_email,
 )
 from storage import backend_status as storage_backend_status
 from storage import download_file as storage_download_file
@@ -141,9 +143,20 @@ def expire_alpha_subscriptions():
 
 def get_verified_wallet(user_id):
     with get_conn() as conn:
-        rows = user_scoped_select(conn, "wallets", "verified = 1")
-        row = next((item for item in rows if item["user_id"] == user_id), None)
-        if not row and not rls_user_id():
+        conn.execute("BEGIN")
+        current_id = rls_user_id()
+        if current_id:
+            email = rls_email()
+            if user_id not in (current_id, email) or not unique_email_owner(conn, email, current_id):
+                return None
+            row = conn.execute(
+                "SELECT * FROM wallets WHERE user_id = ? AND verified = 1", (current_id,)
+            ).fetchone()
+            if not row:
+                row = conn.execute(
+                    "SELECT * FROM wallets WHERE user_id = ? AND verified = 1", (email,)
+                ).fetchone()
+        else:
             row = conn.execute(
                 "SELECT * FROM wallets WHERE user_id = ? AND verified = 1",
                 (user_id,)
