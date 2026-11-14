@@ -1,0 +1,11 @@
+{
+  "name": "safescan-qr-bench",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=20.9.0"},
+  "scripts": {"bench": "node bench_client.mjs --corpus synthetic"},
+  "dependencies": {
+    "jsqr": "1.4.0",
+    "sharp": "0.35.5"
+  }
+}

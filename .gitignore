@@ -8,6 +8,8 @@ qr_cache.db
 .codex_server_*.log
 .codex_tmp_deps/
 .codex_tmp_deps2/
+.cache/
+node_modules/
 data/*
 # Tranco allowlists ship with the code so the short-circuit is hermetic.
 !data/tranco_top_10k.csv
