@@ -13,7 +13,7 @@ specific shared-IP ceiling. A rejection returns 429 with `Retry-After`.
 The Phase 3 route presets are: login 5/min/IP shared across Google, mobile,
 and local entry points, plus 10/15 min/account after a provider token is
 verified (or by normalized email for local login); register 3/hr/IP;
-signed-in text and file API scans together 30/hr/account; guest HTML and JSON scans together
+signed-in HTML, JSON, and file scans together 30/hr/account; guest HTML and JSON scans together
 10/hr/IP; consent 10/hr/IP; waitlist 3/hr/IP and 1/day/normalized address
 (held only as a SHA-256 key in the limiter);
 reports 10/hr/IP; and Go Ghost 3/day/account. Mobile and JSON API 429s retain
