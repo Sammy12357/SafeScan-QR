@@ -88,6 +88,14 @@ const window = new Emitter();
 window.location = { origin: "https://sqafe.com" };
 window.isSecureContext = true;
 window.devicePixelRatio = 1;
+const telemetryEvents = [];
+window.fetch = async (url, options) => {
+  assert.equal(url, "/api/telemetry/scan");
+  assert.equal(options.credentials, "omit");
+  assert.equal(options.referrerPolicy, "no-referrer");
+  telemetryEvents.push(JSON.parse(options.body));
+  return { ok: true };
+};
 window.localStorage = {
   getItem: (key) => localValues.get(key) || null,
   setItem: (key, value) => localValues.set(key, value),
@@ -265,4 +273,13 @@ assert.equal(sentAfterWorkerFailure, null, "failed worker must not auto-send a f
 assert.equal(elements[".qr-camera-server-offer"].hidden, false);
 await elements[".qr-camera-server-send"].dispatch("click");
 assert.equal(sentAfterWorkerFailure.type, "image/jpeg");
+assert.ok(telemetryEvents.some((event) => event.stage === "capture" && event.outcome === "success"));
+assert.ok(telemetryEvents.some((event) => event.stage === "capture" && event.outcome === "ambiguous"));
+assert.ok(telemetryEvents.some((event) => event.stage === "server_retry" && event.outcome === "sent"));
+for (const event of telemetryEvents) {
+  assert.deepEqual(Object.keys(event).sort(),
+    ["engine", "stage", "frames_tried", "ms", "outcome", "guidance_shown"].sort());
+  assert.equal(JSON.stringify(event).includes("https://example.com"), false, "never transmit QR text");
+  assert.ok(event.guidance_shown.every((category) => typeof category === "string" && category.length < 16));
+}
 console.log("Camera controls, burst consensus, consented fallback, and opt-in auto-capture: pass");

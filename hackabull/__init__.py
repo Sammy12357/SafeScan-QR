@@ -43,4 +43,5 @@ from .routes_admin import *  # noqa: F401,F403
 from .routes_api import *  # noqa: F401,F403
 from .routes_pages import *  # noqa: F401,F403
 from .routes_scan_auth import *  # noqa: F401,F403
+from .routes_scan_telemetry import *  # noqa: F401,F403
 from .routes_account import *  # noqa: F401,F403

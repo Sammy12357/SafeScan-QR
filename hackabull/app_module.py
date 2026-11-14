@@ -179,6 +179,14 @@ async def enforce_origin(request: Request, call_next):
 
 @qr_app.middleware("http")
 async def rls_context_middleware(request: Request, call_next):
+    if request.url.path == "/api/telemetry/scan":
+        # This endpoint accepts counts from guests and never needs an account
+        # lookup or row-level user context, even if a caller supplies cookies.
+        set_rls_context(None, "guest")
+        try:
+            return await call_next(request)
+        finally:
+            clear_rls_context()
     try:
         user = get_session_user(request)
         if user:
@@ -197,7 +205,7 @@ async def rls_context_middleware(request: Request, call_next):
 @qr_app.middleware("http")
 async def remember_me_middleware(request: Request, call_next):
     path = request.url.path
-    if path.startswith("/static/") or request.cookies.get(SESSION_COOKIE_NAME):
+    if path.startswith("/static/") or path == "/api/telemetry/scan" or request.cookies.get(SESSION_COOKIE_NAME):
         return await call_next(request)
 
     if getattr(request.state, "remembered_user", None):
@@ -303,6 +311,10 @@ async def start_wallet_nonce_cleanup():
 @qr_app.middleware("http")
 async def security_headers_and_rate_limits(request: Request, call_next):
     path = request.url.path
+    if path == "/api/telemetry/scan":
+        # The telemetry endpoint has its own in-memory count-only budget.
+        # Generic rate-limit failures write IP-linked audit rows.
+        return await call_next(request)
     if request.method == "POST" and path in ("/search_qr_api", "/api/scan/file"):
         raw_length = request.headers.get("content-length")
         if raw_length:

@@ -8,6 +8,34 @@
   const MAX_BURST_PIXELS = 3_000_000;
   const CAMERA_DEVICE_KEY = "safescan-qr-camera-device:" + window.location.origin;
 
+  // Only fixed categories leave the browser. Never include QR text, image
+  // pixels, camera identifiers, or the guidance message itself.
+  function guidanceCategory(message) {
+    if (message.startsWith("Two codes") || message.startsWith("One code is stuck")) return "multiple";
+    if (message.startsWith("Move the code")) return "edge";
+    if (message.startsWith("The code is small")) return "small";
+    if (message.startsWith("Hold steady")) return "blur";
+    if (message.startsWith("Too dark")) return "dark";
+    if (message.startsWith("Glare")) return "glare";
+    if (message.startsWith("Face the code")) return "tilt";
+    if (message.startsWith("Almost")) return "invalid";
+    if (message.startsWith("Can't see") || message.startsWith("Aim at one")) return "none";
+    if (message.startsWith("Code found")) return "ready";
+    return null;
+  }
+
+  function postScanCount(event) {
+    if (typeof window.fetch !== "function") return;
+    // keepalive is beacon-like on navigation. Omit account cookies and referrer.
+    try {
+      void window.fetch("/api/telemetry/scan", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(event), keepalive: true, credentials: "omit",
+        cache: "no-store", referrerPolicy: "no-referrer", mode: "same-origin",
+      }).catch(() => {});
+    } catch (_err) { /* Counting must never affect a scan. */ }
+  }
+
   function savedDeviceId() {
     try { return window.localStorage.getItem(CAMERA_DEVICE_KEY) || null; }
     catch (_err) { return null; }
@@ -387,6 +415,16 @@
     let lastGuidanceAt = 0;
     let lastGuidanceText = "";
     let fallbackBlob = null;
+    const guidanceShown = [];
+
+    function sendCount(stage, outcome, framesTried, startedAt) {
+      const engine = !decoder ? "unavailable" : decoder.kind.startsWith("BarcodeDetector") ? "native+wasm" : "wasm";
+      postScanCount({
+        engine, stage, frames_tried: Math.min(8, Math.max(0, framesTried)),
+        ms: Math.min(30_000, Math.max(0, Date.now() - startedAt)), outcome,
+        guidance_shown: guidanceShown.splice(0, 20),
+      });
+    }
 
     function clearOverlay() {
       if (overlayContext) overlayContext.clearRect(0, 0, overlay.width, overlay.height);
@@ -481,6 +519,8 @@
       const guidance = guidanceFor(result, visible, now, noCodeSince, blurSince, !zoomBtn.hidden);
       if (guidance !== lastGuidanceText && now - lastGuidanceAt >= 1500) {
         status.textContent = guidance;
+        const category = guidanceCategory(guidance);
+        if (category && guidanceShown.length < 20) guidanceShown.push(category);
         lastGuidanceText = guidance;
         lastGuidanceAt = now;
       }
@@ -975,14 +1015,17 @@
 
     serverSendBtn.addEventListener("click", async () => {
       if (!active || !fallbackBlob || typeof opts.onServerFallback !== "function") return;
+      const startedAt = Date.now();
       serverSendBtn.disabled = true;
       status.textContent = "Sending this photo to SafeScan for another read…";
       try {
         const accepted = await opts.onServerFallback(fallbackBlob);
         if (accepted === false) throw new Error("Upload is unavailable in this browser.");
+        sendCount("server_retry", "sent", 0, startedAt);
         cleanup();
       } catch (_error) {
         if (!active) return;
+        sendCount("server_retry", "send_failed", 0, startedAt);
         status.textContent = "Could not send the photo. Use Upload QR file/photo instead.";
         serverSendBtn.disabled = false;
       }
@@ -997,6 +1040,8 @@
         return;
       }
       scanning = true;
+      const startedAt = Date.now();
+      let framesTried = 0;
       const captureGeneration = cameraGeneration;
       cancelLocate();
       serverOffer.hidden = true;
@@ -1045,6 +1090,7 @@
         for (const item of frames) {
           if (!active || captureGeneration !== cameraGeneration) break;
           try {
+            framesTried += 1;
             const decoded = await decoder.decode(item.frame);
             if (decoded?.ambiguous) {
               ambiguous = true;
@@ -1068,6 +1114,7 @@
           let still = null;
           try {
             still = await createImageBitmap(await new ImageCapture(track).takePhoto());
+            framesTried += 1;
             const decoded = await decoder.decode({ bitmap: still, transfer: [still] });
             if (decoded?.ambiguous) {
               ambiguous = true;
@@ -1089,6 +1136,7 @@
       }
 
       if (ambiguous) {
+        sendCount("capture", "ambiguous", framesTried, startedAt);
         fallbackBlob = null;
         status.textContent = structuredAppend
           ? "This code is split across multiple QR codes. Scan a complete code instead."
@@ -1100,6 +1148,7 @@
       }
 
       if (value && !scanError) {
+        sendCount("capture", "success", framesTried, startedAt);
         status.textContent = "QR detected — analysing…";
         cleanup();
         if (typeof opts.onResult === "function") opts.onResult(value);
@@ -1108,6 +1157,7 @@
 
       if (value && scanError) fallbackBlob = null;
       serverOffer.hidden = !(fallbackBlob && !value && typeof opts.onServerFallback === "function");
+      sendCount("capture", value || scanError ? "decoder_error" : serverOffer.hidden ? "no_code" : "offered", framesTried, startedAt);
       status.textContent = value && scanError
         ? "One frame was unclear after a QR was found. Aim at one code and retry."
         : serverOffer.hidden
