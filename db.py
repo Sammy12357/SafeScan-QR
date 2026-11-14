@@ -2,7 +2,7 @@
 Database access layer with application-level row-level security (RLS).
 
 SafeScan stores everything in a single SQLite database. Because SQLite has no
-native per-row security, this module emulates it: each request sets a thread-local
+native per-row security, this module emulates it: each request sets a task-local
 "RLS context" (the current user's id, role, and email) via ``set_rls_context``, and
 the query helpers (``user_scoped_select`` / ``assert_owns_row``) automatically
 filter rows to that user. Admins and owners bypass the filter.
@@ -15,14 +15,16 @@ Responsibilities:
 from __future__ import annotations
 import os
 import sqlite3
-import threading
+from contextvars import ContextVar
 from contextlib import contextmanager
 from urllib.parse import urlparse, unquote
 
 
-# Per-thread storage for the "current user" context. Set at the start of each
-# request and read by the RLS helpers below so queries stay scoped to one user.
-_local = threading.local()
+# One immutable value keeps the role and identity together. ContextVar follows
+# each async request and is copied into Starlette's sync threadpool handlers.
+_rls_context: ContextVar[tuple[str | None, str, str | None]] = ContextVar(
+    "safescan_rls_context", default=(None, "guest", None)
+)
 
 # Maps a table name -> the column that identifies its owning user. Any table
 # listed here is user-owned and will be filtered to the current RLS user.
@@ -201,33 +203,34 @@ def database_storage_status() -> dict:
 
 
 # --- Row-level-security context -------------------------------------------
-# These set/read the current user on the thread. Call set_rls_context() at the
-# start of a request and clear_rls_context() when it ends.
+# These set/read the current user in the request's task context. Reset the
+# token at request completion so nested contexts restore their previous value.
 
 def set_rls_context(user_id: str | None, role: str = "user", email: str | None = None):
-    """Record the authenticated user for the current thread/request."""
-    _local.user_id = user_id
-    _local.role = role
-    _local.email = email
+    """Record the authenticated user and return a token for restoring it."""
+    return _rls_context.set((user_id, role, email))
+
+
+def reset_rls_context(token):
+    """Restore the context that preceded a request or nested operation."""
+    _rls_context.reset(token)
 
 
 def clear_rls_context():
     """Reset to an anonymous guest (no user, no elevated role)."""
-    _local.user_id = None
-    _local.email = None
-    _local.role = "guest"
+    _rls_context.set((None, "guest", None))
 
 
 def rls_user_id() -> str | None:
-    return getattr(_local, "user_id", None)
+    return _rls_context.get()[0]
 
 
 def rls_role() -> str:
-    return getattr(_local, "role", "guest")
+    return _rls_context.get()[1]
 
 
 def rls_email() -> str | None:
-    return getattr(_local, "email", None)
+    return _rls_context.get()[2]
 
 
 def is_admin() -> bool:
