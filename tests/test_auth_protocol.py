@@ -189,3 +189,14 @@ def test_google_redirect_rejects_token_with_wrong_nonce(auth0_verifier, monkeypa
     client, nonce, _ = _google_login_client(auth0, monkeypatch, token_nonce=token_nonce)
     response = client.post("/auth/google", data={"credential": "valid-token", "g_csrf_token": "gis-random-token"})
     assert response.status_code == 401
+
+
+def test_google_login_page_redirects_to_canonical_nonce_host(auth0_verifier):
+    app = importlib.import_module("hackabull")
+    alternate = TestClient(app.qr_app, base_url="https://alternate.example")
+
+    response = alternate.get("/login", follow_redirects=False)
+
+    assert response.status_code in {302, 303, 307, 308}
+    assert response.headers["location"] == "https://testserver/login"
+    assert "__Host-safescan_google_nonce" not in response.cookies
