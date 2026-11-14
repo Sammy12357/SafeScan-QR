@@ -6,6 +6,7 @@ import sys
 
 import pytest
 import requests
+from starlette.requests import Request
 
 
 @pytest.fixture()
@@ -276,7 +277,12 @@ def test_standalone_reputation_endpoint_uses_only_required_providers(modules, mo
     monkeypatch.setattr(routes, "phishtank_signal", lambda _: _finding(pipeline, "PhishTank"))
     monkeypatch.setattr(routes, "virustotal_reputation_signal", lambda _: pytest.fail("retired provider must not be queried"), raising=False)
 
-    result = asyncio.run(routes.api_check_reputation({"url": "https://example.org/"}))
+    request = Request({
+        "type": "http", "method": "POST", "path": "/api/check-reputation",
+        "headers": [], "client": ("198.51.100.1", 12345),
+        "server": ("testserver", 443), "scheme": "https", "query_string": b"",
+    })
+    result = asyncio.run(routes.api_check_reputation(request, {"url": "https://example.org/"}))
 
     assert result["optionalChecks"] == []
     assert result["verificationStatus"] == "complete"

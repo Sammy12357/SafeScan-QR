@@ -64,6 +64,7 @@ from .auth import require_user
 from .config import APP_STARTED_AT
 from .config import APP_URL
 from .config import MAX_QR_UPLOAD_BYTES
+from .component_budget import COMPONENT_BUDGET
 from .fraud import run_fraud_checks
 from .heuristics import check_crypto_pattern_signals
 from .heuristics import check_domain_intelligence
@@ -722,7 +723,10 @@ async def api_fraud_flags(request: Request):
     return {"rows": rows}
 
 @qr_app.post("/api/check-reputation")
-async def api_check_reputation(payload: dict = Body(...)):
+async def api_check_reputation(request: Request, payload: dict = Body(...)):
+    rate_limit = COMPONENT_BUDGET.check(request, outbound=True)
+    if rate_limit:
+        return rate_limit
     validate_strict_payload(payload, {"url"})
     normalized = validate_public_url((payload.get("url") or "").strip())
     google, phishtank = await asyncio.gather(
@@ -741,21 +745,30 @@ async def api_check_reputation(payload: dict = Body(...)):
     }
 
 @qr_app.post("/api/trace-redirects")
-async def api_trace_redirects(payload: dict = Body(...)):
+async def api_trace_redirects(request: Request, payload: dict = Body(...)):
+    rate_limit = COMPONENT_BUDGET.check(request, outbound=True)
+    if rate_limit:
+        return rate_limit
     validate_strict_payload(payload, {"url"})
     normalized = validate_public_url((payload.get("url") or "").strip())
     result = await asyncio.to_thread(trace_redirect_chain, normalized)
     return {"url": normalized, **result, "scannedAt": datetime.utcnow().isoformat() + "Z"}
 
 @qr_app.post("/api/check-domain")
-async def api_check_domain(payload: dict = Body(...)):
+async def api_check_domain(request: Request, payload: dict = Body(...)):
+    rate_limit = COMPONENT_BUDGET.check(request)
+    if rate_limit:
+        return rate_limit
     validate_strict_payload(payload, {"url"})
     normalized = validate_public_url((payload.get("url") or "").strip())
     signals = await asyncio.to_thread(check_domain_intelligence, normalized)
     return {"url": normalized, "signals": signals, "scannedAt": datetime.utcnow().isoformat() + "Z"}
 
 @qr_app.post("/api/check-crypto-patterns")
-async def api_check_crypto_patterns(payload: dict = Body(...)):
+async def api_check_crypto_patterns(request: Request, payload: dict = Body(...)):
+    rate_limit = COMPONENT_BUDGET.check(request)
+    if rate_limit:
+        return rate_limit
     validate_strict_payload(payload, {"url"})
     normalized = validate_public_url((payload.get("url") or "").strip())
     signals = await asyncio.to_thread(check_crypto_pattern_signals, normalized)
