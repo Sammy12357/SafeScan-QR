@@ -8,7 +8,7 @@
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <title>SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg?v=rose-theme-v1" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=no-home-video-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=scanner-phase-3">
 </head>
 <body class="{{ 'test-site-page' if test_site else '' }}">
   {% if not logged_in and google_client_id and not local_auth_enabled %}
@@ -282,7 +282,7 @@
     {% include "footer.html" %}
   </div>
   <script type="module" src="/static/safescan-3d.js?v=rose-theme-v1"></script>
-  <script src="/static/qr-camera.js?v=manual-capture-v2" defer></script>
+  <script src="/static/qr-camera.js?v=scanner-phase-3" defer></script>
   <script src="/static/app-core.js?v=qr-defense-v1"></script>
   <script src="/static/app-widgets.js?v=no-vt-v1"></script>
   <script src="/static/app-go-ghost.js?v=native-scroll-v3"></script>

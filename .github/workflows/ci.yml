@@ -26,6 +26,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - name: Install system packages
         run: sudo apt-get update && sudo apt-get install -y libzbar0
       - name: Install dependencies
@@ -36,4 +39,9 @@ jobs:
       - name: Syntax check
         run: python -m py_compile hackabull/*.py db.py distribute.py scrop.py storage.py ml_model_final.py
       - name: Run tests
-        run: pytest tests/test_security.py tests/test_airdrop_safety.py tests/test_storage_monitoring.py tests/test_wallet_security_static.py tests/test_allowlist.py tests/test_qr_corpus_regression.py tests/test_qr_decode_tiers.py tests/test_qr_upload_concurrency.py -q
+        run: pytest tests/test_security.py tests/test_airdrop_safety.py tests/test_storage_monitoring.py tests/test_wallet_security_static.py tests/test_qr_worker_static.py tests/test_allowlist.py tests/test_qr_corpus_regression.py tests/test_qr_decode_tiers.py tests/test_qr_upload_concurrency.py -q
+      - name: Check browser worker against the QR corpus
+        run: |
+          npm ci --prefix scripts/qr_bench
+          node scripts/qr_bench/test_worker.mjs 16
+          node scripts/qr_bench/test_camera_controls.mjs
