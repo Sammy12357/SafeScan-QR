@@ -41,8 +41,8 @@ def test_counts_only_endpoint_and_rollout_flag(tmp_path, monkeypatch):
     assert module.SCANNER_V3 is False
     home = client.get("/")
     assert home.status_code == 200
-    assert 'qr-camera-phase3.js?v=scanner-phase-3-rollback' in home.text
-    assert 'src="/static/qr-camera.js?v=scanner-phase-6"' not in home.text
+    assert 'qr-camera-phase3.js?v=scanner-phase-3-simplified-controls' in home.text
+    assert 'src="/static/qr-camera.js?v=scanner-v3-simplified-controls"' not in home.text
     counted = client.post("/api/telemetry/scan", json=sample_event())
     assert counted.status_code == 204
     assert counted.headers["cache-control"] == "no-store"
@@ -53,8 +53,8 @@ def test_counts_only_endpoint_and_rollout_flag(tmp_path, monkeypatch):
     module, _, client = load_app(tmp_path, monkeypatch, scanner_v3=True)
     assert module.SCANNER_V3 is True
     home = client.get("/")
-    assert 'src="/static/qr-camera.js?v=scanner-phase-6"' in home.text
-    assert 'qr-camera-phase3.js?v=scanner-phase-3-rollback' not in home.text
+    assert 'src="/static/qr-camera.js?v=scanner-v3-simplified-controls"' in home.text
+    assert 'qr-camera-phase3.js?v=scanner-phase-3-simplified-controls' not in home.text
 
 
 def test_payloads_images_identifiers_and_unbounded_events_are_rejected(tmp_path, monkeypatch):

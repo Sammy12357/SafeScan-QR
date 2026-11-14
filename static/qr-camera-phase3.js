@@ -5,19 +5,6 @@
   const WORKER_URL = "/static/qr-worker.js?v=scanner-phase-2b";
   const WORKER_START_TIMEOUT_MS = 8000;
   const DECODE_TIMEOUT_MS = 6000;
-  const CAMERA_DEVICE_KEY = "safescan-qr-camera-device:" + window.location.origin;
-
-  function savedDeviceId() {
-    try { return window.localStorage.getItem(CAMERA_DEVICE_KEY) || null; }
-    catch (_err) { return null; }
-  }
-
-  function rememberDeviceId(deviceId) {
-    try {
-      if (deviceId) window.localStorage.setItem(CAMERA_DEVICE_KEY, deviceId);
-      else window.localStorage.removeItem(CAMERA_DEVICE_KEY);
-    } catch (_err) { /* Private browsing may block localStorage. */ }
-  }
 
   function cameraCapabilities(track) {
     try { return track && typeof track.getCapabilities === "function" ? track.getCapabilities() || {} : {}; }
@@ -33,8 +20,8 @@
     return Array.isArray(capabilities[property]) && capabilities[property].includes(mode);
   }
 
-  async function acquireCamera(deviceId) {
-    const target = deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: "environment" } };
+  async function acquireCamera() {
+    const target = { facingMode: { ideal: "environment" } };
     const variants = [
       { ...target, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
       { ...target, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
@@ -220,8 +207,6 @@
         '</div>' +
         '<p class="qr-camera-status" aria-live="polite">Starting camera…</p>' +
         '<div class="qr-camera-controls" aria-label="Camera controls" hidden>' +
-          '<button class="qr-camera-switch" type="button" hidden>Switch camera</button>' +
-          '<button class="qr-camera-zoom" type="button" hidden>2× zoom</button>' +
           '<button class="qr-camera-torch" type="button" aria-pressed="false" hidden>Flashlight off</button>' +
         '</div>' +
         '<div class="qr-camera-actions">' +
@@ -244,8 +229,6 @@
     const closeBtn = modal.querySelector(".qr-camera-close");
     const captureBtn = modal.querySelector(".qr-camera-capture");
     const controls = modal.querySelector(".qr-camera-controls");
-    const switchBtn = modal.querySelector(".qr-camera-switch");
-    const zoomBtn = modal.querySelector(".qr-camera-zoom");
     const torchBtn = modal.querySelector(".qr-camera-torch");
     const retryBtn = modal.querySelector(".qr-camera-retry");
     const canvas = document.createElement("canvas");
@@ -258,24 +241,16 @@
     let decoderPromise = null;
     let scanning = false;
     let cameraGeneration = 0;
-    let selectedDeviceId = savedDeviceId();
-    let cameras = [];
     let capabilities = {};
-    let zoomBase = 1;
-    let zoomTarget = 2;
-    let zoomed = false;
     let torchOn = false;
     let focusTimer = null;
     let beginPromise = null;
-    let beginTarget = null;
 
     function updateControlsVisibility() {
-      controls.hidden = switchBtn.hidden && zoomBtn.hidden && torchBtn.hidden;
+      controls.hidden = torchBtn.hidden;
     }
 
     function hideControls() {
-      switchBtn.hidden = true;
-      zoomBtn.hidden = true;
       torchBtn.hidden = true;
       updateControlsVisibility();
     }
@@ -311,39 +286,13 @@
       if (error && error.name === "NotAllowedError") return "Camera access was blocked. Allow it in your browser, then retry.";
       if (error && error.name === "NotFoundError") return "No camera found on this device. You can upload a QR photo instead.";
       if (error && error.name === "NotReadableError") return "Camera is in use by another app. Close that app, then retry.";
-      if (error && error.name === "OverconstrainedError") return "This camera cannot use the requested settings. Try another camera or upload a photo.";
+      if (error && error.name === "OverconstrainedError") return "This camera cannot use the requested settings. Upload a QR photo instead.";
       return "Could not start the camera. Retry or upload a QR photo instead.";
     }
 
     function reportError(message) {
       status.textContent = message;
       if (typeof opts.onError === "function") opts.onError(message);
-    }
-
-    async function refreshCameras(generation) {
-      if (!active || !track || !navigator.mediaDevices.enumerateDevices) return;
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        if (!active || generation !== cameraGeneration) return;
-        // Device labels are localized. Let the user cycle through all video
-        // inputs instead of guessing which labels mean "rear".
-        cameras = devices.filter((device) => device.kind === "videoinput" && device.deviceId);
-        const currentId = cameraSettings(track).deviceId;
-        const currentIndex = cameras.findIndex((device) => device.deviceId === currentId);
-        switchBtn.hidden = cameras.length < 2;
-        switchBtn.textContent = cameras.length > 1
-          ? "Switch camera" + (currentIndex >= 0 ? ` (${currentIndex + 1}/${cameras.length})` : "")
-          : "Switch camera";
-        switchBtn.setAttribute("aria-label", currentIndex >= 0 && cameras[currentIndex].label
-          ? `Switch camera. Current: ${cameras[currentIndex].label}` : "Switch camera");
-        updateControlsVisibility();
-      } catch (_err) {
-        if (active && generation === cameraGeneration) {
-          cameras = [];
-          switchBtn.hidden = true;
-          updateControlsVisibility();
-        }
-      }
     }
 
     async function applyContinuousModes(currentTrack, currentCaps) {
@@ -360,24 +309,15 @@
       const settings = cameraSettings(currentTrack);
       const mirrorPreview = settings.facingMode === "user" || !settings.facingMode;
       video.classList.toggle("is-mirrored", mirrorPreview);
-      zoomed = false;
       torchOn = false;
       torchBtn.setAttribute("aria-pressed", "false");
       torchBtn.textContent = "Flashlight off";
       torchBtn.hidden = !(capabilities.torch === true ||
         (Array.isArray(capabilities.torch) && capabilities.torch.includes(true)));
-      const zoom = capabilities.zoom;
-      zoomBase = zoom && Number.isFinite(zoom.min)
-        ? Math.max(1, zoom.min, Number.isFinite(settings.zoom) ? settings.zoom : 1)
-        : 1;
-      zoomTarget = zoom && Number.isFinite(zoom.max) ? Math.min(zoom.max, zoomBase * 2) : zoomBase;
-      zoomBtn.hidden = !(zoomTarget > zoomBase + 0.05 && typeof currentTrack.applyConstraints === "function");
-      zoomBtn.textContent = `${Number((zoomTarget / zoomBase).toFixed(1))}× zoom`;
-      zoomBtn.setAttribute("aria-pressed", "false");
       updateControlsVisibility();
     }
 
-    async function startCamera(requestedDeviceId) {
+    async function startCamera() {
       if (!active || document.hidden) return false;
       if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
         reportError("This browser cannot access the camera. Use Upload QR or paste the URL.");
@@ -399,15 +339,7 @@
 
       let acquired;
       try {
-        try { acquired = await acquireCamera(requestedDeviceId); }
-        catch (error) {
-          // A remembered device can disappear between visits. Restore the
-          // default environment camera without making the scanner unusable.
-          if (!requestedDeviceId || requestedDeviceId !== savedDeviceId() || error?.name === "NotAllowedError") throw error;
-          rememberDeviceId(null);
-          requestedDeviceId = null;
-          acquired = await acquireCamera(null);
-        }
+        acquired = await acquireCamera();
       } catch (error) {
         if (active && generation === cameraGeneration) {
           reportError(cameraError(error));
@@ -424,7 +356,7 @@
       track = acquired.getVideoTracks()[0] || null;
       if (!track) {
         stopStream();
-        reportError("This camera did not provide a video track. Try another camera.");
+        reportError("This camera did not provide a video track. Upload a QR photo instead.");
         retryBtn.hidden = false;
         return false;
       }
@@ -433,7 +365,6 @@
         if (!active || generation !== cameraGeneration || track !== currentTrack) return;
         cameraGeneration += 1;
         beginPromise = null;
-        beginTarget = null;
         stopStream();
         captureBtn.disabled = true;
         hideControls();
@@ -469,10 +400,6 @@
         return false;
       }
       if (!active || generation !== cameraGeneration || document.hidden) return false;
-      const actualId = cameraSettings(currentTrack).deviceId || requestedDeviceId;
-      selectedDeviceId = actualId || null;
-      await refreshCameras(generation);
-      if (!active || generation !== cameraGeneration) return false;
       const settings = cameraSettings(currentTrack);
       const fixedFocusHint = (settings.facingMode === "user" || !settings.facingMode) &&
         !supportsMode(capabilities, "focusMode", "continuous");
@@ -483,10 +410,9 @@
       return true;
     }
 
-    function beginCamera(requestedDeviceId = selectedDeviceId) {
-      if (beginPromise && beginTarget === requestedDeviceId) return beginPromise;
-      beginTarget = requestedDeviceId;
-      const currentPromise = startCamera(requestedDeviceId);
+    function beginCamera() {
+      if (beginPromise) return beginPromise;
+      const currentPromise = startCamera();
       beginPromise = currentPromise;
       currentPromise.then(
         () => { if (beginPromise === currentPromise) beginPromise = null; },
@@ -499,7 +425,6 @@
       if (!active) return;
       cameraGeneration += 1;
       beginPromise = null;
-      beginTarget = null;
       scanning = false;
       captureBtn.disabled = true;
       hideControls();
@@ -512,7 +437,6 @@
       active = false;
       cameraGeneration += 1;
       beginPromise = null;
-      beginTarget = null;
       clearFocusTimer();
       if (decoder) decoder.close();
       else decoderPromise?.then((pendingDecoder) => pendingDecoder.close()).catch(() => {});
@@ -536,7 +460,7 @@
 
     function onVisibilityChange() {
       if (document.hidden) suspendCamera("Camera paused while the page is hidden.");
-      else if (active && !stream) beginCamera(selectedDeviceId);
+      else if (active && !stream) beginCamera();
     }
 
     function onPageHide() {
@@ -544,7 +468,7 @@
     }
 
     function onPageShow() {
-      if (active && !document.hidden && !stream) beginCamera(selectedDeviceId);
+      if (active && !document.hidden && !stream) beginCamera();
     }
 
     function onDeviceChange() {
@@ -553,7 +477,6 @@
         track.onended?.();
         return;
       }
-      refreshCameras(cameraGeneration);
     }
 
     document.addEventListener("keydown", escapeHandler);
@@ -567,28 +490,6 @@
     closeBtn.addEventListener("click", cleanup);
     modal.addEventListener("click", (event) => {
       if (event.target === modal) cleanup();
-    });
-
-    switchBtn.addEventListener("click", async () => {
-      if (!active || scanning || cameras.length < 2 || !track) return;
-      const oldId = cameraSettings(track).deviceId || selectedDeviceId;
-      const index = cameras.findIndex((camera) => camera.deviceId === oldId);
-      const next = cameras[(index + 1 + cameras.length) % cameras.length];
-      if (!next || next.deviceId === oldId) return;
-      if (await beginCamera(next.deviceId) && selectedDeviceId === next.deviceId) rememberDeviceId(next.deviceId);
-    });
-
-    zoomBtn.addEventListener("click", async () => {
-      if (!active || scanning || !track || zoomBtn.hidden) return;
-      const current = track;
-      const nextZoom = zoomed ? zoomBase : zoomTarget;
-      try {
-        await current.applyConstraints({ advanced: [{ zoom: nextZoom }] });
-        if (current !== track) return;
-        zoomed = !zoomed;
-        zoomBtn.textContent = zoomed ? "1× zoom" : `${Number((zoomTarget / zoomBase).toFixed(1))}× zoom`;
-        zoomBtn.setAttribute("aria-pressed", String(zoomed));
-      } catch (_err) { status.textContent = "Zoom is unavailable on this camera."; }
     });
 
     torchBtn.addEventListener("click", async () => {
@@ -634,8 +535,8 @@
       } catch (_err) { status.textContent = "Tap to focus is unavailable on this camera."; }
     });
 
-    retryBtn.addEventListener("click", () => { if (active) beginCamera(selectedDeviceId); });
-    beginCamera(selectedDeviceId);
+    retryBtn.addEventListener("click", () => { if (active) beginCamera(); });
+    beginCamera();
 
     // Capture handler: grab the current frame and decode it once. Nothing
     // happens until the user clicks, so this is a deliberate "take a photo of
