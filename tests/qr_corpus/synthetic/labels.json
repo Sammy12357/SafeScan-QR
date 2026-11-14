@@ -1,0 +1,76 @@
+{
+  "01_clean_centered.png": [
+    "https://sqafe.com/scan/corpus?case=sample-2026&source=synthetic"
+  ],
+  "02_off_center_corner.png": [
+    "https://sqafe.com/scan/corpus?case=sample-2026&source=synthetic"
+  ],
+  "03_quiet_zone_clipped.png": [
+    "https://sqafe.com/scan/corpus?case=sample-2026&source=synthetic"
+  ],
+  "04_small_far_90.png": [
+    "https://sqafe.com/scan/corpus?case=sample-2026&source=synthetic"
+  ],
+  "05_small_far_corner_80.png": [
+    "https://sqafe.com/scan/corpus?case=sample-2026&source=synthetic"
+  ],
+  "06_small_after_720_downscale.png": [
+    "https://sqafe.com/scan/corpus?case=sample-2026&source=synthetic"
+  ],
+  "07_rotated_35_degrees.png": [
+    "https://sqafe.com/scan/corpus?case=sample-2026&source=synthetic"
+  ],
+  "08_perspective_tilt.png": [
+    "https://sqafe.com/scan/corpus?case=sample-2026&source=synthetic"
+  ],
+  "09_perspective_small_corner.png": [
+    "https://sqafe.com/scan/corpus?case=sample-2026&source=synthetic"
+  ],
+  "10_gaussian_blur.png": [
+    "https://sqafe.com/scan/corpus?case=sample-2026&source=synthetic"
+  ],
+  "11_motion_blur.png": [
+    "https://sqafe.com/scan/corpus?case=sample-2026&source=synthetic"
+  ],
+  "12_low_contrast_noise.png": [
+    "https://sqafe.com/scan/corpus?case=sample-2026&source=synthetic"
+  ],
+  "13_glare_spot.png": [
+    "https://sqafe.com/scan/corpus?case=sample-2026&source=synthetic"
+  ],
+  "14_low_light.png": [
+    "https://sqafe.com/scan/corpus?case=sample-2026&source=synthetic"
+  ],
+  "15_inverted.png": [
+    "https://sqafe.com/scan/corpus?case=sample-2026&source=synthetic"
+  ],
+  "16_mirrored.png": [
+    "https://sqafe.com/scan/corpus?case=sample-2026&source=synthetic"
+  ],
+  "17_jpeg_q35_small.png": [
+    "https://sqafe.com/scan/corpus?case=sample-2026&source=synthetic"
+  ],
+  "18_blur_small_corner.png": [
+    "https://sqafe.com/scan/corpus?case=sample-2026&source=synthetic"
+  ],
+  "19_curved_cylinder.png": [
+    "https://sqafe.com/scan/corpus?case=sample-2026&source=synthetic"
+  ],
+  "20_screen_moire.png": [
+    "https://sqafe.com/scan/corpus?case=sample-2026&source=synthetic"
+  ],
+  "21_stylized_logo.png": [
+    "https://sqafe.com/scan/corpus?case=sample-2026&source=synthetic"
+  ],
+  "22_two_codes.png": [
+    "https://sqafe.com/scan/corpus?case=sample-2026&source=synthetic&code=A",
+    "https://sqafe.com/scan/corpus?case=sample-2026&source=synthetic&code=B"
+  ],
+  "23_overlapping_stickers.png": [
+    "https://sqafe.com/scan/corpus?case=sample-2026&source=synthetic&code=A",
+    "https://sqafe.com/scan/corpus?case=sample-2026&source=synthetic&code=B"
+  ],
+  "24_micro_qr.png": [
+    "SQR123"
+  ]
+}

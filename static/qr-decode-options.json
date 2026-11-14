@@ -1,0 +1,19 @@
+{
+  "locate": {
+    "formats": ["QRCode", "MicroQRCode", "rMQRCode"],
+    "tryHarder": false,
+    "tryDownscale": true,
+    "maxNumberOfSymbols": 4,
+    "returnErrors": true
+  },
+  "capture": {
+    "formats": ["QRCode", "MicroQRCode", "rMQRCode"],
+    "tryHarder": true,
+    "tryRotate": true,
+    "tryInvert": true,
+    "tryDownscale": true,
+    "tryDenoise": true,
+    "maxNumberOfSymbols": 4,
+    "textMode": "Plain"
+  }
+}
