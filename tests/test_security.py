@@ -69,6 +69,13 @@ def test_vendored_qr_wasm_has_correct_media_type(security_app):
     assert response.headers["Content-Type"].startswith("application/wasm")
 
 
+def test_missing_static_asset_is_not_immutable(security_app):
+    _, client, _ = security_app
+    response = client.get("/static/missing-qr-worker.js")
+    assert response.status_code == 404
+    assert response.headers["Cache-Control"] == "no-store"
+
+
 def test_api_responses_are_no_store(security_app):
     _, client, _ = security_app
 

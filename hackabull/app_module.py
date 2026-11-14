@@ -237,8 +237,10 @@ def apply_security_headers(request: Request, response):
     if request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
         response.headers["Pragma"] = "no-cache"
-    elif request.url.path.startswith("/static/"):
+    elif request.url.path.startswith("/static/") and response.status_code == 200:
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-store"
     return response
 
 @qr_app.middleware("http")
