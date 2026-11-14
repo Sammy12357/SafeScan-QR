@@ -310,9 +310,28 @@ def test_legacy_private_history_is_hidden_in_normal_api_and_admin_data(tmp_path,
     assert history[0]["url"] == "[Non-URL QR payload redacted]"
     assert history[0]["signals"][0]["label"] == "Non-URL QR action"
     assert public_threats["entries"] == []
-    assert threat_image.status_code == 404
+    assert threat_image.status_code == 410
     module.record_unique_scan("alice@example.com", "https://safe.example/", "")
     assert secret not in rows(db_path, "scans")[0]["url_found"]
+
+
+def test_live_scan_with_private_url_token_never_enters_public_threat_feed(tmp_path, monkeypatch):
+    _, client, db_path = load_app(tmp_path, monkeypatch)
+    assert client.post("/auth/register", data={"email": "alice@example.com", "password": "password123"}).status_code == 200
+    raw = "http://127.0.0.1/reset?token=PRIVATE_SCAN_TOKEN"
+
+    scan = client.post("/api/scan", json={"payload": raw})
+    assert scan.status_code == 200
+    assert rows(db_path, "scan_history")[0]["risk_score"] >= 80
+
+    guest = TestClient(client.app, base_url="https://testserver")
+    public = guest.get("/api/malicious-qr")
+    search = guest.get("/api/qr-codes", params={"malicious": "true", "q": "PRIVATE_SCAN_TOKEN"})
+    image = guest.get("/api/malicious-qr/image", params={"u": raw})
+    assert public.status_code == search.status_code == 200
+    assert public.json()["entries"] == search.json()["entries"] == []
+    assert "PRIVATE_SCAN_TOKEN" not in public.text + search.text
+    assert image.status_code == 410
 
 
 def test_admin_fraud_flags_api_redacts_legacy_private_qr_metadata(tmp_path, monkeypatch):

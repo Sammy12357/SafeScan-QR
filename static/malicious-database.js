@@ -11,10 +11,7 @@
   var searchEl = document.getElementById("mqSearch");
   var statsEl = document.getElementById("mqStats");
   var statTotal = document.getElementById("mqStatTotal");
-  var statCritical = document.getElementById("mqStatCritical");
-  var statMalicious = document.getElementById("mqStatMalicious");
-  var statSuspicious = document.getElementById("mqStatSuspicious");
-  var statSightings = document.getElementById("mqStatSightings");
+  var statReports = document.getElementById("mqStatReports");
   var statUpdated = document.getElementById("mqStatUpdated");
   if (!grid) return;
 
@@ -37,23 +34,14 @@
     try { return d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" }); }
     catch (e) { return d.toLocaleString(); }
   }
-  function categoryClass(cat) {
-    var c = String(cat || "").toLowerCase();
-    if (c === "critical") return "cat-critical";
-    if (c === "suspicious") return "cat-suspicious";
-    return "cat-malicious";
-  }
   function cardHtml(row) {
-    var imgSrc = "/api/malicious-qr/image?u=" + encodeURIComponent(row.url || "");
     return '<div class="mq-card">' +
-      '<img class="mq-qr" loading="lazy" alt="Malicious QR code (do not scan)" src="' + esc(imgSrc) + '">' +
       '<div class="mq-body">' +
-        '<span class="mq-cat ' + categoryClass(row.category) + '">⚠ ' + esc(row.category || "Malicious") + '</span>' +
-        '<p class="mq-url">' + esc(row.url) + '</p>' +
+        '<span class="mq-cat cat-malicious">⚠ Admin confirmed</span>' +
+        '<p class="mq-url">' + esc(row.domain) + '</p>' +
         '<div class="mq-meta">' +
-          '<div>Risk score: <b>' + (row.riskScore || 0) + '/100</b></div>' +
-          '<div>Last scanned: <b>' + esc(formatLocal(row.lastScannedAt)) + '</b></div>' +
-          '<div>Times seen: <b>' + (row.timesSeen || 1) + '</b></div>' +
+          '<div>Last confirmed: <b>' + esc(formatLocal(row.lastReportedAt)) + '</b></div>' +
+          '<div>Confirmed URLs: <b>' + esc(row.reports || 1) + '</b></div>' +
         '</div>' +
       '</div>' +
     '</div>';
@@ -66,11 +54,8 @@
   }
   function renderStats(stats) {
     if (!stats || !statsEl) return;
-    statTotal.textContent = (stats.totalUrls || 0).toLocaleString();
-    statCritical.textContent = (stats.criticalCount || 0).toLocaleString();
-    statMalicious.textContent = (stats.maliciousCount || 0).toLocaleString();
-    statSuspicious.textContent = (stats.suspiciousCount || 0).toLocaleString();
-    statSightings.textContent = (stats.totalSightings || 0).toLocaleString();
+    statTotal.textContent = (stats.totalDomains || 0).toLocaleString();
+    statReports.textContent = (stats.totalReports || 0).toLocaleString();
     statUpdated.textContent = stats.lastUpdated ? formatLocal(stats.lastUpdated) : "—";
     statsEl.style.display = "";
   }
@@ -81,14 +66,14 @@
     state.totalPages = data.totalPages || 1;
     renderStats(data && data.stats);
 
-    countEl.textContent = state.total + (state.total === 1 ? " code" : " codes") +
+    countEl.textContent = state.total + (state.total === 1 ? " domain" : " domains") +
       (state.query ? " matching “" + state.query + "”" : "");
 
     if (!entries.length) {
       if (state.query) {
-        showState("No malicious codes match your search.", false);
+        showState("No confirmed domains match your search.", false);
       } else {
-        showState("No malicious QR codes found. Good job staying safe!", false);
+        showState("No public domain indicators are available yet.", false);
       }
     } else {
       stateEl.style.display = "none";

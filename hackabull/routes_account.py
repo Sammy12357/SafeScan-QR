@@ -63,11 +63,9 @@ from .config import templates
 from .history import group_scan_history
 from .history import index_user_context
 from .history import serialize_scan_history_row
-from .leaderboard import MALICIOUS_RISK_THRESHOLD
 from .leaderboard import get_global_leaderboard
 from .legal import legal_context
 from .malicious_db import get_malicious_qr_codes
-from .malicious_db import render_threat_qr_png
 from .referrals import get_scan_count
 from .request_helpers import is_eu_locale
 from .security import enforce_rate_limit
@@ -135,12 +133,14 @@ async def leaderboard_page(request: Request):
 
 @qr_app.get("/api/malicious-qr")
 async def api_malicious_qr(request: Request, page: int = Query(1), limit: int = Query(20), q: str = Query("")):
-    """Public JSON feed of QR payloads flagged malicious, paginated and
-    optionally filtered by URL substring. No authentication required."""
+    """Public, admin-confirmed domain indicators; no personal scan URLs."""
     rate_limit = enforce_rate_limit(request, "malicious_qr_list", 120, 60)
     if rate_limit:
         return rate_limit
-    return get_malicious_qr_codes(page=page, limit=limit, query=q)
+    return JSONResponse(
+        get_malicious_qr_codes(page=page, limit=limit, query=q),
+        headers={"Cache-Control": "no-store"},
+    )
 
 @qr_app.get("/api/qr-codes")
 async def api_qr_codes(
@@ -150,50 +150,29 @@ async def api_qr_codes(
     limit: int = Query(20),
     q: str = Query(""),
 ):
-    """Compatibility QR-code listing endpoint.
-
-    The public threat database uses /api/malicious-qr directly, while this
-    endpoint keeps the requested /api/qr-codes?malicious=true shape available
-    for clients that expect a generic QR-code collection route.
-    """
+    """Compatibility endpoint for the sanitized public threat indicators."""
     if not malicious:
         raise HTTPException(status_code=400, detail="Only malicious=true is supported for public QR listings.")
     rate_limit = enforce_rate_limit(request, "malicious_qr_list", 120, 60)
     if rate_limit:
         return rate_limit
-    return get_malicious_qr_codes(page=page, limit=limit, query=q)
+    return JSONResponse(
+        get_malicious_qr_codes(page=page, limit=limit, query=q),
+        headers={"Cache-Control": "no-store"},
+    )
 
-@qr_app.get("/api/malicious-qr/image")
-async def api_malicious_qr_image(request: Request, u: str = Query(...)):
-    """Regenerated QR graphic for a known-malicious URL. Only renders codes
-    that actually exist in the database as malicious, so this can't be used as
-    a generic QR generator for arbitrary (or safe) URLs."""
-    rate_limit = enforce_rate_limit(request, "malicious_qr_image", 120, 60)
-    if rate_limit:
-        return rate_limit
-    target = (u or "").strip()
-    if not target:
-        raise HTTPException(status_code=400, detail="Missing URL.")
-    if not target.lower().startswith(("https://", "http://")):
-        raise HTTPException(status_code=404, detail="Not a known malicious URL QR.")
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT 1 FROM scan_history WHERE url = ? AND "
-            "(COALESCE(risk_score, 0) >= ? OR upper(COALESCE(verdict, '')) = 'MALICIOUS') LIMIT 1",
-            (target, MALICIOUS_RISK_THRESHOLD),
-        ).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Not a known malicious QR.")
-    png = render_threat_qr_png(target)
-    return Response(
-        content=png,
-        media_type="image/png",
-        headers={"Cache-Control": "public, max-age=86400"},
+@qr_app.get("/api/malicious-qr/image", include_in_schema=False)
+async def api_malicious_qr_image():
+    """Retired: exact QR images could reveal private URL tokens."""
+    return JSONResponse(
+        {"detail": "Public threat QR images are no longer available."},
+        status_code=410,
+        headers={"Cache-Control": "no-store"},
     )
 
 @qr_app.get("/malicious-database", response_class=HTMLResponse)
 async def malicious_database_page(request: Request):
-    """Public "codes to avoid" board listing every scanned malicious QR.
+    """Public board of admin-confirmed domain indicators.
 
     The list itself is fetched client-side from /api/malicious-qr so search and
     pagination work without page reloads; the template only needs the page size.
