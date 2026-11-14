@@ -3,12 +3,14 @@
 import importlib
 import re
 import sys
+from io import BytesIO
 from html.parser import HTMLParser
 from pathlib import Path
 from xml.etree import ElementTree
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,6 +41,7 @@ def test_browser_error_pages_and_api_json_negotiation(site):
     assert "no-store" in missing.headers["cache-control"]
     assert "We can’t find that page" in missing.text
     assert '<meta name="robots" content="noindex, nofollow">' in missing.text
+    assert 'property="og:image"' not in missing.text
 
     json_missing = client.get("/missing-page", headers={"Accept": "application/json"})
     assert json_missing.status_code == 404
@@ -61,6 +64,7 @@ def test_browser_error_pages_and_api_json_negotiation(site):
     assert "We couldn’t complete that request" in broken.text
     assert "private diagnostic message" not in broken.text
     assert '<meta name="robots" content="noindex, nofollow">' in broken.text
+    assert 'property="og:image"' not in broken.text
     api_broken = client.get("/api/_test/raise", headers={"Accept": "text/html"})
     assert api_broken.status_code == 500
     assert api_broken.json() == {"error": "Something went wrong on our end."}
@@ -81,13 +85,28 @@ def test_public_heads_canonical_aliases_and_assets(site):
         assert len(re.findall(r"<title>.*?</title>", html)) == 1, path
         assert len(re.findall(r'<meta name="description" ', html)) == 1, path
         assert f'<link rel="canonical" href="{SITE}{canonical_path}">' in html, path
-        assert f'<meta property="og:url" content="{SITE}{canonical_path}">' in html, path
-        assert '<meta name="twitter:card" content="summary">' in html, path
+        if path == "/login":
+            assert 'property="og:image"' not in html, path
+            assert 'name="twitter:image"' not in html, path
+            assert 'name="robots" content="noindex, nofollow"' in html, path
+        else:
+            assert f'<meta property="og:url" content="{SITE}{canonical_path}">' in html, path
+            assert f'<meta property="og:image" content="{SITE}/static/safescan-social-card.png">' in html, path
+            assert '<meta property="og:image:width" content="1200">' in html, path
+            assert '<meta property="og:image:height" content="630">' in html, path
+            assert '<meta name="twitter:card" content="summary_large_image">' in html, path
+            assert f'<meta name="twitter:image" content="{SITE}/static/safescan-social-card.png">' in html, path
         assert 'href="/static/safescan-logo.svg?v=rose-theme-v1"' in html, path
         assert ('name="robots" content="noindex, nofollow"' in html) == (path == "/login"), path
     favicon = client.get("/static/safescan-logo.svg")
     assert favicon.status_code == 200
     assert favicon.headers["content-type"].startswith("image/svg+xml")
+    card = client.get("/static/safescan-social-card.png")
+    assert card.status_code == 200
+    assert card.headers["content-type"].startswith("image/png")
+    with Image.open(BytesIO(card.content)) as image:
+        assert image.format == "PNG"
+        assert image.size == (1200, 630)
 
 
 def test_robots_and_sitemap_list_only_live_public_pages(site):
