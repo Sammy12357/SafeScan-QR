@@ -375,6 +375,17 @@ async def security_headers_and_rate_limits(request: Request, call_next):
     return await call_next(request)
 
 
+_METRIC_METHODS = frozenset({"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
+
+
+def _metric_route_label(request: Request) -> str:
+    # Route patterns are defined by the app; raw paths can contain private
+    # values and let arbitrary 404s create an unlimited number of series.
+    route = request.scope.get("route")
+    path = getattr(route, "path", None)
+    return path if isinstance(path, str) and path else "unmatched"
+
+
 @qr_app.middleware("http")
 async def metrics_middleware(request: Request, call_next):
     start = time.monotonic()
@@ -386,8 +397,10 @@ async def metrics_middleware(request: Request, call_next):
     finally:
         duration = time.monotonic() - start
         status = getattr(locals().get("response", None), "status_code", 500)
-        REQUEST_COUNT.labels(method=request.method, path=request.url.path, status=str(status)).inc()
-        REQUEST_LATENCY.labels(path=request.url.path).observe(duration)
+        route_label = _metric_route_label(request)
+        method_label = request.method if request.method in _METRIC_METHODS else "OTHER"
+        REQUEST_COUNT.labels(method=method_label, path=route_label, status=str(status)).inc()
+        REQUEST_LATENCY.labels(path=route_label).observe(duration)
         if request.url.path in ("/api/scan", "/api/scan/file", "/search_qr_api"):
             ACTIVE_SCANS.dec()
 
