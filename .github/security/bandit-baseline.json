@@ -1,0 +1,123 @@
+{
+  "bandit_version": "1.9.4",
+  "command": "bandit -r hackabull -ll -f json",
+  "findings": [
+    {
+      "filename": "hackabull/admin_data.py",
+      "line_number": 110,
+      "test_id": "B608",
+      "issue_severity": "MEDIUM",
+      "issue_confidence": "MEDIUM",
+      "issue_text": "Possible SQL injection vector through string-based query construction.",
+      "code_sha256": "e95f3a5f311057eed7d750a00c90b76bd8bf318b8fde724f38dc36b40a4bd825"
+    },
+    {
+      "filename": "hackabull/admin_data.py",
+      "line_number": 112,
+      "test_id": "B608",
+      "issue_severity": "MEDIUM",
+      "issue_confidence": "MEDIUM",
+      "issue_text": "Possible SQL injection vector through string-based query construction.",
+      "code_sha256": "778eccbf6b91f8bd5b7c6da2aee6c87a9d5125d786fd4bc76dafe8e5c4ee52da"
+    },
+    {
+      "filename": "hackabull/admin_data.py",
+      "line_number": 217,
+      "test_id": "B608",
+      "issue_severity": "MEDIUM",
+      "issue_confidence": "MEDIUM",
+      "issue_text": "Possible SQL injection vector through string-based query construction.",
+      "code_sha256": "f849adc6046cafdf5aceef6455b8a49789ea356cf088d1169cd4afd20a5e6fa8"
+    },
+    {
+      "filename": "hackabull/admin_data.py",
+      "line_number": 354,
+      "test_id": "B608",
+      "issue_severity": "MEDIUM",
+      "issue_confidence": "MEDIUM",
+      "issue_text": "Possible SQL injection vector through string-based query construction.",
+      "code_sha256": "51da60f1cdd2ac18c9419d23fdcaaba3d5de75033bca4f33600bd230ebb85fec"
+    },
+    {
+      "filename": "hackabull/malicious_db.py",
+      "line_number": 94,
+      "test_id": "B608",
+      "issue_severity": "MEDIUM",
+      "issue_confidence": "MEDIUM",
+      "issue_text": "Possible SQL injection vector through string-based query construction.",
+      "code_sha256": "0b1031e6fb676e797cf4977e3da23eaaacc6640ce92d401d27b366ea7f65fbee"
+    },
+    {
+      "filename": "hackabull/malicious_db.py",
+      "line_number": 98,
+      "test_id": "B608",
+      "issue_severity": "MEDIUM",
+      "issue_confidence": "MEDIUM",
+      "issue_text": "Possible SQL injection vector through string-based query construction.",
+      "code_sha256": "70f4014e8834356d762d45862a52497a6c8919857a4d5dea4b87017cd4fe83c2"
+    },
+    {
+      "filename": "hackabull/malicious_db.py",
+      "line_number": 115,
+      "test_id": "B608",
+      "issue_severity": "MEDIUM",
+      "issue_confidence": "MEDIUM",
+      "issue_text": "Possible SQL injection vector through string-based query construction.",
+      "code_sha256": "150cb1e94b1a9a87983f1fb880482680696ae4ee6908989257a78718334c2673"
+    },
+    {
+      "filename": "hackabull/qr_decode.py",
+      "line_number": 431,
+      "test_id": "B314",
+      "issue_severity": "MEDIUM",
+      "issue_confidence": "HIGH",
+      "issue_text": "Using xml.etree.ElementTree.fromstring to parse untrusted XML data is known to be vulnerable to XML attacks. Replace xml.etree.ElementTree.fromstring with its defusedxml equivalent function or make sure defusedxml.defuse_stdlib() is called",
+      "code_sha256": "d2b05634e9fccb9fbf2c6e2fa186a61c1b9511dde332f7109d4a0a584e31926f"
+    },
+    {
+      "filename": "hackabull/qr_decode.py",
+      "line_number": 463,
+      "test_id": "B314",
+      "issue_severity": "MEDIUM",
+      "issue_confidence": "HIGH",
+      "issue_text": "Using xml.etree.ElementTree.fromstring to parse untrusted XML data is known to be vulnerable to XML attacks. Replace xml.etree.ElementTree.fromstring with its defusedxml equivalent function or make sure defusedxml.defuse_stdlib() is called",
+      "code_sha256": "7b03ce86ff00bcf9f711896934c3d19a7d76f179a7079552db30c31ca14ee87b"
+    },
+    {
+      "filename": "hackabull/qr_image.py",
+      "line_number": 94,
+      "test_id": "B314",
+      "issue_severity": "MEDIUM",
+      "issue_confidence": "HIGH",
+      "issue_text": "Using xml.etree.ElementTree.parse to parse untrusted XML data is known to be vulnerable to XML attacks. Replace xml.etree.ElementTree.parse with its defusedxml equivalent function or make sure defusedxml.defuse_stdlib() is called",
+      "code_sha256": "7dbab9616c5faee9d6716e563df20198222087d03e2d878a8392851be7c568d6"
+    },
+    {
+      "filename": "hackabull/schema.py",
+      "line_number": 310,
+      "test_id": "B608",
+      "issue_severity": "MEDIUM",
+      "issue_confidence": "MEDIUM",
+      "issue_text": "Possible SQL injection vector through string-based query construction.",
+      "code_sha256": "34eeaa9454ff26f7dde004a8cd5047737ec76bae10c3d862bfe9c854aa2c54ff"
+    },
+    {
+      "filename": "hackabull/schema.py",
+      "line_number": 316,
+      "test_id": "B608",
+      "issue_severity": "MEDIUM",
+      "issue_confidence": "MEDIUM",
+      "issue_text": "Possible SQL injection vector through string-based query construction.",
+      "code_sha256": "d2b82c1fac398e7b08ea328c147795099518e288d5cdc5b6e9c5f30d55eec659"
+    },
+    {
+      "filename": "hackabull/schema.py",
+      "line_number": 322,
+      "test_id": "B608",
+      "issue_severity": "MEDIUM",
+      "issue_confidence": "MEDIUM",
+      "issue_text": "Possible SQL injection vector through string-based query construction.",
+      "code_sha256": "cfb97bac5bc5cd96867dfd51e6289bb259d2195503f9c8fcea9f4e37001a73cc"
+    }
+  ]
+}
