@@ -11,7 +11,8 @@ body.qr-camera-open { overflow: hidden; }
 .qr-camera-stage { position: relative; aspect-ratio: 4 / 5; background: #000; overflow: hidden; }
 .qr-camera-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .qr-camera-video.is-mirrored { transform: scaleX(-1); }
-.qr-camera-frame { position: absolute; top: 50%; left: 50%; width: min(64%, 280px); aspect-ratio: 1; transform: translate(-50%, -50%); border: 2px solid rgba(var(--accent-rgb), 0.85); border-radius: 18px; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45); pointer-events: none; }
+.qr-camera-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.qr-camera-frame { position: absolute; top: 50%; left: 50%; width: min(64%, 280px); aspect-ratio: 1; transform: translate(-50%, -50%); border: 2px solid rgba(var(--accent-rgb), 0.55); border-radius: 18px; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.12); pointer-events: none; }
 .qr-camera-frame::before, .qr-camera-frame::after { content: ""; position: absolute; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--accent), transparent); animation: qrCameraSweep 2.2s linear infinite; }
 .qr-camera-frame::after { animation-delay: 1.1s; }
 @keyframes qrCameraSweep { 0% { top: 0; opacity: 0; } 12% { opacity: 1; } 88% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
@@ -26,6 +27,11 @@ body.qr-camera-open { overflow: hidden; }
 .qr-camera-capture:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 14px 34px rgba(var(--accent-rgb), 0.36); }
 .qr-camera-capture:active:not(:disabled) { transform: translateY(0); }
 .qr-camera-capture:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+.qr-camera-server-offer { margin: 0 18px 18px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); text-align: center; }
+.qr-camera-server-offer[hidden] { display: none; }
+.qr-camera-server-offer p { margin: 0 0 10px; color: var(--muted); font-size: 0.84rem; line-height: 1.45; }
+.qr-camera-server-send { min-height: 44px; padding: 0 14px; border: 1px solid var(--accent); border-radius: 8px; background: rgba(var(--accent-rgb), 0.12); color: var(--text); font: inherit; font-weight: 700; cursor: pointer; }
+.qr-camera-server-send:disabled { opacity: 0.55; cursor: wait; }
 @media (max-width: 520px) { .qr-camera-stage { aspect-ratio: 3 / 4; } .qr-camera-capture, .qr-camera-retry { width: 100%; } }
 .wallet-spinner { width: 34px; height: 34px; border: 3px solid rgba(255, 255, 255, 0.13); border-top-color: var(--accent); border-radius: 50%; animation: walletSpin 0.8s linear infinite; }
 .wallet-status a { color: var(--accent); text-decoration: none; font-weight: 800; }

@@ -8,7 +8,7 @@
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <title>SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg?v=rose-theme-v1" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=scanner-phase-3">
+  <link rel="stylesheet" href="/static/styles.css?v=scanner-phase-4">
 </head>
 <body class="{{ 'test-site-page' if test_site else '' }}">
   {% if not logged_in and google_client_id and not local_auth_enabled %}
@@ -84,6 +84,7 @@
               <input type="hidden" name="user_email" value="{{ email }}">
               <input type="hidden" id="hiddenWalletInput" name="wallet_address">
               <input type="hidden" id="deviceFingerprintInput" name="device_fingerprint">
+              <input type="hidden" id="cameraCaptureSource" name="capture_source" value="">
               <label class="upload-chip" for="qrImageInput">Upload QR file/photo</label>
               <input id="qrImageInput" name="file" type="file" accept="image/*,.svg,application/pdf,.pdf" hidden>
               <button id="scanCameraButton" type="button" class="upload-chip">Scan with camera</button>
@@ -282,8 +283,9 @@
     {% include "footer.html" %}
   </div>
   <script type="module" src="/static/safescan-3d.js?v=rose-theme-v1"></script>
-  <script src="/static/qr-camera.js?v=scanner-phase-3" defer></script>
-  <script src="/static/app-core.js?v=qr-defense-v1"></script>
+  {% if scanner_v3 %}<script src="/static/qr-camera.js?v=scanner-phase-6" defer></script>
+  {% else %}<script src="/static/qr-camera-phase3.js?v=scanner-phase-3-rollback" defer></script>{% endif %}
+  <script src="/static/app-core.js?v=scanner-phase-4"></script>
   <script src="/static/app-widgets.js?v=no-vt-v1"></script>
   <script src="/static/app-go-ghost.js?v=native-scroll-v3"></script>
   <script src="/static/app-go-ghost-ui.js?v=native-scroll-v3"></script>

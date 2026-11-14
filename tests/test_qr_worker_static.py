@@ -7,6 +7,8 @@ import re
 ROOT = Path(__file__).resolve().parents[1]
 WORKER = (ROOT / "static" / "qr-worker.js").read_text(encoding="utf-8")
 CAMERA = (ROOT / "static" / "qr-camera.js").read_text(encoding="utf-8")
+APP_CORE = (ROOT / "static" / "app-core.js").read_text(encoding="utf-8")
+INDEX = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
 
 
 def test_worker_loads_only_the_pinned_same_origin_reader():
@@ -35,7 +37,22 @@ def test_tile_search_checks_for_a_second_distinct_code():
     end = WORKER.index("if (collection.valid.size === 0)", start)
     tile_search = WORKER[start:end]
     assert "collectSymbols(collection" in tile_search
-    assert "if (hasMultipleCodes(collection)) return" in tile_search
+    assert "if (await secondCodeFound()) return" in tile_search
     assert "if (collection.valid.size === 1) return" not in tile_search
     assert "checkSecondWithMask(image, collection)" in WORKER[:start]
     assert "collection.validLocations.length > 1" in WORKER
+
+
+def test_camera_frame_upload_requires_a_separate_send_action():
+    assert 'class="qr-camera-server-send"' in CAMERA
+    assert 'serverSendBtn.addEventListener("click"' in CAMERA
+    assert "opts.onServerFallback(fallbackBlob)" in CAMERA
+    assert 'name="capture_source" value=""' in INDEX
+    assert 'source.value = "camera_frame"' in APP_CORE
+    assert 'new File([blob], "safescan-camera-frame.jpg"' in APP_CORE
+    assert 'new DataTransfer()' in APP_CORE
+
+
+def test_structured_append_is_refused_even_with_unknown_total():
+    assert "symbol.sequenceIndex >= 0 || symbol.sequenceSize >= 0" in WORKER
+    assert "result.structuredAppend === true" in CAMERA

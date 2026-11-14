@@ -219,6 +219,9 @@ QR_DECODE_SECONDS = build_metric(
     "End-to-end server QR image decode duration in seconds",
     buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 1.5, 2.5, 5.0, 10.0],
 )
+SCANNER_EVENTS = build_metric(Counter, "safescan_scanner_events_total", "Anonymous camera scanner outcomes", ["engine", "stage", "outcome"])
+SCANNER_CAPTURE_SECONDS = build_metric(Histogram, "safescan_scanner_capture_seconds", "Camera scan time reported by the browser", ["stage"], buckets=[0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30])
+SCANNER_GUIDANCE = build_metric(Counter, "safescan_scanner_guidance_total", "Anonymous camera guidance categories shown", ["category"])
 # Single-label TLDs that show up disproportionately in spam/phishing/scam
 # campaigns because they're cheap (often <$2/yr) and effectively unmoderated.
 HIGH_RISK_TLDS = {
@@ -270,6 +273,8 @@ MALICIOUS_CONTRACT_BLOCKLIST = {
 }
 
 templates = Jinja2Templates(directory="templates")
+SCANNER_V3 = os.getenv("SCANNER_V3", "false").lower() in ("1", "true", "yes", "on")
+templates.env.globals["scanner_v3"] = SCANNER_V3
 _template_response = templates.TemplateResponse
 
 

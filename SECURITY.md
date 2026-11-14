@@ -28,7 +28,12 @@ SafeScan QR currently runs as a FastAPI/Python application with SQLite storage i
 - Audit logs are stored for login, logout, permission denial, QR scans, airdrop sweeps, account deletion, and rate limit hits.
 - Basic in-memory rate limiting is active for public pages, `/api/*`, and `/api/analyze`.
 - Security headers are added on every response, including HSTS, CSP, Referrer-Policy, Permissions-Policy, and X-Content-Type-Options.
+- The browser QR reader is pinned and served from `/static/vendor/`; scanner scripts no longer load jsQR from a third-party CDN. The CSP permits local WebAssembly and does not allow jsdelivr as a script or connect origin.
 - Data export and erasure actions require the active session email to match the requested email before completing automatically.
+
+## Camera Scanner Release Controls
+
+The Phase 1 and Phase 4 camera changes are documented in [docs/qr-scanning.md](docs/qr-scanning.md). Deploy them together before relying on the following controls: a local burst and ambiguity check, explicit user action before a failed frame is uploaded for server retry, bounded in-memory upload parsing, and server upload decoding in a killable child process. The browser camera refuses multiple detected codes and Structured Append fragments; the Python decoder currently lacks Structured Append metadata, so server upload cannot provide the same fragment check. Scanner images are processed for the request and are not written as upload artifacts. Signed-in scan results can still be retained as account history.
 
 ## Protected Routes
 

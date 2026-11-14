@@ -71,10 +71,15 @@ def test_oversized_blank_and_invalid_symbols_are_not_accepted(qr_modules):
         assert qr_decode._barcode_from_result(result) is None
 
 
-def test_multiple_structured_append_fragments_are_ambiguous(qr_modules):
+def test_multiple_structured_append_fragments_are_ambiguous(qr_modules, monkeypatch):
     qr_decode, _ = qr_modules
+    # This checks detection semantics rather than process-startup scheduling.
+    # The killable worker's timeout is covered separately in tier tests.
+    monkeypatch.setenv("QR_DECODE_BUDGET_S", "3.0")
     with pytest.raises(qr_decode.QRDecodeAmbiguityError, match="Multiple different QR payloads"):
-        decoded_upload("structured-all.png", qr_decode)
+        qr_decode._decode_qr_upload_inprocess(
+            (EDGE_CASES / "structured-all.png").read_bytes(), "structured-all.png", "image/png"
+        )
 
 
 @pytest.mark.xfail(strict=True, reason="zxing-cpp 3.1.1 Python result has no Structured Append sequence fields")

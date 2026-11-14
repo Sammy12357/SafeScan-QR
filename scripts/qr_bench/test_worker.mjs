@@ -124,6 +124,33 @@ const located = await decode(await imageData(sameTextFrame), "locate");
 if (located.error || located.symbols.filter((symbol) => symbol.valid && symbol.quad).length < 2) {
   throw new Error("Locate mode dropped a separate same-text QR outline");
 }
+if (!Number.isFinite(located.stats?.sharpness)) throw new Error("Locate guidance lacks sharpness statistics");
+
+// A clearly readable QR must not short-circuit the search for a tiny, distant
+// second QR. The 58px symbol is recovered by the tile pass on the pinned WASM
+// decoder, after the full-frame and masked reads find only the large symbol.
+const secondPatch = await sharp(path.join(corpus, "22_two_codes.png"))
+  .extract({ left: 720, top: 210, width: 275, height: 275 }).png().toBuffer();
+const tinySecond = await sharp(secondPatch).resize(58, 58, { kernel: "nearest" }).png().toBuffer();
+const mixedSizeFrame = await sharp({ create: { width: 1280, height: 720, channels: 4, background: "#ffffff" } })
+  .composite([{ input: clean, left: 220, top: 180 }, { input: tinySecond, left: 1020, top: 65 }])
+  .png().toBuffer();
+const mixedSize = await decode(await imageData(mixedSizeFrame));
+const expectedMixed = [labels["01_clean_centered.png"][0], labels["22_two_codes.png"][1]];
+if (mixedSize.error || !mixedSize.multipleCodes ||
+    !expectedMixed.every((value) => validTexts(mixedSize).includes(value))) {
+  throw new Error("Tiny second QR escaped the full-frame multi-code refusal");
+}
+
+const cleanPatch = await sharp(path.join(corpus, "01_clean_centered.png"))
+  .extract({ left: 480, top: 200, width: 320, height: 320 }).png().toBuffer();
+const blurredPatch = await sharp(path.join(corpus, "11_motion_blur.png"))
+  .extract({ left: 480, top: 200, width: 320, height: 320 }).png().toBuffer();
+const cleanScore = await decode(await imageData(cleanPatch), "score");
+const blurredScore = await decode(await imageData(blurredPatch), "score");
+if (!(cleanScore.stats?.sharpness > blurredScore.stats?.sharpness)) {
+  throw new Error("Worker sharpness score did not rank the clean QR above motion blur");
+}
 
 // A split QR can contain a URL-shaped first fragment. It must not be sent to
 // risk analysis as though it were a complete destination.
@@ -145,6 +172,8 @@ timings.sort((a, b) => a - b);
 const p95 = timings[Math.ceil(timings.length * 0.95) - 1];
 console.log(`Worker exact: ${coreCorrect}/18 core; ${allCorrect}/24 all; p95 ${p95}ms`);
 console.log("Same-text two-code refusal: pass");
+console.log("Tiny second-code refusal: pass");
 console.log("Separate locate outlines: pass");
 console.log("Structured append fragments: refused");
+console.log("Sharpness ranking: pass");
 if (coreCorrect < minimumCore) process.exitCode = 1;

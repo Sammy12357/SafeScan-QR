@@ -38,6 +38,11 @@ class FakeElement extends Emitter {
     };
   }
   setAttribute(name, value) { this.attributes[name] = value; }
+  getContext() { return {
+    setTransform() {}, clearRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, stroke() {},
+    drawImage() {}, putImageData() {},
+    getImageData: (_x, _y, width, height) => ({ width, height, data: new Uint8ClampedArray(width * height * 4) }),
+  }; }
   getBoundingClientRect() { return { left: 0, top: 0, width: 640, height: 480 }; }
   remove() { document.currentModal = null; }
 }
@@ -46,6 +51,8 @@ const elements = Object.fromEntries([
   "video", ".qr-camera-status", ".qr-camera-close", ".qr-camera-capture",
   ".qr-camera-controls", ".qr-camera-switch", ".qr-camera-zoom",
   ".qr-camera-torch", ".qr-camera-retry",
+  ".qr-camera-auto", ".qr-camera-server-offer", ".qr-camera-server-send",
+  ".qr-camera-overlay", ".qr-camera-stage",
 ].map((name) => [name, new FakeElement()]));
 const video = elements.video;
 video.videoWidth = 640;
@@ -53,6 +60,8 @@ video.videoHeight = 480;
 video.readyState = 2;
 video.play = async () => {};
 video.pause = () => {};
+video.requestVideoFrameCallback = (callback) => setTimeout(callback, 0);
+video.cancelVideoFrameCallback = (handle) => clearTimeout(handle);
 const modal = new FakeElement();
 modal.querySelector = (selector) => elements[selector];
 const body = new FakeElement();
@@ -64,8 +73,10 @@ document.currentModal = null;
 document.querySelector = () => document.currentModal;
 document.createElement = (tag) => tag === "div" ? modal : {
   width: 0, height: 0,
+  toBlob: (callback) => callback({ type: "image/jpeg", size: 1234 }),
   getContext: () => ({
     drawImage: () => {},
+    putImageData: () => {},
     getImageData: (_x, _y, width, height) => ({
       width, height, data: new Uint8ClampedArray(width * height * 4),
     }),
@@ -73,9 +84,19 @@ document.createElement = (tag) => tag === "div" ? modal : {
 };
 
 const localValues = new Map();
+localValues.set("safeScanConsent", JSON.stringify({ consentType: "all", timestamp: new Date().toISOString() }));
 const window = new Emitter();
 window.location = { origin: "https://sqafe.com" };
 window.isSecureContext = true;
+window.devicePixelRatio = 1;
+const telemetryEvents = [];
+window.fetch = async (url, options) => {
+  assert.equal(url, "/api/telemetry/scan");
+  assert.equal(options.credentials, "omit");
+  assert.equal(options.referrerPolicy, "no-referrer");
+  telemetryEvents.push(JSON.parse(options.body));
+  return { ok: true };
+};
 window.localStorage = {
   getItem: (key) => localValues.get(key) || null,
   setItem: (key, value) => localValues.set(key, value),
@@ -115,12 +136,32 @@ mediaDevices.enumerateDevices = async () => [
   { kind: "videoinput", deviceId: "front", label: "Front" },
 ];
 const navigator = { mediaDevices };
+let scenario = "single";
+let captureRequests = 0;
+let locateRequests = 0;
 
 class Worker {
-  constructor() { setTimeout(() => this.onmessage?.({ data: { type: "ready" } }), 0); }
+  constructor() {
+    const mode = scenario === "worker-fail" ? "init-error" : "ready";
+    setTimeout(() => this.onmessage?.({ data: { type: mode } }), 0);
+  }
   postMessage(request) {
+    if (request.mode === "capture") captureRequests += 1;
+    if (request.mode === "locate") locateRequests += 1;
+    const payload = scenario === "ambiguous"
+      ? (captureRequests % 2 === 1 ? "https://a.example" : "https://b.example")
+      : "https://example.com";
+    const quad = {
+      topLeft: { x: 200, y: 140 }, topRight: { x: 430, y: 140 },
+      bottomRight: { x: 430, y: 370 }, bottomLeft: { x: 200, y: 370 },
+    };
     setTimeout(() => this.onmessage?.({ data: {
-      id: request.id, symbols: [{ valid: true, text: "https://example.com" }], multipleCodes: false,
+      id: request.id,
+      symbols: request.mode === "capture"
+        ? (scenario === "miss" ? [] : [{ valid: true, text: payload, quad }])
+        : request.mode === "locate" && scenario === "auto" ? [{ valid: true, text: payload, quad }] : [],
+      stats: { sharpness: 100 }, multipleCodes: false,
+      width: 640, height: 480,
     } }), 0);
   }
   terminate() {}
@@ -129,8 +170,8 @@ class Worker {
 vm.runInNewContext(code, { window, document, navigator, Worker, setTimeout, clearTimeout,
   Uint8ClampedArray, console });
 
-async function eventually(test, label) {
-  for (let attempt = 0; attempt < 50; attempt += 1) {
+async function eventually(test, label, attempts = 50) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (test()) return;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
@@ -184,5 +225,74 @@ assert.equal(video.classList.contains("is-mirrored"), true, "only the preview is
 await elements[".qr-camera-capture"].dispatch("click");
 await eventually(() => results.length === 1, "deliberate capture result");
 assert.equal(results[0], "https://example.com");
+assert.equal(captureRequests, 6, "burst must inspect all six frames before accepting one code");
 assert.equal(tracks.at(-1).readyState, "ended", "closing scanner stops camera");
-console.log("Camera resolution fallback, controls, switch, lifecycle, and capture: pass");
+
+scenario = "ambiguous";
+const ambiguousResults = [];
+let serverOffers = 0;
+window.SafeScanQrCamera.open({ onResult: (payload) => ambiguousResults.push(payload),
+  onServerFallback: () => { serverOffers += 1; return true; } });
+await eventually(() => !elements[".qr-camera-capture"].disabled, "ambiguity preview");
+await elements[".qr-camera-capture"].dispatch("click");
+assert.equal(ambiguousResults.length, 0, "different burst payloads must refuse analysis");
+assert.equal(elements[".qr-camera-server-offer"].hidden, true, "ambiguity must not offer server fallback");
+assert.match(elements[".qr-camera-status"].textContent, /two QR codes/i);
+assert.equal(serverOffers, 0);
+await elements[".qr-camera-close"].dispatch("click");
+
+scenario = "miss";
+let sent = null;
+window.SafeScanQrCamera.open({ onResult: () => assert.fail("miss submitted a payload"),
+  onServerFallback: (blob) => { sent = blob; return true; } });
+await eventually(() => !elements[".qr-camera-capture"].disabled, "fallback preview");
+await elements[".qr-camera-capture"].dispatch("click");
+assert.equal(sent, null, "no image should be sent without a separate click");
+assert.equal(elements[".qr-camera-server-offer"].hidden, false);
+await elements[".qr-camera-server-send"].dispatch("click");
+assert.equal(sent.type, "image/jpeg");
+
+scenario = "auto";
+const autoResults = [];
+window.SafeScanQrCamera.open({ onResult: (payload) => autoResults.push(payload) });
+await eventually(() => !elements[".qr-camera-capture"].disabled, "auto preview");
+assert.equal(elements[".qr-camera-auto"].attributes["aria-pressed"], "false", "auto-capture starts off");
+await elements[".qr-camera-auto"].dispatch("click");
+await eventually(() => autoResults.length === 1, "stable auto-capture", 300);
+assert.equal(autoResults[0], "https://example.com");
+assert.ok(locateRequests >= 3, "auto-capture needs repeated live observations");
+
+scenario = "worker-fail";
+let sentAfterWorkerFailure = null;
+window.SafeScanQrCamera.open({ onResult: () => assert.fail("failed worker submitted a payload"),
+  onServerFallback: (blob) => { sentAfterWorkerFailure = blob; return true; } });
+await eventually(() => !elements[".qr-camera-capture"].disabled, "camera-only fallback preview");
+assert.equal(tracks.at(-1).readyState, "live", "camera stays active after local reader startup failure");
+assert.equal(elements[".qr-camera-auto"].hidden, true, "auto-capture needs a local reader");
+await elements[".qr-camera-capture"].dispatch("click");
+assert.equal(sentAfterWorkerFailure, null, "failed worker must not auto-send a frame");
+assert.equal(elements[".qr-camera-server-offer"].hidden, false);
+assert.ok(telemetryEvents.some((event) => event.engine === "unavailable" &&
+  event.stage === "capture" && event.outcome === "offered" && event.frames_tried === 1));
+await elements[".qr-camera-server-send"].dispatch("click");
+assert.equal(sentAfterWorkerFailure.type, "image/jpeg");
+
+localValues.set("safeScanConsent", JSON.stringify({ consentType: "essential_only", timestamp: new Date().toISOString() }));
+const priorEvents = telemetryEvents.length;
+scenario = "single";
+const privacyResults = [];
+window.SafeScanQrCamera.open({ onResult: (payload) => privacyResults.push(payload) });
+await eventually(() => !elements[".qr-camera-capture"].disabled, "privacy preview");
+await elements[".qr-camera-capture"].dispatch("click");
+await eventually(() => privacyResults.length === 1, "privacy scan result");
+assert.equal(telemetryEvents.length, priorEvents, "essential-only consent must suppress scanner analytics");
+assert.ok(telemetryEvents.some((event) => event.stage === "capture" && event.outcome === "success"));
+assert.ok(telemetryEvents.some((event) => event.stage === "capture" && event.outcome === "ambiguous"));
+assert.ok(telemetryEvents.some((event) => event.stage === "server_retry" && event.outcome === "sent"));
+for (const event of telemetryEvents) {
+  assert.deepEqual(Object.keys(event).sort(),
+    ["engine", "stage", "frames_tried", "ms", "outcome", "guidance_shown"].sort());
+  assert.equal(JSON.stringify(event).includes("https://example.com"), false, "never transmit QR text");
+  assert.ok(event.guidance_shown.every((category) => typeof category === "string" && category.length < 16));
+}
+console.log("Camera controls, burst consensus, consented fallback, and opt-in auto-capture: pass");

@@ -1,11 +1,13 @@
 """Private QR data must stay in the one-time scan response, not persistent state."""
 
 import importlib
+import asyncio
 import hashlib
 import io
 import json
 import sqlite3
 import sys
+import time
 from html import escape
 
 import qrcode
@@ -60,6 +62,124 @@ def test_guest_uploaded_authenticator_secret_is_not_retained(tmp_path, monkeypat
     assert rows(db_path, "upload_artifacts") == []
     assert rows(db_path, "scan_history") == []
     assert_secret_absent_from_disk(tmp_path, secret)
+
+
+def test_guest_camera_frame_is_decoded_without_retaining_image(tmp_path, monkeypatch):
+    _, client, db_path = load_app(tmp_path, monkeypatch)
+    secret = "CAMERA_GUEST_TOTP_2946"
+    payload = f"otpauth://totp/Example:guest?secret={secret}&issuer=Example"
+
+    response = client.post(
+        "/search_qr_api",
+        data={"capture_source": "camera_frame"},
+        files={"file": ("camera.jpg", qr_png(payload), "image/jpeg")},
+    )
+
+    assert response.status_code == 200
+    assert secret in response.text
+    assert response.headers["cache-control"] == "no-store"
+    assert rows(db_path, "upload_artifacts") == []
+    assert rows(db_path, "scan_history") == []
+    assert_secret_absent_from_disk(tmp_path, secret)
+
+
+def test_large_camera_frame_stays_in_memory_without_temp_spool(tmp_path, monkeypatch):
+    _, client, db_path = load_app(tmp_path, monkeypatch)
+    import starlette.formparsers as formparsers
+
+    def reject_spool(_self):
+        raise AssertionError("QR camera frame spilled to disk")
+
+    monkeypatch.setattr(formparsers.SpooledTemporaryFile, "rollover", reject_spool)
+    # The decoder is irrelevant to this parser/storage check. A 1.5 MiB
+    # frame crosses Starlette's old 1 MiB disk-spool threshold.
+    route = sys.modules["hackabull.routes_scan_auth"]
+    monkeypatch.setattr(route, "decode_qr_upload", lambda *_args: ("WIFI:T:WPA;S:Cafe;P:camera-test;;", None))
+    frame = b"camera-test-frame" + b"x" * (1_500_000 - len("camera-test-frame"))
+    response = client.post(
+        "/search_qr_api",
+        data={"capture_source": "camera_frame"},
+        files={"file": ("camera.jpg", frame, "image/jpeg")},
+    )
+
+    assert response.status_code == 200
+    assert rows(db_path, "upload_artifacts") == []
+
+
+def test_camera_upload_bounds_and_client_budget_cannot_use_forged_xff(tmp_path, monkeypatch):
+    module, client, _ = load_app(tmp_path, monkeypatch)
+    app_module = sys.modules["hackabull.app_module"]
+    too_large = client.post(
+        "/search_qr_api",
+        content=b"x" * (app_module.QR_REQUEST_BODY_LIMIT + 1),
+        headers={"content-type": "application/octet-stream"},
+    )
+    assert too_large.status_code == 413
+    assert too_large.headers["cache-control"] == "no-store"
+
+    streamed = client.post(
+        "/search_qr_api",
+        content=(b"x" * 500_000 for _ in range(18)),
+        headers={"content-type": "application/octet-stream"},
+    )
+    assert streamed.status_code == 413
+
+    module.RATE_LIMITS["qr_upload_client:testclient"] = [time.time()] * 90
+    blocked = client.post(
+        "/search_qr_api",
+        data={"manual_url": "WIFI:T:WPA;S:Cafe;P:test;;"},
+        headers={"x-forwarded-for": "198.51.100.77", "cf-connecting-ip": "198.51.100.88"},
+    )
+    assert blocked.status_code == 429
+    assert blocked.headers["cache-control"] == "no-store"
+    assert "qr_upload_global:all" not in module.RATE_LIMITS
+
+    # A second visitor is not locked out by the first visitor's budget.
+    other = TestClient(module.qr_app, base_url="https://testserver", client=("198.51.100.89", 50000))
+    allowed = other.post("/search_qr_api", data={"manual_url": "WIFI:T:WPA;S:Other;P:test;;"})
+    assert allowed.status_code == 200
+
+
+def test_slow_camera_body_releases_upload_slot(tmp_path, monkeypatch):
+    load_app(tmp_path, monkeypatch)
+    from starlette.requests import Request
+
+    app_module = sys.modules["hackabull.app_module"]
+    monkeypatch.setattr(app_module, "QR_REQUEST_READ_TIMEOUT_SECONDS", 0.01)
+
+    async def run():
+        async def slow_receive():
+            await asyncio.sleep(0.05)
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        request = Request({
+            "type": "http", "method": "POST", "path": "/search_qr_api",
+            "headers": [], "client": ("198.51.100.90", 50000),
+            "scheme": "https", "server": ("testserver", 443),
+        }, receive=slow_receive)
+
+        async def never_called(_request):
+            raise AssertionError("slow body reached the scan route")
+
+        return await app_module.security_headers_and_rate_limits(request, never_called)
+
+    response = asyncio.run(run())
+    assert response.status_code == 408
+    assert response.headers["cache-control"] == "no-store"
+    assert app_module.QR_REQUEST_ACTIVE_BY_CLIENT == {}
+
+
+def test_camera_source_requires_a_file(tmp_path, monkeypatch):
+    _, client, _ = load_app(tmp_path, monkeypatch)
+    response = client.post("/search_qr_api", data={"capture_source": "camera_frame"})
+    assert response.status_code == 400
+
+
+def test_manual_qr_payload_is_bounded_like_api_scans(tmp_path, monkeypatch):
+    _, client, _ = load_app(tmp_path, monkeypatch)
+    response = client.post("/search_qr_api", data={"manual_url": "A" * 4097})
+    assert response.status_code == 400
+    assert "too large" in response.text.lower()
 
 
 def test_ml_cache_rejects_private_qr_keys(tmp_path, monkeypatch):
