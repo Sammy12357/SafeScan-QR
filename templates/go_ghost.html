@@ -27,7 +27,7 @@
       </div>
       <div class="go-ghost-status" aria-label="Go Ghost progress">
         <span id="ghostProgressCount">0 / 0</span>
-        <p>removals tracked</p>
+        <p>confirmed removals</p>
       </div>
     </header>
 
@@ -148,13 +148,19 @@
         <button id="goGhostScopeNoMatchButton" class="secondary-button" type="button">No match / mark finished</button>
         <button id="goGhostScopeCopyButton" class="secondary-button" type="button">Copy details</button>
       </div>
+      <p class="go-ghost-copy">Track a request after submitting it. Confirm removal only after the listing is gone.</p>
+      <div class="go-ghost-actions ghost-scope-actions">
+        <button id="goGhostScopeSubmittedButton" class="secondary-button" type="button">Mark submitted</button>
+        <button id="goGhostScopeRemovedButton" class="secondary-button" type="button">Confirm removed</button>
+        <button id="goGhostScopeResetButton" class="secondary-button" type="button">Reset status</button>
+      </div>
     </div>
   </div>
 
   <script src="/static/app-core.js?v=ghost-assist-v1"></script>
   <script src="/static/app-widgets.js?v=ghost-assist-v1"></script>
-  <script src="/static/app-go-ghost.js?v=ghost-manual-scope-v1"></script>
-  <script src="/static/app-go-ghost-ui.js?v=ghost-manual-scope-v1"></script>
+  <script src="/static/app-go-ghost.js?v=ghost-manual-status-v1"></script>
+  <script src="/static/app-go-ghost-ui.js?v=ghost-manual-status-v1"></script>
   <script src="/static/app-generate-qr.js?v=ghost-assist-v1"></script>
 </body>
 </html>
