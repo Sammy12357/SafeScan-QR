@@ -367,7 +367,9 @@
       torchBtn.hidden = !(capabilities.torch === true ||
         (Array.isArray(capabilities.torch) && capabilities.torch.includes(true)));
       const zoom = capabilities.zoom;
-      zoomBase = zoom && Number.isFinite(zoom.min) ? Math.max(1, zoom.min) : 1;
+      zoomBase = zoom && Number.isFinite(zoom.min)
+        ? Math.max(1, zoom.min, Number.isFinite(settings.zoom) ? settings.zoom : 1)
+        : 1;
       zoomTarget = zoom && Number.isFinite(zoom.max) ? Math.min(zoom.max, zoomBase * 2) : zoomBase;
       zoomBtn.hidden = !(zoomTarget > zoomBase + 0.05 && typeof currentTrack.applyConstraints === "function");
       zoomBtn.textContent = `${Number((zoomTarget / zoomBase).toFixed(1))}× zoom`;
