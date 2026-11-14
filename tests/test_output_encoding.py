@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
+from browser_client import BrowserTestClient as TestClient
 
 
 @pytest.fixture()
@@ -91,19 +91,20 @@ def test_privacy_policy_escapes_configured_contact_email(web_app, monkeypatch):
     assert "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;" in page.text
 
 
-def test_payment_success_escapes_account_email(web_app, monkeypatch):
-    _, client, _ = web_app
+def test_payment_success_is_pending_and_escapes_contact_email(web_app, monkeypatch):
+    _, client, database = web_app
     pages = importlib.import_module("hackabull.routes_pages")
     malicious = '<img src=x onerror="alert(1)">'
-    monkeypatch.setattr(pages, "record_alpha_subscription_purchase", lambda request: {
-        "email": malicious, "purchased_at": "2026-01-01T00:00:00Z",
-    })
+    monkeypatch.setattr(pages, "ADMIN_EMAIL", malicious)
 
     page = client.get("/pay/alpha/success")
 
     assert page.status_code == 200
     assert malicious not in page.text
     assert "&lt;img src=x onerror=" in page.text
+    assert "payment pending" in page.text.lower()
+    with sqlite3.connect(database) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM alpha_subscriptions").fetchone()[0] == 0
 
 
 def test_breach_report_escapes_submitted_text(web_app):

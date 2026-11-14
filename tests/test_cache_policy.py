@@ -6,7 +6,7 @@ import sys
 from datetime import datetime
 
 import pytest
-from fastapi.testclient import TestClient
+from browser_client import BrowserTestClient as TestClient
 
 
 @pytest.fixture()
