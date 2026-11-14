@@ -1,17 +1,23 @@
 """Real QR-family symbols whose contents or format can mislead a scanner."""
 
+import importlib
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from hackabull import qr_decode, qr_detect
-
-
 EDGE_CASES = Path(__file__).resolve().parent / "qr_corpus" / "edge_cases"
 
 
-def decoded_upload(filename):
+@pytest.fixture()
+def qr_modules(tmp_path, monkeypatch):
+    # The package creates SQLite on import. CI's default relative URL can
+    # resolve to an unwritable root path before any test fixtures run.
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{(tmp_path / 'qr_edges.db').as_posix()}")
+    return importlib.import_module("hackabull.qr_decode"), importlib.import_module("hackabull.qr_detect")
+
+
+def decoded_upload(filename, qr_decode):
     payload, image = qr_decode.decode_qr_upload(
         (EDGE_CASES / filename).read_bytes(), filename, "image/png"
     )
@@ -21,15 +27,17 @@ def decoded_upload(filename):
 
 
 @pytest.mark.parametrize("filename", ["micro.png", "rmqr.png"])
-def test_micro_and_rmqr_use_normal_payload_analysis(filename):
-    assert decoded_upload(filename) == "SQR123"
-    assert qr_detect.detect_payload(decoded_upload(filename))[0] == "Plain text"
+def test_micro_and_rmqr_use_normal_payload_analysis(filename, qr_modules):
+    qr_decode, qr_detect = qr_modules
+    assert decoded_upload(filename, qr_decode) == "SQR123"
+    assert qr_detect.detect_payload(decoded_upload(filename, qr_decode))[0] == "Plain text"
 
 
-def test_kanji_text_keeps_zxing_unicode_transcoding():
+def test_kanji_text_keeps_zxing_unicode_transcoding(qr_modules):
     # The source QR's bytes are Shift-JIS, but ZXing's Text content has a
     # correctly transcoded Unicode `.text`. Raw UTF-8 decoding would corrupt it.
-    assert decoded_upload("unicode.png") == "日本語と漢字"
+    qr_decode, _ = qr_modules
+    assert decoded_upload("unicode.png", qr_decode) == "日本語と漢字"
 
 
 @pytest.mark.parametrize(
@@ -39,8 +47,9 @@ def test_kanji_text_keeps_zxing_unicode_transcoding():
         ("binary.png", b"\x00\xff\xfeABC".decode("utf-8", errors="replace")),
     ],
 )
-def test_binary_bytes_are_replaced_and_never_called_safe_text(filename, expected, monkeypatch):
-    payload = decoded_upload(filename)
+def test_binary_bytes_are_replaced_and_never_called_safe_text(filename, expected, monkeypatch, qr_modules):
+    qr_decode, qr_detect = qr_modules
+    payload = decoded_upload(filename, qr_decode)
     assert payload == expected
     assert qr_detect.detect_payload(payload)[0] == "Unrecognized data"
     monkeypatch.setattr(qr_detect, "classify_qr_with_ml", lambda *_: {"enabled": False})
@@ -52,7 +61,8 @@ def test_binary_bytes_are_replaced_and_never_called_safe_text(filename, expected
     assert any(reason["label"] == "Undecodable QR bytes" for reason in analysis["reasons"])
 
 
-def test_oversized_blank_and_invalid_symbols_are_not_accepted():
+def test_oversized_blank_and_invalid_symbols_are_not_accepted(qr_modules):
+    qr_decode, _ = qr_modules
     for result in (
         SimpleNamespace(text=" " * 12, valid=True),
         SimpleNamespace(text="x" * 4097, valid=True),
@@ -61,14 +71,16 @@ def test_oversized_blank_and_invalid_symbols_are_not_accepted():
         assert qr_decode._barcode_from_result(result) is None
 
 
-def test_multiple_structured_append_fragments_are_ambiguous():
+def test_multiple_structured_append_fragments_are_ambiguous(qr_modules):
+    qr_decode, _ = qr_modules
     with pytest.raises(qr_decode.QRDecodeAmbiguityError, match="Multiple different QR payloads"):
-        decoded_upload("structured-all.png")
+        decoded_upload("structured-all.png", qr_decode)
 
 
 @pytest.mark.xfail(strict=True, reason="zxing-cpp 3.1.1 Python result has no Structured Append sequence fields")
-def test_single_structured_append_fragment_is_refused():
+def test_single_structured_append_fragment_is_refused(qr_modules):
+    qr_decode, _ = qr_modules
     # Keep this known gap visible. ZXing's WASM result exposes sequence
     # metadata, but the pinned Python binding currently drops it.
     with pytest.raises(qr_decode.QRDecodeAmbiguityError):
-        decoded_upload("structured-01.png")
+        decoded_upload("structured-01.png", qr_decode)
