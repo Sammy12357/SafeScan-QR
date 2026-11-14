@@ -1,5 +1,8 @@
 """Account-wide sign-out must invalidate every active authentication token."""
 
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+
 from browser_client import BrowserTestClient as TestClient
 
 from test_auth_persistence import auth_app, browser_post, db_rows, login, register
@@ -43,3 +46,25 @@ def test_sign_out_all_devices_requires_authentication(auth_app):
     response = browser_post(client, "/profile/sign-out-all", follow_redirects=False)
     assert response.status_code == 401
     assert db_rows(db_path, "SELECT COUNT(*) AS total FROM sessions")[0]["total"] == 0
+
+
+def test_remembered_device_can_be_restored_only_once_under_concurrency(auth_app):
+    module, signed_in, db_path = auth_app
+    assert register(signed_in).status_code == 200
+    remember = signed_in.cookies.get(module.REMEMBER_ME_COOKIE_NAME)
+    assert remember
+    start = Barrier(2)
+
+    def restore():
+        browser = TestClient(module.qr_app, base_url="https://testserver")
+        browser.cookies.set(module.REMEMBER_ME_COOKIE_NAME, remember)
+        start.wait(timeout=5)
+        return browser.get("/profile").status_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        statuses = list(pool.map(lambda _: restore(), range(2)))
+
+    assert sorted(statuses) == [200, 401]
+    assert db_rows(
+        db_path, "SELECT COUNT(*) AS total FROM persistent_sessions WHERE revoked_at IS NULL",
+    )[0]["total"] == 1

@@ -142,6 +142,9 @@ def validate_and_rotate_remember_me(request):
         return None, None
     token_hash = remember_token_hash(raw_token)
     with get_conn() as conn:
+        # Serialize one-time token rotation with account-wide revocation and
+        # other concurrent restores of the same remembered device.
+        conn.execute("BEGIN IMMEDIATE")
         conn.row_factory = sqlite3.Row
         row = conn.execute(
             """
