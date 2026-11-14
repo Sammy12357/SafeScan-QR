@@ -44,3 +44,4 @@ jobs:
         run: |
           npm ci --prefix scripts/qr_bench
           node scripts/qr_bench/test_worker.mjs 16
+          node scripts/qr_bench/test_camera_controls.mjs
