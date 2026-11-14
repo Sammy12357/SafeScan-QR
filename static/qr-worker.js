@@ -291,7 +291,7 @@ function captureResult(collection, stage) {
     symbols,
     stage,
     multipleCodes: hasMultipleCodes(collection),
-    structuredAppend: symbols.some((symbol) => symbol.sequenceSize > 1)
+    structuredAppend: symbols.some((symbol) => symbol.sequenceIndex >= 0 || symbol.sequenceSize >= 0)
   };
 }
 

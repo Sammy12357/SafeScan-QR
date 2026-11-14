@@ -24,6 +24,7 @@ def test_capture_only_returns_valid_bounded_payloads():
     assert "onResult" not in WORKER
     assert CAMERA.count("opts.onResult(value)") == 1
     assert "opts.onResult(value)" in CAMERA[CAMERA.index("async function capture()"):]
+    assert 'if (result.structuredAppend === true) return { ambiguous: true, structuredAppend: true };' in CAMERA
 
 
 def test_tile_search_checks_for_a_second_distinct_code():
