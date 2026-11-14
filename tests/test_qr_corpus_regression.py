@@ -8,9 +8,15 @@ from PIL import Image
 import pytest
 
 CORPUS = Path(__file__).parent / "qr_corpus" / "synthetic"
-# Pinned zxing-cpp 3.0.0 baseline on the 22 single-code synthetic images.
-# The two multi-code scenes are checked separately for refusal.
-RECORDED_BASELINE_CORRECT = 17
+# Current zxing-cpp 3.1.1 floor on the 22 single-code synthetic images.
+# The first 18 are the plan's core scenarios; the two multi-code scenes are
+# checked separately for refusal. The 17/18 server target remains unmet:
+# case 06 loses nearly all module detail after 720px downscaling, and case 11
+# has motion blur. Keep the measured floor until a safe decoder gain is shown.
+MIN_SINGLE_CODE_CORRECT = 19
+BASELINE_SINGLE_CODE_COUNT = 22
+MIN_CORE_CORRECT = 16
+CORE_CASE_NAMES = {f"{index:02d}" for index in range(1, 19)}
 
 
 def _labels():
@@ -32,10 +38,16 @@ def _decoded_payloads(image, qr_decode_module):
     return {barcode.data.decode("utf-8", errors="replace") for barcode in qr_decode_module.decode_qr_image(image)}
 
 
-def test_synthetic_read_rate_does_not_fall_below_recorded_baseline(qr_decode_module):
+def test_synthetic_read_rate_meets_measured_floors(qr_decode_module):
     single_code_cases = [(name, values[0]) for name, values in _labels().items() if len(values) == 1]
-    assert len(single_code_cases) >= 18, "The baseline corpus should cover the original 18 scenarios."
+    assert len(single_code_cases) >= BASELINE_SINGLE_CODE_COUNT, "The corpus should cover the 22 single-code scenarios."
+    core_cases = {
+        name for name, _ in single_code_cases
+        if name.split("_", 1)[0] in CORE_CASE_NAMES
+    }
+    assert len(core_cases) == 18, "The corpus should cover all 18 core scenarios."
     correct = 0
+    core_correct = 0
     misses = []
     for filename, expected in single_code_cases:
         path = CORPUS / filename
@@ -43,11 +55,18 @@ def test_synthetic_read_rate_does_not_fall_below_recorded_baseline(qr_decode_mod
             actual = _decoded_payloads(image, qr_decode_module)
         if actual == {expected}:
             correct += 1
+            if filename in core_cases:
+                core_correct += 1
         else:
             misses.append(filename)
-    assert correct >= RECORDED_BASELINE_CORRECT, (
+    assert core_correct >= MIN_CORE_CORRECT, (
+        f"Decoded {core_correct}/18 core synthetic cases; "
+        f"measured floor is {MIN_CORE_CORRECT}. Misses: {', '.join(misses)}"
+    )
+    assert correct * BASELINE_SINGLE_CODE_COUNT >= len(single_code_cases) * MIN_SINGLE_CODE_CORRECT, (
         f"Decoded {correct}/{len(single_code_cases)} synthetic cases; "
-        f"Phase 0 floor is {RECORDED_BASELINE_CORRECT}. Misses: {', '.join(misses)}"
+        f"measured floor is {MIN_SINGLE_CODE_CORRECT}/{BASELINE_SINGLE_CODE_COUNT}. "
+        f"Misses: {', '.join(misses)}"
     )
 
 
