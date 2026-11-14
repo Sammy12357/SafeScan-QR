@@ -15,6 +15,7 @@ def load_app(tmp_path, monkeypatch, scanner_v3=False):
     monkeypatch.setenv("APP_URL", "https://testserver")
     monkeypatch.setenv("MOCK_MODE", "true")
     monkeypatch.setenv("SCANNER_V3", "true" if scanner_v3 else "false")
+    monkeypatch.setenv("METRICS_TOKEN", "test-metrics-bearer-secret-32-characters")
     for name in list(sys.modules):
         if name in {"hackabull", "db", "storage", "safescan_model_calibration"} or name.startswith(("hackabull.", "safescan_model_calibration.")):
             sys.modules.pop(name, None)
@@ -46,7 +47,7 @@ def test_counts_only_endpoint_and_rollout_flag(tmp_path, monkeypatch):
     counted = client.post("/api/telemetry/scan", json=sample_event())
     assert counted.status_code == 204
     assert counted.headers["cache-control"] == "no-store"
-    metrics = client.get("/metrics")
+    metrics = client.get("/metrics", headers={"Authorization": "Bearer test-metrics-bearer-secret-32-characters"})
     assert metrics.status_code == 200
     assert b"safescan_scanner_events_total" in metrics.content or b"prometheus-client is not installed" in metrics.content
 

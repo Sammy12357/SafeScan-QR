@@ -65,7 +65,6 @@ from .config import SESSION_COOKIE_NAME
 from .config import generate_latest
 from .provider_policy import reputation_configuration
 from .phish_feed import refresh_feed_loop
-from .request_helpers import request_ip
 from .security import enforce_rate_limit
 from .sessions import cleanup_persistent_sessions
 from .sessions import clear_remember_me_cookie
@@ -121,11 +120,13 @@ async def health_providers():
 
 @qr_app.get("/metrics", include_in_schema=False)
 async def metrics(request: Request):
-    ip = request_ip(request)
-    allowed = [item.strip() for item in os.getenv("METRICS_ALLOWED_IPS", "127.0.0.1,::1").split(",") if item.strip()]
-    if ip not in allowed:
+    # Client-controlled forwarding headers cannot authenticate a metrics
+    # scraper. An unset or weak token disables the endpoint entirely.
+    token = os.getenv("METRICS_TOKEN", "")
+    supplied = request.headers.get("authorization", "")
+    if len(token) < 32 or not hmac.compare_digest(supplied.encode("utf-8"), f"Bearer {token}".encode("utf-8")):
         raise HTTPException(status_code=403)
-    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST, headers={"Cache-Control": "no-store"})
 
 
 mimetypes.add_type("application/wasm", ".wasm")
