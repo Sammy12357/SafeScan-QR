@@ -50,38 +50,17 @@ from storage import upload_bytes as storage_upload_bytes
 from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party
 import safescan_model_calibration as sm_calibration
 from .config import AIRDROP_ADMIN_SECRET
+from .client_ip import request_ip
 
 # =============================================================================
-# RESULT CACHE & REQUEST HELPERS (IP, locale, ids)
+# REQUEST HELPERS (IP, locale, ids)
 # =============================================================================
-def get_cached_result(target_url: str):
-    with get_conn() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT status, timestamp FROM scan_results WHERE url = ?", (target_url,))
-        row = cursor.fetchone()
-    if row:
-        last_scan = datetime.fromisoformat(row[1])
-        if datetime.now() - last_scan < timedelta(hours=24):
-            return row[0]
-    return None
-
-def save_to_cache(target_url: str, status: str):
-    with get_conn() as conn:
-        cursor = conn.cursor()
-        cursor.execute("INSERT OR REPLACE INTO scan_results VALUES (?, ?, ?)", (target_url, status, datetime.now().isoformat()))
-
 def make_id(prefix):
     return f"{prefix}_{hashlib.sha256(f'{prefix}:{datetime.utcnow().isoformat()}:{os.urandom(8)}'.encode('utf-8')).hexdigest()[:24]}"
 
 def hash_ip(ip_value):
     salt = os.getenv("PRIVACY_HASH_SALT", "safescan-dev-salt")
     return hashlib.sha256(f"{salt}:{ip_value or 'unknown'}".encode("utf-8")).hexdigest()
-
-def request_ip(request: Request):
-    forwarded = request.headers.get("x-forwarded-for", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
 
 def locale_from_request(request: Request):
     return (request.headers.get("accept-language") or "en-US").split(",")[0].strip()
