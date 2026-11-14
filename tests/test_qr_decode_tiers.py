@@ -99,6 +99,34 @@ def test_two_physical_codes_with_the_same_payload_are_refused(decoder):
         decoder._decode_qr_from_pil_image(canvas)
 
 
+def test_zbar_single_hit_does_not_hide_second_code_in_enhanced_tier(decoder, monkeypatch):
+    first = decoder.DecodedBarcode("https://first.example/", quad=((0, 0), (20, 0), (20, 20), (0, 20)))
+    second = decoder.DecodedBarcode("https://second.example/", quad=((80, 60), (100, 60), (100, 80), (80, 80)))
+    monkeypatch.setattr(decoder, "_zxing_barcodes", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(decoder, "_pyzbar_barcodes", lambda *_args, **_kwargs: [first])
+    monkeypatch.setattr(decoder, "decode_barcodes_with_zxing", lambda *_args, **_kwargs: [second])
+    monkeypatch.delenv("QR_WECHAT_ENABLED", raising=False)
+
+    with Image.new("L", (120, 90), "white") as image:
+        with pytest.raises(decoder.QRDecodeAmbiguityError, match="Multiple different QR payloads"):
+            decoder._decode_qr_from_pil_image(image)
+
+
+def test_zbar_single_hit_fails_closed_if_second_code_check_times_out(decoder, monkeypatch):
+    monkeypatch.setenv("QR_DECODE_BUDGET_S", "0.1")
+    monkeypatch.delenv("QR_WECHAT_ENABLED", raising=False)
+    monkeypatch.setattr(decoder, "_zxing_barcodes", lambda *_args, **_kwargs: [])
+
+    def slow_zbar(*_args, **_kwargs):
+        time.sleep(0.12)
+        return [decoder.DecodedBarcode("https://first.example/")]
+
+    monkeypatch.setattr(decoder, "_pyzbar_barcodes", slow_zbar)
+    with Image.new("L", (120, 90), "white") as image:
+        with pytest.raises(decoder.QRDecodeSafetyError, match="second code"):
+            decoder.decode_qr_image(image)
+
+
 def test_same_payload_on_two_pdf_pages_is_refused(decoder):
     fitz = pytest.importorskip("fitz")
     qr = qrcode.make("https://same.example/").convert("RGB")
