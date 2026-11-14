@@ -96,6 +96,56 @@ from .wallet import expire_alpha_subscriptions
 # =============================================================================
 # ROUTES — SERVER-RENDERED HTML PAGES (home, product, legal, account, etc.)
 # =============================================================================
+GO_GHOST_GLOBAL_SLOT = asyncio.Semaphore(1)
+GO_GHOST_RUN_TIMEOUT_SECONDS = 60
+GO_GHOST_STALE_JOB_SECONDS = 120
+
+
+def _go_ghost_busy_response():
+    return JSONResponse(
+        {"error": "A removal is already running. Try again shortly."},
+        status_code=429,
+        headers={"Retry-After": "5"},
+    )
+
+
+def _reserve_go_ghost_job(user_id, account_email, broker, target_url, job_id):
+    """Reserve a single per-user job, including across workers sharing SQLite."""
+    created_at = now_iso()
+    stale_before = (datetime.utcnow() - timedelta(seconds=GO_GHOST_STALE_JOB_SECONDS)).isoformat() + "Z"
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            """UPDATE go_ghost_removal_jobs SET status = 'interrupted',
+                      detail = 'The earlier automation did not finish.', updated_at = ?
+               WHERE user_id = ? AND status = 'running' AND updated_at < ?""",
+            (created_at, user_id, stale_before),
+        )
+        active = conn.execute(
+            "SELECT 1 FROM go_ghost_removal_jobs WHERE user_id = ? AND status = 'running' LIMIT 1",
+            (user_id,),
+        ).fetchone()
+        if active:
+            return False
+        conn.execute(
+            """INSERT INTO go_ghost_removal_jobs
+               (id, user_id, email, broker, status, detail, target_url, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (job_id, user_id, account_email, broker, "running", "Automation started.", target_url, created_at, created_at),
+        )
+    return True
+
+
+def _finish_go_ghost_job(job_id, status, detail, target_url):
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE go_ghost_removal_jobs
+               SET status = ?, detail = ?, target_url = ?, updated_at = ?
+               WHERE id = ? AND status = 'running'""",
+            (status[:40], detail[:500], target_url[:500], now_iso(), job_id),
+        )
+
+
 @qr_app.get("/", response_class=HTMLResponse)
 async def read_index(request: Request):
     user = get_session_user(request)
@@ -136,6 +186,9 @@ async def go_ghost_page(request: Request):
 @qr_app.post("/api/go-ghost/removals/{broker}")
 async def api_go_ghost_removal(request: Request, broker: str, payload: dict = Body(...)):
     user = require_user(request)
+    user_id = str(user.get("google_id") or "")
+    if not user_id:
+        raise SafeScanError("Authentication required.", 401)
     normalized_broker = (broker or "").strip().lower()
 
     from removals.engine import RemovalProfile, run_broker_removal, supported_broker
@@ -152,65 +205,69 @@ async def api_go_ghost_removal(request: Request, broker: str, payload: dict = Bo
         "phone": bounded_text(payload.get("phone"), "phone", 80, strip=True),
         "email": bounded_text(payload.get("email"), "email", 254, required=True, strip=True),
     }
-    rate_limited = enforce_rate_limit(request, "go_ghost", 3, 24 * 60 * 60, user_key=user.get("google_id"))
-    if rate_limited:
-        return rate_limited
-    job_id = make_id("ghostjob")
-    account_email = (user.get("email") or "").strip().lower()
-    created_at = now_iso()
-    with get_conn() as conn:
-        conn.execute(
-            """INSERT INTO go_ghost_removal_jobs
-               (id, user_id, email, broker, status, detail, target_url, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                job_id,
-                user.get("google_id"),
-                account_email,
-                normalized_broker,
-                "running",
-                "Automation started.",
-                broker_config.optout_url,
-                created_at,
-                created_at,
-            ),
-        )
-
+    if GO_GHOST_GLOBAL_SLOT.locked():
+        return _go_ghost_busy_response()
+    await GO_GHOST_GLOBAL_SLOT.acquire()
     try:
-        result = await run_broker_removal(normalized_broker, RemovalProfile(**profile_payload))
-    except RuntimeError as exc:
-        result = {
-            "status": "unavailable",
-            "detail": str(exc),
-            "targetUrl": broker_config.optout_url,
-        }
-    except Exception as exc:
-        result = {
-            "status": "failed",
-            "detail": f"{broker_config.name} automation failed before submission: {type(exc).__name__}: {str(exc)[:320]}",
-            "targetUrl": broker_config.optout_url,
-        }
+        # The global slot avoids launching a second Chromium process on this
+        # worker. The SQLite reservation also blocks same-user jobs if more
+        # than one worker is ever configured.
+        job_id = make_id("ghostjob")
+        account_email = (user.get("email") or "").strip().lower()
+        stale_before = (datetime.utcnow() - timedelta(seconds=GO_GHOST_STALE_JOB_SECONDS)).isoformat() + "Z"
+        with get_conn() as conn:
+            active = conn.execute(
+                """SELECT 1 FROM go_ghost_removal_jobs
+                   WHERE user_id = ? AND status = 'running' AND updated_at >= ? LIMIT 1""",
+                (user_id, stale_before),
+            ).fetchone()
+        if active:
+            return _go_ghost_busy_response()
+        rate_limited = enforce_rate_limit(request, "go_ghost", 3, 24 * 60 * 60, user_key=user_id)
+        if rate_limited:
+            return rate_limited
+        if not _reserve_go_ghost_job(user_id, account_email, normalized_broker, broker_config.optout_url, job_id):
+            return _go_ghost_busy_response()
 
-    status = str(result.get("status") or "failed")[:40]
-    detail = str(result.get("detail") or "")[:500]
-    target_url = str(result.get("targetUrl") or broker_config.optout_url)[:500]
-    with get_conn() as conn:
-        conn.execute(
-            """UPDATE go_ghost_removal_jobs
-               SET status = ?, detail = ?, target_url = ?, updated_at = ?
-               WHERE id = ?""",
-            (status, detail, target_url, now_iso(), job_id),
+        result = {"status": "failed", "detail": "Automation was interrupted.", "targetUrl": broker_config.optout_url}
+        try:
+            result = await asyncio.wait_for(
+                run_broker_removal(normalized_broker, RemovalProfile(**profile_payload)),
+                timeout=GO_GHOST_RUN_TIMEOUT_SECONDS,
+            )
+        except TimeoutError:
+            result = {"status": "failed", "detail": "Automation timed out. Please retry later.", "targetUrl": broker_config.optout_url}
+        except RuntimeError:
+            result = {"status": "unavailable", "detail": "Automation is unavailable right now.", "targetUrl": broker_config.optout_url}
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            result = {
+                "status": "failed",
+                "detail": f"{broker_config.name} automation failed before submission: {type(exc).__name__}",
+                "targetUrl": broker_config.optout_url,
+            }
+        finally:
+            if not isinstance(result, dict):
+                result = {"status": "failed", "detail": "Automation returned an invalid result.", "targetUrl": broker_config.optout_url}
+            status = str(result.get("status") or "failed")[:40]
+            if status not in {"submitted", "email_required", "captcha_required", "needs_profile_url", "filled", "opened", "cancelled", "unavailable", "failed"}:
+                status = "failed"
+            detail = str(result.get("detail") or "")[:500]
+            target_url = str(result.get("targetUrl") or broker_config.optout_url)[:500]
+            _finish_go_ghost_job(job_id, status, detail, target_url)
+
+        audit_log(
+            "go_ghost.removal_attempted",
+            request=request,
+            actor_user_id=user_id,
+            target_type="broker",
+            target_id=normalized_broker,
+            metadata={"jobId": job_id, "status": status},
         )
-
-    audit_log(
-        "go_ghost.removal_attempted",
-        request=request,
-        actor_user_id=user.get("google_id"),
-        target_type="broker",
-        target_id=normalized_broker,
-        metadata={"jobId": job_id, "status": status},
-    )
-    return {"jobId": job_id, "broker": normalized_broker, "status": status, "detail": detail, "targetUrl": target_url}
+        return {"jobId": job_id, "broker": normalized_broker, "status": status, "detail": detail, "targetUrl": target_url}
+    finally:
+        GO_GHOST_GLOBAL_SLOT.release()
 
 @qr_app.get("/legal/privacy-policy", response_class=HTMLResponse)
 async def privacy_policy(request: Request):
