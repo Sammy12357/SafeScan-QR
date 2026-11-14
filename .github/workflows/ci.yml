@@ -39,7 +39,7 @@ jobs:
       - name: Syntax check
         run: python -m py_compile hackabull/*.py db.py distribute.py scrop.py storage.py ml_model_final.py
       - name: Run tests
-        run: pytest tests/test_security.py tests/test_airdrop_safety.py tests/test_storage_monitoring.py tests/test_wallet_security_static.py tests/test_qr_worker_static.py tests/test_allowlist.py tests/test_qr_corpus_regression.py tests/test_qr_decode_tiers.py tests/test_qr_upload_concurrency.py -q
+        run: pytest tests/test_security.py tests/test_airdrop_safety.py tests/test_storage_monitoring.py tests/test_wallet_security_static.py tests/test_qr_worker_static.py tests/test_allowlist.py tests/test_qr_corpus_regression.py tests/test_qr_decode_tiers.py tests/test_qr_upload_concurrency.py tests/test_qr_edge_cases.py -q
       - name: Check browser worker against the QR corpus
         run: |
           npm ci --prefix scripts/qr_bench
