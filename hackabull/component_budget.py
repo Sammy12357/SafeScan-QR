@@ -39,16 +39,18 @@ class ComponentBudget:
             hits.popleft()
 
     def check(self, request, *, outbound: bool = False):
-        now = time.monotonic()
         identity = request_ip(request)
         # Bound the cost of hashing a hostile forwarded header. Phase 3 will
         # replace request_ip with a trusted ingress resolver.
         if not isinstance(identity, str) or len(identity) > 256:
             identity = "unverified"
         client_key = hmac.new(self._key, identity.encode("utf-8", "replace"), hashlib.sha256).hexdigest()
-        cutoff = now - self.WINDOW_SECONDS
 
         with self._lock:
+            # Sample after acquiring the lock so concurrent appends preserve
+            # timestamp order for the rolling-window deques.
+            now = time.monotonic()
+            cutoff = now - self.WINDOW_SECONDS
             self._expire(self._global, cutoff)
             self._expire(self._global_outbound, cutoff)
             while self._clients:
