@@ -23,11 +23,12 @@ from datetime import datetime, timedelta, timezone
 from xml.etree import ElementTree
 
 from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.formparsers import MultiPartParser
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 import os
@@ -60,6 +61,7 @@ from .auth import get_session_user
 from .config import ACTIVE_SCANS
 from .config import ALLOWED_ORIGINS
 from .config import APP_ORIGIN
+from .config import PUBLIC_SITE_ORIGIN
 from .config import CLIENT_ID
 from .config import CONTENT_TYPE_LATEST
 from .config import CSP_REPORT_ONLY_ENABLED
@@ -113,6 +115,7 @@ app = qr_app
 PUBLIC_PROBE_PATHS = frozenset({
     "/health", "/health/live", "/health/ready", "/health/providers",
     "/api/health", "/.well-known/security.txt", "/metrics",
+    "/robots.txt", "/sitemap.xml",
 })
 SECURITY_TXT_PATH = Path(__file__).resolve().parents[1] / "well-known" / "security.txt"
 
@@ -121,6 +124,50 @@ SECURITY_TXT_PATH = Path(__file__).resolve().parents[1] / "well-known" / "securi
 async def health_check():
     """Lightweight liveness probe - does not touch the DB."""
     return {"status": "ok"}
+
+
+PUBLIC_SITEMAP_PATHS = (
+    "/", "/generate-qr", "/learn", "/plans", "/go-ghost",
+    "/malicious-database", "/leaderboard", "/token",
+    "/legal/privacy-policy", "/legal/terms-of-use", "/legal/cookie-policy",
+    "/legal/security", "/legal/do-not-sell",
+)
+
+
+@qr_app.get("/robots.txt", include_in_schema=False)
+async def robots_txt():
+    return PlainTextResponse(
+        "User-agent: *\n"
+        "Allow: /\n"
+        "Disallow: /api/\n"
+        "Disallow: /admin\n"
+        "Disallow: /auth/\n"
+        "Disallow: /profile\n"
+        "Disallow: /history\n"
+        "Disallow: /account/\n"
+        "Disallow: /legal/data-request\n"
+        "Disallow: /legal/consent-log\n"
+        "Disallow: /waitlist/confirm\n"
+        "Disallow: /health\n"
+        "Disallow: /metrics\n"
+        f"Sitemap: {PUBLIC_SITE_ORIGIN}/sitemap.xml\n",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+@qr_app.get("/sitemap.xml", include_in_schema=False)
+async def sitemap_xml():
+    namespace = "http://www.sitemaps.org/schemas/sitemap/0.9"
+    ElementTree.register_namespace("", namespace)
+    root = ElementTree.Element(f"{{{namespace}}}urlset")
+    for path in PUBLIC_SITEMAP_PATHS:
+        entry = ElementTree.SubElement(root, f"{{{namespace}}}url")
+        ElementTree.SubElement(entry, f"{{{namespace}}}loc").text = PUBLIC_SITE_ORIGIN + path
+    return Response(
+        ElementTree.tostring(root, encoding="utf-8", xml_declaration=True),
+        media_type="application/xml",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 @qr_app.get("/health/live", include_in_schema=False)
@@ -515,12 +562,37 @@ async def metrics_middleware(request: Request, call_next):
         if request.url.path in ("/api/scan", "/api/scan/file", "/search_qr_api"):
             ACTIVE_SCANS.dec()
 
+def _wants_html_error(request: Request) -> bool:
+    path = request.url.path
+    if path.startswith(("/api/", "/health", "/metrics", "/webhooks/")):
+        return False
+    return "text/html" in request.headers.get("accept", "").lower()
+
+
+def _render_unhandled_error(request: Request):
+    if _wants_html_error(request):
+        return templates.TemplateResponse(
+            "500.html", {"request": request}, status_code=500,
+            headers={"Cache-Control": "no-store"},
+        )
+    return JSONResponse({"error": "Something went wrong on our end."}, status_code=500)
+
+
 @qr_app.exception_handler(SafeScanError)
 async def safe_scan_error_handler(request: Request, exc: SafeScanError):
+    if exc.status_code >= 500 and _wants_html_error(request):
+        return templates.TemplateResponse("500.html", {"request": request}, status_code=exc.status_code,
+                                          headers={"Cache-Control": "no-store"})
     return JSONResponse({"error": str(exc)}, status_code=exc.status_code)
 
-@qr_app.exception_handler(HTTPException)
-async def http_error_handler(request: Request, exc: HTTPException):
+@qr_app.exception_handler(StarletteHTTPException)
+async def http_error_handler(request: Request, exc: StarletteHTTPException):
+    if exc.status_code == 404 and _wants_html_error(request):
+        return templates.TemplateResponse("404.html", {"request": request}, status_code=404,
+                                          headers={"Cache-Control": "no-store"})
+    if exc.status_code >= 500 and _wants_html_error(request):
+        return templates.TemplateResponse("500.html", {"request": request}, status_code=exc.status_code,
+                                          headers={"Cache-Control": "no-store"})
     safe_messages = {
         400: "Invalid request.",
         401: "Authentication required.",
@@ -542,7 +614,7 @@ async def unhandled_error_handler(request: Request, exc: Exception):
         method=request.method, route=getattr(request.scope.get("route"), "path", None),
         status_code=500, error_type=type(exc).__name__,
     )
-    response = JSONResponse({"error": "Something went wrong on our end."}, status_code=500)
+    response = _render_unhandled_error(request)
     if request_id:
         response.headers["X-Request-Id"] = request_id
     return apply_security_headers(request, response)
@@ -562,5 +634,9 @@ async def monitor_server_errors(request: Request, call_next):
 
 # Last user middleware is outermost, so early rejects and handled failures
 # receive the same server request ID and safe JSON event as successful routes.
-qr_app.add_middleware(RequestIdLoggingMiddleware, decorate_error=apply_security_headers)
+qr_app.add_middleware(
+    RequestIdLoggingMiddleware,
+    decorate_error=apply_security_headers,
+    render_error=_render_unhandled_error,
+)
 

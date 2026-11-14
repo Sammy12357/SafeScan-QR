@@ -77,10 +77,10 @@
 <div id="cookieConsentBanner" class="consent-banner hidden" data-version="consent-v1">
   <div>
     <p class="consent-title">Privacy preferences</p>
-    <p class="consent-copy">SafeScan uses essential storage for auth and consent, plus optional analytics to improve QR safety. You can reject non-essential tracking.</p>
+    <p class="consent-copy">SafeScan uses essential storage for sign-in and consent. If you accept optional analytics, this browser sends scanner performance counts to help improve QR reading. You can reject those counts; your choice is still recorded.</p>
     <div id="cookieConsentPreferences" class="hidden">
-      <label class="consent-copy"><input id="consentAnalytics" type="checkbox"> Allow anonymous scanner performance counts</label>
-      <p class="consent-copy">Counts include decoder type, timing, and outcome. They never include QR text or photos.</p>
+      <label class="consent-copy"><input id="consentAnalytics" type="checkbox"> Allow scanner performance counts</label>
+      <p class="consent-copy">Counts include decoder type, timing, outcome, and guidance category. They do not include QR text, photos, account cookies, or device identifiers.</p>
       <div class="consent-actions">
         <button id="saveConsentPreferences" class="primary-button" type="button">Save preferences</button>
         <button id="cancelConsentPreferences" class="secondary-button" type="button">Back</button>

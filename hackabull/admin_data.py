@@ -384,13 +384,13 @@ PRIVACY_POLICY_HTML = f"""
   <li>Cookies and local storage values for authentication state, consent state, referral state, wallet state, and local report queues.</li>
 </ul>
 <p>Live camera preview frames are checked in your browser. If the local reader fails, SafeScan sends a captured photo to its server only after you choose “Send photo to SafeScan.” The server processes that photo in memory to read the QR code and does not store the image. The decoded payload follows the scan-history rules described here; signed-in scans may be saved.</p>
-<p>If you accept optional analytics, the upgraded scanner sends aggregate performance counts, such as decoder type, elapsed time, outcome, and guidance category. These counts do not include QR text, photos, or device identifiers.</p>
+<p>If you accept optional analytics, your browser sends count-only scanner events with decoder type, elapsed time, outcome, and guidance category. SafeScan aggregates these events to tune scanner performance. They do not include QR text, photos, account cookies, or device identifiers. If you reject optional analytics, the browser does not send these scanner events. Your consent choice is recorded separately for audit purposes.</p>
 <h2>2. Why We Collect It and Legal Basis</h2>
 <ul>
   <li>Authentication: contractual necessity.</li>
   <li>Scan history and QR security delivery: legitimate interest in providing and improving security analysis.</li>
   <li>Airdrop eligibility, scan tiers, referrals, and wallet address: contractual necessity for the tier program.</li>
-  <li>Analytics and abuse prevention: legitimate interest.</li>
+  <li>Optional scanner performance counts: your consent. Operational request metrics and abuse prevention: legitimate interest.</li>
   <li>Marketing emails: explicit consent only.</li>
 </ul>
 <h2>3. How Long We Keep It</h2>
@@ -410,7 +410,7 @@ PRIVACY_POLICY_HTML = f"""
   <li>Render.com for hosting infrastructure.</li>
 </ul>
 <h2>5. Cookies and Tracking</h2>
-<p>SafeScan uses essential cookies/local storage for auth, consent, referral, wallet, and report state. Analytics is optional and should only run after consent where required.</p>
+<p>SafeScan uses cookies and local storage for authentication, consent, referral, wallet, theme, and report state. Optional scanner performance counts are sent only after this browser records your acceptance. Operational request metrics and abuse controls continue to run to provide the service.</p>
 <h2>6. Your Rights</h2>
 <p>EU/EEA users may exercise GDPR rights of access, erasure, rectification, restriction, portability, and objection. California users may exercise CCPA/CPRA rights to know, delete, correct, opt out of sale/sharing, limit sensitive personal information, and non-discrimination. Brazilian users may exercise LGPD rights including revoking consent and requesting information about public and private entities with whom data is shared. Canadian users are protected under PIPEDA principles: knowledge and consent, limited use, accuracy, safeguards, access, and the right to challenge compliance.</p>
 <p>Use the <a href="/legal/data-request">Data Request portal</a> to submit requests.</p>
@@ -457,18 +457,22 @@ TERMS_HTML = """
 """
 
 COOKIE_POLICY_HTML = """
-<h2>Cookie Table</h2>
+<h2>Cookies and Browser Storage</h2>
 <table class="legal-table">
-  <thead><tr><th>Cookie Name</th><th>Provider</th><th>Purpose</th><th>Type</th><th>Duration</th></tr></thead>
+  <thead><tr><th>Name</th><th>Storage</th><th>Purpose</th><th>Category</th><th>Duration</th></tr></thead>
   <tbody>
-    <tr><td>session token</td><td>SafeScan</td><td>Authentication session reference</td><td>Essential</td><td>Session</td></tr>
-    <tr><td>consent-id</td><td>SafeScan</td><td>Stores consent record ID</td><td>Essential</td><td>12 months</td></tr>
-    <tr><td>phishproofAirdropProfile</td><td>SafeScan local storage</td><td>Stores local demo profile and wallet state</td><td>Functional</td><td>Until cleared</td></tr>
-    <tr><td>safeScanConsent</td><td>SafeScan local storage</td><td>Stores local consent choice so the banner does not reappear unnecessarily</td><td>Essential</td><td>12 months</td></tr>
-    <tr><td>safeScanReports</td><td>SafeScan local storage</td><td>Stores local Block & Report queue</td><td>Functional</td><td>Until cleared</td></tr>
+    <tr><td>__Host-safescan_session</td><td>SafeScan cookie</td><td>Authentication session reference</td><td>Essential</td><td>Up to 24 hours</td></tr>
+    <tr><td>__Host-safescan_remember</td><td>SafeScan cookie</td><td>Optional remembered sign-in</td><td>Essential</td><td>Up to 30 days</td></tr>
+    <tr><td>__Host-safescan_csrf</td><td>SafeScan cookie</td><td>Protects guest forms from cross-site requests</td><td>Essential</td><td>Up to 24 hours</td></tr>
+    <tr><td>__Host-safescan_google_nonce</td><td>SafeScan cookie</td><td>Checks a Google sign-in attempt</td><td>Essential</td><td>Up to 10 minutes</td></tr>
+    <tr><td>__Host-safescan_waitlist_confirm</td><td>SafeScan cookie</td><td>Confirms a waitlist request</td><td>Essential</td><td>Up to 30 minutes</td></tr>
+    <tr><td>safeScanConsent and safeScanConsentId</td><td>Browser local storage</td><td>Stores your consent choice and its record ID</td><td>Essential</td><td>Choice reviewed after 12 months</td></tr>
+    <tr><td>phishproofAirdropProfile</td><td>Browser local storage</td><td>Stores local demo profile and wallet state</td><td>Functional</td><td>Until cleared</td></tr>
+    <tr><td>safeScanReports</td><td>Browser local storage</td><td>Stores local Block &amp; Report queue</td><td>Functional</td><td>Until cleared</td></tr>
+    <tr><td>safescan_theme</td><td>Browser local storage</td><td>Remembers light or dark mode</td><td>Functional</td><td>Until cleared</td></tr>
   </tbody>
 </table>
-<p>No third-party advertising cookies are used. If Google Analytics or similar analytics is added, it must be listed here before deployment and gated by consent where required.</p>
+<p>SafeScan does not install third-party advertising or Google Analytics cookies. Optional scanner count events are sent to SafeScan only after you accept analytics in this browser. Your consent choice is saved to SafeScan separately, even when you reject optional analytics.</p>
 <h2>Disable Cookies</h2>
 <p>You can manage cookies in <a href="https://support.google.com/chrome/answer/95647" target="_blank" rel="noopener noreferrer">Chrome</a>, <a href="https://support.mozilla.org/en-US/kb/clear-cookies-and-site-data-firefox" target="_blank" rel="noopener noreferrer">Firefox</a>, <a href="https://support.apple.com/guide/safari/manage-cookies-sfri11471/mac" target="_blank" rel="noopener noreferrer">Safari</a>, and <a href="https://support.microsoft.com/microsoft-edge" target="_blank" rel="noopener noreferrer">Edge</a>.</p>
 """

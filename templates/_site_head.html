@@ -1,0 +1,64 @@
+{# Shared metadata for every server-rendered HTML page. Keep copy factual:
+   scan results are risk assessments, never guarantees. #}
+{% set page_titles = {
+  'home': 'SafeScan QR | Check before you open',
+  'generate': 'QR Generator | SafeScan QR',
+  'learn': 'QR Code Safety Guide | SafeScan QR',
+  'plans': 'Plans | SafeScan QR',
+  'ghost': 'Go Ghost | SafeScan QR',
+  'token': 'SQR Token & Airdrop | SafeScan QR',
+  'malicious': 'Malicious QR Database | SafeScan QR',
+  'leaderboard': 'Leaderboard | SafeScan QR',
+  'history': 'Scan History | SafeScan QR',
+  'profile': 'Profile | SafeScan QR',
+  'login': 'Sign In | SafeScan QR',
+  'age': 'Confirm Age | SafeScan QR',
+  'data_request': 'Data Request | SafeScan QR',
+  'username': 'Choose Username | SafeScan QR',
+  'logout': 'Confirm sign out | SafeScan QR',
+  'limited': 'Try again later | SafeScan QR',
+  'error404': 'Page not found | SafeScan QR',
+  'error500': 'Something went wrong | SafeScan QR'
+} %}
+{% set page_descriptions = {
+  'home': 'Check QR links and other QR payloads before opening them. See the destination, risk signals, and what remains unverified.',
+  'generate': 'Create a QR code for a URL after SafeScan checks the destination with available risk signals.',
+  'learn': 'Learn how QR phishing works and what to check before opening a code on a menu, poster, or payment terminal.',
+  'plans': 'Compare SafeScan plans and the scanning features available at each level.',
+  'ghost': 'Review supported data broker opt-out steps and track your removal requests.',
+  'token': 'Explore SafeScan scan tiers, SQR rewards, and wallet connection features.',
+  'malicious': 'Browse QR destinations classified as malicious and review why they were flagged.',
+  'leaderboard': 'See the public SafeScan scanner leaderboard.',
+  'history': 'Review the QR scans saved to your SafeScan account.',
+  'profile': 'Manage your SafeScan account and connected services.',
+  'login': 'Sign in to your SafeScan account.',
+  'age': 'Confirm your age before using SafeScan.',
+  'data_request': 'Request access, export, or deletion of personal data held by SafeScan.',
+  'username': 'Choose a public username for your SafeScan account.',
+  'logout': 'Confirm that you want to sign out of SafeScan.',
+  'limited': 'SafeScan has temporarily limited requests. Please try again later.',
+  'error404': 'The SafeScan page you requested could not be found.',
+  'error500': 'SafeScan could not complete this request. Please try again.'
+} %}
+{% set request_path = request.url.path if request is defined else '/' %}
+{% set aliases = {'/test-site': '/', '/legal/privacy': '/legal/privacy-policy', '/legal/terms': '/legal/terms-of-use'} %}
+{% set canonical_path = aliases.get(request_path, request_path) %}
+{% set site_origin = public_site_origin|default('https://sqafe.com') %}
+{% set canonical_url = site_origin ~ canonical_path %}
+{% set head_key = head_page|default('home') %}
+{% set head_title = (title ~ ' | SafeScan Admin') if head_key in ['admin', 'admin_table'] and title is defined else ((title ~ ' | SafeScan QR') if head_key == 'legal' and title is defined else page_titles.get(head_key, 'SafeScan QR')) %}
+{% set head_description = page_descriptions.get(head_key, 'SafeScan helps you review QR destinations and risk signals before you act.') %}
+{% set private_page = head_key in ['admin', 'admin_table', 'history', 'profile', 'login', 'age', 'data_request', 'username', 'logout', 'limited', 'error404', 'error500'] or request_path in ['/account/settings', '/legal/consent-log'] %}
+<title>{{ head_title }}</title>
+<meta name="description" content="{{ head_description }}">
+<link rel="canonical" href="{{ canonical_url }}">
+<link rel="icon" href="/static/safescan-logo.svg?v=rose-theme-v1" type="image/svg+xml">
+{% if private_page %}<meta name="robots" content="noindex, nofollow">{% endif %}
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="SafeScan QR">
+<meta property="og:title" content="{{ head_title }}">
+<meta property="og:description" content="{{ head_description }}">
+<meta property="og:url" content="{{ canonical_url }}">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="{{ head_title }}">
+<meta name="twitter:description" content="{{ head_description }}">
