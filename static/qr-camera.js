@@ -2,7 +2,7 @@
 // The native detector is a fast first pass; the self-hosted ZXing worker checks
 // the full-resolution frame and protects the multi-code refusal on every browser.
 (function () {
-  const WORKER_URL = "/static/qr-worker.js?v=scanner-phase-2";
+  const WORKER_URL = "/static/qr-worker.js?v=scanner-phase-2b";
   const WORKER_START_TIMEOUT_MS = 8000;
   const DECODE_TIMEOUT_MS = 6000;
 
