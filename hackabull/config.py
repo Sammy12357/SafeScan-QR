@@ -118,6 +118,7 @@ ADMIN_EMAIL_GMAIL_COMPOSE_URL = f"https://mail.google.com/mail/?view=cm&fs=1&to=
 ADMIN_ACCESS_DENYLIST = {email.strip().lower() for email in os.getenv("ADMIN_ACCESS_DENYLIST", "safescanqr@gmail.com").split(",") if email.strip()}
 APP_URL = os.getenv("APP_URL", "https://safescan-qr.onrender.com").rstrip("/")
 APP_ORIGIN = "{uri.scheme}://{uri.netloc}".format(uri=urlparse(APP_URL)) if urlparse(APP_URL).scheme and urlparse(APP_URL).netloc else APP_URL
+PUBLIC_SITE_ORIGIN = (os.getenv("PUBLIC_SITE_ORIGIN") or "https://sqafe.com").strip().rstrip("/")
 ALLOWED_ORIGINS = sorted({
     APP_ORIGIN,
     *(origin.strip()
@@ -303,6 +304,7 @@ MALICIOUS_CONTRACT_BLOCKLIST = {
 }
 
 templates = Jinja2Templates(directory="templates")
+templates.env.globals["public_site_origin"] = PUBLIC_SITE_ORIGIN
 SCANNER_V3 = os.getenv("SCANNER_V3", "false").lower() in ("1", "true", "yes", "on")
 templates.env.globals["scanner_v3"] = SCANNER_V3
 templates.env.globals["turnstile_enabled"] = TURNSTILE_ENABLED

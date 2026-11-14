@@ -7,9 +7,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
-  <title>Malicious QR Database | SafeScan QR</title>
-  <meta name="description" content="A public database of QR codes scanned and flagged as malicious by SafeScan. Browse known-dangerous codes so you can avoid them.">
-  <link rel="icon" href="/static/safescan-logo.svg?v=rose-theme-v1" type="image/svg+xml">
+  {% set head_page = 'malicious' %}
+  {% include "_site_head.html" %}
   <link rel="stylesheet" href="/static/styles.css?v=rose-theme-v1">
   <style>
     :root { --danger-strong: #dc2626; --warn: #f59e0b; }

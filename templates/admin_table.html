@@ -7,7 +7,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="csrf-token" content="{{ csrf_token() if csrf_token is defined else '' }}">
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
-  <title>{{ title }} | SafeScan QR</title>
+  {% set head_page = 'admin_table' %}
+  {% include "_site_head.html" %}
   <link rel="stylesheet" href="/static/styles.css?v=rose-theme-v1">
 </head>
 <body>

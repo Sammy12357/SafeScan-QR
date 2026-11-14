@@ -73,9 +73,10 @@ def log_event(
 class RequestIdLoggingMiddleware:
     """Add a server-generated ID and an outcome event to every HTTP response."""
 
-    def __init__(self, app, decorate_error):
+    def __init__(self, app, decorate_error, render_error=None):
         self.app = app
         self.decorate_error = decorate_error
+        self.render_error = render_error
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
@@ -110,8 +111,14 @@ class RequestIdLoggingMiddleware:
                 status_code=500, error_type=type(exc).__name__,
             )
             if not response_started:
-                response = JSONResponse({"error": "Something went wrong on our end."}, status_code=500)
-                self.decorate_error(Request(scope, receive=receive), response)
+                request = Request(scope, receive=receive)
+                try:
+                    response = self.render_error(request) if self.render_error else None
+                except Exception:
+                    response = None
+                if response is None:
+                    response = JSONResponse({"error": "Something went wrong on our end."}, status_code=500)
+                self.decorate_error(request, response)
                 await response(scope, receive, send_with_request_id)
             elif not response_complete:
                 # Headers cannot be changed after streaming begins. Finish the
