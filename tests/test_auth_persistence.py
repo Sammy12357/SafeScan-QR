@@ -322,6 +322,7 @@ def test_google_login_persists_provider_user_and_session(auth_app, monkeypatch):
         lambda credential, request, client_id: {
             "sub": "google-sub-1",
             "email": "google@example.com",
+            "email_verified": True,
             "name": "Google User",
             "picture": "https://example.com/avatar.png",
         },
@@ -346,6 +347,7 @@ def test_google_then_local_registration_blocks_duplicate_email(auth_app, monkeyp
         lambda credential, request, client_id: {
             "sub": "google-sub-2",
             "email": "shared@example.com",
+            "email_verified": True,
         },
     )
 
@@ -370,6 +372,7 @@ def test_mobile_sign_in_then_local_registration_blocks_duplicate_email(auth_app,
         lambda credential, request, client_id: {
             "sub": "mobile-sub-1",
             "email": "mobile-shared@example.com",
+            "email_verified": True,
             "name": "Mobile User",
         },
     )

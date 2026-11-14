@@ -114,16 +114,7 @@ _AUTH0_JWKS_TTL_SECONDS = 60 * 60
 AIRDROP_ADMIN_SECRET = os.getenv("AIRDROP_ADMIN_SECRET")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "safescanqr@gmail.com")
 ADMIN_EMAIL_GMAIL_COMPOSE_URL = f"https://mail.google.com/mail/?view=cm&fs=1&to={quote(ADMIN_EMAIL)}"
-DEFAULT_ADMIN_EMAILS = {"homzajoe@gmail.com", "restreposamuel2004@gmail.com"}
 ADMIN_ACCESS_DENYLIST = {email.strip().lower() for email in os.getenv("ADMIN_ACCESS_DENYLIST", "safescanqr@gmail.com").split(",") if email.strip()}
-ADMIN_EMAILS = (
-    DEFAULT_ADMIN_EMAILS
-    | {email.strip().lower() for email in os.getenv("ADMIN_EMAILS", ADMIN_EMAIL).split(",") if email.strip()}
-) - ADMIN_ACCESS_DENYLIST
-OWNER_EMAILS = (
-    {email.strip().lower() for email in os.getenv("OWNER_EMAILS", "").split(",") if email.strip()}
-    or {ADMIN_EMAIL.strip().lower()}
-) - ADMIN_ACCESS_DENYLIST
 APP_URL = os.getenv("APP_URL", "https://safescan-qr.onrender.com").rstrip("/")
 APP_ORIGIN = "{uri.scheme}://{uri.netloc}".format(uri=urlparse(APP_URL)) if urlparse(APP_URL).scheme and urlparse(APP_URL).netloc else APP_URL
 ALLOWED_ORIGINS = sorted({

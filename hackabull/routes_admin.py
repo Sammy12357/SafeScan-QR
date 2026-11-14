@@ -64,9 +64,7 @@ from .audit import audit_log
 from .audit import now_iso
 from .auth import has_role
 from .auth import require_role_user
-from .config import ADMIN_EMAILS
 from .config import APP_URL
-from .config import OWNER_EMAILS
 from .config import VALID_ROLES
 from .config import templates
 from .history import admin_avatar
@@ -115,8 +113,14 @@ async def admin_change_role(request: Request, email: str, role: str = Form(...))
     if role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="Invalid request.")
     with get_conn() as conn:
-        conn.execute("UPDATE users SET role = ? WHERE email = ?", (role, email))
-    audit_log("admin.role_changed", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=email, metadata={"role": role})
+        matches = conn.execute(
+            "SELECT google_id FROM users WHERE email = ? OR google_id = ?", (email, email)
+        ).fetchall()
+        if len(matches) != 1:
+            raise HTTPException(status_code=409, detail="Select one account by its ID.")
+        target_user_id = matches[0]["google_id"]
+        conn.execute("UPDATE users SET role = ? WHERE google_id = ?", (role, target_user_id))
+    audit_log("admin.role_changed", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=target_user_id, metadata={"role": role})
     return RedirectResponse("/admin/users", status_code=303)
 
 @qr_app.post("/admin/users/{email}/delete")
@@ -320,5 +324,13 @@ async def admin_revoke_api_key(request: Request, key_id: str):
 
 @qr_app.get("/admin/settings", response_class=HTMLResponse)
 async def admin_settings(request: Request):
-    return admin_context(request, "Settings", "settings", {"app_url": APP_URL, "admin_emails": sorted(ADMIN_EMAILS), "owner_emails": sorted(OWNER_EMAILS)}, owner_only=True)
+    with get_conn() as conn:
+        privileged = conn.execute(
+            "SELECT email, role FROM users WHERE status = 'active' AND role IN ('admin', 'owner') ORDER BY role, email"
+        ).fetchall()
+    return admin_context(request, "Settings", "settings", {
+        "app_url": APP_URL,
+        "admin_emails": [row["email"] for row in privileged if row["role"] == "admin"],
+        "owner_emails": [row["email"] for row in privileged if row["role"] == "owner"],
+    }, owner_only=True)
 

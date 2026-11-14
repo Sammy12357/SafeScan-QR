@@ -50,8 +50,6 @@ from storage import upload_bytes as storage_upload_bytes
 from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party
 import safescan_model_calibration as sm_calibration
 from .config import ADMIN_ACCESS_DENYLIST
-from .config import ADMIN_EMAILS
-from .config import OWNER_EMAILS
 
 # =============================================================================
 # DATABASE SCHEMA & INITIALIZATION
@@ -90,6 +88,18 @@ def init_db():
                         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         deleted_at TEXT
                     )''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS user_identities (
+                        provider TEXT NOT NULL CHECK(provider IN ('google', 'auth0')),
+                        issuer TEXT NOT NULL,
+                        subject TEXT NOT NULL,
+                        user_id TEXT NOT NULL,
+                        email_at_link TEXT NOT NULL,
+                        email_verified INTEGER NOT NULL CHECK(email_verified = 1),
+                        linked_at TEXT NOT NULL,
+                        PRIMARY KEY (issuer, subject),
+                        FOREIGN KEY(user_id) REFERENCES users(google_id)
+                    )''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_identities_user_id ON user_identities(user_id)")
     cursor.execute('''CREATE TABLE IF NOT EXISTS scans (email TEXT PRIMARY KEY, url_found TEXT, scan_count INTEGER DEFAULT 0, wallet_address TEXT, tokens_sent INTEGER DEFAULT 0)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS scan_events
                         (email TEXT NOT NULL, payload_hash TEXT NOT NULL, url_found TEXT NOT NULL,
@@ -309,18 +319,6 @@ def init_db():
         cursor.execute(
             f"UPDATE users SET role = 'user' WHERE lower(email) IN ({placeholders}) AND role IN ('admin', 'owner')",
             tuple(sorted(ADMIN_ACCESS_DENYLIST))
-        )
-    if ADMIN_EMAILS:
-        placeholders = ",".join("?" for _ in ADMIN_EMAILS)
-        cursor.execute(
-            f"UPDATE users SET role = 'admin' WHERE lower(email) IN ({placeholders}) AND role != 'owner'",
-            tuple(sorted(ADMIN_EMAILS))
-        )
-    if OWNER_EMAILS:
-        placeholders = ",".join("?" for _ in OWNER_EMAILS)
-        cursor.execute(
-            f"UPDATE users SET role = 'owner' WHERE lower(email) IN ({placeholders})",
-            tuple(sorted(OWNER_EMAILS))
         )
     cursor.execute("UPDATE users SET created_at = COALESCE(created_at, last_login, ?)", (datetime.utcnow().isoformat() + "Z",))
     cursor.execute("PRAGMA table_info(scans)")

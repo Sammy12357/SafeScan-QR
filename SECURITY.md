@@ -7,7 +7,7 @@ SafeScan QR currently runs as a FastAPI/Python application with SQLite storage i
 ## Implemented Controls
 
 - Server-side user roles and status fields on `users`: `user`, `admin`, `owner`; `active`, `suspended`, `deleted`.
-- Built-in admin allowlist includes `homzajoe@gmail.com` and `restreposamuel2004@gmail.com`; set `ADMIN_EMAILS` in Render to keep this explicit.
+- Admin and owner roles are stored on `users` and are never granted from an email address. New federated accounts start with the `user` role; existing roles are retained until an owner changes them. The `ADMIN_ACCESS_DENYLIST` remains an emergency demotion switch.
 - Server-side sessions in the `sessions` table, issued as HTTP-only, Secure, SameSite=Strict cookies.
 - Suspended or deleted users are rejected when loading sessions.
 - Admin pages now require an active session with `admin` or `owner` role.
@@ -16,7 +16,8 @@ SafeScan QR currently runs as a FastAPI/Python application with SQLite storage i
 - Scan submission no longer trusts the hidden `user_email` form field; the server derives the email from the session.
 - URL analysis validates URL shape, max length, scheme, hostname, and blocks localhost/private/internal Render targets before reputation checks or redirects.
 - Redirect tracing follows redirects manually and validates every hop before requesting it.
-- Auth0 mobile ID tokens are verified server-side using an RS256 signature and the tenant JWKS. The verifier also checks `iss` against `AUTH0_DOMAIN`, `aud` against the `AUTH0_CLIENT_IDS` allowlist, expiration, and the presence of an email claim. JWKS responses are cached for one hour and refreshed once when a token references an unknown key ID.
+- Auth0 mobile ID tokens are verified server-side using an RS256 signature and the tenant JWKS. The verifier also checks `iss` against `AUTH0_DOMAIN`, `aud` against the `AUTH0_CLIENT_IDS` allowlist, expiration, and the presence of a verified email claim. JWKS responses are cached for one hour and refreshed once when a token references an unknown key ID.
+- Google and Auth0 sign-ins are keyed by issuer and full subject in `user_identities`. A matching email never links accounts automatically. Legacy accounts must be reviewed and explicitly mapped before this change is released.
 - `POST /auth/verify` selects the Auth0 or Google verifier from the token issuer, returns a generic `401` when verification fails, and is limited to 20 attempts per 15 minutes per IP before token validation begins.
 - Wallet connection now uses a server-issued 5-minute nonce and Ed25519 message-signature verification before a wallet is stored.
 - Wallet nonces are single-use, rotated after failed verification, rate-limited per wallet address, and cleaned up by a background task.
