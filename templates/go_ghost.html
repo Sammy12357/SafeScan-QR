@@ -19,7 +19,11 @@
       <div>
         <p class="eyebrow">Privacy cleanup</p>
         <h1>Go Ghost</h1>
+        {% if browser_automation_available %}
         <p class="go-ghost-lede">Find exposed profiles, open the right opt-out pages, and run assisted broker removals with clear checkpoints for CAPTCHA and email confirmation.</p>
+        {% else %}
+        <p class="go-ghost-lede">Find exposed profiles, open broker opt-out pages, and track each removal as you complete it in your browser.</p>
+        {% endif %}
       </div>
       <div class="go-ghost-status" aria-label="Go Ghost progress">
         <span id="ghostProgressCount">0 / 0</span>
@@ -27,7 +31,7 @@
       </div>
     </header>
 
-    <main class="go-ghost-layout" id="goGhostWorkspace" hidden>
+    <main class="go-ghost-layout" id="goGhostWorkspace" hidden data-browser-automation-available="{{ 'true' if browser_automation_available else 'false' }}">
       <section class="go-ghost-card result-card-wide">
         <div class="panel-header">
           <div>
@@ -46,12 +50,17 @@
       <section class="go-ghost-card automation-scope-card">
         <div class="panel-header">
           <div>
-            <p class="eyebrow">Local automation</p>
-            <h2>Automation scope and search kit</h2>
+            <p class="eyebrow">Broker opt-outs</p>
+            <h2>Search and opt-out kit</h2>
           </div>
           <span class="privacy-local-badge">Local only</span>
         </div>
+        {% if browser_automation_available %}
         <p class="go-ghost-copy">Go Ghost can prepare searches and submissions for supported opt-outs using the minimum local details you choose. Email confirmation, CAPTCHA, and exact profile matching still need user-approved checkpoints.</p>
+        {% else %}
+        <p class="go-ghost-copy">Add only the details you need. Use Search to find your listing, Opt out to open the broker form, and Copy details to paste your information. You complete and submit each request in your browser.</p>
+        <p class="go-ghost-copy" role="status">Assisted browser submissions are temporarily unavailable.</p>
+        {% endif %}
         <p id="goGhostDeviceNotice" class="go-ghost-device-notice" role="status" aria-live="polite">Desktop layout active.</p>
 
         <form id="goGhostProfileForm" class="go-ghost-form go-ghost-keyword-form">
@@ -71,21 +80,25 @@
             <input id="ghostEmailInput" type="email" autocomplete="email">
           </label>
           <div class="go-ghost-actions">
-            <button class="primary-button" type="submit">Update automation scope</button>
+            <button class="primary-button" type="submit">{{ 'Update automation scope' if browser_automation_available else 'Update search details' }}</button>
             <button class="secondary-button" id="clearGhostDataButton" type="button">Clear info</button>
           </div>
         </form>
 
+        {% if browser_automation_available %}
         <div class="ghost-automation-stack">
           <span>Headless submit jobs</span>
           <span>Email confirmation listener</span>
           <span>Weekly re-check queue</span>
         </div>
+        {% endif %}
         <div class="ghost-automation-actions">
+          {% if browser_automation_available %}
           <button id="startGhostQueueButton" class="primary-button" type="button">Start assisted queue</button>
-          <button id="openNextGhostBrokerButton" class="secondary-button" type="button">Open next pending</button>
+          {% endif %}
+          <button id="openNextGhostBrokerButton" class="secondary-button" type="button">Search next broker</button>
         </div>
-        <div class="ghost-automation-table" aria-label="Go Ghost automation scope by broker">
+        <div class="ghost-automation-table" aria-label="Go Ghost broker search and opt-out status">
           <div class="ghost-automation-row ghost-automation-head"><span>Site</span><span>Effort</span><span>You do</span><span>Status</span></div>
           <div id="goGhostAutomationRows" class="ghost-automation-rows"></div>
         </div>
@@ -100,7 +113,11 @@
     <div class="ghost-consent-card">
       <p class="eyebrow">Confirm intent</p>
       <h2 id="goGhostConsentTitle">Do you want your personal data taken off the internet?</h2>
+      {% if browser_automation_available %}
       <p>Go Ghost helps you find broker profiles and submit removals. You will still confirm each request yourself, because many brokers require email verification or CAPTCHA.</p>
+      {% else %}
+      <p>Go Ghost helps you find broker profiles and open their opt-out pages. You complete each request in your browser, including any email verification or CAPTCHA.</p>
+      {% endif %}
       <div class="ghost-safety-list">
         <span>Use minimum info only</span>
         <span>Never provide SSN</span>
@@ -124,7 +141,9 @@
       <div class="go-ghost-actions ghost-scope-actions">
         <button id="goGhostScopeSearchButton" class="secondary-button" type="button">Search</button>
         <button id="goGhostScopeOptOutButton" class="primary-button" type="button">Opt out</button>
+        {% if browser_automation_available %}
         <button id="goGhostScopeAutoFillButton" class="primary-button" type="button">Run auto fill</button>
+        {% endif %}
         <button id="goGhostScopeFinishButton" class="primary-button" type="button" hidden>Finish in browser</button>
         <button id="goGhostScopeNoMatchButton" class="secondary-button" type="button">No match / mark finished</button>
         <button id="goGhostScopeCopyButton" class="secondary-button" type="button">Copy details</button>
@@ -134,8 +153,8 @@
 
   <script src="/static/app-core.js?v=ghost-assist-v1"></script>
   <script src="/static/app-widgets.js?v=ghost-assist-v1"></script>
-  <script src="/static/app-go-ghost.js?v=ghost-assist-v1"></script>
-  <script src="/static/app-go-ghost-ui.js?v=ghost-assist-v1"></script>
+  <script src="/static/app-go-ghost.js?v=ghost-browser-gate-v1"></script>
+  <script src="/static/app-go-ghost-ui.js?v=ghost-browser-gate-v1"></script>
   <script src="/static/app-generate-qr.js?v=ghost-assist-v1"></script>
 </body>
 </html>

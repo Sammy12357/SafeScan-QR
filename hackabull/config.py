@@ -196,6 +196,10 @@ ML_AGGREGATE_WEIGHT = max(0.0, min(0.85, float(os.getenv("SAFESCAN_ML_WEIGHT", "
 # user-facing UI. Flip to "true" if you need ML row visible for debugging.
 ML_SIGNAL_VISIBLE = os.getenv("SAFESCAN_ML_SIGNAL_VISIBLE", "false").lower() in ("1", "true", "yes", "on")
 _PRODUCTION_RUNTIME = bool(os.getenv("RENDER")) or os.getenv("ENVIRONMENT", "").strip().lower() in ("prod", "production")
+# Browser automation must not run in the app container. Revisit only after an
+# isolated worker with enforced network egress and browser sandboxing exists.
+# Deliberately has no environment-variable override.
+GO_GHOST_BROWSER_AUTOMATION_AVAILABLE = False
 LOCAL_AUTH_ENABLED = not _PRODUCTION_RUNTIME and (
     MOCK_MODE or APP_URL.startswith("http://127.0.0.1") or APP_URL.startswith("http://localhost")
 )
