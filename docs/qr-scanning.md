@@ -76,11 +76,14 @@ the user should aim at one visible code.
 ## Server decoder and limits
 
 The Phase 1 server implementation uses `zxing-cpp==3.1.1` and runs upload
-decoding in a thread pool behind `QR_DECODE_CONCURRENCY` (default 2). It reads
-EXIF orientation, rejects images over 40 megapixels, and checks a
-`QR_DECODE_BUDGET_S` deadline (default 1.5 seconds) **between** native calls.
-One long native C++ call cannot be interrupted by that deadline. Monitor actual
-latency on Render, particularly for pathological images.
+decoding in a thread pool behind `QR_DECODE_CONCURRENCY` (default 2). Each
+production upload runs in a killable child process, so a native C++ stall cannot
+hold an upload worker indefinitely. The internal tier deadline is
+`QR_DECODE_BUDGET_S` (default 1.5 seconds); the parent enforces a wall limit of
+that budget plus one second for an image or 3.5 seconds for a PDF. Direct
+internal calls to `decode_qr_image()` still use the soft tier deadline. The
+decoder reads EXIF orientation and rejects images over 40 megapixels. Monitor
+latency and memory on Render, particularly for pathological images.
 
 | Order | Tier | Purpose |
 | --- | --- | --- |
@@ -101,11 +104,13 @@ measured read-rate gain and acceptable memory/cold-start cost on Render.
 
 The Phase 4 upload guard limits the complete multipart request to
 `MAX_QR_UPLOAD_BYTES` (default 8 MiB) plus 64 KiB of form overhead before form
-parsing. It bounds concurrent upload requests to three, returns 503 when the
-short slot wait expires, and applies a process-wide 180-request/15-minute
-upload budget, including guests. These are per-process controls; use a shared
-limiter before scaling to multiple instances. The multipart spool threshold is
-raised above the request cap so scanner uploads do not spill to a disk file.
+parsing. It bounds concurrent upload requests to three, allows at most two
+active uploads per visitor, and enforces a 15-second body-read deadline. A
+90-request/15-minute budget is keyed to Render's edge-authored client IP when
+available, without trusting a caller's `X-Forwarded-For`. These are
+per-process controls; use a shared limiter before scaling to multiple
+instances. The multipart spool threshold is raised above the request cap so
+scanner uploads do not spill to a disk file.
 
 ## Privacy and retention
 
@@ -125,12 +130,14 @@ raised above the request cap so scanner uploads do not spill to a disk file.
   account scan-history row. The server audit log records scan metadata, not the
   JPEG bytes.
 - Decoder metrics contain tier, outcome, and duration. Do not add payloads,
-  images, device IDs, or URLs to labels. Counts-only client telemetry was
-  approved separately; this guide does **not** assume a telemetry endpoint is
-  deployed.
+  images, device IDs, or URLs to labels. With `SCANNER_V3=true`, the browser
+  also sends fixed-category scanner counts to `/api/telemetry/scan`; the server
+  aggregates them into counters and discards individual events. The event
+  contains no QR text, photo, device identifier, session cookie, or free-form
+  guidance message.
 
-Before enabling the server retry publicly, check that the published Privacy
-Policy and in-app camera copy describe the consented image transfer accurately.
+The published Privacy Policy and in-app camera copy describe the consented
+image transfer and aggregate performance counts.
 
 ## Benchmarks and corpus maintenance
 
@@ -194,4 +201,7 @@ Check the release on a fresh browser session: worker and `.wasm` load from
 `/static/` with the expected MIME type; the CSP has no jsdelivr origin; manual
 and auto-capture refuse two-code scenes; server retry requires a click; the
 upload rejects oversize requests; and a camera-frame request creates no image
-artifact. Check actual Render latency and memory before enabling WeChat.
+artifact. `SCANNER_V3` defaults to `false`, serving the preserved Phase 3
+self-hosted scanner. Enable it only after checking the Phase 4 camera on the
+live service, and set it back to `false` to roll back the browser behavior.
+Check actual Render latency and memory before enabling WeChat.

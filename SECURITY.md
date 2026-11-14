@@ -33,7 +33,7 @@ SafeScan QR currently runs as a FastAPI/Python application with SQLite storage i
 
 ## Camera Scanner Release Controls
 
-The Phase 1 and Phase 4 camera changes are documented in [docs/qr-scanning.md](docs/qr-scanning.md). Deploy them together before relying on the following controls: a local burst and ambiguity check, explicit user action before a failed frame is uploaded for server retry, bounded in-memory upload parsing, and thread-pooled server decoding. The browser camera refuses multiple detected codes and Structured Append fragments; the Python decoder currently lacks Structured Append metadata, so server upload cannot provide the same fragment check. Scanner images are processed for the request and are not written as upload artifacts. Signed-in scan results can still be retained as account history.
+The Phase 1 and Phase 4 camera changes are documented in [docs/qr-scanning.md](docs/qr-scanning.md). Deploy them together before relying on the following controls: a local burst and ambiguity check, explicit user action before a failed frame is uploaded for server retry, bounded in-memory upload parsing, and server upload decoding in a killable child process. The browser camera refuses multiple detected codes and Structured Append fragments; the Python decoder currently lacks Structured Append metadata, so server upload cannot provide the same fragment check. Scanner images are processed for the request and are not written as upload artifacts. Signed-in scan results can still be retained as account history.
 
 ## Protected Routes
 

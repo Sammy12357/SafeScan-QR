@@ -43,7 +43,7 @@ This checklist documents compliance-oriented controls implemented for audit, inv
 - [x] Airdrop fraud flags and review queue - `/admin/airdrop/fraud`
 
 ### Production Follow-Ups
-- [ ] Before releasing consented camera-frame server retry, update the public Privacy Policy and in-app camera text to distinguish local preview, decoded-payload analysis, optional JPEG transfer, and account scan-history retention.
+- [x] Disclose local camera preview, optional JPEG server retry, and account scan-history retention in the public Privacy Policy and in-app camera text.
 - [ ] Record the camera device/browser matrix and server Structured Append limitation in the release review - `docs/qr-scanning.md`.
 - [ ] Attorney review before public launch or token distribution.
 - [ ] Connect transactional email for privacy request confirmations and completion notices.

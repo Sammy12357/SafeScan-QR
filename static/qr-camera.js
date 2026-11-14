@@ -351,7 +351,7 @@
           '<button class="qr-camera-retry" type="button" hidden>Retry camera</button>' +
         '</div>' +
         '<div class="qr-camera-server-offer" hidden>' +
-          '<p>Couldn\'t read it here. Send the clearest photo to SafeScan for another try? The image is processed in memory and is not saved.</p>' +
+          '<p>Couldn\'t read it here. Send the clearest photo to SafeScan for another try? The image is processed in memory and is not saved. Signed-in scan results may be saved to your history.</p>' +
           '<button class="qr-camera-server-send" type="button">Send photo to SafeScan</button>' +
         '</div>' +
       '</div>';
