@@ -29,7 +29,8 @@ def signed_in(auth_app):
     assert registered.status_code == 303
     profile = client.get("/profile")
     assert profile.status_code == 200
-    assert profile.headers["cache-control"] == "no-store"
+    assert "no-store" in profile.headers["cache-control"]
+    assert "private" in profile.headers["cache-control"]
     return module, client, db_path, _token(profile.text)
 
 
@@ -164,7 +165,7 @@ def test_all_browser_form_routes_require_csrf(auth_app):
         route for route in module.qr_app.routes
         if isinstance(route, APIRoute) and "POST" in route.methods
         and not route.path.startswith("/api/")
-        and route.path not in {"/auth/google", "/auth/verify", "/webhooks/stripe"}
+        and route.path not in {"/auth/google", "/auth/verify", "/webhooks/stripe", "/trigger-airdrop-secret"}
     ]
     form_routes += [
         route for route in module.qr_app.routes

@@ -1,0 +1,10 @@
+<h2>Account Settings</h2>
+<p>Use this page to revoke non-essential consent with one click. This supports LGPD and general privacy readiness.</p>
+<form class="legal-form" action="/legal/data-request" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+  <input type="hidden" name="request_type" value="revoke_consent">
+  <input type="hidden" name="region" value="">
+  <input type="hidden" name="details" value="One-click consent revocation from account settings.">
+  <label>Email <input type="email" name="email" required value="{{ email }}" placeholder="you@example.com"></label>
+  <button class="danger-button" type="submit">Revoke Consent</button>
+</form>

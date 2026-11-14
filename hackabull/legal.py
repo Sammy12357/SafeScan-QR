@@ -57,8 +57,8 @@ from .config import LEGAL_VERSION
 # =============================================================================
 # LEGAL PAGES, LOCALE & GDPR DATA EXPORT/DELETE
 # =============================================================================
-def legal_context(request: Request, title, body_html):
-    return {
+def legal_context(request: Request, title, body_html="", **extra):
+    context = {
         "request": request,
         "title": title,
         "body_html": body_html,
@@ -67,6 +67,8 @@ def legal_context(request: Request, title, body_html):
         "admin_email": ADMIN_EMAIL,
         "google_client_id": CLIENT_ID
     }
+    context.update(extra)
+    return context
 
 def get_user_export(email):
     with get_conn() as conn:

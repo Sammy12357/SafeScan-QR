@@ -1,6 +1,7 @@
 """Federated identities must never inherit another account's privileges by email."""
 
 import importlib
+import re
 import sqlite3
 import sys
 
@@ -37,6 +38,17 @@ def _rows(database, sql, params=()):
     with sqlite3.connect(database) as conn:
         conn.row_factory = sqlite3.Row
         return [dict(row) for row in conn.execute(sql, params)]
+
+
+def _browser_form_post(client, path, data=None, *, include_origin=True):
+    page = client.get("/")
+    match = re.search(r'<meta name="csrf-token" content="([a-f0-9]{64})"', page.text)
+    assert match
+    headers = {"Origin": "https://testserver"} if include_origin else {}
+    return client.post(
+        path, data={**(data or {}), "csrf_token": match.group(1)},
+        headers=headers, follow_redirects=False,
+    )
 
 
 def _auth0_client(app, routes, monkeypatch, *, subject, email, verified):
@@ -162,10 +174,8 @@ def test_verified_identity_with_changed_email_requires_review(identity_app, monk
 def test_local_registration_never_grants_owner_role_from_email(identity_app):
     app, routes, database = identity_app
     client = TestClient(app.qr_app, base_url="https://testserver")
-    response = client.post(
-        "/auth/register", data={"email": "owner@example.com", "password": "password123"},
-        follow_redirects=False,
-    )
+    response = _browser_form_post(client, "/auth/register",
+                                  {"email": "owner@example.com", "password": "password123"})
     assert response.status_code == 303
     assert _rows(database, "SELECT role FROM users") == [{"role": "user"}]
     app.init_db()
@@ -175,17 +185,15 @@ def test_local_registration_never_grants_owner_role_from_email(identity_app):
 def test_role_change_refuses_ambiguous_email(identity_app):
     app, routes, database = identity_app
     owner = TestClient(app.qr_app, base_url="https://testserver")
-    registered = owner.post(
-        "/auth/register", data={"email": "operator@example.com", "password": "password123"},
-        follow_redirects=False,
-    )
+    registered = _browser_form_post(owner, "/auth/register",
+                                    {"email": "operator@example.com", "password": "password123"})
     assert registered.status_code == 303
     with sqlite3.connect(database) as conn:
         conn.execute("UPDATE users SET role = 'owner' WHERE email = 'operator@example.com'")
         conn.execute("INSERT INTO users (google_id, email) VALUES (?, ?)", ("account-a", "shared@example.com"))
         conn.execute("INSERT INTO users (google_id, email) VALUES (?, ?)", ("account-b", "shared@example.com"))
 
-    response = owner.post("/admin/users/shared@example.com/role", data={"role": "admin"}, follow_redirects=False)
+    response = _browser_form_post(owner, "/admin/users/shared@example.com/role", {"role": "admin"})
 
     assert response.status_code == 409
     assert _rows(database, "SELECT role FROM users WHERE email = 'shared@example.com'") == [
@@ -209,23 +217,19 @@ def test_airdrop_secret_never_appears_in_state_changing_get(identity_app, monkey
 def test_airdrop_admin_post_requires_same_origin(identity_app):
     app, routes, database = identity_app
     owner = TestClient(app.qr_app, base_url="https://testserver")
-    assert owner.post(
-        "/auth/register", data={"email": "operator@example.com", "password": "password123"},
-        follow_redirects=False,
-    ).status_code == 303
+    assert _browser_form_post(owner, "/auth/register",
+                              {"email": "operator@example.com", "password": "password123"}).status_code == 303
     with sqlite3.connect(database) as conn:
         conn.execute("UPDATE users SET role = 'owner' WHERE email = 'operator@example.com'")
 
-    assert owner.post("/trigger-airdrop-secret").status_code == 403
+    assert _browser_form_post(owner, "/trigger-airdrop-secret", include_origin=False).status_code == 403
 
 
 def test_admin_airdrop_distribute_rejects_missing_origin(identity_app, monkeypatch):
     app, routes, database = identity_app
     owner = TestClient(app.qr_app, base_url="https://testserver")
-    assert owner.post(
-        "/auth/register", data={"email": "operator@example.com", "password": "password123"},
-        follow_redirects=False,
-    ).status_code == 303
+    assert _browser_form_post(owner, "/auth/register",
+                              {"email": "operator@example.com", "password": "password123"}).status_code == 303
     with sqlite3.connect(database) as conn:
         conn.execute("UPDATE users SET role = 'owner' WHERE email = 'operator@example.com'")
 
@@ -234,11 +238,9 @@ def test_admin_airdrop_distribute_rejects_missing_origin(identity_app, monkeypat
         calls.append(True)
         return {"status": "dry_run", "eligible": 0, "sent": [], "total_tokens_sent": 0}
     monkeypatch.setattr(importlib.import_module("distribute"), "airdrop_sweep", fake_sweep)
-    assert owner.post("/admin/airdrop/distribute").status_code == 403
+    assert _browser_form_post(owner, "/admin/airdrop/distribute", include_origin=False).status_code == 403
     assert calls == []
-    assert owner.post(
-        "/admin/airdrop/distribute", headers={"Origin": "https://testserver"}
-    ).status_code == 200
+    assert _browser_form_post(owner, "/admin/airdrop/distribute").status_code == 200
     assert calls == [True]
 
 

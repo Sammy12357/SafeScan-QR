@@ -16,7 +16,6 @@ import socket
 import time
 import csv
 from decimal import Decimal, InvalidOperation
-from html import escape as escape_html
 from urllib.parse import quote, urlencode, urljoin, urlparse, parse_qsl
 from datetime import datetime, timedelta, timezone
 from xml.etree import ElementTree
@@ -32,6 +31,7 @@ import os
 from dotenv import load_dotenv
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
+from markupsafe import Markup
 from db import (
     assert_owns_row,
     clear_rls_context,
@@ -218,7 +218,7 @@ async def api_go_ghost_removal(request: Request, broker: str, payload: dict = Bo
 
 @qr_app.get("/legal/privacy-policy", response_class=HTMLResponse)
 async def privacy_policy(request: Request):
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Privacy Policy", PRIVACY_POLICY_HTML))
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Privacy Policy", Markup(PRIVACY_POLICY_HTML)))
 
 @qr_app.post("/waitlist", response_class=HTMLResponse, dependencies=[Depends(require_csrf_form)])
 async def waitlist_signup(request: Request, email: str = Form(...)):
@@ -243,39 +243,36 @@ async def waitlist_signup(request: Request, email: str = Form(...)):
             send_email,
             normalized_email,
             "You're on the SafeScan QR list",
-            "<h2>You're on the list</h2>"
-            "<p>Thanks for joining the SafeScan QR newsletter. We'll send one email per major release &mdash; no spam.</p>"
-            f"<p><a href='{APP_URL}'>Open SafeScan QR</a></p>"
-            f"<p style='color:#888;font-size:12px'>Didn't sign up? Ignore this email or reply to unsubscribe.</p>",
+            templates.env.get_template("email/waitlist_welcome.html").render(app_url=APP_URL),
         )
     body = "<h2>You're on the list</h2><p>Thanks for joining the SafeScan QR waitlist. We'll send only major product updates.</p><p><a href='/'>Return to SafeScan QR</a></p>"
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Waitlist", body))
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Waitlist", Markup(body)))
 
 @qr_app.get("/legal/terms-of-use", response_class=HTMLResponse)
 async def terms_of_use(request: Request):
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Terms of Use", TERMS_HTML))
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Terms of Use", Markup(TERMS_HTML)))
 
 @qr_app.get("/legal/privacy", response_class=HTMLResponse)
 async def privacy_policy_alias(request: Request):
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Privacy Policy", PRIVACY_POLICY_HTML))
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Privacy Policy", Markup(PRIVACY_POLICY_HTML)))
 
 @qr_app.get("/legal/terms", response_class=HTMLResponse)
 async def terms_of_use_alias(request: Request):
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Terms of Use", TERMS_HTML))
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Terms of Use", Markup(TERMS_HTML)))
 
 @qr_app.get("/legal/cookie-policy", response_class=HTMLResponse)
 async def cookie_policy(request: Request):
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Cookie Policy", COOKIE_POLICY_HTML))
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Cookie Policy", Markup(COOKIE_POLICY_HTML)))
 
 @qr_app.get("/legal/terms-history", response_class=HTMLResponse)
 async def terms_history(request: Request):
     body = "<h2>Version History</h2><p>v1.0 - May 2026: Initial SafeScan QR Terms of Use.</p>"
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Terms History", body))
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Terms History", Markup(body)))
 
 @qr_app.get("/changelog", response_class=HTMLResponse)
 async def changelog_page(request: Request):
     body = "<h2>Changelog</h2><p>v0.1 - May 2026: SafeScan QR hackathon MVP, risk engine, legal pages, and footer system.</p>"
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Changelog", body))
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Changelog", Markup(body)))
 
 @qr_app.get("/legal/license", response_class=HTMLResponse)
 async def license_page(request: Request):
@@ -284,61 +281,30 @@ async def license_page(request: Request):
     <p>SafeScan QR is currently proprietary while the product is in hackathon and early beta development. Open-source components remain governed by their original licenses.</p>
     <p>Public API, SDK, and mobile client licensing will be published before a production developer release.</p>
     """
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "License", body))
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "License", Markup(body)))
 
 @qr_app.get("/legal/security", response_class=HTMLResponse)
 async def security_page(request: Request):
-    body = f"""
-    <h2>Security</h2>
-    <p>SafeScan QR analyzes QR payloads, URLs, wallet links, redirect chains, reputation signals, and crypto-specific risk patterns before users continue.</p>
-    <p>To report a vulnerability, contact <a href="mailto:{ADMIN_EMAIL}">{ADMIN_EMAIL}</a>. Please include affected routes, reproduction steps, and potential impact.</p>
-    """
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Security", body))
+    return templates.TemplateResponse("legal_page.html", legal_context(
+        request, "Security", content_template="legal/security_body.html",
+    ))
 
 @qr_app.get("/contact", response_class=HTMLResponse)
 async def contact_page(request: Request):
-    body = f"""
-    <section class="contact-hero">
-      <h2>Contact SafeScan QR</h2>
-      <p>For community updates, support, security reports, partnerships, or privacy questions, use the best channel below.</p>
-    </section>
-
-    <div class="contact-grid">
-      <a class="contact-card contact-card-primary" href="https://discord.gg/hqHBQ22z" target="_blank" rel="noopener noreferrer">
-        <span class="contact-label">Community</span>
-        <strong>Join the Discord</strong>
-        <p>Ask questions, follow release updates, and connect with the SafeScan QR community.</p>
-      </a>
-      <a class="contact-card" href="{ADMIN_EMAIL_GMAIL_COMPOSE_URL}" target="_blank" rel="noopener noreferrer">
-        <span class="contact-label">Email</span>
-        <strong>{ADMIN_EMAIL}</strong>
-        <p>Best for account, privacy, partnership, and general support questions.</p>
-      </a>
-      <a class="contact-card" href="/legal/security">
-        <span class="contact-label">Security</span>
-        <strong>Report a vulnerability</strong>
-        <p>Send affected routes, reproduction steps, and potential impact so we can investigate quickly.</p>
-      </a>
-      <a class="contact-card" href="https://github.com/Sammy12357/SafeScan-QR" target="_blank" rel="noopener noreferrer">
-        <span class="contact-label">Code</span>
-        <strong>GitHub</strong>
-        <p>View the project repository and track public development.</p>
-      </a>
-    </div>
-
-    <p class="contact-note">For privacy rights requests, use the <a href="/legal/data-request">Data Request portal</a>. For sale/sharing opt-outs, use <a href="/legal/do-not-sell">Do Not Sell or Share</a>.</p>
-    """
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Contact", body))
+    return templates.TemplateResponse("legal_page.html", legal_context(
+        request, "Contact", content_template="legal/contact_body.html",
+        email_compose_url=ADMIN_EMAIL_GMAIL_COMPOSE_URL,
+    ))
 
 @qr_app.get("/product/install", response_class=HTMLResponse)
 async def product_install(request: Request):
     body = "<h2>Install</h2><p>SafeScan QR is currently available as a web demo. iOS, Android, and Solana Mobile distribution are planned after the hackathon MVP.</p>"
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Install", body))
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Install", Markup(body)))
 
 @qr_app.get("/product/getting-started", response_class=HTMLResponse)
 async def product_getting_started(request: Request):
     body = "<h2>Getting Started</h2><p>Sign in, connect a wallet for airdrop tracking, then scan or paste a QR payload to see the SafeScan risk verdict and signal breakdown.</p>"
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Getting Started", body))
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Getting Started", Markup(body)))
 
 @qr_app.get("/risk-engine", response_class=HTMLResponse)
 async def risk_engine_page(request: Request):
@@ -423,81 +389,30 @@ async def risk_engine_page(request: Request):
     <h2>Privacy and limits</h2>
     <p>URL payloads may be sent to configured reputation providers. SafeScan shows what checks completed, but a URL with no known threat match can still be harmful or change after the scan. Verify important links, wallet prompts, and payment recipients independently.</p>
     """
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Risk Engine", body))
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Risk Engine", Markup(body)))
 
 @qr_app.get("/product/wedges", response_class=HTMLResponse)
 async def product_wedges(request: Request):
     body = "<h2>Wedges</h2><p>SafeScan starts with consumer QR safety, expands into Solana Mobile distribution, and grows into a threat-intelligence API for wallets, dApps, and payment providers.</p>"
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Wedges", body))
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Wedges", Markup(body)))
 
 @qr_app.get("/product/pricing", response_class=HTMLResponse)
 async def product_pricing(request: Request):
     body = "<h2>Pricing</h2><p>The SafeScan QR public demo is free during the hackathon. Alpha premium access is $1/mo for early API docs, endpoint access, and merchant QR safety workflows.</p><p><a class='primary-button' href='/pay/alpha'>Pay Now</a></p>"
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Pricing", body))
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Pricing", Markup(body)))
 
 @qr_app.get("/pay/alpha", response_class=HTMLResponse)
 async def alpha_payment_page(request: Request):
     expire_alpha_subscriptions()
     user = get_session_user(request)
     stripe_url = alpha_stripe_checkout_url(request)
-    stripe_button = (
-        f"<a class='primary-button payment-button stripe-payment-button' style='color:#000 !important;-webkit-text-fill-color:#000;text-shadow:none;' href='{stripe_url}' target='_blank' rel='noopener noreferrer'>Pay by card with Stripe</a>"
-        if stripe_url else
-        "<a class='secondary-button payment-button' href='/login?next=%2Fpay%2Falpha'>Sign in to pay by card</a>"
-        if not user else
-        "<span class='secondary-button payment-button payment-disabled'>Stripe checkout not configured</span>"
-    )
     solana_url = alpha_solana_pay_url(request)
     solana_quote = alpha_solana_quote_for_user(user) if user and solana_url else None
-    solana_verify = (
-        f"""<form action="/pay/alpha/solana/verify" method="post">
-          <input type="hidden" name="csrf_token" value="{request.state.csrf_token}">
-          <button class="secondary-button payment-button" type="submit">Verify Solana payment</button>
-        </form>"""
-        if solana_url and user else
-        "<p class='payment-note'>Sign in before paying with Solana so SafeScan can attach the payment to your account.</p>"
-    )
-    solana_button = (
-        f"<a class='secondary-button payment-button' href='{solana_url}'>Pay with Solana</a>"
-        if solana_url else
-        "<a class='secondary-button payment-button' href='/login?next=%2Fpay%2Falpha'>Sign in to pay with Solana</a>"
-        if not user else
-        "<span class='secondary-button payment-button payment-disabled'>Solana Pay not configured</span>"
-    )
-    solana_note = (
-        (
-            f"<p class='payment-note'>Quote: ${solana_quote['amountUsd']} = {solana_quote['amountSol']} SOL"
-            + (f" at ${solana_quote['solUsdPrice']}/SOL" if solana_quote.get("solUsdPrice") else " using fallback SOL pricing")
-            + f". Valid until {solana_quote['quoteExpiresAt']}.</p>"
-            + f"<p class='payment-note'>Solana payment recipient: <code>{ALPHA_SOLANA_RECIPIENT}</code></p>"
-        )
-        if solana_quote else
-        "<p class='payment-note'>Sign in to receive a payment quote.</p>"
-        if not user else
-        f"<p class='payment-note'>Solana payment recipient: <code>{ALPHA_SOLANA_RECIPIENT}</code></p>"
-        if ALPHA_SOLANA_RECIPIENT else
-        "<p class='payment-note'>Add ALPHA_SOLANA_RECIPIENT in Render to enable wallet checkout.</p>"
-    )
-    body = f"""
-    <h2>Alpha Premium</h2>
-    <p>Pay $1/mo for Alpha access to Go Ghost privacy cleanup, SafeScan QR premium API docs, risk scoring endpoints, and merchant QR safety workflows.</p>
-    <div class="payment-panel">
-      <div class="payment-option">
-        <p class="eyebrow">Card</p>
-        <h3>Stripe checkout</h3>
-        <p>Use this for credit card and subscription billing.</p>
-        {stripe_button}
-      </div>
-      <div class="payment-option payment-option-wallet">
-        <h3>Wallet payment</h3>
-        <p>Use this for a Solana Pay transfer, then verify it on-chain to activate Alpha access.</p>
-        {solana_button}
-        {solana_verify}
-        {solana_note}
-      </div>
-    </div>
-    """
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Alpha Payment", body))
+    return templates.TemplateResponse("legal_page.html", legal_context(
+        request, "Alpha Payment", content_template="legal/alpha_payment_body.html",
+        user=user, stripe_url=stripe_url, solana_url=solana_url,
+        solana_quote=solana_quote, solana_recipient=ALPHA_SOLANA_RECIPIENT,
+    ))
 
 @qr_app.post("/pay/alpha/solana/verify", response_class=HTMLResponse, dependencies=[Depends(require_csrf_form)])
 async def alpha_solana_payment_verify(request: Request):
@@ -507,24 +422,21 @@ async def alpha_solana_payment_verify(request: Request):
         reference = quote_row["reference"] if quote_row else ""
         signature = verify_alpha_solana_payment(reference)
         if not signature:
-            body = """
-            <h2>Solana payment not found yet</h2>
-            <p>SafeScan could not find a finalized Solana payment for your payment reference yet. If you just paid, wait a moment and try verification again.</p>
-            <p><a class="primary-button payment-button" href="/pay/alpha">Back to Alpha payment</a></p>
-            """
-            return templates.TemplateResponse("legal_page.html", legal_context(request, "Solana Payment Pending", body), status_code=202)
+            return templates.TemplateResponse("legal_page.html", legal_context(
+                request, "Solana Payment Pending", content_template="legal/solana_payment_body.html",
+                payment_state="pending",
+            ), status_code=202)
         record = record_alpha_solana_subscription(user, reference, signature)
     except SafeScanError as exc:
-        body = f"<h2>Solana verification unavailable</h2><p>{escape_html(exc.args[0])}</p><p><a class='primary-button payment-button' href='/pay/alpha'>Back to Alpha payment</a></p>"
-        return templates.TemplateResponse("legal_page.html", legal_context(request, "Solana Payment Error", body), status_code=exc.status_code)
+        return templates.TemplateResponse("legal_page.html", legal_context(
+            request, "Solana Payment Error", content_template="legal/solana_payment_body.html",
+            payment_state="error", error_message=exc.args[0],
+        ), status_code=exc.status_code)
 
-    body = f"""
-    <h2>Solana payment verified</h2>
-    <p>Alpha access is active for {record['email']} until {record['expires_at']}.</p>
-    <p class="payment-note">Transaction signature: <code>{record['signature']}</code></p>
-    <p><a class="primary-button payment-button" href="/resources/docs">Open docs</a></p>
-    """
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Solana Payment Verified", body))
+    return templates.TemplateResponse("legal_page.html", legal_context(
+        request, "Solana Payment Verified", content_template="legal/solana_payment_body.html",
+        payment_state="verified", payment_record=record,
+    ))
 
 @qr_app.post("/webhooks/stripe")
 async def stripe_webhook(request: Request):
@@ -540,40 +452,25 @@ async def stripe_webhook(request: Request):
 @qr_app.get("/pay/alpha/success", response_class=HTMLResponse)
 async def alpha_payment_success_page(request: Request):
     expire_alpha_subscriptions()
-    body = f"""
-    <h2>Alpha payment pending</h2>
-    <p>SafeScan is waiting for payment confirmation from Stripe. Visiting this page does not activate access.</p>
-    <div class="payment-panel">
-      <div>
-        <p class="eyebrow">Next step</p>
-        <h3>Activate access</h3>
-        <p>Email your Stripe receipt or Solana transaction signature to <a href="mailto:{ADMIN_EMAIL}">{ADMIN_EMAIL}</a>. Include the email you use to sign in to SafeScan.</p>
-      </div>
-      <div>
-        <p class="eyebrow">Alpha docs</p>
-        <h3>Continue to docs</h3>
-        <p>Review the current Alpha docs while access is activated.</p>
-        <a class="primary-button payment-button" href="/resources/docs">Open docs</a>
-      </div>
-    </div>
-    <p class="payment-note">A verified Stripe webhook updates subscription access after payment, renewal, cancellation, or period-end expiration.</p>
-    """
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Alpha Payment Success", body))
+    return templates.TemplateResponse("legal_page.html", legal_context(
+        request, "Alpha Payment Pending", content_template="legal/alpha_success_body.html",
+        admin_email=ADMIN_EMAIL,
+    ))
 
 @qr_app.get("/resources/docs", response_class=HTMLResponse)
 async def resources_docs(request: Request):
     body = "<h2>Docs</h2><p>SafeScan docs will cover QR scanning, risk signals, reputation checks, wallet-pattern detection, and API usage.</p>"
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Docs", body))
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Docs", Markup(body)))
 
 @qr_app.get("/resources/architecture", response_class=HTMLResponse)
 async def resources_architecture(request: Request):
     body = "<h2>Architecture</h2><p>The risk engine pipeline normalizes QR payloads, checks domain intelligence, traces redirects, runs reputation lookups, matches crypto risk patterns, and merges signals into a verdict.</p>"
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Architecture", body))
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Architecture", Markup(body)))
 
 @qr_app.get("/resources/roadmap", response_class=HTMLResponse)
 async def resources_roadmap(request: Request):
     body = "<h2>Roadmap</h2><p>Next milestones: waitlist, mobile beta, Solana dApp Store submission, wallet integrations, threat-intelligence API, and expanded abuse reporting.</p>"
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Roadmap", body))
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Roadmap", Markup(body)))
 
 @qr_app.get("/tokenomics", response_class=HTMLResponse)
 async def tokenomics_page(request: Request):
@@ -667,23 +564,13 @@ async def tokenomics_page(request: Request):
     <h2>Disclaimer</h2>
     <p>$SQR is a proposed utility design for the SafeScan QR ecosystem. Features, launch timing, access rules, and allocation categories may change. Nothing on this page is a promise of token value, profit, availability, or eligibility.</p>
     """
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "$SQR Tokenomics", body))
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "$SQR Tokenomics", Markup(body)))
 
 @qr_app.get("/legal/do-not-sell", response_class=HTMLResponse)
 async def do_not_sell(request: Request):
-    body = f"""
-    <h2>Do Not Sell or Share My Personal Information</h2>
-    <p>SafeScan does not sell personal information and does not use advertising networks. California residents can still submit a formal opt-out of sale/sharing or cross-context behavioral advertising.</p>
-    <form class="legal-form" action="/legal/data-request" method="post">
-      <input type="hidden" name="csrf_token" value="{request.state.csrf_token}">
-      <input type="hidden" name="request_type" value="do_not_sell">
-      <input type="hidden" name="region" value="California">
-      <label>Email <input type="email" name="email" required placeholder="you@example.com"></label>
-      <label>Details <textarea name="details" rows="4">I opt out of sale or sharing of my personal information.</textarea></label>
-      <button class="primary-button" type="submit">Submit opt-out</button>
-    </form>
-    """
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Do Not Sell or Share", body))
+    return templates.TemplateResponse("legal_page.html", legal_context(
+        request, "Do Not Sell or Share", content_template="legal/do_not_sell_body.html",
+    ))
 
 @qr_app.get("/legal/data-request", response_class=HTMLResponse)
 async def data_request_page(request: Request, email: str = Query("")):
@@ -739,7 +626,14 @@ async def log_consent(request: Request, payload: dict = Body(...)):
     rate_limited = enforce_rate_limit(request, "consent", 10, 60 * 60)
     if rate_limited:
         return rate_limited
+    validate_strict_payload(payload, {"consentType", "bannerVersion"})
     consent_type = payload.get("consentType", "essential_only")
+    if not isinstance(consent_type, str) or consent_type not in {"all", "essential_only"}:
+        raise SafeScanError("Invalid consent choice.", 400)
+    banner_version = payload.get("bannerVersion", "consent-v1")
+    if (not isinstance(banner_version, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,40}", banner_version)):
+        raise SafeScanError("Invalid banner version.", 400)
+    user = get_session_user(request)
     consent_given = consent_type != "essential_only"
     now = datetime.utcnow()
     consent_id = make_id("consent")
@@ -748,14 +642,14 @@ async def log_consent(request: Request, payload: dict = Body(...)):
             "INSERT INTO consent_logs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 consent_id,
-                payload.get("userId"),
+                user.get("google_id") if user else None,
                 hash_ip(request_ip(request)),
                 int(consent_given),
                 consent_type,
-                payload.get("bannerVersion", "consent-v1"),
+                banner_version,
                 now.isoformat() + "Z",
-                request.headers.get("user-agent", ""),
-                locale_from_request(request),
+                request.headers.get("user-agent", "")[:256],
+                locale_from_request(request)[:35],
                 (now + timedelta(days=365)).isoformat() + "Z"
             )
         )
@@ -768,10 +662,10 @@ async def consent_log(request: Request, secret: str = Query("")):
         conn.row_factory = sqlite3.Row
         rows = [dict(row) for row in conn.execute("SELECT * FROM consent_logs ORDER BY timestamp DESC LIMIT 200")]
     audit_log("admin.view_logs", request=request, actor_user_id=admin_user.get("google_id"), target_type="consent_logs")
-    body = "<table class='legal-table'><thead><tr><th>Time</th><th>User</th><th>Type</th><th>IP Hash</th><th>Locale</th></tr></thead><tbody>"
-    body += "".join(f"<tr><td>{row['timestamp']}</td><td>{row['user_id'] or ''}</td><td>{row['consent_type']}</td><td>{row['ip_hash'][:16]}...</td><td>{row['locale'] or ''}</td></tr>" for row in rows)
-    body += "</tbody></table>"
-    return templates.TemplateResponse("admin_table.html", {"request": request, "title": "Consent Log", "body_html": body, "message": ""})
+    return templates.TemplateResponse("admin_table.html", {
+        "request": request, "title": "Consent Log", "content_template": "admin/consent_log_body.html",
+        "rows": rows, "message": "",
+    })
 
 @qr_app.get("/admin/data-processing-log", response_class=HTMLResponse)
 async def data_processing_log(request: Request, secret: str = Query("")):
@@ -783,27 +677,19 @@ async def data_processing_log(request: Request, secret: str = Query("")):
         ("Consent records", "Compliance evidence", "Legal obligation", "Internal only", "5 years"),
         ("IP hash and user agent", "Fraud prevention", "Legitimate interest", "Render", "90 days unless tied to compliance record"),
     ]
-    body = "<table class='legal-table'><thead><tr><th>Data</th><th>Purpose</th><th>Legal Basis</th><th>Shared With</th><th>Retention</th></tr></thead><tbody>"
-    body += "".join(f"<tr><td>{a}</td><td>{b}</td><td>{c}</td><td>{d}</td><td>{e}</td></tr>" for a, b, c, d, e in categories)
-    body += "</tbody></table><p>CCPA/CPRA threshold note: full statutory obligations may apply once SafeScan reaches $25M annual revenue or processes data of 100,000+ California consumers; these rights are implemented voluntarily now for trust and readiness.</p>"
     audit_log("admin.view_logs", request=request, actor_user_id=admin_user.get("google_id"), target_type="data_processing_log")
-    return templates.TemplateResponse("admin_table.html", {"request": request, "title": "Data Processing Log", "body_html": body, "message": ""})
+    return templates.TemplateResponse("admin_table.html", {
+        "request": request, "title": "Data Processing Log",
+        "content_template": "admin/data_processing_body.html", "categories": categories, "message": "",
+    })
 
 @qr_app.get("/admin/report-breach", response_class=HTMLResponse)
 async def report_breach_form(request: Request, secret: str = Query("")):
     require_role_user(request, "admin")
-    body = f"""
-    <form class="legal-form" action="/admin/report-breach" method="post">
-      <input type="hidden" name="csrf_token" value="{request.state.csrf_token}">
-      <label>Breach discovery date <input name="discovery_date" required placeholder="2026-05-05T14:32:00Z"></label>
-      <label>Data categories affected <textarea name="data_categories" required rows="3"></textarea></label>
-      <label>Estimated users affected <input name="users_affected" required></label>
-      <label>Likely consequences <textarea name="likely_consequences" required rows="4"></textarea></label>
-      <label>Measures taken <textarea name="measures_taken" required rows="4"></textarea></label>
-      <button class="primary-button" type="submit">Generate breach template</button>
-    </form>
-    """
-    return templates.TemplateResponse("admin_table.html", {"request": request, "title": "Report Breach", "body_html": body, "message": ""})
+    return templates.TemplateResponse("admin_table.html", {
+        "request": request, "title": "Report Breach",
+        "content_template": "admin/breach_report_form.html", "message": "",
+    })
 
 @qr_app.post("/admin/report-breach", response_class=HTMLResponse, dependencies=[Depends(require_csrf_form)])
 async def report_breach(
@@ -821,8 +707,12 @@ async def report_breach(
     with get_conn() as conn:
         conn.execute("INSERT INTO breach_reports VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (report_id, discovery_date, data_categories, users_affected, likely_consequences, measures_taken, now, template))
     audit_log("admin.breach_report_created", request=request, actor_user_id=admin_user.get("google_id"), target_type="breach_report", target_id=report_id)
-    body = f"<h2>Breach Report {report_id}</h2><pre class='legal-json'>{template}</pre>"
-    return templates.TemplateResponse("admin_table.html", {"request": request, "title": "Breach Template", "body_html": body, "message": "Report logged. Connect email provider for live admin notifications."})
+    return templates.TemplateResponse("admin_table.html", {
+        "request": request, "title": "Breach Template",
+        "content_template": "admin/breach_template_body.html",
+        "report_id": report_id, "report_text": template,
+        "message": "Report logged. Connect email provider for live admin notifications.",
+    })
 
 @qr_app.get("/api/health")
 async def api_health():

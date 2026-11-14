@@ -6,7 +6,9 @@ import sqlite3
 import sys
 
 import pytest
-from fastapi.testclient import TestClient
+from fastapi.testclient import TestClient as RawTestClient
+
+from browser_client import BrowserTestClient as TestClient
 
 
 @pytest.fixture()
@@ -187,7 +189,7 @@ def test_provider_login_has_ten_per_fifteen_minutes_account_budget(quota_app):
 
 
 def test_mobile_login_shares_account_budget_with_web_login(quota_app):
-    _, client, _, monkeypatch = quota_app
+    app, client, _, monkeypatch = quota_app
     auth = importlib.import_module("hackabull.routes_scan_auth")
     monkeypatch.setattr(auth, "LOCAL_AUTH_ENABLED", False)
     monkeypatch.setenv("RENDER", "true")
@@ -198,11 +200,12 @@ def test_mobile_login_shares_account_budget_with_web_login(quota_app):
     monkeypatch.setattr(auth.id_token, "verify_oauth2_token", lambda *_: {
         "sub": "shared-sub", "email": "shared@example.com", "email_verified": True,
     })
+    mobile = RawTestClient(app.qr_app, base_url="https://testserver")
     for index in range(6, 11):
-        response = client.post("/auth/verify", json={"token": "valid"}, headers=edge_ip(index))
+        response = mobile.post("/auth/verify", json={"token": "valid"}, headers=edge_ip(index))
         assert response.status_code == 200
         assert "session" in response.json()
-    blocked = client.post("/auth/verify", json={"token": "valid"}, headers=edge_ip(11))
+    blocked = mobile.post("/auth/verify", json={"token": "valid"}, headers=edge_ip(11))
     assert_limited(blocked)
     assert blocked.headers["content-type"].startswith("application/json")
 

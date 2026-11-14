@@ -1,0 +1,14 @@
+{% if payment_state == 'pending' %}
+  <h2>Solana payment not found yet</h2>
+  <p>SafeScan could not find a confirmed Solana payment for your payment reference yet. If you just paid, wait a few seconds and try verification again.</p>
+  <p><a class="primary-button payment-button" href="/pay/alpha">Back to Alpha payment</a></p>
+{% elif payment_state == 'error' %}
+  <h2>Solana verification unavailable</h2>
+  <p>{{ error_message }}</p>
+  <p><a class="primary-button payment-button" href="/pay/alpha">Back to Alpha payment</a></p>
+{% elif payment_state == 'verified' %}
+  <h2>Solana payment verified</h2>
+  <p>Alpha access is active for {{ payment_record.email }} until {{ payment_record.expires_at }}.</p>
+  <p class="payment-note">Transaction signature: <code>{{ payment_record.signature }}</code></p>
+  <p><a class="primary-button payment-button" href="/resources/docs">Open docs</a></p>
+{% endif %}
