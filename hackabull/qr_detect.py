@@ -59,8 +59,6 @@ from .qr_image import ml_signal_from_result
 from .redirects import inspect_redirects
 from .reputation import check_url_reputation
 from .reputation import threat_type_for_analysis
-from .request_helpers import get_cached_result
-from .request_helpers import save_to_cache
 from .scoring import clamp_score
 from .scoring import risk_from_score
 from .scoring import risk_reason
@@ -355,20 +353,8 @@ def analyze_url_payload(raw_payload):
     threat_class = "Safe Destination"
     reasons = []
 
-    cached_status = get_cached_result(normalized)
-    if cached_status:
-        return {
-            "status": cached_status,
-            "score": "95" if cached_status == "MALICIOUS" else "0",
-            "threat_class": "Phishing/Malware Risk" if cached_status == "MALICIOUS" else "Safe Destination",
-            "source": "Local Cache",
-            "normalized": normalized,
-            "payload_type": "URL",
-            "action_description": action_description,
-            "reputation": {"provider": "Local Cache", "status": cached_status, "matches": [], "detail": "Cached verdict from the last 24 hours."},
-            "reasons": [risk_reason("Cached reputation verdict", "high" if cached_status == "MALICIOUS" else "low", "This URL was recently scanned and reused from local cache.")]
-        }
-
+    # A stored SAFE verdict can be made stale by changing the destination
+    # after the first scan. Always run the live reputation and redirect checks.
     reputation = check_url_reputation(normalized)
     redirect_result = inspect_redirects(normalized)
     status = "MALICIOUS" if reputation["status"] == "MALICIOUS" else "SAFE"
@@ -416,7 +402,6 @@ def analyze_url_payload(raw_payload):
     if not reasons:
         reasons.append(risk_reason("No suspicious URL pattern detected", "low", "SafeScan did not find redirect, wallet-drainer, credential, or high-risk URL indicators."))
 
-    save_to_cache(normalized, status)
     return {
         "status": status,
         "score": str(min(score, 95)),

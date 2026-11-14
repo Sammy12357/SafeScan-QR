@@ -49,6 +49,7 @@ from storage import upload_bytes as storage_upload_bytes
 
 from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party
 import safescan_model_calibration as sm_calibration
+from .limits import RateLimitStore
 
 # =============================================================================
 # OPTIONAL PROMETHEUS METRICS
@@ -145,7 +146,7 @@ MAX_QR_UPLOAD_BYTES = int(os.getenv("MAX_QR_UPLOAD_BYTES", str(8 * 1024 * 1024))
 MAX_QR_PDF_PAGES = int(os.getenv("MAX_QR_PDF_PAGES", "5"))
 VALID_ROLES = ("user", "admin", "owner")
 VALID_STATUSES = ("active", "suspended", "deleted")
-RATE_LIMITS = {}
+RATE_LIMITS = RateLimitStore(max_buckets=4096)
 AIRDROP_BASE_ALLOCATION = int(os.getenv("SQR_BASE_ALLOCATION", "100"))
 WHOISXML_API_KEY = os.getenv("WHOISXML_API_KEY")
 SECURITYTRAILS_API_KEY = os.getenv("SECURITYTRAILS_API_KEY")
