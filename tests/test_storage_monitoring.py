@@ -75,6 +75,48 @@ def test_metrics_fail_closed_without_token(tmp_path, monkeypatch):
     assert client.get("/metrics", headers={"Authorization": "Bearer short"}).status_code == 403
 
 
+def test_metrics_use_bounded_route_labels_without_private_paths(tmp_path, monkeypatch):
+    _, client, _ = load_app(tmp_path, monkeypatch)
+    app_module = importlib.import_module("hackabull.app_module")
+
+    class MetricRecorder:
+        def __init__(self):
+            self.label_sets = []
+
+        def labels(self, **labels):
+            self.label_sets.append(labels)
+            return self
+
+        def inc(self):
+            return None
+
+        def observe(self, _duration):
+            return None
+
+    requests = MetricRecorder()
+    latencies = MetricRecorder()
+    monkeypatch.setattr(app_module, "REQUEST_COUNT", requests)
+    monkeypatch.setattr(app_module, "REQUEST_LATENCY", latencies)
+
+    private_email = "private-metrics-test@example.invalid"
+    client.get(f"/admin/users/{private_email}/drawer")
+    client.post("/api/go-ghost/removals/people", json={})
+    for number in range(25):
+        assert client.get(f"/missing-metrics-test/{number}").status_code == 404
+    client.request("UNUSUAL", "/health")
+
+    assert {labels["path"] for labels in requests.label_sets} == {
+        "/admin/users/{email}/drawer", "/api/go-ghost/removals/{broker}", "unmatched", "/health"
+    }
+    assert {labels["path"] for labels in latencies.label_sets} == {
+        labels["path"] for labels in requests.label_sets
+    }
+    assert sum(labels["path"] == "unmatched" and labels["status"] == "404"
+               for labels in requests.label_sets) == 25
+    assert any(labels["method"] == "OTHER" for labels in requests.label_sets)
+    assert private_email not in str(requests.label_sets)
+
+
 def test_provider_health_reports_status_without_configuration(tmp_path, monkeypatch):
     monkeypatch.delenv("GOOGLE_WEB_RISK_API_KEY", raising=False)
     monkeypatch.setenv("GOOGLE_SAFE_BROWSING_API_KEY", "legacy-secret-value")
