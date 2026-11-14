@@ -80,12 +80,18 @@ def test_production_page_keeps_manual_opt_out_controls(go_ghost_app):
     assert "Backend does" not in response.text
 
 
-def test_manual_opt_out_does_not_put_personal_details_in_broker_url():
+def test_manual_browser_ui_has_no_automation_button_or_personal_details_in_url():
     script = r"""
 const fs = require('fs');
 const vm = require('vm');
-const context = vm.createContext({document: {getElementById: () => null}, window: {}, URL});
+const elements = {goGhostBrokerList: {innerHTML: ''}, goGhostAutomationRows: {innerHTML: ''}};
+const context = vm.createContext({
+  document: {getElementById: id => elements[id] || null}, window: {}, URL,
+  readJsonStorage: (_key, fallback) => fallback, escapeHtml: value => String(value)
+});
 vm.runInContext(fs.readFileSync('static/app-go-ghost.js', 'utf8'), context);
+vm.runInContext(fs.readFileSync('static/app-go-ghost-ui.js', 'utf8'), context);
+vm.runInContext('renderGoGhostBrokers(); renderGoGhostAutomationScope();', context);
 const result = vm.runInContext(`({
   available: GO_GHOST_BROWSER_AUTOMATION_AVAILABLE,
   url: goGhostBrokerOptOutUrl({removalUrl: 'https://broker.example/optout'},
@@ -95,7 +101,11 @@ const result = vm.runInContext(`({
     {name: 'Example Person', email: 'person@example.com'}, 'https://broker.example/search')
 })`, context);
 if (result.available !== false || result.url !== 'https://broker.example/optout' ||
-    result.lane !== 'Manual' || !result.packet.includes('complete the request in your browser.')) {
+    result.lane !== 'Manual' || !result.packet.includes('complete the request in your browser.') ||
+    elements.goGhostBrokerList.innerHTML.includes('data-ghost-auto=') ||
+    !elements.goGhostBrokerList.innerHTML.includes('data-ghost-copy=') ||
+    !elements.goGhostBrokerList.innerHTML.includes('data-ghost-optout=') ||
+    !elements.goGhostAutomationRows.innerHTML.includes('Manual')) {
   process.exit(1);
 }
 """
