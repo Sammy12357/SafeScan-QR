@@ -294,6 +294,7 @@ function setGhostProgress(siteId, field, checked) {
   const progress = getGhostProgress();
   progress[siteId] = { ...(progress[siteId] || {}), [field]: checked, updatedAt: new Date().toISOString() };
   writeJsonStorage(GO_GHOST_PROGRESS_KEY, progress);
+  renderGoGhostAutomationScope();
   renderGoGhostProgress();
 }
 
@@ -307,6 +308,7 @@ function finishGhostBroker(siteId, detail = "No matching profile found.") {
     updatedAt: new Date().toISOString()
   };
   writeJsonStorage(GO_GHOST_PROGRESS_KEY, progress);
+  renderGoGhostAutomationScope();
   renderGoGhostProgress();
 }
 
@@ -314,6 +316,7 @@ function updateGhostAutomationState(siteId, automation) {
   const progress = getGhostProgress();
   progress[siteId] = { ...(progress[siteId] || {}), automation, updatedAt: new Date().toISOString() };
   writeJsonStorage(GO_GHOST_PROGRESS_KEY, progress);
+  renderGoGhostAutomationScope();
   renderGoGhostProgress();
 }
 
