@@ -140,7 +140,7 @@ function renderGoGhostProgress() {
 function renderGoGhostAutomationScope() {
   if (!goGhostAutomationRows) return;
   const progress = getGhostProgress();
-  goGhostAutomationRows.innerHTML = goGhostBrokers.slice(0, 8).map((broker) => {
+  goGhostAutomationRows.innerHTML = goGhostBrokers.map((broker) => {
     const lane = ghostEffortLane(broker);
     const state = progress[broker.id] || {};
     const automation = GO_GHOST_BROWSER_AUTOMATION_AVAILABLE ? state.automation : null;
