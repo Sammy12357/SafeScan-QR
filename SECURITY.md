@@ -44,7 +44,7 @@ The Phase 1 and Phase 4 camera changes are documented in [docs/qr-scanning.md](d
 - Admin session required: `GET /legal/consent-log`, `GET /admin/data-processing-log`, `GET /admin/report-breach`, `POST /admin/report-breach`.
 - Admin session required: `GET /admin`, `/admin/activity`, `/admin/users`, `/admin/scans`, `/admin/reports`, `/admin/risk-logs`, `/admin/airdrop`, `/admin/airdrop/fraud`, `/admin/airdrop/wallets`, `/admin/logs`.
 - Owner session required: `GET/POST /admin/api-keys`, `POST /admin/api-keys/{id}/revoke`, `GET /admin/settings`, `GET /admin/export/users`, owner role changes and deletes.
-- Admin session or valid `AIRDROP_ADMIN_SECRET`: `GET /trigger-airdrop-secret`.
+- Admin session with same-origin request or valid `X-Airdrop-Secret` header: `POST /trigger-airdrop-secret`.
 
 ## Audit-Logged Actions
 

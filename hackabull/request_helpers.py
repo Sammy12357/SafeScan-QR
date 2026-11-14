@@ -97,5 +97,8 @@ def is_california_locale_or_region(request: Request, region: str = ""):
     return region.lower() in ("ca", "california") or "california" in region.lower()
 
 def admin_authorized(secret):
-    return bool(AIRDROP_ADMIN_SECRET and secret == AIRDROP_ADMIN_SECRET)
+    return bool(
+        AIRDROP_ADMIN_SECRET and len(AIRDROP_ADMIN_SECRET) >= 32 and secret and
+        hmac.compare_digest(secret, AIRDROP_ADMIN_SECRET)
+    )
 

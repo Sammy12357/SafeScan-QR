@@ -188,3 +188,47 @@ def test_role_change_refuses_ambiguous_email(identity_app):
     assert _rows(database, "SELECT role FROM users WHERE email = 'shared@example.com'") == [
         {"role": "user"}, {"role": "user"}
     ]
+
+
+def test_airdrop_secret_never_appears_in_state_changing_get(identity_app, monkeypatch):
+    app, routes, _ = identity_app
+    account_routes = importlib.import_module("hackabull.routes_account")
+    monkeypatch.setattr(account_routes, "AIRDROP_ADMIN_SECRET", "s" * 32)
+    async def fake_sweep():
+        raise AssertionError("The test must not run an airdrop sweep")
+    monkeypatch.setattr(importlib.import_module("distribute"), "airdrop_sweep", fake_sweep)
+    client = TestClient(app.qr_app, base_url="https://testserver")
+
+    assert client.get("/trigger-airdrop-secret", params={"secret": "s" * 32}).status_code == 405
+    assert client.post("/trigger-airdrop-secret", params={"secret": "s" * 32}).status_code == 403
+
+
+def test_airdrop_admin_post_requires_same_origin(identity_app):
+    app, routes, database = identity_app
+    owner = TestClient(app.qr_app, base_url="https://testserver")
+    assert owner.post(
+        "/auth/register", data={"email": "operator@example.com", "password": "password123"},
+        follow_redirects=False,
+    ).status_code == 303
+    with sqlite3.connect(database) as conn:
+        conn.execute("UPDATE users SET role = 'owner' WHERE email = 'operator@example.com'")
+
+    assert owner.post("/trigger-airdrop-secret").status_code == 403
+
+
+def test_airdrop_header_secret_allows_one_post_without_browser_cookie(identity_app, monkeypatch):
+    app, routes, _ = identity_app
+    account_routes = importlib.import_module("hackabull.routes_account")
+    monkeypatch.setattr(account_routes, "AIRDROP_ADMIN_SECRET", "s" * 32)
+    calls = []
+    async def fake_sweep():
+        calls.append(True)
+        return {"status": "dry_run", "eligible": 0, "sent": [], "total_tokens_sent": 0}
+    monkeypatch.setattr(importlib.import_module("distribute"), "airdrop_sweep", fake_sweep)
+    client = TestClient(app.qr_app, base_url="https://testserver")
+
+    assert client.post("/trigger-airdrop-secret", headers={"X-Airdrop-Secret": "wrong"}).status_code == 403
+    allowed = client.post("/trigger-airdrop-secret", headers={"X-Airdrop-Secret": "s" * 32})
+
+    assert allowed.status_code == 200
+    assert calls == [True]
