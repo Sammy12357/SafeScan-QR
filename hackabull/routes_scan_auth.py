@@ -126,8 +126,13 @@ async def scan_qr(
     device_fingerprint: str = Form(""),
     file: UploadFile = File(None),
     manual_url: str = Form(None),
-    template_variant: str = Form("")
+    template_variant: str = Form(""),
+    capture_source: str = Form("")
 ):
+    if capture_source not in ("", "camera_frame"):
+        raise SafeScanError("Invalid scan source.", 400)
+    if capture_source == "camera_frame" and (not file or not file.filename or manual_url):
+        raise SafeScanError("A camera frame must be sent as an image file.", 400)
     user = get_session_user(request)
     user_email = user["email"] if user else ""
     test_site = template_variant in ("main_site", "test_site")
@@ -141,6 +146,8 @@ async def scan_qr(
     if manual_url and manual_url.strip():
         url_qr = manual_url
     elif file and file.filename:
+        # Camera frames are decoded from this request only. Do not add a
+        # storage artifact here, even for an authenticated scanner.
         contents = await file.read()
         if len(contents) > MAX_QR_UPLOAD_BYTES:
             return templates.TemplateResponse("index.html", {
@@ -213,7 +220,7 @@ async def scan_qr(
         # the same owner identity across scans and later cleanup migrations.
         stored_reference = scan_storage_reference(url_qr, user_email, payload_type)
         run_fraud_checks("scan", user_email, request, {"url": stored_reference, "deviceFingerprint": device_fingerprint})
-    audit_log("qr.scanned", request=request, actor_user_id=user.get("google_id") if user else None, target_type="scan", metadata={"counted": counted, "payloadType": payload_type, "guest": not bool(user_email)})
+    audit_log("qr.scanned", request=request, actor_user_id=user.get("google_id") if user else None, target_type="scan", metadata={"counted": counted, "payloadType": payload_type, "guest": not bool(user_email), "cameraFrame": capture_source == "camera_frame"})
 
     result_response = templates.TemplateResponse("index.html", {
         "request": request, "logged_in": True, "results_visible": True,

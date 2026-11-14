@@ -6,6 +6,7 @@ import io
 import json
 import sqlite3
 import sys
+import time
 from html import escape
 
 import qrcode
@@ -60,6 +61,82 @@ def test_guest_uploaded_authenticator_secret_is_not_retained(tmp_path, monkeypat
     assert rows(db_path, "upload_artifacts") == []
     assert rows(db_path, "scan_history") == []
     assert_secret_absent_from_disk(tmp_path, secret)
+
+
+def test_guest_camera_frame_is_decoded_without_retaining_image(tmp_path, monkeypatch):
+    _, client, db_path = load_app(tmp_path, monkeypatch)
+    secret = "CAMERA_GUEST_TOTP_2946"
+    payload = f"otpauth://totp/Example:guest?secret={secret}&issuer=Example"
+
+    response = client.post(
+        "/search_qr_api",
+        data={"capture_source": "camera_frame"},
+        files={"file": ("camera.jpg", qr_png(payload), "image/jpeg")},
+    )
+
+    assert response.status_code == 200
+    assert secret in response.text
+    assert response.headers["cache-control"] == "no-store"
+    assert rows(db_path, "upload_artifacts") == []
+    assert rows(db_path, "scan_history") == []
+    assert_secret_absent_from_disk(tmp_path, secret)
+
+
+def test_large_camera_frame_stays_in_memory_without_temp_spool(tmp_path, monkeypatch):
+    _, client, db_path = load_app(tmp_path, monkeypatch)
+    import starlette.formparsers as formparsers
+
+    def reject_spool(_self):
+        raise AssertionError("QR camera frame spilled to disk")
+
+    monkeypatch.setattr(formparsers.SpooledTemporaryFile, "rollover", reject_spool)
+    # The decoder is irrelevant to this parser/storage check. A 1.5 MiB
+    # frame crosses Starlette's old 1 MiB disk-spool threshold.
+    route = sys.modules["hackabull.routes_scan_auth"]
+    monkeypatch.setattr(route, "decode_qr_upload", lambda *_args: ("WIFI:T:WPA;S:Cafe;P:camera-test;;", None))
+    frame = b"camera-test-frame" + b"x" * (1_500_000 - len("camera-test-frame"))
+    response = client.post(
+        "/search_qr_api",
+        data={"capture_source": "camera_frame"},
+        files={"file": ("camera.jpg", frame, "image/jpeg")},
+    )
+
+    assert response.status_code == 200
+    assert rows(db_path, "upload_artifacts") == []
+
+
+def test_camera_upload_bounds_and_global_budget_cannot_use_forged_xff(tmp_path, monkeypatch):
+    module, client, _ = load_app(tmp_path, monkeypatch)
+    app_module = sys.modules["hackabull.app_module"]
+    too_large = client.post(
+        "/search_qr_api",
+        content=b"x" * (app_module.QR_REQUEST_BODY_LIMIT + 1),
+        headers={"content-type": "application/octet-stream"},
+    )
+    assert too_large.status_code == 413
+    assert too_large.headers["cache-control"] == "no-store"
+
+    streamed = client.post(
+        "/search_qr_api",
+        content=(b"x" * 500_000 for _ in range(18)),
+        headers={"content-type": "application/octet-stream"},
+    )
+    assert streamed.status_code == 413
+
+    module.RATE_LIMITS["qr_upload_global:all"] = [time.time()] * 180
+    blocked = client.post(
+        "/search_qr_api",
+        data={"manual_url": "https://example.com"},
+        headers={"x-forwarded-for": "198.51.100.77", "cf-connecting-ip": "198.51.100.88"},
+    )
+    assert blocked.status_code == 429
+    assert blocked.headers["cache-control"] == "no-store"
+
+
+def test_camera_source_requires_a_file(tmp_path, monkeypatch):
+    _, client, _ = load_app(tmp_path, monkeypatch)
+    response = client.post("/search_qr_api", data={"capture_source": "camera_frame"})
+    assert response.status_code == 400
 
 
 def test_ml_cache_rejects_private_qr_keys(tmp_path, monkeypatch):

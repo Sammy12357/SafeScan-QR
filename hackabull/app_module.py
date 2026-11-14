@@ -27,6 +27,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.formparsers import MultiPartParser
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 import os
@@ -56,6 +57,7 @@ from .auth import get_session_user
 from .config import ACTIVE_SCANS
 from .config import ALLOWED_ORIGINS
 from .config import CONTENT_TYPE_LATEST
+from .config import MAX_QR_UPLOAD_BYTES
 from .config import REMEMBER_ME_COOKIE_NAME
 from .config import REQUEST_COUNT
 from .config import REQUEST_LATENCY
@@ -128,6 +130,13 @@ async def metrics(request: Request):
 
 mimetypes.add_type("application/wasm", ".wasm")
 qr_app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Keep bounded QR uploads in memory instead of Starlette's default 1 MiB
+# disk-backed spool. These are the site's only UploadFile routes.
+QR_MULTIPART_OVERHEAD_BYTES = 64 * 1024
+QR_REQUEST_BODY_LIMIT = MAX_QR_UPLOAD_BYTES + QR_MULTIPART_OVERHEAD_BYTES
+MultiPartParser.spool_max_size = QR_REQUEST_BODY_LIMIT + 1
+QR_REQUEST_SLOTS = asyncio.Semaphore(3)
 
 qr_app.add_middleware(
     CORSMiddleware,
@@ -234,7 +243,7 @@ def apply_security_headers(request: Request, response):
         del response.headers["Server"]
     if "X-Powered-By" in response.headers:
         del response.headers["X-Powered-By"]
-    if request.url.path.startswith("/api/"):
+    if request.url.path.startswith("/api/") or request.url.path == "/search_qr_api":
         response.headers["Cache-Control"] = "no-store"
         response.headers["Pragma"] = "no-cache"
     elif request.url.path.startswith("/static/") and response.status_code == 200:
@@ -275,6 +284,38 @@ async def start_wallet_nonce_cleanup():
 @qr_app.middleware("http")
 async def security_headers_and_rate_limits(request: Request, call_next):
     path = request.url.path
+    if request.method == "POST" and path in ("/search_qr_api", "/api/scan/file"):
+        # A process-wide budget cannot be bypassed with forged proxy headers.
+        # It applies to guests before multipart parsing and CPU decoding.
+        scan_limit = enforce_rate_limit(request, "qr_upload_global", 180, 15 * 60, user_key="all")
+        if scan_limit:
+            return apply_security_headers(request, scan_limit)
+        raw_length = request.headers.get("content-length")
+        if raw_length:
+            try:
+                declared_length = int(raw_length)
+            except ValueError:
+                declared_length = -1
+            if declared_length < 0 or declared_length > QR_REQUEST_BODY_LIMIT:
+                return apply_security_headers(request, JSONResponse({"error": "QR scan request is too large."}, status_code=413))
+        try:
+            await asyncio.wait_for(QR_REQUEST_SLOTS.acquire(), timeout=2.0)
+        except asyncio.TimeoutError:
+            return apply_security_headers(request, JSONResponse({"error": "Scanner is busy. Please retry."}, status_code=503))
+        try:
+            # Content-Length is optional and untrusted. Bound actual streamed
+            # bytes before FastAPI's Form/File dependencies parse the body.
+            chunks = []
+            received = 0
+            async for chunk in request.stream():
+                received += len(chunk)
+                if received > QR_REQUEST_BODY_LIMIT:
+                    return apply_security_headers(request, JSONResponse({"error": "QR scan request is too large."}, status_code=413))
+                chunks.append(chunk)
+            request._body = b"".join(chunks)
+            return await call_next(request)
+        finally:
+            QR_REQUEST_SLOTS.release()
     if not path.startswith("/static/"):
         public_limit = enforce_rate_limit(request, "public", 300, 15 * 60)
         if public_limit:
