@@ -4,7 +4,7 @@
   <section class="footer-newsletter" aria-labelledby="footerNewsletterTitle">
     <h2 id="footerNewsletterTitle">Stay in the loop</h2>
     <p>One tight email when SafeScan ships mobile beta, Solana dApp Store updates, and new risk-engine releases. No sales spam.</p>
-    <form class="footer-newsletter-form" action="/waitlist" method="post">
+    <form class="footer-newsletter-form" action="/waitlist" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
       <input type="email" name="email" placeholder="you@example.com" aria-label="Email address" required>
       <button type="submit">Notify me</button>
     </form>

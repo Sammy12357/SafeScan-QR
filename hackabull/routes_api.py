@@ -21,7 +21,7 @@ from urllib.parse import quote, urlencode, urljoin, urlparse, parse_qsl
 from datetime import datetime, timedelta, timezone
 from xml.etree import ElementTree
 
-from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body, HTTPException
+from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body, HTTPException, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
@@ -60,6 +60,7 @@ from .audit import now_iso
 from .auth import get_session_user
 from .auth import require_role_user
 from .auth import require_user
+from .csrf import require_csrf_form
 from .config import APP_STARTED_AT
 from .config import APP_URL
 from .config import MAX_QR_UPLOAD_BYTES
@@ -137,7 +138,7 @@ async def api_scan(request: Request, response: Response, payload: dict = Body(..
     response.headers["Pragma"] = "no-cache"
     return await analyze_and_record_scan(request, user, raw_payload, request.headers.get("x-device-fingerprint", ""))
 
-@qr_app.post("/api/scan/file")
+@qr_app.post("/api/scan/file", dependencies=[Depends(require_csrf_form)])
 async def api_scan_file(request: Request, response: Response, file: UploadFile = File(...)):
     user = require_user(request)
     # Text and file scans are one signed-in scan budget.

@@ -3,6 +3,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <meta name="csrf-token" content="{{ csrf_token() if csrf_token is defined else '' }}">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
@@ -34,7 +35,7 @@
         </article>
       </div>
 
-      <form class="legal-form" action="/legal/data-request" method="post">
+      <form class="legal-form" action="/legal/data-request" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
         <label>Email
           <input type="email" name="email" required placeholder="you@example.com" value="{{ email | default('') }}">
         </label>

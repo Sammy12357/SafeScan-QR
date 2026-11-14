@@ -2,12 +2,25 @@
 
 import asyncio
 import importlib
+import re
 import sys
 import threading
 import time
 
 import httpx
 import pytest
+
+
+async def browser_post(client, path, *, data=None, files=None):
+    page = await client.get("/")
+    token = re.search(r'<meta name="csrf-token" content="([a-f0-9]{64})"', page.text)
+    assert token
+    return await client.post(
+        path,
+        data={**(data or {}), "csrf_token": token.group(1)},
+        files=files,
+        headers={"Origin": "https://testserver"},
+    )
 
 
 @pytest.fixture()
@@ -58,13 +71,13 @@ def test_both_upload_routes_share_the_decode_concurrency_limit(scan_app, monkeyp
         async with httpx.AsyncClient(transport=first_transport, base_url="https://testserver") as first, \
                 httpx.AsyncClient(transport=second_transport, base_url="https://testserver") as second:
             for client, email in ((first, "first@example.com"), (second, "second@example.com")):
-                account = await client.post("/auth/register", data={"email": email, "password": "password123"})
+                account = await browser_post(client, "/auth/register", data={"email": email, "password": "password123"})
                 assert account.status_code in (200, 303)
             requests = [
-                client.post("/search_qr_api", files={"file": ("frame.png", b"x", "image/png")})
+                browser_post(client, "/search_qr_api", files={"file": ("frame.png", b"x", "image/png")})
                 for client in (first, second)
             ] + [
-                client.post("/api/scan/file", files={"file": ("frame.png", b"x", "image/png")})
+                browser_post(client, "/api/scan/file", files={"file": ("frame.png", b"x", "image/png")})
                 for client in (first, second)
             ]
             return await asyncio.gather(*requests)
@@ -85,11 +98,11 @@ def test_both_upload_routes_bound_read_size_before_decoding(scan_app, monkeypatc
     async def run_requests():
         transport = httpx.ASGITransport(app=scan_app.qr_app)
         async with httpx.AsyncClient(transport=transport, base_url="https://testserver") as client:
-            account = await client.post("/auth/register", data={"email": "scanner@example.com", "password": "password123"})
+            account = await browser_post(client, "/auth/register", data={"email": "scanner@example.com", "password": "password123"})
             assert account.status_code in (200, 303)
             file = {"file": ("too-large.png", b"x" * 17, "image/png")}
-            home = await client.post("/search_qr_api", files=file)
-            mobile = await client.post("/api/scan/file", files=file)
+            home = await browser_post(client, "/search_qr_api", files=file)
+            mobile = await browser_post(client, "/api/scan/file", files=file)
             return home, mobile
 
     home, mobile = asyncio.run(run_requests())

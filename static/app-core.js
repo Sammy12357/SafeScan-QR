@@ -447,7 +447,7 @@ async function verifySelectedWallet(wallet) {
 
     const nonceResponse = await fetch("/api/wallet/nonce", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content || "" },
       body: JSON.stringify({ walletAddress })
     });
     const nonceBody = await nonceResponse.json();
@@ -467,7 +467,7 @@ async function verifySelectedWallet(wallet) {
     showWalletModal("<h3>Verifying wallet</h3><p>SafeScan is checking the signature server-side...</p><div class='wallet-spinner'></div>");
     const verifyResponse = await fetch("/api/wallet/verify", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content || "" },
       body: JSON.stringify({ walletAddress, signature })
     });
     const verifyBody = await verifyResponse.json();
@@ -523,7 +523,7 @@ async function disconnectWalletConnection(wallet = null, options = {}) {
       await wallet.provider.disconnect();
     }
     if (profile?.walletAddress || profile?.walletVerified) {
-      const response = await fetch("/api/wallet", { method: "DELETE" });
+      const response = await fetch("/api/wallet", { method: "DELETE", headers: { "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content || "" } });
       let body = {};
       try {
         body = await response.json();

@@ -21,7 +21,7 @@ from urllib.parse import quote, urlencode, urljoin, urlparse, parse_qsl
 from datetime import datetime, timedelta, timezone
 from xml.etree import ElementTree
 
-from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body, HTTPException
+from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body, HTTPException, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
@@ -59,6 +59,7 @@ from .audit import now_iso
 from .auth import get_session_user
 from .auth import require_role_user
 from .auth import require_user
+from .csrf import require_csrf_form
 from .config import ADMIN_EMAIL
 from .config import ADMIN_EMAIL_GMAIL_COMPOSE_URL
 from .config import ALPHA_SOLANA_RECIPIENT
@@ -219,7 +220,7 @@ async def api_go_ghost_removal(request: Request, broker: str, payload: dict = Bo
 async def privacy_policy(request: Request):
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Privacy Policy", PRIVACY_POLICY_HTML))
 
-@qr_app.post("/waitlist", response_class=HTMLResponse)
+@qr_app.post("/waitlist", response_class=HTMLResponse, dependencies=[Depends(require_csrf_form)])
 async def waitlist_signup(request: Request, email: str = Form(...)):
     normalized_email = email.strip().lower()
     ip_rate_limit = enforce_rate_limit(request, "waitlist_ip", 3, 60 * 60)
@@ -449,7 +450,8 @@ async def alpha_payment_page(request: Request):
     solana_url = alpha_solana_pay_url(request)
     solana_quote = alpha_solana_quote_for_user(user) if user and solana_url else None
     solana_verify = (
-        """<form action="/pay/alpha/solana/verify" method="post">
+        f"""<form action="/pay/alpha/solana/verify" method="post">
+          <input type="hidden" name="csrf_token" value="{request.state.csrf_token}">
           <button class="secondary-button payment-button" type="submit">Verify Solana payment</button>
         </form>"""
         if solana_url and user else
@@ -497,7 +499,7 @@ async def alpha_payment_page(request: Request):
     """
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Alpha Payment", body))
 
-@qr_app.post("/pay/alpha/solana/verify", response_class=HTMLResponse)
+@qr_app.post("/pay/alpha/solana/verify", response_class=HTMLResponse, dependencies=[Depends(require_csrf_form)])
 async def alpha_solana_payment_verify(request: Request):
     user = require_user(request)
     try:
@@ -669,10 +671,11 @@ async def tokenomics_page(request: Request):
 
 @qr_app.get("/legal/do-not-sell", response_class=HTMLResponse)
 async def do_not_sell(request: Request):
-    body = """
+    body = f"""
     <h2>Do Not Sell or Share My Personal Information</h2>
     <p>SafeScan does not sell personal information and does not use advertising networks. California residents can still submit a formal opt-out of sale/sharing or cross-context behavioral advertising.</p>
     <form class="legal-form" action="/legal/data-request" method="post">
+      <input type="hidden" name="csrf_token" value="{request.state.csrf_token}">
       <input type="hidden" name="request_type" value="do_not_sell">
       <input type="hidden" name="region" value="California">
       <label>Email <input type="email" name="email" required placeholder="you@example.com"></label>
@@ -689,7 +692,7 @@ async def data_request_page(request: Request, email: str = Query("")):
         "version": LEGAL_VERSION, "last_updated": LEGAL_LAST_UPDATED
     })
 
-@qr_app.post("/legal/data-request", response_class=HTMLResponse)
+@qr_app.post("/legal/data-request", response_class=HTMLResponse, dependencies=[Depends(require_csrf_form)])
 async def submit_data_request(
     request: Request,
     email: str = Form(...),
@@ -789,8 +792,9 @@ async def data_processing_log(request: Request, secret: str = Query("")):
 @qr_app.get("/admin/report-breach", response_class=HTMLResponse)
 async def report_breach_form(request: Request, secret: str = Query("")):
     require_role_user(request, "admin")
-    body = """
+    body = f"""
     <form class="legal-form" action="/admin/report-breach" method="post">
+      <input type="hidden" name="csrf_token" value="{request.state.csrf_token}">
       <label>Breach discovery date <input name="discovery_date" required placeholder="2026-05-05T14:32:00Z"></label>
       <label>Data categories affected <textarea name="data_categories" required rows="3"></textarea></label>
       <label>Estimated users affected <input name="users_affected" required></label>
@@ -801,7 +805,7 @@ async def report_breach_form(request: Request, secret: str = Query("")):
     """
     return templates.TemplateResponse("admin_table.html", {"request": request, "title": "Report Breach", "body_html": body, "message": ""})
 
-@qr_app.post("/admin/report-breach", response_class=HTMLResponse)
+@qr_app.post("/admin/report-breach", response_class=HTMLResponse, dependencies=[Depends(require_csrf_form)])
 async def report_breach(
     request: Request,
     discovery_date: str = Form(...),

@@ -65,6 +65,13 @@ from .config import REQUEST_COUNT
 from .config import REQUEST_LATENCY
 from .config import SESSION_COOKIE_NAME
 from .config import generate_latest
+from .config import templates
+from .csrf import browser_csrf_required
+from .csrf import check_browser_origin
+from .csrf import csrf_token
+from .csrf import prepare_csrf_token
+from .csrf import require_csrf_header
+from .csrf import set_guest_csrf_cookie
 from .google_login import issue_google_login_challenge
 from .google_login import set_google_login_cookie
 from .provider_policy import reputation_configuration
@@ -161,6 +168,28 @@ qr_app.add_middleware(
     max_age=600,
 )
 
+templates.env.globals["csrf_token"] = csrf_token
+
+
+@qr_app.middleware("http")
+async def csrf_middleware(request: Request, call_next):
+    if request.method in {"GET", "HEAD"}:
+        if not request.url.path.startswith("/static/"):
+            prepare_csrf_token(request)
+    else:
+        prepare_csrf_token(request)
+        if browser_csrf_required(request):
+            try:
+                check_browser_origin(request)
+                content_type = request.headers.get("content-type", "").split(";", 1)[0].lower()
+                if content_type not in {"application/x-www-form-urlencoded", "multipart/form-data"}:
+                    require_csrf_header(request)
+            except HTTPException:
+                return JSONResponse({"error": "CSRF check failed."}, status_code=403)
+    response = await call_next(request)
+    set_guest_csrf_cookie(response, request)
+    return response
+
 @qr_app.middleware("http")
 async def google_login_challenge_middleware(request: Request, call_next):
     if (CLIENT_ID and request.method == "GET" and
@@ -225,6 +254,7 @@ async def remember_me_middleware(request: Request, call_next):
     if remembered_user:
         request.state.remembered_user = remembered_user
         session_id = create_session(remembered_user["google_id"], request)
+        request.state.remembered_session_id = session_id
         response = await call_next(request)
         set_session_cookie(response, session_id)
         set_remember_me_cookie(response, rotated_token)

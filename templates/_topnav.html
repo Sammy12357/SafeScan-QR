@@ -90,7 +90,7 @@
         <div class="sidenav-profile-actions">
           <a href="/profile" class="profile-button">Profile</a>
           {% if is_admin %}<a href="/admin" class="admin-dashboard-button">Admin dashboard</a>{% endif %}
-          <form class="sign-out-form" action="/auth/logout" method="post">
+          <form class="sign-out-form" action="/auth/logout" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
             <button class="sign-out-button" type="submit">Sign out</button>
           </form>
         </div>

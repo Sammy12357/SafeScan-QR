@@ -21,7 +21,7 @@ from urllib.parse import quote, urlencode, urljoin, urlparse, parse_qsl
 from datetime import datetime, timedelta, timezone
 from xml.etree import ElementTree
 
-from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body, HTTPException
+from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body, HTTPException, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
@@ -55,6 +55,7 @@ from .audit import now_iso
 from .auth import get_session_user
 from .auth import require_role_user
 from .auth import require_user
+from .csrf import require_csrf_form
 from .config import AIRDROP_ADMIN_SECRET
 from .config import APP_STARTED_AT
 from .csrf import require_same_origin_action
@@ -269,7 +270,7 @@ async def confirm_age_page(request: Request, email: str = Query(...), locale: st
         "request": request, "email": email, "locale": locale, "threshold": threshold, "blocked": False
     })
 
-@qr_app.post("/auth/confirm-age", response_class=HTMLResponse)
+@qr_app.post("/auth/confirm-age", response_class=HTMLResponse, dependencies=[Depends(require_csrf_form)])
 async def confirm_age_submit(
     request: Request,
     email: str = Form(...),
@@ -304,6 +305,7 @@ async def account_settings(request: Request, email: str = Query("")):
     <h2>Account Settings</h2>
     <p>Use this page to revoke non-essential consent with one click. This supports LGPD and general privacy readiness.</p>
     <form class="legal-form" action="/legal/data-request" method="post">
+      <input type="hidden" name="csrf_token" value="{request.state.csrf_token}">
       <input type="hidden" name="request_type" value="revoke_consent">
       <input type="hidden" name="region" value="">
       <input type="hidden" name="details" value="One-click consent revocation from account settings.">

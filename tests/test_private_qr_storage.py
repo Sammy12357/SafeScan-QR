@@ -11,7 +11,7 @@ import time
 from html import escape
 
 import qrcode
-from fastapi.testclient import TestClient
+from browser_client import BrowserTestClient as TestClient
 
 
 def load_app(tmp_path, monkeypatch):

@@ -127,7 +127,7 @@ blockReportButton?.addEventListener("click", async () => {
   try {
     const response = await fetch("/api/report", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content || "" },
       body: JSON.stringify({ url: payload, reason: "other" })
     });
     if (!response.ok) throw new Error(`Report request failed: ${response.status}`);
@@ -202,7 +202,7 @@ cookieConsentBanner?.addEventListener("click", async (event) => {
   try {
     const response = await fetch("/api/consent", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content || "" },
       body: JSON.stringify({ consentType, bannerVersion })
     });
     const body = await response.json();

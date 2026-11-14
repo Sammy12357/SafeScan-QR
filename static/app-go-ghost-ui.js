@@ -69,7 +69,7 @@ async function runGhostBrokerAutomation(broker, triggerButton) {
   try {
     const response = await fetch(`/api/go-ghost/removals/${encodeURIComponent(broker.id)}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content || "" },
       signal: controller.signal,
       body: JSON.stringify({
         name: profile.name,

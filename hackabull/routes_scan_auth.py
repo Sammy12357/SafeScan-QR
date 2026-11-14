@@ -72,6 +72,8 @@ from .auth import require_user
 from .auth import require_user_from_google_id
 from .auth0 import _decode_jwt_unverified
 from .auth0 import verify_auth0_id_token
+from .csrf import bind_csrf_to_new_session
+from .csrf import require_csrf_form
 from .config import APP_URL
 from .config import AUTH0_ISSUER
 from .config import CLIENT_ID
@@ -127,7 +129,7 @@ from .wallet import get_verified_wallet
 # =============================================================================
 # ROUTES — QR SCANNING & AUTHENTICATION (sign-in, logout, profile, scanning)
 # =============================================================================
-@qr_app.post("/search_qr_api", response_class=HTMLResponse)
+@qr_app.post("/search_qr_api", response_class=HTMLResponse, dependencies=[Depends(require_csrf_form)])
 async def scan_qr(
     request: Request,
     user_email: str = Form(""),
@@ -335,6 +337,7 @@ async def auth_google(
         if wants_remember_me(remember_me):
             issue_remember_me_cookie(response, google_id, request)
         return response
+    bind_csrf_to_new_session(request, session_id)
     response = templates.TemplateResponse("index.html", {
         "request": request, "logged_in": True, "results_visible": False,
         "email": user_email, "score": "0", "threat_class": "N/A",
@@ -442,13 +445,13 @@ async def _do_logout(request: Request):
     clear_remember_me_cookie(response)
     return response
 
-@qr_app.post("/auth/logout")
+@qr_app.post("/auth/logout", dependencies=[Depends(require_csrf_form)])
 async def logout_post(request: Request):
     return await _do_logout(request)
 
 @qr_app.get("/auth/logout")
 async def logout_get(request: Request):
-    return await _do_logout(request)
+    return templates.TemplateResponse("logout_confirm.html", {"request": request})
 
 @qr_app.get("/auth/discord")
 async def auth_discord_start(request: Request):
@@ -518,7 +521,7 @@ async def auth_discord_callback(request: Request, code: str = Query(""), state: 
               metadata={"discordId": discord_id, "guildMember": joined, "roleGranted": role_granted})
     return RedirectResponse("/profile", status_code=303)
 
-@qr_app.post("/auth/discord/unlink")
+@qr_app.post("/auth/discord/unlink", dependencies=[Depends(require_csrf_form)])
 async def auth_discord_unlink(request: Request):
     """Remove the stored Discord link (does not kick them from the server)."""
     user = require_user(request)
@@ -541,7 +544,7 @@ def require_local_auth_enabled():
         raise HTTPException(status_code=404, detail="Not found.")
 
 
-@qr_app.post("/auth/register", response_class=HTMLResponse, dependencies=[Depends(require_local_auth_enabled)])
+@qr_app.post("/auth/register", response_class=HTMLResponse, dependencies=[Depends(require_csrf_form), Depends(require_local_auth_enabled)])
 async def auth_register(request: Request, email: str = Form(...), password: str = Form(...), remember_me: str = Form("1"), next_url: str = Form("/", alias="next")):
     # Local credentials are disabled in production; retain a bounded budget
     # for developer and test runtimes where these routes remain available.
@@ -575,7 +578,7 @@ async def auth_register(request: Request, email: str = Form(...), password: str 
         issue_remember_me_cookie(response, lid, request)
     return response
 
-@qr_app.post("/auth/login", response_class=HTMLResponse, dependencies=[Depends(require_local_auth_enabled)])
+@qr_app.post("/auth/login", response_class=HTMLResponse, dependencies=[Depends(require_csrf_form), Depends(require_local_auth_enabled)])
 async def auth_login_local(request: Request, email: str = Form(...), password: str = Form(...), remember_me: str = Form("1"), next_url: str = Form("/", alias="next")):
     rate_limited = enforce_rate_limit(request, "login_ip", 5, 60)
     if rate_limited:
@@ -604,7 +607,7 @@ async def auth_login_local(request: Request, email: str = Form(...), password: s
         issue_remember_me_cookie(response, lid, request)
     return response
 
-@qr_app.post("/auth/dev-google")
+@qr_app.post("/auth/dev-google", dependencies=[Depends(require_csrf_form)])
 async def auth_dev_google(request: Request, remember_me: str = Form("1"), next_url: str = Form("/", alias="next")):
     if not LOCAL_AUTH_ENABLED:
         raise HTTPException(status_code=404, detail="Not found.")
@@ -627,7 +630,7 @@ async def auth_dev_google(request: Request, remember_me: str = Form("1"), next_u
 async def username_onboarding_page(request: Request, error: str = Query("")):
     return RedirectResponse(f"/profile?error={quote(error)}" if error else "/profile", status_code=303)
 
-@qr_app.post("/onboarding/username", response_class=HTMLResponse)
+@qr_app.post("/onboarding/username", response_class=HTMLResponse, dependencies=[Depends(require_csrf_form)])
 async def username_onboarding_submit(request: Request, username: str = Form(...)):
     return await profile_username_submit(request, username)
 
@@ -650,7 +653,7 @@ async def profile_page(request: Request, error: str = Query(""), discord_error: 
         "discord_invite": DISCORD_INVITE_URL,
     })
 
-@qr_app.post("/profile/username", response_class=HTMLResponse)
+@qr_app.post("/profile/username", response_class=HTMLResponse, dependencies=[Depends(require_csrf_form)])
 async def profile_username_submit(request: Request, username: str = Form(...)):
     user = require_user(request)
     try:

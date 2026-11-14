@@ -3,6 +3,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <meta name="csrf-token" content="{{ csrf_token() if csrf_token is defined else '' }}">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
@@ -17,7 +18,7 @@
       <p class="legal-meta">{{ email }}</p>
       <p>Your username appears on the global leaderboard instead of your email.</p>
       {% if error %}<p class="error-text">{{ error }}</p>{% endif %}
-      <form action="/onboarding/username" method="post" class="data-request-form">
+      <form action="/onboarding/username" method="post" class="data-request-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
         <label>
           Username
           <input name="username" autocomplete="username" minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" placeholder="safescanner" required>
