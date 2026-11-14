@@ -708,7 +708,21 @@
         decoder = await decoderPromise;
       } catch (error) {
         decoderPromise = null;
+        decoder = null;
         if (active && generation === cameraGeneration) {
+          if (typeof opts.onServerFallback === "function") {
+            // The camera still works when WASM/Worker startup fails. A frame
+            // can be captured locally and offered for explicit server consent.
+            selectedDeviceId = cameraSettings(currentTrack).deviceId || requestedDeviceId || null;
+            await refreshCameras(generation);
+            if (!active || generation !== cameraGeneration || document.hidden) return false;
+            autoBtn.hidden = true;
+            updateControlsVisibility();
+            captureBtn.disabled = false;
+            retryBtn.hidden = true;
+            status.textContent = "Local QR reader unavailable. Take a picture to offer a server retry.";
+            return true;
+          }
           stopStream();
           retryBtn.hidden = false;
           reportError((error && error.message) || "Could not initialise the QR decoder.");
@@ -753,6 +767,8 @@
       beginPromise = null;
       beginTarget = null;
       scanning = false;
+      fallbackBlob = null;
+      serverOffer.hidden = true;
       setAutoArmed(false);
       captureBtn.disabled = true;
       hideControls();
@@ -763,6 +779,7 @@
     function cleanup() {
       if (!active) return;
       active = false;
+      fallbackBlob = null;
       cameraGeneration += 1;
       beginPromise = null;
       beginTarget = null;
@@ -974,7 +991,7 @@
     // Only this function may forward a decoded payload for risk analysis.
     // Locate mode and auto-capture both feed this same bounded burst path.
     async function capture() {
-      if (!active || scanning || !decoder || !track || track.readyState !== "live") return;
+      if (!active || scanning || !track || track.readyState !== "live") return;
       if (video.readyState < 2 /* HAVE_CURRENT_DATA */) {
         status.textContent = "Camera is still warming up — try again in a second.";
         return;
@@ -986,6 +1003,24 @@
       fallbackBlob = null;
       captureBtn.disabled = true;
       status.textContent = "Taking several pictures to find the clearest QR…";
+
+      if (!decoder) {
+        let frame = null;
+        try {
+          frame = await captureFrame(video, canvas, ctx, false);
+          const blob = await jpegFromFrame(frame);
+          if (active && captureGeneration === cameraGeneration) fallbackBlob = blob;
+        } catch (_error) { /* The upload button remains available below. */ }
+        finally { disposeFrame(frame); }
+        if (!active || captureGeneration !== cameraGeneration) return;
+        serverOffer.hidden = !fallbackBlob;
+        status.textContent = fallbackBlob
+          ? "Photo captured. Choose Send photo to SafeScan for a server retry."
+          : "Could not capture a photo. Try again or use Upload QR file/photo.";
+        captureBtn.disabled = false;
+        scanning = false;
+        return;
+      }
 
       let frames = [];
       let scanError = false;

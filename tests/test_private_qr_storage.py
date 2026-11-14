@@ -1,6 +1,7 @@
 """Private QR data must stay in the one-time scan response, not persistent state."""
 
 import importlib
+import asyncio
 import hashlib
 import io
 import json
@@ -105,7 +106,7 @@ def test_large_camera_frame_stays_in_memory_without_temp_spool(tmp_path, monkeyp
     assert rows(db_path, "upload_artifacts") == []
 
 
-def test_camera_upload_bounds_and_global_budget_cannot_use_forged_xff(tmp_path, monkeypatch):
+def test_camera_upload_bounds_and_client_budget_cannot_use_forged_xff(tmp_path, monkeypatch):
     module, client, _ = load_app(tmp_path, monkeypatch)
     app_module = sys.modules["hackabull.app_module"]
     too_large = client.post(
@@ -123,14 +124,49 @@ def test_camera_upload_bounds_and_global_budget_cannot_use_forged_xff(tmp_path, 
     )
     assert streamed.status_code == 413
 
-    module.RATE_LIMITS["qr_upload_global:all"] = [time.time()] * 180
+    module.RATE_LIMITS["qr_upload_client:testclient"] = [time.time()] * 90
     blocked = client.post(
         "/search_qr_api",
-        data={"manual_url": "https://example.com"},
+        data={"manual_url": "WIFI:T:WPA;S:Cafe;P:test;;"},
         headers={"x-forwarded-for": "198.51.100.77", "cf-connecting-ip": "198.51.100.88"},
     )
     assert blocked.status_code == 429
     assert blocked.headers["cache-control"] == "no-store"
+    assert "qr_upload_global:all" not in module.RATE_LIMITS
+
+    # A second visitor is not locked out by the first visitor's budget.
+    other = TestClient(module.qr_app, base_url="https://testserver", client=("198.51.100.89", 50000))
+    allowed = other.post("/search_qr_api", data={"manual_url": "WIFI:T:WPA;S:Other;P:test;;"})
+    assert allowed.status_code == 200
+
+
+def test_slow_camera_body_releases_upload_slot(tmp_path, monkeypatch):
+    load_app(tmp_path, monkeypatch)
+    from starlette.requests import Request
+
+    app_module = sys.modules["hackabull.app_module"]
+    monkeypatch.setattr(app_module, "QR_REQUEST_READ_TIMEOUT_SECONDS", 0.01)
+
+    async def run():
+        async def slow_receive():
+            await asyncio.sleep(0.05)
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        request = Request({
+            "type": "http", "method": "POST", "path": "/search_qr_api",
+            "headers": [], "client": ("198.51.100.90", 50000),
+            "scheme": "https", "server": ("testserver", 443),
+        }, receive=slow_receive)
+
+        async def never_called(_request):
+            raise AssertionError("slow body reached the scan route")
+
+        return await app_module.security_headers_and_rate_limits(request, never_called)
+
+    response = asyncio.run(run())
+    assert response.status_code == 408
+    assert response.headers["cache-control"] == "no-store"
+    assert app_module.QR_REQUEST_ACTIVE_BY_CLIENT == {}
 
 
 def test_camera_source_requires_a_file(tmp_path, monkeypatch):

@@ -137,6 +137,25 @@ QR_MULTIPART_OVERHEAD_BYTES = 64 * 1024
 QR_REQUEST_BODY_LIMIT = MAX_QR_UPLOAD_BYTES + QR_MULTIPART_OVERHEAD_BYTES
 MultiPartParser.spool_max_size = QR_REQUEST_BODY_LIMIT + 1
 QR_REQUEST_SLOTS = asyncio.Semaphore(3)
+QR_REQUEST_ACTIVE_BY_CLIENT = {}
+QR_REQUEST_READ_TIMEOUT_SECONDS = 15
+
+
+def qr_request_client_identity(request: Request):
+    """Use Render's edge-authored client IP, never caller-supplied XFF.
+
+    On Render, Cloudflare overwrites CF-Connecting-IP before the request
+    reaches the app. Outside Render, the ASGI peer is the only trusted source.
+    A missing/invalid edge header disables the per-client bucket rather than
+    grouping every visitor behind one Render load-balancer address.
+    """
+    if os.getenv("RENDER", "").lower() == "true":
+        candidate = request.headers.get("cf-connecting-ip", "")
+        try:
+            return str(ipaddress.ip_address(candidate))
+        except ValueError:
+            return None
+    return request.client.host if request.client else None
 
 qr_app.add_middleware(
     CORSMiddleware,
@@ -285,11 +304,6 @@ async def start_wallet_nonce_cleanup():
 async def security_headers_and_rate_limits(request: Request, call_next):
     path = request.url.path
     if request.method == "POST" and path in ("/search_qr_api", "/api/scan/file"):
-        # A process-wide budget cannot be bypassed with forged proxy headers.
-        # It applies to guests before multipart parsing and CPU decoding.
-        scan_limit = enforce_rate_limit(request, "qr_upload_global", 180, 15 * 60, user_key="all")
-        if scan_limit:
-            return apply_security_headers(request, scan_limit)
         raw_length = request.headers.get("content-length")
         if raw_length:
             try:
@@ -298,24 +312,47 @@ async def security_headers_and_rate_limits(request: Request, call_next):
                 declared_length = -1
             if declared_length < 0 or declared_length > QR_REQUEST_BODY_LIMIT:
                 return apply_security_headers(request, JSONResponse({"error": "QR scan request is too large."}, status_code=413))
+        client_identity = qr_request_client_identity(request)
+        if client_identity:
+            scan_limit = enforce_rate_limit(request, "qr_upload_client", 90, 15 * 60, user_key=client_identity)
+            if scan_limit:
+                return apply_security_headers(request, scan_limit)
+            # One visitor may use two tabs, but cannot occupy every upload
+            # slot with slow bodies. Keep one slot available for other users.
+            if QR_REQUEST_ACTIVE_BY_CLIENT.get(client_identity, 0) >= 2:
+                return apply_security_headers(request, JSONResponse({"error": "Scanner is busy. Please retry."}, status_code=503))
+            QR_REQUEST_ACTIVE_BY_CLIENT[client_identity] = QR_REQUEST_ACTIVE_BY_CLIENT.get(client_identity, 0) + 1
         try:
-            await asyncio.wait_for(QR_REQUEST_SLOTS.acquire(), timeout=2.0)
-        except asyncio.TimeoutError:
-            return apply_security_headers(request, JSONResponse({"error": "Scanner is busy. Please retry."}, status_code=503))
-        try:
-            # Content-Length is optional and untrusted. Bound actual streamed
-            # bytes before FastAPI's Form/File dependencies parse the body.
-            chunks = []
-            received = 0
-            async for chunk in request.stream():
-                received += len(chunk)
-                if received > QR_REQUEST_BODY_LIMIT:
-                    return apply_security_headers(request, JSONResponse({"error": "QR scan request is too large."}, status_code=413))
-                chunks.append(chunk)
-            request._body = b"".join(chunks)
-            return await call_next(request)
+            try:
+                await asyncio.wait_for(QR_REQUEST_SLOTS.acquire(), timeout=2.0)
+            except asyncio.TimeoutError:
+                return apply_security_headers(request, JSONResponse({"error": "Scanner is busy. Please retry."}, status_code=503))
+            try:
+                # Content-Length is optional and untrusted. Bound actual
+                # streamed bytes and time before multipart parsing. The read
+                # deadline also prevents slow clients holding all upload slots.
+                chunks = []
+                received = 0
+                try:
+                    async with asyncio.timeout(QR_REQUEST_READ_TIMEOUT_SECONDS):
+                        async for chunk in request.stream():
+                            received += len(chunk)
+                            if received > QR_REQUEST_BODY_LIMIT:
+                                return apply_security_headers(request, JSONResponse({"error": "QR scan request is too large."}, status_code=413))
+                            chunks.append(chunk)
+                except TimeoutError:
+                    return apply_security_headers(request, JSONResponse({"error": "QR scan upload timed out. Please retry."}, status_code=408))
+                request._body = b"".join(chunks)
+                return await call_next(request)
+            finally:
+                QR_REQUEST_SLOTS.release()
         finally:
-            QR_REQUEST_SLOTS.release()
+            if client_identity:
+                remaining = QR_REQUEST_ACTIVE_BY_CLIENT[client_identity] - 1
+                if remaining:
+                    QR_REQUEST_ACTIVE_BY_CLIENT[client_identity] = remaining
+                else:
+                    QR_REQUEST_ACTIVE_BY_CLIENT.pop(client_identity, None)
     if not path.startswith("/static/"):
         public_limit = enforce_rate_limit(request, "public", 300, 15 * 60)
         if public_limit:

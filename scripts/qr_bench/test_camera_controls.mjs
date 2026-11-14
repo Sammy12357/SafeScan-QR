@@ -132,7 +132,10 @@ let captureRequests = 0;
 let locateRequests = 0;
 
 class Worker {
-  constructor() { setTimeout(() => this.onmessage?.({ data: { type: "ready" } }), 0); }
+  constructor() {
+    const mode = scenario === "worker-fail" ? "init-error" : "ready";
+    setTimeout(() => this.onmessage?.({ data: { type: mode } }), 0);
+  }
   postMessage(request) {
     if (request.mode === "capture") captureRequests += 1;
     if (request.mode === "locate") locateRequests += 1;
@@ -249,4 +252,17 @@ await elements[".qr-camera-auto"].dispatch("click");
 await eventually(() => autoResults.length === 1, "stable auto-capture", 300);
 assert.equal(autoResults[0], "https://example.com");
 assert.ok(locateRequests >= 3, "auto-capture needs repeated live observations");
+
+scenario = "worker-fail";
+let sentAfterWorkerFailure = null;
+window.SafeScanQrCamera.open({ onResult: () => assert.fail("failed worker submitted a payload"),
+  onServerFallback: (blob) => { sentAfterWorkerFailure = blob; return true; } });
+await eventually(() => !elements[".qr-camera-capture"].disabled, "camera-only fallback preview");
+assert.equal(tracks.at(-1).readyState, "live", "camera stays active after local reader startup failure");
+assert.equal(elements[".qr-camera-auto"].hidden, true, "auto-capture needs a local reader");
+await elements[".qr-camera-capture"].dispatch("click");
+assert.equal(sentAfterWorkerFailure, null, "failed worker must not auto-send a frame");
+assert.equal(elements[".qr-camera-server-offer"].hidden, false);
+await elements[".qr-camera-server-send"].dispatch("click");
+assert.equal(sentAfterWorkerFailure.type, "image/jpeg");
 console.log("Camera controls, burst consensus, consented fallback, and opt-in auto-capture: pass");
