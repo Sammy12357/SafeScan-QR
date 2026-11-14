@@ -2,6 +2,7 @@
 
 import importlib
 import hashlib
+import io
 import json
 import sys
 import time
@@ -98,6 +99,23 @@ def test_two_physical_codes_with_the_same_payload_are_refused(decoder):
         decoder._decode_qr_from_pil_image(canvas)
 
 
+def test_same_payload_on_two_pdf_pages_is_refused(decoder):
+    fitz = pytest.importorskip("fitz")
+    qr = qrcode.make("https://same.example/").convert("RGB")
+    png = io.BytesIO()
+    qr.save(png, format="PNG")
+    document = fitz.open()
+    try:
+        for _ in range(2):
+            page = document.new_page(width=300, height=300)
+            page.insert_image(fitz.Rect(20, 20, 280, 280), stream=png.getvalue())
+        contents = document.tobytes()
+    finally:
+        document.close()
+    with pytest.raises(decoder.QRDecodeAmbiguityError, match="Multiple QR codes"):
+        decoder.decode_qr_upload(contents, "two-pages.pdf", "application/pdf")
+
+
 def test_repeated_read_of_one_physical_code_is_not_ambiguous(decoder):
     first = decoder.DecodedBarcode("https://same.example/", quad=((0, 0), (100, 0), (100, 100), (0, 100)))
     second = decoder.DecodedBarcode("https://same.example/", quad=((4, 3), (104, 3), (104, 103), (4, 103)))
@@ -108,6 +126,17 @@ def test_oversized_image_is_rejected_before_copying_pixels(decoder):
     huge = SimpleNamespace(width=8000, height=6000)
     with pytest.raises(decoder.QRDecodeSafetyError, match="40 megapixel"):
         decoder.decode_qr_image(huge)
+
+
+def test_upload_worker_is_killed_when_native_decode_stalls(decoder, monkeypatch, tmp_path):
+    worker = tmp_path / "qr_decode_worker.py"
+    worker.write_text("import time\ntime.sleep(30)\n")
+    monkeypatch.setattr(decoder, "__file__", str(tmp_path / "qr_decode.py"))
+    monkeypatch.setenv("QR_DECODE_BUDGET_S", "0.1")
+    started = time.monotonic()
+    with pytest.raises(decoder.QRDecodeSafetyError, match="time limit"):
+        decoder.decode_qr_upload(b"untrusted image bytes", "frame.png", "image/png")
+    assert time.monotonic() - started < 2.5
 
 
 @pytest.mark.parametrize("filename", ["21_stylized_logo.png", "24_micro_qr.png"])

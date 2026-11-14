@@ -16,6 +16,9 @@ import socket
 import time
 import csv
 import threading
+import subprocess
+import sys
+import contextvars
 from decimal import Decimal, InvalidOperation
 from html import escape as escape_html
 from urllib.parse import quote, urlencode, urljoin, urlparse, parse_qsl
@@ -83,6 +86,14 @@ QR_DECODE_SEMAPHORE = asyncio.Semaphore(_positive_env_int("QR_DECODE_CONCURRENCY
 _WECHAT_LOCK = threading.Lock()
 _WECHAT_DECODER = None
 _WECHAT_UNAVAILABLE = False
+_QR_TIER_EVENTS = contextvars.ContextVar("qr_tier_events", default=None)
+
+
+def _record_qr_tier(tier, outcome):
+    QR_DECODE_TOTAL.labels(tier=tier, outcome=outcome).inc()
+    events = _QR_TIER_EVENTS.get()
+    if events is not None:
+        events.append((tier, outcome))
 
 
 def _decode_budget_seconds():
@@ -288,18 +299,18 @@ def decode_qr_image(image, *, is_pure=False):
 
     def run_tier(name, operation):
         if time.monotonic() >= deadline:
-            QR_DECODE_TOTAL.labels(tier=name, outcome="deadline").inc()
+            _record_qr_tier(name, "deadline")
             return []
         try:
             results = _distinct_barcodes(operation())
         except QRDecodeSafetyError:
-            QR_DECODE_TOTAL.labels(tier=name, outcome="error").inc()
+            _record_qr_tier(name, "error")
             raise
         except Exception:
-            QR_DECODE_TOTAL.labels(tier=name, outcome="error").inc()
+            _record_qr_tier(name, "error")
             return []
         outcome = "hit" if results else "deadline" if time.monotonic() >= deadline else "miss"
-        QR_DECODE_TOTAL.labels(tier=name, outcome=outcome).inc()
+        _record_qr_tier(name, outcome)
         return results
 
     try:
@@ -515,22 +526,24 @@ def _render_basic_svg_qr(svg_bytes):
     walk(root, root_transform)
     return image
 
-def decode_qr_upload(contents, filename="", content_type=""):
+def _decode_qr_upload_inprocess(contents, filename="", content_type=""):
     Image, _, _, _, _ = _qr_image_libs()
 
     selected_payload = None
     selected_image = None
 
-    def remember(payload, qr_image):
+    def remember(payload, qr_image, *, distinct_source=False):
         nonlocal selected_payload, selected_image
         if not payload:
             return
         if selected_payload is None:
             selected_payload, selected_image = payload, qr_image
-        elif payload != selected_payload:
+        elif payload != selected_payload or distinct_source:
             qr_image.close()
             selected_image.close()
-            raise QRDecodeAmbiguityError("Multiple different QR payloads were found. Crop to one QR code and scan it again.")
+            if payload != selected_payload:
+                raise QRDecodeAmbiguityError("Multiple different QR payloads were found. Crop to one QR code and scan it again.")
+            raise QRDecodeAmbiguityError("Multiple QR codes were found. Upload a page with only one QR code.")
         else:
             qr_image.close()
 
@@ -575,7 +588,7 @@ def decode_qr_upload(contents, filename="", content_type=""):
                     pixmap = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5), alpha=False)
                     with Image.open(io.BytesIO(pixmap.tobytes("png"))) as image:
                         payload, qr_image = _decode_qr_from_pil_image(image, is_pure=True)
-                        remember(payload, qr_image)
+                        remember(payload, qr_image, distinct_source=True)
             finally:
                 document.close()
         except (QRDecodeAmbiguityError, QRDecodeSafetyError):
@@ -587,6 +600,79 @@ def decode_qr_upload(contents, filename="", content_type=""):
         return selected_payload, selected_image
 
     return None, None
+
+
+def decode_qr_upload(contents, filename="", content_type=""):
+    """Decode in a killable process so native library stalls have a hard limit.
+
+    This runs from the bounded upload thread pool. The per-image tier budget
+    applies inside the worker; one extra second covers process startup and IPC.
+    """
+    from pathlib import Path
+
+    started = time.monotonic()
+    timeout = _decode_budget_seconds() + (3.5 if _looks_like_pdf(contents, filename, content_type) else 1.0)
+    worker = Path(__file__).with_name("qr_decode_worker.py")
+    worker_filename = str(filename or "")[:255].replace("\x00", "")
+    worker_content_type = str(content_type or "")[:255].replace("\x00", "")
+    header = json.dumps({"filename": worker_filename, "content_type": worker_content_type}).encode("utf-8")
+    packet = len(header).to_bytes(4, "big") + header + contents
+    try:
+        process = subprocess.run(
+            [sys.executable, str(worker)],
+            input=packet,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        _record_qr_tier("worker", "deadline")
+        raise QRDecodeSafetyError("QR decoding exceeded the time limit. Try a clearer image or crop to one code.") from exc
+    except (OSError, ValueError) as exc:
+        _record_qr_tier("worker", "error")
+        raise QRDecodeSafetyError("QR decoder could not inspect this file.") from exc
+    finally:
+        QR_DECODE_SECONDS.observe(time.monotonic() - started)
+
+    if process.returncode != 0:
+        _record_qr_tier("worker", "error")
+        raise QRDecodeSafetyError("QR decoder could not inspect this file.")
+    try:
+        result = json.loads(process.stdout)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        _record_qr_tier("worker", "error")
+        raise QRDecodeSafetyError("QR decoder could not inspect this file.") from exc
+
+    allowed_tiers = {"native", "upscale", "pyzbar", "wechat", "enhanced"}
+    allowed_outcomes = {"hit", "miss", "deadline", "error"}
+    for event in result.get("tier_events", []):
+        if (isinstance(event, list) and len(event) == 2
+                and event[0] in allowed_tiers and event[1] in allowed_outcomes):
+            _record_qr_tier(event[0], event[1])
+    error = result.get("error")
+    if error == "ambiguity":
+        raise QRDecodeAmbiguityError(result.get("message") or "Multiple QR codes were found.")
+    if error == "safety":
+        raise QRDecodeSafetyError(result.get("message") or "QR image exceeds a safe decoding limit.")
+    if error:
+        _record_qr_tier("worker", "error")
+        raise QRDecodeSafetyError("QR decoder could not inspect this file.")
+
+    payload = result.get("payload")
+    if not isinstance(payload, str) or not payload:
+        _record_qr_tier("worker", "miss")
+        return None, None
+    encoded_image = result.get("image")
+    try:
+        image_bytes = base64.b64decode(encoded_image, validate=True) if encoded_image else contents
+        with PILImage.open(io.BytesIO(image_bytes)) as image:
+            _assert_safe_dimensions(image)
+            copied = image.copy()
+            _record_qr_tier("worker", "hit")
+            return payload, copied
+    except (OSError, ValueError, PILImage.DecompressionBombError) as exc:
+        _record_qr_tier("worker", "error")
+        raise QRDecodeSafetyError("QR decoder could not inspect this image.") from exc
 
 class DecodedBarcode:
     def __init__(self, text, barcode_format="Unknown", *, quad=None):
