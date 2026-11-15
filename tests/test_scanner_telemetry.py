@@ -88,7 +88,7 @@ def test_gpc_suppresses_counts_before_admission_and_coerces_consent(tmp_path, mo
     module, telemetry, client = load_app(tmp_path, monkeypatch)
     assert client.post("/api/telemetry/scan", json=sample_event(), headers={"Sec-GPC": "1"}).status_code == 204
     assert len(telemetry._recent_events) == 0
-    consent = client.post("/api/consent", json={"consentType": "all"}, headers={"Sec-GPC": "1"})
+    consent = client.post("/api/consent", json={"consentType": "all", "bannerVersion": "consent-v1"}, headers={"Sec-GPC": "1"})
     assert consent.status_code == 200
     assert consent.json()["effectiveConsentType"] == "essential_only"
     with module.get_conn() as conn:

@@ -159,6 +159,7 @@ AIRDROP_TOKEN_ALLOCATIONS = {
 }
 LEGAL_VERSION = "v1.0"
 LEGAL_LAST_UPDATED = "May 2026"
+CONSENT_BANNER_VERSION = "consent-v1"
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SOLANA_RPC_URL = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
@@ -296,6 +297,7 @@ templates.env.globals["token_features_enabled"] = token_features_enabled
 templates.env.globals["token_distribution_enabled"] = token_distribution_enabled
 SCANNER_V3 = os.getenv("SCANNER_V3", "false").lower() in ("1", "true", "yes", "on")
 templates.env.globals["scanner_v3"] = SCANNER_V3
+templates.env.globals["consent_banner_version"] = CONSENT_BANNER_VERSION
 _template_response = templates.TemplateResponse
 
 

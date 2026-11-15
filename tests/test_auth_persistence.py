@@ -77,6 +77,33 @@ def register(client, email="person@example.com", password="password123"):
     return client.post("/auth/register", data={"email": email, "password": password})
 
 
+def test_consent_log_binds_account_and_banner_version_to_server(auth_app):
+    module, member, db_path = auth_app
+    guest = TestClient(module.qr_app, base_url="https://testserver")
+    version = module.CONSENT_BANNER_VERSION
+    assert f'data-version="{version}"' in guest.get("/").text
+
+    for posted in ({"consentType": "all"}, {"consentType": "all", "bannerVersion": "unreviewed-version"}):
+        assert guest.post("/api/consent", json=posted).status_code == 409
+    assert db_rows(db_path, "SELECT id FROM consent_logs") == []
+
+    guest_response = guest.post("/api/consent", json={
+        "consentType": "all", "bannerVersion": version, "userId": "forged-account"
+    })
+    assert guest_response.status_code == 200
+    guest_row = db_rows(db_path, "SELECT user_id, banner_version FROM consent_logs WHERE id = ?", (guest_response.json()["id"],))[0]
+    assert guest_row == {"user_id": None, "banner_version": version}
+
+    assert register(member, "consent-member@example.com").status_code == 200
+    actual_id = db_rows(db_path, "SELECT google_id FROM users WHERE email = ?", ("consent-member@example.com",))[0]["google_id"]
+    member_response = member.post("/api/consent", json={
+        "consentType": "essential_only", "bannerVersion": version, "userId": "forged-account"
+    })
+    assert member_response.status_code == 200
+    member_row = db_rows(db_path, "SELECT user_id, banner_version FROM consent_logs WHERE id = ?", (member_response.json()["id"],))[0]
+    assert member_row == {"user_id": actual_id, "banner_version": version}
+
+
 def login(client, email="person@example.com", password="password123"):
     return client.post("/auth/login", data={"email": email, "password": password})
 
