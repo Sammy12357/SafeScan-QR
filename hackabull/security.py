@@ -73,7 +73,7 @@ def enforce_rate_limit(request, bucket, limit, window_seconds, user_key=None):
         retry_after = max(1, int(window_seconds - (now - hits[0])))
         audit_log("auth.rate_limited", request=request, metadata={"bucket": bucket, "retryAfter": retry_after})
         return error_response(
-            request, 429, code="rate_limited", message="Too many requests",
+            request, 429, code="rate_limited",
             headers={"Retry-After": str(retry_after)},
         )
     hits.append(now)
@@ -82,10 +82,10 @@ def enforce_rate_limit(request, bucket, limit, window_seconds, user_key=None):
 
 def validate_strict_payload(payload, allowed_fields):
     if not isinstance(payload, dict):
-        raise SafeScanError("Invalid request.", 400)
+        raise SafeScanError(code="invalid_request")
     unexpected = set(payload.keys()) - set(allowed_fields)
     if unexpected:
-        raise SafeScanError("Unexpected fields: " + ", ".join(sorted(unexpected)), 400)
+        raise SafeScanError(code="invalid_request")
 
 def is_private_hostname(hostname):
     host = (hostname or "").strip().lower().rstrip(".")
@@ -110,13 +110,15 @@ def validate_public_url(target_url):
     making requests to internal services. Returns the normalised URL or raises
     SafeScanError(400).
     """
-    if not isinstance(target_url, str) or len(target_url.strip()) > 2048:
-        raise SafeScanError("URL is required and must be 2048 characters or fewer.", 400)
+    if not isinstance(target_url, str) or not target_url.strip():
+        raise SafeScanError(code="url_required", field="url")
+    if len(target_url.strip()) > 2048:
+        raise SafeScanError(code="url_too_long", field="url")
     raw = target_url.strip()
     # normalize_url adds https:// to bare domains. Do not let it turn an
     # unsupported redirect scheme such as ftp:// into a plausible HTTPS URL.
     if re.match(r"^[a-z][a-z0-9+.-]*://", raw, re.IGNORECASE) and not re.match(r"^https?://", raw, re.IGNORECASE):
-        raise SafeScanError("Only valid http and https URLs are supported.", 400)
+        raise SafeScanError(code="url_invalid", field="url")
     normalized = normalize_url(target_url)
     try:
         parsed = urlparse(normalized)
@@ -125,17 +127,17 @@ def validate_public_url(target_url):
         password = parsed.password
         parsed.port  # Reject malformed/out-of-range ports before any fetch.
     except ValueError:
-        raise SafeScanError("URL has an invalid hostname or port.", 400) from None
+        raise SafeScanError(code="url_invalid", field="url") from None
     if parsed.scheme not in ("http", "https") or not hostname:
-        raise SafeScanError("Only valid http and https URLs are supported.", 400)
+        raise SafeScanError(code="url_invalid", field="url")
     if username is not None or password is not None:
-        raise SafeScanError("URLs containing username or password are not supported.", 400)
+        raise SafeScanError(code="url_credentials", field="url")
     try:
         ascii_host = hostname.rstrip(".").encode("idna").decode("ascii")
     except UnicodeError:
-        raise SafeScanError("URL has an invalid hostname.", 400) from None
+        raise SafeScanError(code="url_invalid", field="url") from None
     if is_private_hostname(ascii_host):
-        raise SafeScanError("Private, localhost, and internal service URLs are blocked.", 400)
+        raise SafeScanError(code="url_private", field="url")
     return normalized
 
 
@@ -143,7 +145,7 @@ def _public_address_for_connection(hostname, port):
     """Resolve once, reject every non-public answer, and return a pinned IP."""
     host = (hostname or "").strip().lower().rstrip(".")
     if not host or host == "localhost" or host.endswith(".localhost") or "render-internal" in host:
-        raise SafeScanError("Private, localhost, and internal service URLs are blocked.", 400)
+        raise SafeScanError(code="url_private", field="url")
     try:
         addresses = [ipaddress.ip_address(host)]
     except ValueError:
@@ -155,7 +157,7 @@ def _public_address_for_connection(hostname, port):
     if not addresses:
         raise requests.ConnectionError("DNS returned no addresses.")
     if any(not address.is_global for address in addresses):
-        raise SafeScanError("Private, localhost, and internal service URLs are blocked.", 400)
+        raise SafeScanError(code="url_private", field="url")
     return str(addresses[0])
 
 
@@ -171,7 +173,7 @@ def _fetch_pinned_url(target_url, timeout):
     try:
         ascii_host = hostname.rstrip(".").encode("idna").decode("ascii")
     except UnicodeError:
-        raise SafeScanError("URL has an invalid hostname.", 400) from None
+        raise SafeScanError(code="url_invalid", field="url") from None
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
     pinned_ip = _public_address_for_connection(ascii_host, port)
     default_port = 443 if parsed.scheme == "https" else 80

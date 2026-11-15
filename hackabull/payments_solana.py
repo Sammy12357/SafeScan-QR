@@ -104,14 +104,14 @@ def fallback_alpha_solana_lamports():
     try:
         amount = Decimal(ALPHA_SOLANA_AMOUNT_SOL)
     except InvalidOperation as exc:
-        raise SafeScanError("ALPHA_SOLANA_AMOUNT_SOL is invalid.", 500) from exc
+        raise SafeScanError("ALPHA_SOLANA_AMOUNT_SOL is invalid.", 503, code="payment_unavailable") from exc
     if amount <= 0:
         return 0, ""
     return solana_amount_to_lamports(amount), decimal_text(amount)
 
 def create_alpha_solana_quote():
     if ALPHA_SOLANA_PRICE_USD <= 0:
-        raise SafeScanError("ALPHA_SOLANA_PRICE_USD must be greater than 0.", 500)
+        raise SafeScanError("ALPHA_SOLANA_PRICE_USD must be greater than 0.", 503, code="payment_unavailable")
     sol_usd = fetch_sol_usd_price()
     if sol_usd:
         amount_sol = ALPHA_SOLANA_PRICE_USD / sol_usd
@@ -133,7 +133,7 @@ def create_alpha_solana_quote():
             "amountLamports": fallback_lamports,
             "quoteExpiresAt": (datetime.utcnow() + timedelta(seconds=ALPHA_SOLANA_QUOTE_TTL_SECONDS)).isoformat() + "Z",
         }
-    raise SafeScanError("SOL/USD price is unavailable and no fallback SOL amount is configured.", 503)
+    raise SafeScanError("SOL/USD price is unavailable and no fallback SOL amount is configured.", 503, code="payment_unavailable")
 
 def normalize_alpha_solana_quote(row):
     if not row:
@@ -159,7 +159,7 @@ def get_or_create_alpha_solana_reference(user):
     if not ALPHA_SOLANA_RECIPIENT:
         return None
     if not is_valid_solana_address(ALPHA_SOLANA_RECIPIENT):
-        raise SafeScanError("ALPHA_SOLANA_RECIPIENT is not a valid Solana address.", 500)
+        raise SafeScanError("ALPHA_SOLANA_RECIPIENT is not a valid Solana address.", 503, code="payment_unavailable")
     now = now_iso()
     with get_conn() as conn:
         row = conn.execute(
@@ -231,15 +231,21 @@ def alpha_solana_pay_url(request: Request | None = None):
     return f"solana:{ALPHA_SOLANA_RECIPIENT}?{query}" if query else f"solana:{ALPHA_SOLANA_RECIPIENT}"
 
 def solana_rpc(method, params):
-    response = requests.post(
-        SOLANA_RPC_URL,
-        json={"jsonrpc": "2.0", "id": f"safescan-{method}", "method": method, "params": params},
-        timeout=10,
-    )
-    response.raise_for_status()
-    body = response.json()
+    try:
+        response = requests.post(
+            SOLANA_RPC_URL,
+            json={"jsonrpc": "2.0", "id": f"safescan-{method}", "method": method, "params": params},
+            timeout=10,
+        )
+        response.raise_for_status()
+        body = response.json()
+    except (requests.RequestException, ValueError) as exc:
+        raise SafeScanError(
+            f"Solana RPC request failed: {type(exc).__name__}: {exc}",
+            502, code="payment_network_unavailable",
+        ) from exc
     if body.get("error"):
-        raise SafeScanError(f"Solana RPC error: {body['error'].get('message', 'unknown error')}", 502)
+        raise SafeScanError(f"Solana RPC error: {body['error'].get('message', 'unknown error')}", 502, code="payment_network_unavailable")
     return body.get("result")
 
 def transaction_account_keys(transaction):
@@ -278,12 +284,12 @@ def verify_alpha_solana_payment(reference):
             (reference,),
         ).fetchone()
     if not quote_row:
-        raise SafeScanError("No pending Solana payment quote was found.", 400)
+        raise SafeScanError(code="payment_quote_missing")
     required_lamports = int(quote_row["amount_lamports"] or 0)
     if not ALPHA_SOLANA_RECIPIENT or not required_lamports:
-        raise SafeScanError("Solana payment is not configured.", 400)
+        raise SafeScanError("Solana payment is not configured.", 503, code="payment_unavailable")
     if quote_row["quote_expires_at"] and quote_row["quote_expires_at"] <= now_iso():
-        raise SafeScanError("This Solana payment quote expired. Open the payment page to generate a fresh quote.", 400)
+        raise SafeScanError(code="payment_quote_expired")
     signatures = solana_rpc("getSignaturesForAddress", [reference, {"limit": 12, "commitment": "confirmed"}]) or []
     for item in signatures:
         signature = item.get("signature")

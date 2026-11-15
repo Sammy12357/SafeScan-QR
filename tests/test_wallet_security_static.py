@@ -49,7 +49,7 @@ def test_failed_signature_invalidates_nonce():
     body = function_body("api_wallet_verify")
     assert "UPDATE wallet_nonces SET used = 1" in body
     assert "wallet.verification_failed" in body
-    assert "Signature verification failed" in body
+    assert 'SafeScanError(code="wallet_signature_invalid")' in body
 
 
 def test_scan_submission_uses_verified_server_wallet_only():

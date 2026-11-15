@@ -13,7 +13,7 @@
   <div class="page-shell legal-shell">
     <a class="secondary-button legal-back" href="/">Back to SafeScan</a>
     <article class="legal-document">
-      <p class="eyebrow">SafeScan QR Legal</p>
+      <p class="eyebrow">{{ eyebrow | default('SafeScan QR Legal') }}</p>
       <h1>{{ title }}</h1>
       <p class="legal-meta">Version {{ version }} - Last updated {{ last_updated }}</p>
       {{ body_html | safe }}

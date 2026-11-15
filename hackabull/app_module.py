@@ -432,17 +432,13 @@ async def safe_scan_error_handler(request: Request, exc: SafeScanError):
 
 @qr_app.exception_handler(StarletteHTTPException)
 async def http_error_handler(request: Request, exc: StarletteHTTPException):
-    safe_messages = {
-        400: "Invalid request.",
-        401: "Authentication required.",
-        403: "You do not have permission to do this.",
-        404: "Not found.",
-        429: "Too many requests. Please slow down.",
-    }
     if exc.status_code >= 500:
         _log_known_server_error(request, exc)
     detail = exc.detail if isinstance(exc.detail, str) else None
-    return error_response(request, exc.status_code, message=safe_messages.get(exc.status_code, detail), headers=exc.headers)
+    # Generic HTTP failures use catalogue wording. Route-specific 409 details
+    # remain useful to clients, while 5xx detail is redacted by error_response.
+    public_detail = detail if exc.status_code == 409 else None
+    return error_response(request, exc.status_code, message=public_detail, headers=exc.headers)
 
 @qr_app.exception_handler(RequestValidationError)
 async def request_validation_error_handler(request: Request, exc: RequestValidationError):
