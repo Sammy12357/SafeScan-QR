@@ -74,7 +74,8 @@ def initialize_status_schema(conn: sqlite3.Connection) -> None:
                      user_id TEXT NOT NULL,
                      relationship TEXT NOT NULL CHECK(relationship IN ('self', 'family')),
                      created_at TEXT NOT NULL,
-                     UNIQUE(user_id, subject_id))''')
+                     UNIQUE(user_id, subject_id),
+                     FOREIGN KEY(user_id) REFERENCES users(google_id) ON DELETE CASCADE)''')
     conn.execute('''CREATE TABLE IF NOT EXISTS go_ghost_consents
                     (user_id TEXT NOT NULL,
                      subject_id TEXT NOT NULL,
@@ -109,6 +110,8 @@ def initialize_status_schema(conn: sqlite3.Connection) -> None:
                      FOREIGN KEY(user_id, subject_id)
                          REFERENCES go_ghost_subjects(user_id, subject_id) ON DELETE CASCADE)''')
     conn.execute("CREATE INDEX IF NOT EXISTS idx_go_ghost_subjects_user ON go_ghost_subjects(user_id)")
+    conn.execute("""CREATE UNIQUE INDEX IF NOT EXISTS idx_go_ghost_one_self_subject
+                    ON go_ghost_subjects(user_id) WHERE relationship = 'self'""")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_go_ghost_consents_user ON go_ghost_consents(user_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_go_ghost_requests_user ON go_ghost_requests(user_id)")
 
@@ -326,6 +329,8 @@ def apply_client_event(conn: sqlite3.Connection, account_id: str, broker_id: str
     elif next_state == "confirmed":
         confirmed_at = now_text
     elif event in ("recheck_absent", "recheck_present"):
+        next_check_at = None
+    elif next_state in ("failed", "skipped", "not_found"):
         next_check_at = None
     if row:
         result = conn.execute(

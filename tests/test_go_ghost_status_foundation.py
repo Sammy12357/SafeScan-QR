@@ -120,6 +120,23 @@ def test_family_attestation_and_version_are_required(foundation):
                                    "email": "someone@example.com"})
 
 
+def test_only_one_self_subject_per_account_is_enforced_in_storage(foundation):
+    _, db, status, _ = foundation
+    first = _subject(db, status, "account-a")
+    with db.get_conn() as conn:
+        with pytest.raises(status.StatusConflictError):
+            status.create_subject(conn, "account-a", {"relationship": "self"})
+    with db.get_conn() as conn:
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                """INSERT INTO go_ghost_subjects
+                   (subject_id, user_id, relationship, created_at) VALUES (?, ?, 'self', ?)""",
+                ("ea82f92c-6675-4b69-b330-951ace9db09a", "account-a", "2026-11-14T00:00:00Z"),
+            )
+    with db.get_conn() as conn:
+        assert [item["subjectId"] for item in status.list_status(conn, "account-a")] == [first]
+
+
 def test_event_validation_revisions_and_claim_provenance(foundation):
     _, db, status, _ = foundation
     subject = _subject(db, status, "account-a")
