@@ -21,6 +21,11 @@ function ghostCanAct(broker = null) {
     showCopyToast("This broker requires the person to use its suppression tool themselves");
     return false;
   }
+  if (!ghostProfileIsReviewed()) {
+    scrollToGhostProfile();
+    showCopyToast("Complete and save the reviewed name, city, region, and email first");
+    return false;
+  }
   return true;
 }
 
@@ -241,8 +246,6 @@ function renderGhostScopeKeywords(profile) {
   const fields = [
     ["Full name", profile.name],
     ["City/state", profile.location],
-    ["Street address", profile.address],
-    ["Phone", profile.phone || profile.identifier],
     ["Email", profile.email]
   ];
   goGhostScopeKeywords.innerHTML = fields.map(([label, value]) => `
@@ -266,9 +269,13 @@ function openGoGhostScopeModal(siteId, focusClose = true) {
   if (goGhostScopePriority) goGhostScopePriority.textContent = broker.priority;
   if (goGhostScopeDescription) goGhostScopeDescription.textContent = subjectOnly
     ? "PeopleConnect limits this suppression tool to the person's own use. Ask the family member to complete it directly."
+    : profile.state === "OUTSIDE_US"
+      ? "This directory targets U.S. records. Search opens this broker's manual instructions without adding your name or location to a link."
     : GO_GHOST_BROWSER_AUTOMATION_AVAILABLE
       ? (broker.automationNote || broker.priorityDescription || "")
       : "Find your matching listing, then open the broker opt-out page and submit the request in your browser.";
+  if (goGhostScopeSearchButton) goGhostScopeSearchButton.textContent =
+    profile.state === "OUTSIDE_US" ? "Broker instructions" : "Search";
   for (const button of [goGhostScopeSearchButton, goGhostScopeOptOutButton, goGhostScopeCopyButton, goGhostScopeFinishButton, goGhostScopeAutoFillButton]) {
     if (button) button.disabled = subjectOnly;
   }
@@ -361,27 +368,84 @@ function renderGhostSubjects() {
   if (ghostFamilyAttestationInput) ghostFamilyAttestationInput.checked = goGhostFamilyAttestedThisVisit.has(subject.id);
 }
 
-function hydrateGoGhostProfile() {
-  const profile = goGhostStoreLocked ? ghostEmptyProfile() : ghostCurrentSubject().profile;
-  if (ghostNameInput) ghostNameInput.value = profile.name || "";
-  if (ghostLocationInput) ghostLocationInput.value = profile.location || "";
-  if (ghostAddressInput) ghostAddressInput.value = profile.address || "";
-  if (ghostPhoneInput) ghostPhoneInput.value = profile.phone || profile.identifier || "";
-  if (ghostEmailInput) ghostEmailInput.value = profile.email || "";
-  renderGhostSubjects();
+function ghostSimpleAccountName(value) {
+  const parts = cleanGhostText(value).split(" ");
+  const namePart = /^[\p{L}\p{M}][\p{L}\p{M}'-]*$/u;
+  return parts.length === 2 && parts.every((part) => namePart.test(part)) ? parts : null;
 }
 
-function saveGhostFormProfile() {
-  if (goGhostStoreLocked) return;
+function ghostRefreshReviewNotice() {
+  if (!ghostProfileReviewNotice) return;
+  ghostProfileReviewNotice.textContent = ghostProfileIsReviewed()
+    ? "Details reviewed. You can open broker links for this person."
+    : "Enter the required details, review them, then save before opening broker links.";
+}
+
+function hydrateGoGhostProfile() {
+  const profile = goGhostStoreLocked ? ghostEmptyProfile() : ghostCurrentSubject().profile;
+  const subject = goGhostStoreLocked ? null : ghostCurrentSubject();
+  const self = subject?.kind === "self";
+  const hasOlderScopedName = Boolean(profile.name || profile.location)
+    && !profile.firstName && !profile.lastName && !profile.city && !profile.state;
+  const allowAccountPrefill = self && !hasOlderScopedName && !profile.firstName && !profile.lastName;
+  const accountParts = allowAccountPrefill ? ghostSimpleAccountName(goGhostAccountName) : null;
+  if (ghostFirstNameInput) ghostFirstNameInput.value = profile.firstName || (accountParts ? accountParts[0] : "");
+  if (ghostMiddleNameInput) ghostMiddleNameInput.value = profile.middleName || "";
+  if (ghostLastNameInput) ghostLastNameInput.value = profile.lastName || (accountParts ? accountParts[1] : "");
+  if (ghostCityInput) ghostCityInput.value = profile.city || "";
+  if (ghostStateInput) ghostStateInput.value = profile.state || "";
+  if (ghostBirthYearInput) ghostBirthYearInput.value = profile.birthYear || "";
+  if (ghostAddressInput) ghostAddressInput.value = profile.address || "";
+  if (ghostPhoneInput) ghostPhoneInput.value = profile.phone || profile.identifier || "";
+  if (ghostEmailInput) ghostEmailInput.value = profile.email || (self ? goGhostAccountEmail : "");
+  if (ghostPreviousCitiesInput) ghostPreviousCitiesInput.value = profile.previousCities || "";
+  if (ghostOtherNamesInput) ghostOtherNamesInput.value = profile.otherNames || "";
+  if (ghostSavedProfileHint) {
+    ghostSavedProfileHint.hidden = !hasOlderScopedName || Boolean(profile.reviewedAt);
+    ghostSavedProfileHint.textContent = ghostSavedProfileHint.hidden ? "" :
+      "Previously saved on this account: " + [profile.name, profile.location].filter(Boolean).join(" · ")
+      + ". Split and review these details before opening broker links.";
+  }
+  if (ghostAccountNameHint) {
+    const showNameHint = allowAccountPrefill
+      && Boolean(goGhostAccountName) && !accountParts;
+    ghostAccountNameHint.hidden = !showNameHint;
+    ghostAccountNameHint.textContent = showNameHint
+      ? "Your account name is “" + goGhostAccountName
+        + ".” Enter the correct first and last name for the broker search." : "";
+  }
+  renderGhostSubjects();
+  ghostRefreshReviewNotice();
+}
+
+function saveGhostFormProfile(review = false) {
+  if (goGhostStoreLocked) return false;
   const subject = ghostCurrentSubject();
   const next = getGhostFormProfile();
-  if (subject.kind === "family" && Object.keys(next).some((field) => next[field] !== (subject.profile[field] || ""))) {
+  if (review && !ghostValidProfileFields(next)) {
+    goGhostProfileForm?.reportValidity?.();
+    scrollToGhostProfile();
+    showCopyToast("Enter a valid first name, last name, city, region, email, and optional birth year");
+    return false;
+  }
+  const changed = GHOST_PROFILE_FORM_FIELDS.some((field) => next[field] !== (subject.profile[field] || ""));
+  if (subject.kind === "family" && changed) {
     goGhostFamilyAttestedThisVisit.delete(subject.id);
     subject.familyAttestedAt = "";
     if (ghostFamilyAttestationInput) ghostFamilyAttestationInput.checked = false;
   }
+  if (review) {
+    next.name = `${next.firstName} ${next.lastName}`;
+    next.location = next.state === "OUTSIDE_US" ? "" : next.city + ", " + next.state;
+    next.reviewedAt = new Date().toISOString();
+  } else if (changed) {
+    next.reviewedAt = "";
+  }
   ghostSaveProfile(next);
   renderGhostSubjects();
+  ghostRefreshReviewNotice();
+  if (ghostSavedProfileHint && review) ghostSavedProfileHint.hidden = true;
+  return true;
 }
 
 function showGoGhostWorkspace() {
@@ -451,9 +515,14 @@ function lockGhostWorkspace() {
   goGhostAutomationControllers.clear();
   goGhostFamilyAttestedThisVisit.clear();
   goGhostState = null;
-  for (const input of [ghostNameInput, ghostLocationInput, ghostAddressInput, ghostPhoneInput, ghostEmailInput]) {
+  for (const input of [ghostFirstNameInput, ghostMiddleNameInput, ghostLastNameInput, ghostCityInput,
+    ghostStateInput, ghostBirthYearInput, ghostAddressInput, ghostPhoneInput, ghostEmailInput,
+    ghostPreviousCitiesInput, ghostOtherNamesInput]) {
     if (input) input.value = "";
   }
+  if (ghostProfileReviewNotice) ghostProfileReviewNotice.textContent = "";
+  if (ghostSavedProfileHint) ghostSavedProfileHint.textContent = "";
+  if (ghostAccountNameHint) ghostAccountNameHint.textContent = "";
   if (ghostFamilyAttestationInput) ghostFamilyAttestationInput.checked = false;
   if (goGhostAutomationRows) goGhostAutomationRows.innerHTML = "";
   if (goGhostBrokerList) goGhostBrokerList.innerHTML = "";
@@ -528,18 +597,21 @@ if (goGhostWorkspace) {
 
   goGhostProfileForm?.addEventListener("submit", (event) => {
     event.preventDefault();
-    saveGhostFormProfile();
+    if (!saveGhostFormProfile(true)) return;
     renderGoGhostAutomationScope();
     renderGoGhostProgress();
-    showCopyToast(GO_GHOST_BROWSER_AUTOMATION_AVAILABLE ? "Automation scope updated" : "Search details updated");
+    showCopyToast("Reviewed details saved");
   });
 
-  [ghostNameInput, ghostLocationInput, ghostAddressInput, ghostPhoneInput, ghostEmailInput].forEach((input) => {
-    input?.addEventListener("input", () => {
+  [ghostFirstNameInput, ghostMiddleNameInput, ghostLastNameInput, ghostCityInput, ghostStateInput,
+    ghostBirthYearInput, ghostAddressInput, ghostPhoneInput, ghostEmailInput,
+    ghostPreviousCitiesInput, ghostOtherNamesInput].forEach((input) => {
+    const changed = () => {
       saveGhostFormProfile();
       renderGoGhostAutomationScope();
       renderGoGhostProgress();
-    });
+    };
+    input?.addEventListener(input === ghostStateInput ? "change" : "input", changed);
   });
 
   clearGhostDataButton?.addEventListener("click", () => {

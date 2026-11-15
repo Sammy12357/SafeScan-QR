@@ -27,11 +27,20 @@ const goGhostScopeCopyButton = document.getElementById("goGhostScopeCopyButton")
 const startGhostQueueButton = document.getElementById("startGhostQueueButton");
 const openNextGhostBrokerButton = document.getElementById("openNextGhostBrokerButton");
 const ghostProgressCount = document.getElementById("ghostProgressCount");
-const ghostNameInput = document.getElementById("ghostNameInput");
-const ghostLocationInput = document.getElementById("ghostLocationInput");
+const ghostFirstNameInput = document.getElementById("ghostFirstNameInput");
+const ghostMiddleNameInput = document.getElementById("ghostMiddleNameInput");
+const ghostLastNameInput = document.getElementById("ghostLastNameInput");
+const ghostCityInput = document.getElementById("ghostCityInput");
+const ghostStateInput = document.getElementById("ghostStateInput");
+const ghostBirthYearInput = document.getElementById("ghostBirthYearInput");
 const ghostAddressInput = document.getElementById("ghostAddressInput");
 const ghostPhoneInput = document.getElementById("ghostPhoneInput");
 const ghostEmailInput = document.getElementById("ghostEmailInput");
+const ghostPreviousCitiesInput = document.getElementById("ghostPreviousCitiesInput");
+const ghostOtherNamesInput = document.getElementById("ghostOtherNamesInput");
+const ghostProfileReviewNotice = document.getElementById("ghostProfileReviewNotice");
+const ghostSavedProfileHint = document.getElementById("ghostSavedProfileHint");
+const ghostAccountNameHint = document.getElementById("ghostAccountNameHint");
 const goGhostDeviceNotice = document.getElementById("goGhostDeviceNotice");
 const goGhostSessionNotice = document.getElementById("goGhostSessionNotice");
 const goGhostLegacyNotice = document.getElementById("goGhostLegacyNotice");
@@ -48,6 +57,8 @@ const GO_GHOST_CONSENT_KEY = "safeScanGoGhostConsent";
 const GO_GHOST_LEGACY_KEYS = [GO_GHOST_PROFILE_KEY, GO_GHOST_PROGRESS_KEY, GO_GHOST_CONSENT_KEY];
 // The old keys have no owner. Erase them without reading or importing values.
 const goGhostAccountId = goGhostWorkspace?.dataset.accountId || "";
+const goGhostAccountName = goGhostWorkspace?.dataset.accountName || "";
+const goGhostAccountEmail = goGhostWorkspace?.dataset.accountEmail || "";
 const GO_GHOST_STORE_KEY = goGhostAccountId
   ? `safeScanGoGhostV2:account:${encodeURIComponent(goGhostAccountId)}`
   : "safeScanGoGhostV2:guest";
@@ -116,7 +127,13 @@ function writeJsonStorage(key, value, area) {
 }
 
 function ghostEmptyProfile() {
-  return { name: "", location: "", address: "", phone: "", email: "", identifier: "" };
+  return {
+    firstName: "", middleName: "", lastName: "", city: "", state: "", email: "",
+    birthYear: "", address: "", phone: "", previousCities: "", otherNames: "",
+    // `name` and `location` preserve account-scoped v2 values until the user
+    // reviews the split fields. They are never used for an action while unreviewed.
+    name: "", location: "", identifier: "", reviewedAt: ""
+  };
 }
 
 function ghostNewSubject(kind) {
@@ -191,6 +208,63 @@ function ghostSaveProfile(profile) {
   ghostSaveState();
 }
 
+const GHOST_PROFILE_FORM_FIELDS = [
+  "firstName", "middleName", "lastName", "city", "state", "email", "birthYear",
+  "address", "phone", "previousCities", "otherNames"
+];
+
+function ghostFormValues() {
+  return {
+    firstName: cleanGhostText(ghostFirstNameInput?.value),
+    middleName: cleanGhostText(ghostMiddleNameInput?.value),
+    lastName: cleanGhostText(ghostLastNameInput?.value),
+    city: cleanGhostText(ghostCityInput?.value),
+    state: cleanGhostText(ghostStateInput?.value),
+    email: cleanGhostText(ghostEmailInput?.value),
+    birthYear: cleanGhostText(ghostBirthYearInput?.value),
+    address: cleanGhostText(ghostAddressInput?.value),
+    phone: cleanGhostText(ghostPhoneInput?.value),
+    previousCities: cleanGhostText(ghostPreviousCitiesInput?.value),
+    otherNames: cleanGhostText(ghostOtherNamesInput?.value)
+  };
+}
+
+function ghostValidProfileFields(values) {
+  // Constrain URL-bound name/city values to text rather than address or URL
+  // fragments. A region is selected from the reviewed U.S. list or Outside US.
+  const personText = /^[\p{L}\p{M}][\p{L}\p{M} .'-]*$/u;
+  const cityText = /^[\p{L}\p{M}][\p{L}\p{M} .'-]*$/u;
+  const state = values.state;
+  const year = values.birthYear;
+  return personText.test(values.firstName) && values.firstName.length <= 80
+    && personText.test(values.lastName) && values.lastName.length <= 100
+    && (!values.middleName || (personText.test(values.middleName) && values.middleName.length <= 100))
+    && cityText.test(values.city) && values.city.length <= 100
+    && (ghostSearchRegionCodes.has(state) || state === "OUTSIDE_US")
+    && values.email.length <= 180 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)
+    && (!year || (/^\d{4}$/.test(year) && Number(year) >= 1900 && Number(year) <= new Date().getFullYear()));
+}
+
+function ghostProfileIsReviewed() {
+  if (goGhostStoreLocked || !goGhostWorkspace) return false;
+  const saved = ghostCurrentSubject().profile;
+  const form = ghostFormValues();
+  const reviewedAt = saved.reviewedAt;
+  const validReviewTime = typeof reviewedAt === "string"
+    && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(reviewedAt)
+    && !Number.isNaN(Date.parse(reviewedAt)) && new Date(reviewedAt).toISOString() === reviewedAt;
+  return validReviewTime && ghostValidProfileFields(form)
+    && GHOST_PROFILE_FORM_FIELDS.every((field) => form[field] === saved[field]);
+}
+
+function ghostActionProfile() {
+  const values = ghostFormValues();
+  const reviewed = ghostProfileIsReviewed();
+  const name = reviewed ? `${values.firstName} ${values.lastName}` : "";
+  const location = reviewed && values.state !== "OUTSIDE_US" ? `${values.city}, ${values.state}` : "";
+  return { ...values, name, location, identifier: "" };
+}
+
 function ghostSaveProgress(progress) {
   if (goGhostStoreLocked) return;
   ghostCurrentSubject().progress = progress;
@@ -238,19 +312,7 @@ function ghostPathSlug(value) {
 
 function getGhostProfile() {
   if (goGhostStoreLocked || !goGhostWorkspace) return ghostEmptyProfile();
-  const profile = ghostCurrentSubject().profile;
-  const currentProfile = {
-    ...profile,
-    name: ghostNameInput ? cleanGhostText(ghostNameInput.value) : cleanGhostText(profile.name),
-    location: ghostLocationInput ? cleanGhostText(ghostLocationInput.value) : cleanGhostText(profile.location),
-    address: ghostAddressInput ? cleanGhostText(ghostAddressInput.value) : cleanGhostText(profile.address),
-    phone: ghostPhoneInput ? cleanGhostText(ghostPhoneInput.value) : cleanGhostText(profile.phone),
-    email: ghostEmailInput ? cleanGhostText(ghostEmailInput.value) : cleanGhostText(profile.email),
-    identifier: profile.identifier || ""
-  };
-  currentProfile.phone = currentProfile.phone || currentProfile.identifier || "";
-  currentProfile.email = currentProfile.email || "";
-  return currentProfile;
+  return ghostActionProfile();
 }
 
 function getGhostProgress() {
@@ -426,18 +488,18 @@ function goGhostCopyPacket(broker, profile, searchUrl) {
   return [
     `${broker.name} opt-out packet`,
     `Name: ${profile.name || ""}`,
-    `Street address: ${profile.address || ""}`,
     `City/state: ${profile.location || ""}`,
-    `Phone: ${profile.phone || profile.identifier || ""}`,
     `Email: ${profile.email || ""}`,
     `Search link: ${searchUrl}`,
     `Opt-out link: ${optOutUrl}`,
     `Needed: ${(broker.requiredInfo || []).join(", ")}`,
+    "Optional address, phone, birth year, and aliases are not copied. Add them only if this broker requires them.",
     `Next step: ${GO_GHOST_BROWSER_AUTOMATION_AVAILABLE ? (broker.automationNote || "Open the matching profile and complete the broker opt-out form.") : "Open the broker opt-out page and complete the request in your browser."}`,
   ].join("\n");
 }
 
 function goGhostBrokerSearchUrl(broker, profile) {
+  if (profile.state === "OUTSIDE_US") return broker.removalUrl;
   return profile.name ? broker.searchUrl(profile) : ghostSearchFallback(profile, broker.name);
 }
 
@@ -471,7 +533,7 @@ function nextPendingGhostBroker(allowed = () => true) {
 
 function scrollToGhostProfile() {
   goGhostProfileForm?.scrollIntoView({ behavior: "smooth", block: "center" });
-  ghostNameInput?.focus({ preventScroll: true });
+  ghostFirstNameInput?.focus({ preventScroll: true });
 }
 
 function scrollToGhostBroker(broker) {
@@ -480,13 +542,7 @@ function scrollToGhostBroker(broker) {
 }
 
 function getGhostFormProfile() {
-  return {
-    name: ghostNameInput?.value?.trim() || "",
-    location: ghostLocationInput?.value?.trim() || "",
-    address: ghostAddressInput?.value?.trim() || "",
-    phone: ghostPhoneInput?.value?.trim() || "",
-    email: ghostEmailInput?.value?.trim() || ""
-  };
+  return { ...ghostCurrentSubject().profile, ...ghostFormValues() };
 }
 
 function applyGoGhostDeviceFormatting() {

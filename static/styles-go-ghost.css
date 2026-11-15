@@ -14,6 +14,12 @@
 .ghost-automation-site-row { cursor: pointer; transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease; }
 .ghost-automation-site-row:hover, .ghost-automation-site-row:focus-visible { border-color: rgba(var(--accent-rgb), 0.42); background: rgba(var(--accent-rgb), 0.08); outline: none; transform: translateY(-1px); }
 .go-ghost-keyword-form { margin-top: 16px; padding: 14px; border: 1px solid rgba(var(--accent-rgb), 0.18); border-radius: 8px; background: rgba(var(--accent-rgb), 0.045); }
+.go-ghost-form select, .go-ghost-form textarea { width: 100%; padding: 14px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-strong); color: var(--text); font: inherit; }
+.go-ghost-form textarea { resize: vertical; min-height: 76px; }
+.ghost-optional-fields { padding: 14px; border: 1px solid var(--line); border-radius: 8px; }
+.ghost-optional-fields summary { cursor: pointer; color: var(--text); font-weight: 800; }
+.ghost-optional-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
+.ghost-optional-fields .go-ghost-copy { margin: 12px 0 0; }
 .ghost-subject-switch { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 16px; }
 .ghost-subject-switch label { color: var(--text); font-weight: 800; }
 .ghost-subject-switch select { flex: 1 1 190px; min-height: 46px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-strong); color: var(--text); font: inherit; }
@@ -41,7 +47,8 @@
 .ghost-scope-actions { margin-top: 18px; }
 .go-ghost-mobile .go-ghost-layout { grid-template-columns: 1fr; }
 .go-ghost-mobile .automation-scope-card { order: 3; }
-.go-ghost-mobile .go-ghost-form input { min-height: 50px; font-size: 16px; }
+.go-ghost-mobile .go-ghost-form input, .go-ghost-mobile .go-ghost-form select, .go-ghost-mobile .go-ghost-form textarea { min-height: 50px; font-size: 16px; }
+.go-ghost-mobile .ghost-optional-grid { grid-template-columns: 1fr; }
 .go-ghost-mobile .broker-actions .primary-button, .go-ghost-mobile .broker-actions .secondary-button, .go-ghost-mobile .go-ghost-actions button, .go-ghost-mobile .go-ghost-actions a, .go-ghost-mobile .ghost-automation-actions button { flex: 1 1 100%; min-height: 48px; text-align: center; }
 .go-ghost-mobile .broker-card { grid-template-columns: 1fr; align-items: stretch; }
 .go-ghost-mobile .broker-actions, .go-ghost-mobile .ghost-automation-actions { justify-content: stretch; }
@@ -149,6 +156,8 @@
 :root[data-theme="light"] .legal-form select,
 :root[data-theme="light"] .legal-form textarea,
 :root[data-theme="light"] .go-ghost-form input,
+:root[data-theme="light"] .go-ghost-form select,
+:root[data-theme="light"] .go-ghost-form textarea,
 :root[data-theme="light"] .scanner-subcard-url input[type="url"] {
   background: rgba(255, 255, 255, 0.76);
   border-color: rgba(16, 24, 39, 0.16);
@@ -171,7 +180,8 @@
   .go-ghost-status { min-width: 0; }
   .broker-actions { justify-content: stretch; }
   .broker-actions a, .broker-actions button, .go-ghost-actions button, .go-ghost-actions a { flex: 1 1 100%; text-align: center; }
-  .go-ghost-form input { min-height: 50px; font-size: 16px; }
+  .go-ghost-form input, .go-ghost-form select, .go-ghost-form textarea { min-height: 50px; font-size: 16px; }
+  .ghost-optional-grid { grid-template-columns: 1fr; }
   .go-ghost-device-notice { font-size: 0.94rem; }
   .ghost-automation-actions button { flex: 1 1 100%; min-height: 48px; }
   .ghost-automation-row { grid-template-columns: minmax(94px, 1.15fr) repeat(3, minmax(42px, 0.58fr)); gap: 5px; min-width: 0; padding: 10px 7px; font-size: 0.72rem; }

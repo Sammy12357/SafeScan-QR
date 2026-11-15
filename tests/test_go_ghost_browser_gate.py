@@ -105,11 +105,18 @@ def test_production_page_keeps_manual_opt_out_controls(go_ghost_app):
 def test_go_ghost_browser_scope_uses_session_owner_id(go_ghost_app, monkeypatch):
     client, routes, _ = go_ghost_app
     monkeypatch.setattr(routes, "get_session_user", lambda request: {
-        "google_id": "account-a", "email": "person@example.com", "role": "user",
+        "google_id": "account-a", "email": "person@example.com",
+        "display_name": "Amy & Lee", "role": "user",
     })
     response = client.get("/go-ghost")
     assert response.status_code == 200
     assert 'data-account-id="account-a"' in response.text
+    assert 'data-account-name="Amy &amp; Lee"' in response.text
+    assert 'data-account-email="person@example.com"' in response.text
+    assert 'id="ghostFirstNameInput"' in response.text
+    assert 'id="ghostStateInput"' in response.text
+    assert 'value="DC">District of Columbia</option>' in response.text
+    assert response.text.count('<option value="') >= 52
     assert response.headers["Cache-Control"] == "no-store"
 
 

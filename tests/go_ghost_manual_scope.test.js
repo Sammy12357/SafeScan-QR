@@ -29,8 +29,10 @@ const ids = [
   'goGhostScopeSubmittedButton', 'goGhostScopeRemovedButton',
   'goGhostScopeResetButton', 'goGhostScopeCopyButton',
   'openNextGhostBrokerButton',
-  'ghostProgressCount', 'ghostNameInput', 'ghostLocationInput',
-  'ghostAddressInput', 'ghostPhoneInput', 'ghostEmailInput',
+  'ghostProgressCount', 'ghostFirstNameInput', 'ghostMiddleNameInput', 'ghostLastNameInput',
+  'ghostCityInput', 'ghostStateInput', 'ghostBirthYearInput', 'ghostAddressInput',
+  'ghostPhoneInput', 'ghostEmailInput', 'ghostPreviousCitiesInput', 'ghostOtherNamesInput',
+  'ghostProfileReviewNotice', 'ghostSavedProfileHint', 'ghostAccountNameHint',
   'goGhostDeviceNotice', 'goGhostLegacyNotice', 'goGhostLegacyActions', 'eraseGhostLegacyButton', 'goGhostSessionNotice',
   'ghostSubjectSelect', 'addGhostFamilyButton', 'removeGhostSubjectButton',
   'ghostFamilyAttestationLabel', 'ghostFamilyAttestationInput'
@@ -102,16 +104,21 @@ async function main() {
   assert.equal(rows.includes('Manual'), true);
   assert.equal(rows.includes('Run auto fill'), false);
 
-  elements.ghostNameInput.value = 'Example Person';
-  elements.ghostLocationInput.value = 'Tampa, FL';
+  elements.ghostFirstNameInput.value = 'Example';
+  elements.ghostLastNameInput.value = 'Person';
+  elements.ghostCityInput.value = 'Tampa';
+  elements.ghostStateInput.value = 'FL';
   elements.ghostAddressInput.value = '123 Private Street';
   elements.ghostPhoneInput.value = '8135550100';
   elements.ghostEmailInput.value = 'person@example.com';
-  elements.ghostNameInput.handlers.input();
-  elements.ghostLocationInput.handlers.input();
+  elements.ghostFirstNameInput.handlers.input();
+  elements.ghostLastNameInput.handlers.input();
+  elements.ghostCityInput.handlers.input();
+  elements.ghostStateInput.handlers.change();
   elements.ghostAddressInput.handlers.input();
   elements.ghostPhoneInput.handlers.input();
   elements.ghostEmailInput.handlers.input();
+  elements.goGhostProfileForm.handlers.submit({preventDefault() {}});
   const brokerUrls = vm.runInContext('goGhostBrokers.map(broker => [broker.id, goGhostBrokerOptOutUrl(broker)])', context);
   const brokerUrlById = Object.fromEntries(brokerUrls);
   for (const id of ['intelius', 'ussearch', 'instantcheckmate', 'truthfinder']) {
@@ -202,7 +209,7 @@ async function main() {
   assert.equal(saved.has('safeScanGoGhostProfile'), false);
   assert.equal(elements.goGhostWorkspace.hidden, true);
   assert.equal(elements.goGhostConsentModal.classList.contains('hidden'), false);
-  assert.equal(elements.ghostNameInput.value, '');
+  assert.equal(elements.ghostFirstNameInput.value, '');
   assert.equal(elements.ghostProgressCount.textContent, '0 / 18');
 }
 

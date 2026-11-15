@@ -8,7 +8,7 @@
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <title>Go Ghost | SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg?v=rose-theme-v1" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=ghost-legacy-erase-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=ghost-profile-v2">
 </head>
 <body>
   <div class="page-shell go-ghost-shell">
@@ -34,7 +34,7 @@
     <p id="goGhostLegacyNotice" class="go-ghost-copy" role="alert" hidden>Older Go Ghost details could not be erased from this browser. Try again or clear this site's browser storage.</p>
     <div id="goGhostLegacyActions" class="go-ghost-actions" hidden><button id="eraseGhostLegacyButton" class="secondary-button" type="button">Retry erasing older details</button></div>
 
-    <main class="go-ghost-layout" id="goGhostWorkspace" hidden data-browser-automation-available="{{ 'true' if browser_automation_available else 'false' }}" data-account-id="{{ go_ghost_account_id }}">
+    <main class="go-ghost-layout" id="goGhostWorkspace" hidden data-browser-automation-available="{{ 'true' if browser_automation_available else 'false' }}" data-account-id="{{ go_ghost_account_id }}" data-account-name="{{ go_ghost_account_name }}" data-account-email="{{ go_ghost_account_email }}">
       <section class="go-ghost-card result-card-wide">
         <div class="panel-header">
           <div>
@@ -72,30 +72,62 @@
           <button id="addGhostFamilyButton" class="secondary-button" type="button">Add family member</button>
           <button id="removeGhostSubjectButton" class="secondary-button" type="button">Remove this person</button>
         </div>
+        <p class="go-ghost-copy">This directory covers mainly U.S. people-search records. Outside the U.S., Search opens the broker's manual instructions without adding your name or location to a link.</p>
         <p class="go-ghost-copy">Signed-in profiles stay on this browser. Guest details are kept in this tab's session. Each person has separate progress.</p>
 
         <form id="goGhostProfileForm" class="go-ghost-form go-ghost-keyword-form">
-          <label>Full name
-            <input id="ghostNameInput" type="text" autocomplete="name" maxlength="160">
+          <p id="ghostProfileReviewNotice" class="go-ghost-copy" role="status">Enter the required details, review them, then save before opening broker links.</p>
+          <p id="ghostSavedProfileHint" class="go-ghost-copy" hidden></p>
+          <p id="ghostAccountNameHint" class="go-ghost-copy" hidden></p>
+          <label>First name
+            <input id="ghostFirstNameInput" type="text" autocomplete="given-name" maxlength="80" required>
           </label>
-          <label>City and state
-            <input id="ghostLocationInput" type="text" autocomplete="address-level2" maxlength="140">
+          <label>Last name
+            <input id="ghostLastNameInput" type="text" autocomplete="family-name" maxlength="100" required>
           </label>
-          <label>Street address
-            <input id="ghostAddressInput" type="text" autocomplete="street-address" maxlength="220">
+          <label>City
+            <input id="ghostCityInput" type="text" autocomplete="address-level2" maxlength="100" required>
           </label>
-          <label>Phone number
-            <input id="ghostPhoneInput" type="tel" autocomplete="tel" maxlength="80">
+          <label>U.S. state or region
+            <select id="ghostStateInput" autocomplete="address-level1" required>
+              <option value="">Choose a state or region</option>
+              {% for code, label in go_ghost_us_states %}<option value="{{ code }}">{{ label }}</option>{% endfor %}
+              <option value="OUTSIDE_US">Outside the U.S.</option>
+            </select>
           </label>
           <label>Email
-            <input id="ghostEmailInput" type="email" autocomplete="email" maxlength="180">
+            <input id="ghostEmailInput" type="email" autocomplete="email" maxlength="180" required>
           </label>
+          <details class="ghost-optional-fields">
+            <summary>Optional details for future matching</summary>
+            <div class="ghost-optional-grid">
+              <label>Middle name or initial
+                <input id="ghostMiddleNameInput" type="text" autocomplete="additional-name" maxlength="100">
+              </label>
+              <label>Birth year
+                <input id="ghostBirthYearInput" type="text" inputmode="numeric" autocomplete="bday-year" pattern="[0-9]{4}" maxlength="4" placeholder="YYYY">
+              </label>
+              <label>Street address
+                <input id="ghostAddressInput" type="text" autocomplete="street-address" maxlength="220">
+              </label>
+              <label>Phone number
+                <input id="ghostPhoneInput" type="tel" autocomplete="tel" maxlength="80">
+              </label>
+              <label>Previous cities (comma-separated)
+                <textarea id="ghostPreviousCitiesInput" rows="2" maxlength="220" autocomplete="off"></textarea>
+              </label>
+              <label>Other names used (comma-separated)
+                <textarea id="ghostOtherNamesInput" rows="2" maxlength="220" autocomplete="off"></textarea>
+              </label>
+            </div>
+            <p class="go-ghost-copy">These details stay in this browser and are not used by current searches or opt-out actions. Leave them blank unless you want to keep them here for a future matching feature.</p>
+          </details>
           <label id="ghostFamilyAttestationLabel" class="ghost-family-attestation" hidden>
             <input id="ghostFamilyAttestationInput" type="checkbox">
             <span>I confirm I am authorized to help this family member request removal. A broker may require the person to verify directly.</span>
           </label>
           <div class="go-ghost-actions">
-            <button class="primary-button" type="submit">{{ 'Update automation scope' if browser_automation_available else 'Update search details' }}</button>
+            <button class="primary-button" type="submit">Save reviewed details</button>
             <button class="secondary-button" id="clearGhostDataButton" type="button">{{ 'Clear this account’s Go Ghost info' if logged_in else 'Clear guest Go Ghost info' }}</button>
           </div>
         </form>
@@ -175,8 +207,8 @@
   <script id="goGhostBrokerRegistry" type="application/json">{{ go_ghost_brokers | tojson }}</script>
   <script src="/static/app-core.js?v=ghost-assist-v1"></script>
   <script src="/static/app-widgets.js?v=ghost-assist-v1"></script>
-  <script src="/static/app-go-ghost.js?v=ghost-legacy-erase-v1"></script>
-  <script src="/static/app-go-ghost-ui.js?v=ghost-legacy-erase-v1"></script>
+  <script src="/static/app-go-ghost.js?v=ghost-profile-v2"></script>
+  <script src="/static/app-go-ghost-ui.js?v=ghost-profile-v2"></script>
   <script src="/static/app-generate-qr.js?v=ghost-assist-v1"></script>
 </body>
 </html>

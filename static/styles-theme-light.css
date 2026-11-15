@@ -136,6 +136,8 @@
 :root[data-theme="light"] .legal-form select,
 :root[data-theme="light"] .legal-form textarea,
 :root[data-theme="light"] .go-ghost-form input,
+:root[data-theme="light"] .go-ghost-form select,
+:root[data-theme="light"] .go-ghost-form textarea,
 :root[data-theme="light"] .scanner-subcard-url textarea,
 :root[data-theme="light"] .generate-qr-form-row input[type="url"] {
   background: #ffffff;
