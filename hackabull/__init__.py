@@ -45,3 +45,4 @@ from .routes_pages import *  # noqa: F401,F403
 from .routes_scan_auth import *  # noqa: F401,F403
 from .routes_scan_telemetry import *  # noqa: F401,F403
 from .routes_account import *  # noqa: F401,F403
+from .routes_go_ghost_status import *  # noqa: F401,F403

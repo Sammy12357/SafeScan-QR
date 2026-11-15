@@ -52,6 +52,9 @@ USER_COLUMN = {
     "consent_logs": "user_id",
     "referrals": "referrer_email",
     "discord_links": "user_id",
+    "go_ghost_subjects": "user_id",
+    "go_ghost_consents": "user_id",
+    "go_ghost_requests": "user_id",
 }
 
 # Tables with no per-user owner column. These hold global/administrative data,

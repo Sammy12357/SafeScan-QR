@@ -70,6 +70,27 @@ def legal_context(request: Request, title, body_html):
         "google_client_id": CLIENT_ID
     }
 
+
+_GO_GHOST_STATUS_TABLES = frozenset({
+    "go_ghost_subjects", "go_ghost_consents", "go_ghost_requests",
+})
+
+
+def _go_ghost_status_table_exists(conn, table):
+    if table not in _GO_GHOST_STATUS_TABLES:
+        raise ValueError("Unknown Go Ghost status table")
+    return conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)
+    ).fetchone() is not None
+
+
+def _go_ghost_status_export(conn, table, user_id):
+    if not _go_ghost_status_table_exists(conn, table):
+        return []
+    return [dict(row) for row in conn.execute(
+        f"SELECT * FROM {table} WHERE user_id = ?", (user_id,)
+    )]
+
 def get_user_export(email, user_id):
     with get_conn() as conn:
         conn.row_factory = sqlite3.Row
@@ -97,7 +118,17 @@ def get_user_export(email, user_id):
         requests_ = [dict(row) for row in conn.execute("SELECT * FROM data_requests WHERE email = ?", (email,))]
         age = [dict(row) for row in conn.execute("SELECT * FROM age_confirmations WHERE email = ?", (email,))]
         opt_outs = [dict(row) for row in conn.execute("SELECT * FROM privacy_opt_outs WHERE email = ?", (email,))]
-    return {"email": email, "scans": scans, "scanEvents": events, "dataRequests": requests_, "ageConfirmations": age, "privacyOptOuts": opt_outs}
+        ghost_subjects = _go_ghost_status_export(conn, "go_ghost_subjects", user_id)
+        ghost_consents = _go_ghost_status_export(conn, "go_ghost_consents", user_id)
+        ghost_requests = _go_ghost_status_export(conn, "go_ghost_requests", user_id)
+        ghost_legacy_jobs = [dict(row) for row in conn.execute(
+            "SELECT * FROM go_ghost_removal_jobs WHERE user_id = ?", (user_id,)
+        )]
+    return {"email": email, "scans": scans, "scanEvents": events,
+            "dataRequests": requests_, "ageConfirmations": age,
+            "privacyOptOuts": opt_outs,
+            "goGhostSubjects": ghost_subjects, "goGhostConsents": ghost_consents,
+            "goGhostRequests": ghost_requests, "goGhostLegacyJobs": ghost_legacy_jobs}
 
 def delete_user_data(email, user_id):
     with get_conn() as conn:
@@ -116,6 +147,12 @@ def delete_user_data(email, user_id):
             "DELETE FROM scan_history WHERE user_id = ? OR ((user_id IS NULL OR user_id = '') AND lower(email) = lower(?))",
             (user_id, email),
         )
+        # SQLite connections do not currently enforce foreign keys. Delete
+        # each Go Ghost table explicitly, including the retired PII-bearing jobs.
+        for table in ("go_ghost_requests", "go_ghost_consents", "go_ghost_subjects"):
+            if _go_ghost_status_table_exists(conn, table):
+                conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM go_ghost_removal_jobs WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM users WHERE google_id = ?", (user_id,))
         conn.execute("DELETE FROM age_confirmations WHERE email = ?", (email,))
     return True
