@@ -60,7 +60,7 @@ def test_browser_storage_and_cookie_names_are_in_inventory():
         assert family in inventory
 
 
-def test_data_map_has_field_level_purpose_and_retention():
+def test_data_map_lists_table_fields_and_table_level_metadata():
     data_map = json.loads(_source("docs/legal/data-map.yaml"))
     assert data_map["tables"]
     for table, entry in data_map["tables"].items():
