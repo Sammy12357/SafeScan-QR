@@ -1,5 +1,8 @@
 """Server-rendered empty states should explain the next useful action."""
 
+from contextlib import contextmanager
+import sqlite3
+
 import pytest
 from starlette.requests import Request
 
@@ -127,3 +130,85 @@ def test_admin_filtered_empty_states_offer_clear_filter():
     assert_empty_state(render_admin("waitlist", waitlist), "No signups match this search", "/admin/waitlist")
     logs = {"rows": [], "actions": []}
     assert_empty_state(render_admin("logs", logs, query="action=none"), "No logs match these filters", "/admin/logs")
+
+
+def test_admin_user_detail_has_content_and_contextual_empty_subsections():
+    user = {
+        "email": "scanner@example.test", "display_name": "Test Scanner", "status": "active",
+        "role": "user", "created_at": "2026-11-01", "last_login_at": None,
+        "last_login": None, "scan_count": 0, "wallet_address": None,
+    }
+    html = render_admin("user_drawer", {"user": user, "flags": [], "logs": [], "scans": []}, path="/admin/users/scanner@example.test/drawer")
+    assert '<h2 id="admin-detail-name">Test Scanner</h2>' in html
+    assert "scanner@example.test" in html
+    for heading, href in (
+        ("No verified wallet", "/admin/airdrop/wallets"),
+        ("No fraud flags", "/admin/airdrop/fraud"),
+        ("No saved scans", "/admin/scans"),
+        ("No account activity logged", "/admin/logs"),
+    ):
+        assert_empty_state(html, heading, href, heading_level=3)
+
+    populated = render_admin("user_drawer", {
+        "user": {**user, "wallet_address": "SyntheticWalletAddress", "wallet_verified": 1, "scan_count": 1},
+        "flags": [{"check_name": "scan_velocity", "severity": "medium", "reason": "Burst of scans", "reviewed": 0, "created_at": "2026-11-02"}],
+        "logs": [{"action": "user.login", "created_at": "2026-11-03"}],
+        "scans": [{"url": "https://example.test/<script>", "verdict": "CAUTION", "risk_score": 42, "created_at": "2026-11-04"}],
+    })
+    assert "SyntheticWalletAddress" in populated
+    assert "Burst of scans" in populated
+    assert "User Login" in populated
+    assert "Risk 42" in populated
+    assert "&lt;script&gt;" in populated
+    assert "No fraud flags" not in populated
+    assert "No saved scans" not in populated
+
+
+def test_admin_user_detail_link_is_reachable_from_user_list():
+    html = render_admin("users", {
+        "rows": [{"email": "scanner@example.test", "display_name": "Test Scanner", "role": "user", "status": "active", "tier": "Registered", "scan_count": 0, "referral_count": 0, "wallet_address": None, "created_at": "2026-11-01", "last_login_at": None, "last_login": None}],
+        "filters": {"search": "", "status": "", "role": "", "tier": "", "flag": ""},
+        "page": 1, "pages": 1, "total": 1,
+    })
+    assert 'href="/admin/users/scanner%40example.test/drawer"' in html
+
+
+def test_fetch_user_detail_resolves_account_id_and_keeps_other_users_out(tmp_path, monkeypatch):
+    from hackabull import admin_data
+
+    database = tmp_path / "user-detail.db"
+    with sqlite3.connect(database) as conn:
+        conn.executescript("""
+            CREATE TABLE users (google_id TEXT, email TEXT, display_name TEXT, role TEXT, status TEXT, created_at TEXT, last_login TEXT, last_login_at TEXT);
+            CREATE TABLE scans (email TEXT, wallet_address TEXT, scan_count INTEGER);
+            CREATE TABLE wallets (user_id TEXT, address TEXT, verified INTEGER, sol_balance REAL, tx_count INTEGER, wallet_age_days INTEGER, onchain_verified_at TEXT);
+            CREATE TABLE fraud_flags (id TEXT, user_id TEXT, check_name TEXT, severity TEXT, reason TEXT, metadata TEXT, reviewed INTEGER, created_at TEXT);
+            CREATE TABLE audit_logs (id TEXT, actor_user_id TEXT, action TEXT, target_id TEXT, created_at TEXT);
+            CREATE TABLE scan_history (id TEXT, email TEXT, url TEXT, risk_score INTEGER, verdict TEXT, signals TEXT, created_at TEXT);
+            INSERT INTO users VALUES ('account-1', 'one@example.test', 'One', 'user', 'active', '2026-11-01', NULL, NULL);
+            INSERT INTO users VALUES ('account-2', 'two@example.test', 'Two', 'user', 'active', '2026-11-01', NULL, NULL);
+            INSERT INTO scans VALUES ('one@example.test', 'stale-unverified-wallet', 1);
+            INSERT INTO fraud_flags VALUES ('flag-1', 'account-1', 'scan_velocity', 'medium', 'Burst of scans', '{}', 0, '2026-11-02');
+            INSERT INTO fraud_flags VALUES ('flag-2', 'account-2', 'scan_velocity', 'medium', 'Other account', '{}', 0, '2026-11-02');
+            INSERT INTO audit_logs VALUES ('log-1', 'account-1', 'user.login', NULL, '2026-11-03');
+            INSERT INTO audit_logs VALUES ('log-2', 'account-2', 'user.login', NULL, '2026-11-03');
+            INSERT INTO scan_history VALUES ('scan-1', 'one@example.test', 'https://one.example.test', 42, 'CAUTION', '[]', '2026-11-04');
+            INSERT INTO scan_history VALUES ('scan-2', 'two@example.test', 'https://two.example.test', 10, 'SAFE', '[]', '2026-11-04');
+        """)
+
+    @contextmanager
+    def get_test_conn():
+        conn = sqlite3.connect(database)
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    monkeypatch.setattr(admin_data, "get_conn", get_test_conn)
+    detail = admin_data.fetch_user_detail("ONE@example.test")
+    assert detail["user"]["google_id"] == "account-1"
+    assert detail["user"]["wallet_address"] is None
+    assert [flag["id"] for flag in detail["flags"]] == ["flag-1"]
+    assert [log["id"] for log in detail["logs"]] == ["log-1"]
+    assert [scan["id"] for scan in detail["scans"]] == ["scan-1"]
+    assert admin_data.fetch_user_detail("missing@example.test") == {"user": None, "flags": [], "logs": [], "scans": []}

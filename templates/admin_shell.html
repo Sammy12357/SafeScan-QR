@@ -91,7 +91,7 @@
       </div>
       <div class="two-grid">
         <section class="admin-card"><h2>Recent Signups</h2>{% if data.recent_users %}<table><tbody>
-          {% for user in data.recent_users %}<tr><td><div class="mini-avatar">{{ user.email[:1]|upper }}</div></td><td>{{ user.email }}</td><td>{{ ((user.created_at or user.last_login) | time_only) }}</td><td>{{ 'yes' if user.wallet_address else 'no' }}</td><td><a href="/admin/users?search={{ user.email }}">View</a></td></tr>{% endfor %}
+          {% for user in data.recent_users %}<tr><td><div class="mini-avatar">{{ user.email[:1]|upper }}</div></td><td>{{ user.email }}</td><td>{{ ((user.created_at or user.last_login) | time_only) }}</td><td>{{ 'yes' if user.wallet_address else 'no' }}</td><td><a href="/admin/users/{{ user.email|urlencode }}/drawer">View</a></td></tr>{% endfor %}
         </tbody></table>{% else %}{{ empty_state(icon='info', title='No signups yet', body='New accounts will appear here.', action_label='Open users', action_href='/admin/users', compact=true, heading_level=3) }}{% endif %}</section>
         <section class="admin-card"><h2>Recent Reports</h2>{% if data.recent_reports %}<table><tbody>
           {% for report in data.recent_reports %}<tr><td class="truncate">{{ report.url }}</td><td>{{ report.reporter_email }}</td><td>{{ report.risk_score }}</td><td><a href="/admin/reports">Review</a></td></tr>{% endfor %}
@@ -113,7 +113,7 @@
         <thead><tr><th></th><th>Email</th><th>Display Name</th><th>Role</th><th>Status</th><th>Tier</th><th>Scans</th><th>Referrals</th><th>Wallet</th><th>Joined</th><th>Last Active</th><th>Actions</th></tr></thead>
         <tbody>{% for user in data.rows %}<tr>
           <td><input type="checkbox"></td><td>{{ user.email }}</td><td>{{ user.display_name or 'Safe Scanner' }}</td><td><span class="badge role">{{ user.role }}</span></td><td><span class="badge {{ user.status }}">{{ user.status }}</span></td><td>{{ user.tier }}</td><td>{{ user.scan_count }}</td><td>{{ user.referral_count }}</td><td class="truncate">{{ user.wallet_address or 'None' }}</td><td>{{ user.created_at | time_only }}</td><td>{{ ((user.last_login_at or user.last_login) | time_only) }}</td>
-          <td class="row-actions"><a href="/admin/users?search={{ user.email }}">View</a>
+          <td class="row-actions"><a href="/admin/users/{{ user.email|urlencode }}/drawer">View</a>
             <form action="/admin/users/{{ user.email }}/suspend" method="post"><button>{{ 'Unsuspend' if user.status == 'suspended' else 'Suspend' }}</button><input type="hidden" name="action" value="{{ 'unsuspend' if user.status == 'suspended' else 'suspend' }}"></form>
             {% if is_owner %}
             <form action="/admin/users/{{ user.email }}/role" method="post"><select name="role" aria-label="Role for {{ user.email }}" {% if form_error and form_error.target == user.email and form_error.field == 'role' %}aria-invalid="true" aria-describedby="admin-inline-role"{% endif %} onchange="this.form.submit()"><option>{{ user.role }}</option><option>user</option><option>admin</option><option>owner</option></select></form>
@@ -128,6 +128,38 @@
       {% else %}
       {{ empty_state(icon='info', title='No users yet', body='New accounts will appear here.', action_label='Open dashboard', action_href='/admin', compact=true) }}
       {% endif %}{% endif %}{% if data.rows %}<p>Page {{ data.page }} of {{ data.pages }} · {{ data.total }} users</p>{% endif %}</section>
+
+      {% elif page == 'user_drawer' %}
+      <div class="admin-detail-heading"><a class="button-link" href="/admin/users">← All users</a><span>Account details</span></div>
+      <section class="admin-card admin-detail-summary" aria-labelledby="admin-detail-name">
+        <div class="admin-detail-identity">
+          <div><p class="admin-detail-label">User</p><h2 id="admin-detail-name">{{ data.user.display_name or 'Safe Scanner' }}</h2><p class="admin-detail-email">{{ data.user.email }}</p></div>
+          <div class="admin-detail-badges"><span class="badge {{ data.user.status }}">{{ data.user.status }}</span><span class="badge role">{{ data.user.role }}</span></div>
+        </div>
+        <dl class="admin-detail-facts">
+          <div><dt>Joined</dt><dd>{{ data.user.created_at or 'Unknown' }}</dd></div>
+          <div><dt>Last active</dt><dd>{{ data.user.last_login_at or data.user.last_login or 'Not yet' }}</dd></div>
+          <div><dt>Saved scans</dt><dd>{{ data.user.scan_count or 0 }}</dd></div>
+        </dl>
+      </section>
+      <div class="admin-detail-grid">
+        <section class="admin-card" aria-labelledby="admin-detail-wallet"><h2 id="admin-detail-wallet">Verified wallet</h2>
+          {% if data.user.wallet_verified and data.user.wallet_address %}<p class="admin-detail-address">{{ data.user.wallet_address }}</p><p class="admin-detail-meta">Connected wallet on file.</p>
+          {% else %}{{ empty_state(icon='lock', title='No verified wallet', body='This account has not linked a verified wallet.', action_label='Open wallet registry', action_href='/admin/airdrop/wallets', compact=true, heading_level=3) }}{% endif %}
+        </section>
+        <section class="admin-card" aria-labelledby="admin-detail-flags"><h2 id="admin-detail-flags">Fraud flags</h2>
+          {% if data.flags %}<ul class="admin-detail-list">{% for flag in data.flags %}<li><div><strong>{{ flag.check_name|replace('_', ' ')|title }}</strong><span class="badge {{ flag.severity }}">{{ flag.severity }}</span></div><p>{{ flag.reason }}</p><small>{{ flag.created_at }} · {{ 'Reviewed' if flag.reviewed else 'Needs review' }}</small></li>{% endfor %}</ul>
+          {% else %}{{ empty_state(icon='check', title='No fraud flags', body='No fraud checks have flagged this account.', action_label='Open fraud review', action_href='/admin/airdrop/fraud', compact=true, heading_level=3) }}{% endif %}
+        </section>
+        <section class="admin-card" aria-labelledby="admin-detail-scans"><h2 id="admin-detail-scans">Recent scans</h2>
+          {% if data.scans %}<ul class="admin-detail-list">{% for scan in data.scans %}<li><div><strong class="admin-detail-url">{{ scan.url }}</strong><span class="badge {{ (scan.verdict or '')|lower }}">{{ scan.verdict or 'Unknown' }}</span></div><small>Risk {{ scan.risk_score or 0 }} · {{ scan.created_at }}</small></li>{% endfor %}</ul>
+          {% else %}{{ empty_state(icon='scan', title='No saved scans', body='This account has not saved a scan yet.', action_label='Open scan list', action_href='/admin/scans', compact=true, heading_level=3) }}{% endif %}
+        </section>
+        <section class="admin-card" aria-labelledby="admin-detail-activity"><h2 id="admin-detail-activity">Account activity</h2>
+          {% if data.logs %}<ul class="admin-detail-list">{% for log in data.logs %}<li><div><strong>{{ log.action|replace('.', ' ')|replace('_', ' ')|title }}</strong></div><small>{{ log.created_at }}</small></li>{% endfor %}</ul>
+          {% else %}{{ empty_state(icon='info', title='No account activity logged', body='Account and admin events will appear here when recorded.', action_label='Open audit logs', action_href='/admin/logs', compact=true, heading_level=3) }}{% endif %}
+        </section>
+      </div>
 
       {% elif page == 'scans' %}
       <div class="stat-grid small"><article>Total Scans <b>{{ data.stats.total }}</b></article><article>Flagged Today <b>{{ data.stats.flagged_today }}</b></article><article>Avg Risk 7d <b>{{ data.stats.avg_risk }}</b></article><article>Common TLD <b>{{ data.stats.common_tld }}</b></article></div>

@@ -142,21 +142,31 @@ def fetch_user_detail(email):
         conn.row_factory = sqlite3.Row
         user = conn.execute(
             """
-            SELECT u.*, COALESCE(w.address, s.wallet_address) AS wallet_address,
+            SELECT u.*, w.address AS wallet_address,
                    w.verified AS wallet_verified, w.sol_balance, w.tx_count,
                    w.wallet_age_days, w.onchain_verified_at,
                    COALESCE(s.scan_count, 0) AS scan_count
             FROM users u
             LEFT JOIN scans s ON s.email = u.email
             LEFT JOIN wallets w ON w.user_id = u.email AND w.verified = 1
-            WHERE u.email = ? OR u.google_id = ?
+            WHERE lower(u.email) = lower(?) OR u.google_id = ?
             """,
             (email, email)
         ).fetchone()
-        flags = [safe_fraud_flag_record(row) for row in conn.execute("SELECT * FROM fraud_flags WHERE user_id = ? ORDER BY created_at DESC LIMIT 50", (email,))]
-        logs = [dict(row) for row in conn.execute("SELECT * FROM audit_logs WHERE actor_user_id = ? OR target_id = ? ORDER BY created_at DESC LIMIT 50", (email, email))]
-        scans = [safe_scan_history_record(row) for row in conn.execute("SELECT * FROM scan_history WHERE email = ? ORDER BY created_at DESC LIMIT 50", (email,))]
-    return {"user": dict(user) if user else None, "flags": flags, "logs": logs, "scans": scans}
+        if not user:
+            return {"user": None, "flags": [], "logs": [], "scans": []}
+        identity = (user["google_id"], user["email"])
+        flags = [safe_fraud_flag_record(row) for row in conn.execute(
+            "SELECT * FROM fraud_flags WHERE user_id IN (?, ?) ORDER BY created_at DESC LIMIT 50", identity,
+        )]
+        logs = [dict(row) for row in conn.execute(
+            "SELECT * FROM audit_logs WHERE actor_user_id IN (?, ?) OR target_id IN (?, ?) ORDER BY created_at DESC LIMIT 50",
+            identity + identity,
+        )]
+        scans = [safe_scan_history_record(row) for row in conn.execute(
+            "SELECT * FROM scan_history WHERE lower(email) = lower(?) ORDER BY created_at DESC LIMIT 50", (user["email"],),
+        )]
+    return {"user": dict(user), "flags": flags, "logs": logs, "scans": scans}
 
 def dashboard_data():
     today = datetime.utcnow().date().isoformat()
