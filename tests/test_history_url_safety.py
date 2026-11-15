@@ -38,7 +38,7 @@ def scan(url, classification, host_forms=None):
     return {
         "url": url,
         "classification": classification,
-        "classificationLabel": classification,
+        "classificationLabel": "Lower risk score at scan time" if classification == "SAFE" else classification,
         "risk_score": 85 if classification == "MALICIOUS" else 8,
         "created_at": "2026-11-15T12:00:00Z",
         "hostForms": host_forms,
@@ -59,13 +59,16 @@ def test_dangerous_or_non_web_history_is_plain_text():
     assert "ASCII (punycode): xn--pple-43d.com" in html
 
 
-def test_verified_safe_history_link_keeps_visible_host_identity():
+def test_historical_safe_url_requires_recheck_and_keeps_visible_host_identity():
     html = render([
         scan("https://xn--mnchen-3ya.de/", "SAFE", {"unicode": "münchen.de", "ascii": "xn--mnchen-3ya.de"}),
     ])
     links = HistoryLinks()
     links.feed(html)
 
-    assert links.destinations == ["https://xn--mnchen-3ya.de/"]
+    assert links.destinations == []
+    assert "Lower risk score at scan time" in html
+    assert "badge-historical" in html
+    assert "Copy URL" in html and 'href="/#scanner"' in html
     assert "münchen.de" in html
     assert "xn--mnchen-3ya.de" in html

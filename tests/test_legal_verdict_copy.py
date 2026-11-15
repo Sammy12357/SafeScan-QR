@@ -50,3 +50,24 @@ def test_history_uses_bounded_legacy_labels():
 
     assert SCAN_CLASSIFICATION_LABELS["SAFE"] == "Lower risk score at scan time"
     assert SCAN_CLASSIFICATION_LABELS["MALICIOUS"] == "High-risk indicators"
+
+
+def test_legacy_history_url_never_opens_directly_and_offers_recheck():
+    url = "https://example.org/old-destination"
+    scan = {
+        "url": url,
+        "classification": "SAFE",
+        "classificationLabel": "Lower risk score at scan time",
+        "risk_score": 5,
+        "created_at": "2026-11-15T12:00:00Z",
+    }
+    html = TEMPLATES.get_template("history.html").render(
+        email="scanner@example.com",
+        scans=[scan],
+        scan_groups=[{"label": "Today", "count": 1, "scans": [scan]}],
+    )
+    assert f'<span class="history-url history-url-text">{url}</span>' in html
+    assert f'href="{url}"' not in html
+    assert "history-badge badge-historical" in html
+    assert "Older records do not retain check coverage" in html
+    assert "Copy URL" in html and 'href="/#scanner"' in html
