@@ -1,53 +1,21 @@
-## SafeScan QR Compliance Checklist
+# SafeScan legal and privacy control inventory
 
-This checklist documents compliance-oriented controls implemented for audit, investor, and future developer review. It is not legal advice; production launch should include attorney review.
+This is an engineering inventory, **not a statement of legal compliance or approved legal advice**. The public Terms, Privacy Policy, Cookie Policy, subscription terms, and international-user position need qualified attorney review. The evidence and unresolved questions are in `docs/legal/attorney-packet.md` and `docs/legal/research-log.md`.
 
-### GDPR
-- [x] Consent banner with reject option - `templates/footer.html`, `static/app-widgets.js`, `POST /api/consent`
-- [x] Consent records stored with timestamp, IP hash, locale, banner version, and 12-month expiry - `consent_logs` table
-- [x] User rights portal - `/legal/data-request`
-- [x] Data processing records - `/admin/data-processing-log`
-- [x] Breach notification template - `/admin/report-breach`
-- [x] SCCs noted for international transfers - `/legal/privacy-policy`
-- [x] Retention periods defined - Privacy Policy Section 3
-- [x] Age threshold for EU users set to 16 in age confirmation flow - `/auth/confirm-age`
+## Controls implemented in code
 
-### CCPA/CPRA
-- [x] Do Not Sell or Share link in footer - `templates/footer.html`
-- [x] Opt-out page - `/legal/do-not-sell`
-- [x] California rights section - `/legal/data-request`
-- [x] No data sold to third parties - Privacy Policy
-- [x] CCPA scale threshold note for future readiness - `/admin/data-processing-log`
+- Google and Auth0 sign-in now hold a verified identity in a short-lived pending state until the account age check completes. The server sets the account minimum age to 16; birth year and birthday answer are not retained. A separate adult attestation gates new payments, wallet, airdrop, token, and Go Ghost features. Existing billing management remains accessible so cancellation is not blocked. See `hackabull/age_gate.py` and `docs/legal/age-gate.md`.
+- Orbitron is hosted at SafeScan's own origin. The Google sign-in script loads on the login page, not the homepage. The profile picture may still be requested from a Google image host for a signed-in user. See `docs/legal/vendor-register.md`.
+- Optional first-party scanner performance counts require consent; no session recorder or advertising pixel was found in the Phase 0 code audit. The cookie banner now describes those counts. Consent records include a timestamp, IP hash, locale and banner version.
+- Waitlist addresses require an explicit opt-in and confirmation before marketing export. One-use signed unsubscribe links and a suppression list are implemented. Marketing email is disabled until SMTP, a stable signing secret, a verified legal sender name and a physical postal address are configured. See `docs/legal/email-operations.md`.
+- Card Checkout requires displayed renewal terms, an unchecked consent box, an account-bound Stripe Checkout Session and a verified webhook event before access is granted. The success page alone does not grant access. A signed-in customer can reach the Stripe portal for cancellation. Card checkout remains closed until the owner verifies the Stripe and business settings in `docs/legal/phase-1-payment-release.md`.
+- The site has privacy-request, opt-out, consent-log and incident-report routes. Their existence does not establish that every data source, vendor, backup and statutory deadline is covered.
 
-### COPPA
-- [x] Age confirmation gate after Google OAuth - `/auth/confirm-age`
-- [x] Under-13 users are blocked and no account is created - `confirm_age.html`
+## Open work and owner decisions
 
-### LGPD
-- [x] One-click consent revocation - `/account/settings`
-- [x] Third-party sharing list included - Privacy Policy Section 4
+- **Attorney:** approve the real legal entity, contracting terms, refund exceptions, privacy and cookie disclosures, age thresholds, cross-border treatment, arbitration terms, and the proposed SQR/token position. Do not publish an invented company name or address.
+- **Owner:** provide a real business name and postal address before enabling marketing email or card checkout; verify Stripe product, portal cancellation, receipts, webhooks, tax handling and the legacy Payment Link migration. The owner chose the proposed refund position: no refunds after a billing period starts, except where law requires otherwise.
+- **Engineering:** complete the field-level data map, retention jobs, end-to-end data rights, third-party licence notices, listing dispute workflow, token off switch, accessibility review and regression gates in later legal phases. Confirm actual Render storage, logs, backups, vendor agreements and browser requests.
+- **Release:** the backend age flow and mobile age client must be tested together before the backend change reaches production. Existing account identities with a mismatched provider subject require manual recovery; do not merge them by email alone.
 
-### PIPEDA
-- [x] Canadian privacy principles noted - Privacy Policy Section 6
-
-### General
-- [x] Privacy Policy versioned and dated - `/legal/privacy-policy`
-- [x] Browser scanner decoder served from SafeScan's own origin; no QR decoder CDN is required - `static/qr-worker.js`, `static/vendor/zxing-wasm/3.1.6/`
-- [x] Terms of Use with arbitration clause - `/legal/terms-of-use`
-- [x] Cookie Policy with cookie table - `/legal/cookie-policy`
-- [x] Footer links on every page - `templates/footer.html`
-- [x] Internal consent log - `/legal/consent-log`
-- [x] Admin routes protected by active admin/owner session; airdrop automation still supports `AIRDROP_ADMIN_SECRET` fallback
-- [x] Internal admin dashboard - `/admin`
-- [x] Audit log table and admin audit viewer - `/admin/logs`
-- [x] Airdrop fraud flags and review queue - `/admin/airdrop/fraud`
-
-### Production Follow-Ups
-- [x] Disclose local camera preview, optional JPEG server retry, and account scan-history retention in the public Privacy Policy and in-app camera text.
-- [ ] Record the camera device/browser matrix and server Structured Append limitation in the release review - `docs/qr-scanning.md`.
-- [ ] Attorney review before public launch or token distribution.
-- [ ] Connect transactional email for privacy request confirmations and completion notices.
-- [x] Keep signed-in user scan history and leaderboard counters as long-term records unless the user requests deletion or an owner removes the account.
-- [ ] Encrypt or hash stored wallet addresses before production scale.
-- [ ] Replace email query parameters with signed session state.
-- [ ] Remove the remaining airdrop shared-secret fallback after automation has an owner session or signed job token.
+This file tracks code state on the legal Phase 1 branch. Check the corresponding PR and live deployment before treating a control as available to customers.

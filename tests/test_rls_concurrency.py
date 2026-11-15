@@ -37,6 +37,10 @@ def app_with_users(tmp_path, monkeypatch):
                 "INSERT INTO users (google_id, email, role, status, created_at) VALUES (?, ?, ?, 'active', ?)",
                 (user_id, email, role, now.isoformat() + "Z"),
             )
+            conn.execute(
+                "INSERT INTO age_eligibility (user_id, minimum_age, confirmed_at, adult_attested_at) VALUES (?, 18, ?, ?)",
+                (user_id, now.isoformat() + "Z", now.isoformat() + "Z"),
+            )
         for session_id, user_id in (
             ("admin-test-session", "google_admin"),
             ("user-test-session", "google_user"),

@@ -37,14 +37,14 @@ Manual Deploy > Deploy latest commit
 7. Verify the live site at:
 
 ```text
-https://safescan-qr.onrender.com
+https://sqafe.com
 ```
 
 For the Alpha Premium payment flow, verify:
 
 ```text
-https://safescan-qr.onrender.com/pay/alpha
-https://safescan-qr.onrender.com/pay/alpha/success
+https://sqafe.com/pay/alpha
+https://sqafe.com/pay/alpha/success
 ```
 
 ## Important Render Settings
@@ -63,19 +63,7 @@ Do not rely on `/app/data` unless a Render persistent disk is explicitly mounted
 
 ## Stripe Alpha Premium Notes
 
-The Alpha Premium Stripe link is:
-
-```text
-https://buy.stripe.com/00w3cxfdAb7OcKB4sC87K01
-```
-
-The Stripe Payment Link success redirect should point to:
-
-```text
-https://safescan-qr.onrender.com/pay/alpha/success
-```
-
-The app records signed-in Alpha Premium success-page visits in the long-term database table `alpha_subscriptions`. A Stripe webhook is still the preferred follow-up for fully verified automatic activation.
+The old Stripe Payment Link must be disabled before card billing opens. The success page never grants access. New card subscriptions require an account-bound Checkout Session, recorded recurring consent, a verified Stripe webhook event, and the business and Stripe settings in `docs/legal/phase-1-payment-release.md`. The portal management path remains available to existing verified subscribers even if new checkout is closed.
 
 ## Test Commands
 
@@ -84,7 +72,7 @@ Use the bundled or local Python runtime available in the environment.
 Focused payment persistence test:
 
 ```text
-python -m pytest tests/test_auth_persistence.py::test_alpha_payment_uses_stripe_link_and_records_purchase_date -q
+python -m pytest tests/test_auth_persistence.py -q
 ```
 
 Broader auth persistence suite:

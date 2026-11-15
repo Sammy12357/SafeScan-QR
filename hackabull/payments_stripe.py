@@ -20,6 +20,7 @@ from fastapi import HTTPException, Request
 from db import get_conn
 from .audit import iso_from_unix_timestamp, now_iso
 from .auth import require_user
+from .age_gate import account_is_adult
 from .config import (
     APP_URL, BILLING_LEGAL_ENTITY_NAME, BILLING_POSTAL_ADDRESS,
     BILLING_REFUND_POLICY_TEXT, BILLING_SUPPORT_EMAIL, BILLING_TERMS_VERSION,
@@ -42,12 +43,15 @@ def _valid_id(value):
 
 
 def require_payment_user(request: Request):
-    """Payment authorization hook: wire the shared 18+ account gate here.
+    """Require an authenticated adult for new card and Solana purchases.
 
-    The age-gate branch starts from the same parent commit. Until integrated,
-    checkout is additionally fail-closed by owner-controlled billing settings.
+    The separate management route uses ``require_user`` so an existing payer
+    can always reach cancellation, including if an age record is missing.
     """
-    return require_user(request)
+    user = require_user(request)
+    if not account_is_adult(user["google_id"]):
+        raise HTTPException(status_code=403, detail="Confirm adult eligibility before payment.")
+    return user
 
 
 def billing_terms_text():

@@ -29,6 +29,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.routing import Match
 from starlette.formparsers import MultiPartParser
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from cryptography.exceptions import InvalidSignature
@@ -431,7 +432,17 @@ def _metric_route_label(request: Request) -> str:
     # values and let arbitrary 404s create an unlimited number of series.
     route = request.scope.get("route")
     path = getattr(route, "path", None)
-    return path if isinstance(path, str) and path else "unmatched"
+    if isinstance(path, str) and path:
+        return path
+    # A guard can reject a request before Starlette attaches the matched
+    # route. Resolve only against declared route patterns, never the raw URL.
+    for candidate in qr_app.routes:
+        match, _ = candidate.matches(request.scope)
+        if match == Match.FULL:
+            declared = getattr(candidate, "path", None)
+            if isinstance(declared, str) and declared:
+                return declared
+    return "unmatched"
 
 
 @qr_app.middleware("http")
