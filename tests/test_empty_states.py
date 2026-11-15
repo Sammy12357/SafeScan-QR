@@ -166,11 +166,11 @@ def test_admin_user_detail_has_content_and_contextual_empty_subsections():
 
 def test_admin_user_detail_link_is_reachable_from_user_list():
     html = render_admin("users", {
-        "rows": [{"email": "scanner@example.test", "display_name": "Test Scanner", "role": "user", "status": "active", "tier": "Registered", "scan_count": 0, "referral_count": 0, "wallet_address": None, "created_at": "2026-11-01", "last_login_at": None, "last_login": None}],
+        "rows": [{"google_id": "auth0|scanner/123", "email": "scanner@example.test", "display_name": "Test Scanner", "role": "user", "status": "active", "tier": "Registered", "scan_count": 0, "referral_count": 0, "wallet_address": None, "created_at": "2026-11-01", "last_login_at": None, "last_login": None}],
         "filters": {"search": "", "status": "", "role": "", "tier": "", "flag": ""},
         "page": 1, "pages": 1, "total": 1,
     })
-    assert 'href="/admin/users/scanner%40example.test/drawer"' in html
+    assert 'href="/admin/users/detail?account_id=auth0%7Cscanner%2F123"' in html
 
 
 def test_fetch_user_detail_resolves_account_id_and_keeps_other_users_out(tmp_path, monkeypatch):
@@ -180,21 +180,21 @@ def test_fetch_user_detail_resolves_account_id_and_keeps_other_users_out(tmp_pat
     with sqlite3.connect(database) as conn:
         conn.executescript("""
             CREATE TABLE users (google_id TEXT, email TEXT, display_name TEXT, role TEXT, status TEXT, created_at TEXT, last_login TEXT, last_login_at TEXT);
-            CREATE TABLE scans (email TEXT, wallet_address TEXT, scan_count INTEGER);
+            CREATE TABLE scans (email TEXT, user_id TEXT, wallet_address TEXT, scan_count INTEGER);
             CREATE TABLE wallets (user_id TEXT, address TEXT, verified INTEGER, sol_balance REAL, tx_count INTEGER, wallet_age_days INTEGER, onchain_verified_at TEXT);
             CREATE TABLE fraud_flags (id TEXT, user_id TEXT, check_name TEXT, severity TEXT, reason TEXT, metadata TEXT, reviewed INTEGER, created_at TEXT);
-            CREATE TABLE audit_logs (id TEXT, actor_user_id TEXT, action TEXT, target_id TEXT, created_at TEXT);
-            CREATE TABLE scan_history (id TEXT, email TEXT, url TEXT, risk_score INTEGER, verdict TEXT, signals TEXT, created_at TEXT);
+            CREATE TABLE audit_logs (id TEXT, actor_user_id TEXT, action TEXT, target_type TEXT, target_id TEXT, created_at TEXT);
+            CREATE TABLE scan_history (id TEXT, email TEXT, user_id TEXT, url TEXT, risk_score INTEGER, verdict TEXT, signals TEXT, created_at TEXT);
             INSERT INTO users VALUES ('account-1', 'one@example.test', 'One', 'user', 'active', '2026-11-01', NULL, NULL);
             INSERT INTO users VALUES ('account-2', 'two@example.test', 'Two', 'user', 'active', '2026-11-01', NULL, NULL);
-            INSERT INTO scans VALUES ('one@example.test', 'stale-unverified-wallet', 1);
+            INSERT INTO scans VALUES ('one@example.test', NULL, 'stale-unverified-wallet', 1);
             INSERT INTO wallets VALUES ('account-2', 'verified-legacy-wallet', 1, 0, 0, 0, '2026-11-01');
             INSERT INTO fraud_flags VALUES ('flag-1', 'account-1', 'scan_velocity', 'medium', 'Burst of scans', '{}', 0, '2026-11-02');
             INSERT INTO fraud_flags VALUES ('flag-2', 'account-2', 'scan_velocity', 'medium', 'Other account', '{}', 0, '2026-11-02');
-            INSERT INTO audit_logs VALUES ('log-1', 'account-1', 'user.login', NULL, '2026-11-03');
-            INSERT INTO audit_logs VALUES ('log-2', 'account-2', 'user.login', NULL, '2026-11-03');
-            INSERT INTO scan_history VALUES ('scan-1', 'one@example.test', 'https://one.example.test', 42, 'CAUTION', '[]', '2026-11-04');
-            INSERT INTO scan_history VALUES ('scan-2', 'two@example.test', 'https://two.example.test', 10, 'SAFE', '[]', '2026-11-04');
+            INSERT INTO audit_logs VALUES ('log-1', 'account-1', 'user.login', NULL, NULL, '2026-11-03');
+            INSERT INTO audit_logs VALUES ('log-2', 'account-2', 'user.login', NULL, NULL, '2026-11-03');
+            INSERT INTO scan_history VALUES ('scan-1', 'one@example.test', NULL, 'https://one.example.test', 42, 'CAUTION', '[]', '2026-11-04');
+            INSERT INTO scan_history VALUES ('scan-2', 'two@example.test', 'account-2', 'https://two.example.test', 10, 'SAFE', '[]', '2026-11-04');
         """)
 
     @contextmanager
@@ -212,7 +212,63 @@ def test_fetch_user_detail_resolves_account_id_and_keeps_other_users_out(tmp_pat
     assert [flag["id"] for flag in detail["flags"]] == ["flag-1"]
     assert [log["id"] for log in detail["logs"]] == ["log-1"]
     assert [scan["id"] for scan in detail["scans"]] == ["scan-1"]
+    assert detail["user"]["scan_count"] == 1
     legacy_detail = admin_data.fetch_user_detail("account-2")
     assert legacy_detail["user"]["wallet_address"] == "verified-legacy-wallet"
     assert legacy_detail["user"]["wallet_verified"] == 1
+    assert legacy_detail["user"]["scan_count"] == 1
     assert admin_data.fetch_user_detail("missing@example.test") == {"user": None, "flags": [], "logs": [], "scans": []}
+
+
+def test_admin_user_detail_never_attributes_duplicate_email_records_to_another_account(tmp_path, monkeypatch):
+    from hackabull import admin_data
+
+    database = tmp_path / "duplicate-user-detail.db"
+    with sqlite3.connect(database) as conn:
+        conn.executescript("""
+            CREATE TABLE users (google_id TEXT PRIMARY KEY, email TEXT, display_name TEXT);
+            CREATE TABLE wallets (user_id TEXT, address TEXT, verified INTEGER, sol_balance REAL, tx_count INTEGER, wallet_age_days INTEGER, onchain_verified_at TEXT);
+            CREATE TABLE fraud_flags (id TEXT, user_id TEXT, metadata TEXT, created_at TEXT);
+            CREATE TABLE audit_logs (id TEXT, actor_user_id TEXT, target_type TEXT, target_id TEXT, created_at TEXT);
+            CREATE TABLE scan_history (id TEXT, email TEXT, user_id TEXT, url TEXT, risk_score INTEGER, signals TEXT, created_at TEXT);
+            INSERT INTO users VALUES ('account-A', 'shared@example.test', 'A');
+            INSERT INTO users VALUES ('account-B', 'SHARED@example.test', 'B');
+            INSERT INTO users VALUES ('account-C', 'unique@example.test', 'C');
+            INSERT INTO wallets VALUES ('shared@example.test', 'legacy-wallet', 1, 0, 0, 0, '2026-11-01');
+            INSERT INTO wallets VALUES ('account-B', 'B-wallet', 1, 0, 0, 0, '2026-11-01');
+            INSERT INTO fraud_flags VALUES ('B-flag', 'account-B', '{}', '2026-11-02');
+            INSERT INTO fraud_flags VALUES ('legacy-flag', 'shared@example.test', '{}', '2026-11-02');
+            INSERT INTO audit_logs VALUES ('B-log', 'account-B', NULL, NULL, '2026-11-03');
+            INSERT INTO audit_logs VALUES ('legacy-log', 'shared@example.test', NULL, NULL, '2026-11-03');
+            INSERT INTO audit_logs VALUES ('B-target', NULL, 'user', 'account-B', '2026-11-03');
+            INSERT INTO audit_logs VALUES ('unrelated-target', NULL, 'report', 'account-A', '2026-11-03');
+            INSERT INTO scan_history VALUES ('B-scan', 'shared@example.test', 'account-B', 'https://b.example.test', 10, '[]', '2026-11-04');
+            INSERT INTO scan_history VALUES ('legacy-scan', 'shared@example.test', NULL, 'https://legacy.example.test', 10, '[]', '2026-11-04');
+            INSERT INTO scan_history VALUES ('C-legacy-scan', 'unique@example.test', NULL, 'https://c.example.test', 10, '[]', '2026-11-04');
+        """)
+
+    @contextmanager
+    def get_test_conn():
+        with sqlite3.connect(database) as conn:
+            yield conn
+
+    monkeypatch.setattr(admin_data, "get_conn", get_test_conn)
+    a = admin_data.fetch_user_detail("account-A")
+    assert a["user"]["google_id"] == "account-A"
+    assert a["user"]["scan_count"] == 0
+    assert a["user"]["wallet_address"] is None
+    assert a["flags"] == []
+    assert a["logs"] == []
+    assert a["scans"] == []
+
+    b = admin_data.fetch_user_detail("account-B")
+    assert b["user"]["scan_count"] == 1
+    assert b["user"]["wallet_address"] == "B-wallet"
+    assert [flag["id"] for flag in b["flags"]] == ["B-flag"]
+    assert {log["id"] for log in b["logs"]} == {"B-log", "B-target"}
+    assert [scan["id"] for scan in b["scans"]] == ["B-scan"]
+    assert admin_data.fetch_user_detail("shared@example.test")["user"] is None
+
+    c = admin_data.fetch_user_detail("unique@example.test")
+    assert c["user"]["scan_count"] == 1
+    assert [scan["id"] for scan in c["scans"]] == ["C-legacy-scan"]

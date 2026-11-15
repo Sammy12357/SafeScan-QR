@@ -34,12 +34,14 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 from db import (
     assert_owns_row,
+    canonical_email_key,
     clear_rls_context,
     database_path,
     database_storage_status,
     get_conn,
     rls_user_id,
     set_rls_context,
+    unique_email_owner,
     user_scoped_select,
 )
 from storage import backend_status as storage_backend_status
@@ -137,39 +139,71 @@ def fetch_admin_users(search="", status="", role="", tier="", page=1, limit=25):
         rows = [row for row in rows if row["tier"].lower() == tier.lower()]
     return {"rows": rows, "total": total, "page": page, "limit": limit, "pages": max(1, (total + limit - 1) // limit)}
 
-def fetch_user_detail(email):
+def fetch_user_detail(reference):
     with get_conn() as conn:
         conn.row_factory = sqlite3.Row
-        user = conn.execute(
-            """
-            SELECT u.*, w.address AS wallet_address,
-                   w.verified AS wallet_verified, w.sol_balance, w.tx_count,
-                   w.wallet_age_days, w.onchain_verified_at,
-                   COALESCE(s.scan_count, 0) AS scan_count
-            FROM users u
-            LEFT JOIN scans s ON s.email = u.email
-            LEFT JOIN wallets w ON w.user_id = COALESCE(
-                (SELECT user_id FROM wallets WHERE user_id = u.email AND verified = 1),
-                u.google_id
-            ) AND w.verified = 1
-            WHERE lower(u.email) = lower(?) OR u.google_id = ?
-            """,
-            (email, email)
-        ).fetchone()
-        if not user:
+        user_row = conn.execute("SELECT * FROM users WHERE google_id = ?", (reference,)).fetchone()
+        if user_row is None:
+            # The old drawer URL contains an email. Keep it only when that
+            # address identifies exactly one account, including IDNA aliases.
+            key = canonical_email_key(reference)
+            matches = [row for row in conn.execute("SELECT * FROM users WHERE email IS NOT NULL")
+                       if canonical_email_key(row["email"]) == key] if key else []
+            user_row = matches[0] if len(matches) == 1 else None
+        if user_row is None:
             return {"user": None, "flags": [], "logs": [], "scans": []}
-        identity = (user["google_id"], user["email"])
+        user = dict(user_row)
+        user_id = user["google_id"]
+        email = user.get("email") or ""
+        legacy_owner = unique_email_owner(conn, email, user_id)
+        legacy_enabled = int(legacy_owner)
+
+        # Current records are keyed by account ID. Email-only records are
+        # attributable only when there is a single canonical email owner.
+        scan_params = (user_id, legacy_enabled, email, email)
+        user["scan_count"] = conn.execute(
+            "SELECT COUNT(*) FROM scan_history WHERE user_id = ? "
+            "OR (? = 1 AND (user_id IS NULL OR user_id = '' OR user_id = ?) "
+            "AND lower(email) = lower(?))",
+            scan_params,
+        ).fetchone()[0]
+        wallet = conn.execute(
+            "SELECT * FROM wallets WHERE user_id = ? AND verified = 1", (user_id,),
+        ).fetchone()
+        if wallet is None and legacy_owner:
+            wallet = conn.execute(
+                "SELECT * FROM wallets WHERE user_id = ? AND verified = 1", (email,),
+            ).fetchone()
+        for field in ("wallet_verified", "wallet_address", "sol_balance", "tx_count",
+                      "wallet_age_days", "onchain_verified_at"):
+            user[field] = None
+        if wallet is not None:
+            user.update({
+                "wallet_verified": wallet["verified"],
+                "wallet_address": wallet["address"],
+                "sol_balance": wallet["sol_balance"],
+                "tx_count": wallet["tx_count"],
+                "wallet_age_days": wallet["wallet_age_days"],
+                "onchain_verified_at": wallet["onchain_verified_at"],
+            })
         flags = [safe_fraud_flag_record(row) for row in conn.execute(
-            "SELECT * FROM fraud_flags WHERE user_id IN (?, ?) ORDER BY created_at DESC LIMIT 50", identity,
+            "SELECT * FROM fraud_flags WHERE user_id = ? OR (? = 1 AND user_id = ?) "
+            "ORDER BY created_at DESC LIMIT 50", (user_id, legacy_enabled, email),
         )]
         logs = [dict(row) for row in conn.execute(
-            "SELECT * FROM audit_logs WHERE actor_user_id IN (?, ?) OR target_id IN (?, ?) ORDER BY created_at DESC LIMIT 50",
-            identity + identity,
+            "SELECT * FROM audit_logs WHERE actor_user_id = ? "
+            "OR (target_type = 'user' AND target_id = ?) "
+            "OR (? = 1 AND (actor_user_id = ? OR (target_type = 'user' AND target_id = ?))) "
+            "ORDER BY created_at DESC LIMIT 50",
+            (user_id, user_id, legacy_enabled, email, email),
         )]
         scans = [safe_scan_history_record(row) for row in conn.execute(
-            "SELECT * FROM scan_history WHERE lower(email) = lower(?) ORDER BY created_at DESC LIMIT 50", (user["email"],),
+            "SELECT * FROM scan_history WHERE user_id = ? "
+            "OR (? = 1 AND (user_id IS NULL OR user_id = '' OR user_id = ?) "
+            "AND lower(email) = lower(?)) ORDER BY created_at DESC LIMIT 50",
+            scan_params,
         )]
-    return {"user": dict(user), "flags": flags, "logs": logs, "scans": scans}
+    return {"user": user, "flags": flags, "logs": logs, "scans": scans}
 
 def dashboard_data():
     today = datetime.utcnow().date().isoformat()
@@ -181,6 +215,18 @@ def dashboard_data():
         blocked = conn.execute("SELECT COUNT(*) FROM scan_history WHERE verdict IN ('MALICIOUS', 'HIGH') OR risk_score >= 80").fetchone()[0]
         fraud_flags = conn.execute("SELECT COUNT(*) FROM fraud_flags WHERE reviewed = 0").fetchone()[0]
         recent_users = [dict(row) for row in conn.execute("SELECT u.*, COALESCE(w.address, s.wallet_address) AS wallet_address, COALESCE(s.scan_count, 0) AS scan_count FROM users u LEFT JOIN scans s ON s.email = u.email LEFT JOIN wallets w ON w.user_id = u.email AND w.verified = 1 ORDER BY COALESCE(u.created_at, u.last_login) DESC LIMIT 10")]
+        for user in recent_users:
+            owned_email = unique_email_owner(conn, user.get("email"), user["google_id"])
+            own_wallet = conn.execute(
+                "SELECT address FROM wallets WHERE user_id = ? AND verified = 1",
+                (user["google_id"],),
+            ).fetchone()
+            if own_wallet is not None:
+                user["wallet_address"] = own_wallet["address"]
+            elif not owned_email:
+                user["wallet_address"] = None
+            if not owned_email:
+                user["scan_count"] = 0
         recent_reports = [dict(row) for row in conn.execute("SELECT * FROM url_reports ORDER BY created_at DESC LIMIT 10")]
         activity = [dict(row) for row in conn.execute(
             """
@@ -333,19 +379,72 @@ def next_airdrop_milestone(scan_count, referrals):
 def fetch_fraud_data():
     with get_conn() as conn:
         conn.row_factory = sqlite3.Row
-        rows = [dict(row) for row in conn.execute(
-            """
-            SELECT u.email, u.role, u.airdrop_status, COALESCE(u.fraud_score, 0) AS fraud_score,
-                   COALESCE(w.address, s.wallet_address) AS wallet_address, COALESCE(s.scan_count, 0) AS scan_count,
-                   COUNT(f.id) AS signal_count, MAX(f.severity) AS highest_severity, MAX(f.created_at) AS flag_date
-            FROM users u
-            LEFT JOIN scans s ON s.email = u.email
-            LEFT JOIN wallets w ON w.user_id = u.email AND w.verified = 1
-            JOIN fraud_flags f ON f.user_id = u.email AND f.reviewed = 0
-            GROUP BY u.email
-            ORDER BY fraud_score DESC, flag_date DESC
-            """
-        )]
+        users = {row["google_id"]: dict(row) for row in conn.execute("SELECT * FROM users")}
+        owners_by_email = {}
+        for user in users.values():
+            key = canonical_email_key(user.get("email"))
+            if key:
+                owners_by_email.setdefault(key, []).append(user["google_id"])
+        flags_by_user = {}
+        unassigned_flags = {}
+        for flag in conn.execute("SELECT user_id, severity, created_at FROM fraud_flags WHERE reviewed = 0"):
+            flag_owner = flag["user_id"]
+            if flag_owner not in users:
+                key = canonical_email_key(flag_owner)
+                owners = owners_by_email.get(key, []) if key else []
+                flag_owner = owners[0] if len(owners) == 1 and unique_email_owner(
+                    conn, users[owners[0]].get("email"), owners[0],
+                ) else None
+            if flag_owner is None:
+                unassigned_flags.setdefault(flag["user_id"], []).append(flag)
+            else:
+                flags_by_user.setdefault(flag_owner, []).append(flag)
+
+        severity_rank = {"low": 1, "medium": 2, "high": 3, "critical": 4}
+        rows = []
+        for account_id, flags in flags_by_user.items():
+            user = users[account_id]
+            email = user.get("email") or ""
+            email_owned = unique_email_owner(conn, email, account_id)
+            wallet = conn.execute(
+                "SELECT address FROM wallets WHERE user_id = ? AND verified = 1", (account_id,),
+            ).fetchone()
+            if wallet is None and email_owned:
+                wallet = conn.execute(
+                    "SELECT address FROM wallets WHERE user_id = ? AND verified = 1", (email,),
+                ).fetchone()
+            scan = conn.execute(
+                "SELECT user_id, scan_count, wallet_address FROM scans WHERE lower(email) = lower(?)", (email,),
+            ).fetchone()
+            scan_owned = scan is not None and (scan["user_id"] == account_id or (
+                email_owned and not scan["user_id"]
+            ))
+            rows.append({
+                "google_id": account_id,
+                "email": email,
+                "role": user.get("role"),
+                "airdrop_status": user.get("airdrop_status"),
+                "fraud_score": user.get("fraud_score") or 0,
+                "wallet_address": wallet["address"] if wallet else (scan["wallet_address"] if scan_owned else None),
+                "scan_count": scan["scan_count"] if scan_owned else 0,
+                "signal_count": len(flags),
+                "highest_severity": max((flag["severity"] for flag in flags), key=lambda value: severity_rank.get(value, 0)),
+                "flag_date": max(flag["created_at"] for flag in flags),
+                "ambiguous_email": int(not email_owned),
+            })
+        # Email-only flags for shared or unknown addresses stay visible as
+        # unassigned records, never as claims on either account.
+        for email, flags in unassigned_flags.items():
+            rows.append({
+                "google_id": None, "email": email, "role": None,
+                "airdrop_status": "Unassigned", "fraud_score": 0,
+                "wallet_address": None, "scan_count": 0,
+                "signal_count": len(flags),
+                "highest_severity": max((flag["severity"] for flag in flags), key=lambda value: severity_rank.get(value, 0)),
+                "flag_date": max(flag["created_at"] for flag in flags),
+                "ambiguous_email": 1,
+            })
+        rows.sort(key=lambda row: (row["fraud_score"], row["flag_date"]), reverse=True)
     return {"rows": rows}
 
 def fetch_audit_logs(search="", action="", target_type=""):
