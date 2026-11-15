@@ -65,9 +65,9 @@ Source reviewed November 14, 2026:
   CAPTCHA handoff, no profile data in sync, and clean disable/fallback behavior.
 - A human test in Chrome and Edge demonstrates the complete flow and records
   exactly what actions are still required from the user.
-- Product copy distinguishes a submitted request, a user report, and a removal
-  independently verified by a later search. It does not promise deletion or
-  broker compliance.
+- Product copy distinguishes a submitted request, a user report, and a later
+  recheck that found no listing. It labels whether the recheck was done by the
+  user or the extension. It does not promise deletion or broker compliance.
 
 This gate applies to automated broker interaction on any client, including a
 future mobile WebView. It does not block official links, instructions, manual
