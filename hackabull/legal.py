@@ -109,6 +109,52 @@ _ERASURE_REVIEW_QUERIES = {
 }
 
 
+# Anyone can enter an email in several public forms. These records cannot be
+# assigned to an authenticated account by email alone, even when that account
+# is the only one using the address. Keep their contents out of self-service
+# exports and stop automatic erasure until an operator checks ownership.
+_EMAIL_ONLY_REVIEW_QUERIES = {
+    "unbound scan aggregates": "SELECT 1 FROM scans WHERE lower(email) = lower(?) AND (user_id IS NULL OR user_id = '') LIMIT 1",
+    "unbound scan events": "SELECT 1 FROM scan_events WHERE lower(email) = lower(?) AND (user_id IS NULL OR user_id = '') LIMIT 1",
+    "unbound scan history": "SELECT 1 FROM scan_history WHERE lower(email) = lower(?) AND (user_id IS NULL OR user_id = '') LIMIT 1",
+    "privacy requests": "SELECT 1 FROM data_requests WHERE lower(email) = lower(?) LIMIT 1",
+    "legacy age confirmations": "SELECT 1 FROM age_confirmations WHERE lower(email) = lower(?) LIMIT 1",
+    "privacy opt-outs": "SELECT 1 FROM privacy_opt_outs WHERE lower(email) = lower(?) LIMIT 1",
+    "reported URLs": "SELECT 1 FROM url_reports WHERE lower(reporter_email) = lower(?) LIMIT 1",
+    "waitlist signups": "SELECT 1 FROM waitlist_signups WHERE lower(email) = lower(?) LIMIT 1",
+    "email suppressions": "SELECT 1 FROM email_suppressions WHERE lower(email) = lower(?) LIMIT 1",
+    "pending sign-ins": "SELECT 1 FROM pending_age_signins WHERE lower(email) = lower(?) LIMIT 1",
+    "waitlist tokens": "SELECT 1 FROM waitlist_email_tokens WHERE lower(email) = lower(?) LIMIT 1",
+    "unbound credentials": "SELECT 1 FROM local_credentials WHERE lower(email) = lower(?) AND (user_id IS NULL OR user_id = '') LIMIT 1",
+    "email-attributed API keys": "SELECT 1 FROM api_keys WHERE lower(created_by) = lower(?) LIMIT 1",
+    "email-attributed uploads": "SELECT 1 FROM upload_artifacts WHERE lower(email) = lower(?) AND (user_id IS NULL OR user_id = '') LIMIT 1",
+    "email-attributed blocklist entries": "SELECT 1 FROM url_blocklist WHERE lower(added_by) = lower(?) LIMIT 1",
+    "referrals": "SELECT 1 FROM referrals WHERE lower(referrer_email) = lower(?) OR lower(referred_email) = lower(?) LIMIT 1",
+    "abuse flags": "SELECT 1 FROM abuse_flags WHERE lower(email) = lower(?) LIMIT 1",
+}
+
+
+_OTHER_OWNER_REVIEW_QUERIES = {
+    "other-account scan aggregates": "SELECT 1 FROM scans WHERE lower(email) = lower(?) AND user_id IS NOT NULL AND user_id != '' AND user_id != ? LIMIT 1",
+    "other-account scan events": "SELECT 1 FROM scan_events WHERE lower(email) = lower(?) AND user_id IS NOT NULL AND user_id != '' AND user_id != ? LIMIT 1",
+    "other-account scan history": "SELECT 1 FROM scan_history WHERE lower(email) = lower(?) AND user_id IS NOT NULL AND user_id != '' AND user_id != ? LIMIT 1",
+    "other-account credentials": "SELECT 1 FROM local_credentials WHERE lower(email) = lower(?) AND user_id IS NOT NULL AND user_id != '' AND user_id != ? LIMIT 1",
+    "other-account uploads": "SELECT 1 FROM upload_artifacts WHERE lower(email) = lower(?) AND user_id IS NOT NULL AND user_id != '' AND user_id != ? LIMIT 1",
+}
+
+
+def _ambiguous_email_records(conn, email, user_id):
+    reasons = []
+    for label, sql in _EMAIL_ONLY_REVIEW_QUERIES.items():
+        params = (email, email) if label == "referrals" else (email,)
+        if conn.execute(sql, params).fetchone():
+            reasons.append(label)
+    for label, sql in _OTHER_OWNER_REVIEW_QUERIES.items():
+        if conn.execute(sql, (email, user_id)).fetchone():
+            reasons.append(label)
+    return reasons
+
+
 def _erasure_review_reasons(conn, email, user_id):
     reasons = []
     if os.getenv("RETENTION_LEGAL_HOLD", "").strip().lower() in {"1", "true", "yes"}:
@@ -118,6 +164,7 @@ def _erasure_review_reasons(conn, email, user_id):
                   "both": (user_id, email), "emails": (email, email)}[scope]
         if conn.execute(sql, params).fetchone():
             reasons.append(label)
+    reasons.extend(label for label in _ambiguous_email_records(conn, email, user_id) if label not in reasons)
     return reasons
 
 
@@ -156,20 +203,15 @@ def get_user_export(email, user_id):
                     "Withheld %d scan rows from ambiguous privacy export pending ownership review", count
                 )
             return None
-        scans = [dict(row) for row in conn.execute(
-            "SELECT * FROM scans WHERE user_id = ? OR ((user_id IS NULL OR user_id = '') AND lower(email) = lower(?))",
-            (user_id, email),
-        )]
-        events = [dict(row) for row in conn.execute(
-            "SELECT * FROM scan_events WHERE user_id = ? OR ((user_id IS NULL OR user_id = '') AND lower(email) = lower(?))",
-            (user_id, email),
-        )]
-        requests_ = [dict(row) for row in conn.execute("SELECT * FROM data_requests WHERE lower(email) = lower(?)", (email,))]
-        age = [dict(row) for row in conn.execute("SELECT * FROM age_confirmations WHERE lower(email) = lower(?)", (email,))]
+        scans = _rows(conn, "SELECT * FROM scans WHERE user_id = ?", (user_id,))
+        events = _rows(conn, "SELECT * FROM scan_events WHERE user_id = ?", (user_id,))
+        # Email-only requests and legacy age records are pending ownership
+        # review. Their public forms did not bind them to this account.
+        requests_, age = [], []
         age_eligibility = [dict(row) for row in conn.execute(
             "SELECT * FROM age_eligibility WHERE user_id = ?", (user_id,)
         )]
-        opt_outs = [dict(row) for row in conn.execute("SELECT * FROM privacy_opt_outs WHERE lower(email) = lower(?)", (email,))]
+        opt_outs = []
         ghost_subjects = _go_ghost_status_export(conn, "go_ghost_subjects", user_id)
         ghost_consents = _go_ghost_status_export(conn, "go_ghost_consents", user_id)
         ghost_requests = _go_ghost_status_export(conn, "go_ghost_requests", user_id)
@@ -185,8 +227,7 @@ def get_user_export(email, user_id):
         # Explicit owner predicates prevent an email collision or a third
         # party's referral from leaking into a self-service export.
         account = _rows(conn, "SELECT * FROM users WHERE google_id = ?", (user_id,))
-        history = _rows(conn, """SELECT * FROM scan_history WHERE user_id = ? OR
-            ((user_id IS NULL OR user_id = '') AND lower(email) = lower(?))""", (user_id, email))
+        history = _rows(conn, "SELECT * FROM scan_history WHERE user_id = ?", (user_id,))
         from .history import safe_scan_history_record
         history = [safe_scan_history_record(row) for row in history]
         from .payload_privacy import safe_legacy_scan_value
@@ -200,10 +241,7 @@ def get_user_export(email, user_id):
         discord = _rows(conn, "SELECT * FROM discord_links WHERE user_id = ?", (user_id,))
         velocity = _rows(conn, "SELECT * FROM scan_velocity WHERE user_id = ?", (user_id,))
         devices = _rows(conn, "SELECT * FROM device_fingerprints WHERE user_id = ?", (user_id,))
-        reports = _rows(conn, """SELECT id, url, reason, risk_score, status, created_at, reviewed_at
-            FROM url_reports WHERE lower(reporter_email) = lower(?)""", (email,))
-        waitlist = _rows(conn, "SELECT * FROM waitlist_signups WHERE lower(email) = lower(?)", (email,))
-        suppressions = _rows(conn, "SELECT * FROM email_suppressions WHERE lower(email) = lower(?)", (email,))
+        reports, waitlist, suppressions = [], [], []
         solana = _rows(conn, "SELECT * FROM alpha_solana_payment_references WHERE user_id = ?", (user_id,))
         sessions = _rows(conn, """SELECT created_at, expires_at, last_active, revoked_at, ip_hash, user_agent
             FROM sessions WHERE google_id = ?""", (user_id,))
@@ -213,15 +251,12 @@ def get_user_export(email, user_id):
             FROM wallet_nonces WHERE user_id = ?""", (user_id,))
         age_challenges = _rows(conn, """SELECT return_to, expires_at FROM adult_age_challenges
             WHERE user_id = ?""", (user_id,))
-        pending_signins = _rows(conn, """SELECT provider, subject, email, display_name, picture,
-            client_kind, return_to, remember_me, expires_at FROM pending_age_signins
-            WHERE lower(email) = lower(?)""", (email,))
+        pending_signins = []
         local_credentials = _rows(conn, """SELECT email, created_at FROM local_credentials
-            WHERE user_id = ? OR ((user_id IS NULL OR user_id = '') AND lower(email) = lower(?))""", (user_id, email))
+            WHERE user_id = ?""", (user_id,))
         payment_tokens = _rows(conn, """SELECT purpose, expires_at FROM payment_form_tokens
             WHERE user_id = ?""", (user_id,))
-        waitlist_tokens = _rows(conn, """SELECT purpose, created_at, expires_at, used_at
-            FROM waitlist_email_tokens WHERE lower(email) = lower(?)""", (email,))
+        waitlist_tokens = []
         # These contain anti-abuse evidence, third-party details, credential
         # material, or blob contents. Return only safe metadata and keep the
         # request open for a human to review the withheld fields.
@@ -229,15 +264,17 @@ def get_user_export(email, user_id):
         for label, sql, params in (
             ("auditLogs", "SELECT action, target_type, created_at FROM audit_logs WHERE actor_user_id = ?", (user_id,)),
             ("fraudFlags", "SELECT check_name, severity, reviewed, created_at FROM fraud_flags WHERE user_id = ?", (user_id,)),
-            ("abuseFlags", "SELECT flag_type, created_at FROM abuse_flags WHERE lower(email) = lower(?)", (email,)),
             ("ipRegistry", "SELECT event_type, created_at FROM ip_registry WHERE user_id = ?", (user_id,)),
-            ("apiKeys", "SELECT name, key_hint, scopes, status, created_at FROM api_keys WHERE created_by = ? OR lower(created_by) = lower(?)", (user_id, email)),
-            ("uploadArtifacts", "SELECT content_type, byte_size, sha256, created_at FROM upload_artifacts WHERE user_id = ? OR lower(email) = lower(?)", (user_id, email)),
-            ("referrals", "SELECT id, counted, created_at FROM referrals WHERE lower(referrer_email) = lower(?) OR lower(referred_email) = lower(?)", (email, email)),
-            ("urlBlocklist", "SELECT id, created_at, removed_at FROM url_blocklist WHERE added_by = ? OR lower(added_by) = lower(?)", (user_id, email)),
+            ("apiKeys", "SELECT name, key_hint, scopes, status, created_at FROM api_keys WHERE created_by = ?", (user_id,)),
+            ("uploadArtifacts", "SELECT content_type, byte_size, sha256, created_at FROM upload_artifacts WHERE user_id = ?", (user_id,)),
+            ("urlBlocklist", "SELECT id, created_at, removed_at FROM url_blocklist WHERE added_by = ?", (user_id,)),
         ):
             reviewed[label] = _rows(conn, sql, params)
         review_needed = [label for label, rows in reviewed.items() if rows]
+        if _ambiguous_email_records(conn, email, user_id):
+            # Do not disclose even the category of another person's report or
+            # an anti-abuse record in an otherwise owner-scoped export.
+            review_needed.append("records matched by email require ownership review")
         # The payment provider can hold additional account records that are
         # not in SafeScan's database; never mark this export complete for them.
         if billing_consents or billing_subscriptions:
@@ -274,11 +311,11 @@ def delete_user_data(email, user_id):
         if review_reasons:
             return False
         for sql in (
-            "DELETE FROM scans WHERE user_id = ? OR ((user_id IS NULL OR user_id = '') AND lower(email) = lower(?))",
-            "DELETE FROM scan_events WHERE user_id = ? OR ((user_id IS NULL OR user_id = '') AND lower(email) = lower(?))",
-            "DELETE FROM scan_history WHERE user_id = ? OR ((user_id IS NULL OR user_id = '') AND lower(email) = lower(?))",
+            "DELETE FROM scans WHERE user_id = ?",
+            "DELETE FROM scan_events WHERE user_id = ?",
+            "DELETE FROM scan_history WHERE user_id = ?",
         ):
-            conn.execute(sql, (user_id, email))
+            conn.execute(sql, (user_id,))
         for table in ("go_ghost_requests", "go_ghost_consents", "go_ghost_subjects"):
             if _go_ghost_status_table_exists(conn, table):
                 conn.execute(_GO_GHOST_STATUS_SQL[table][1], (user_id,))
@@ -297,13 +334,9 @@ def delete_user_data(email, user_id):
             "DELETE FROM adult_age_challenges WHERE user_id = ?",
         ):
             conn.execute(sql, (user_id,))
-        conn.execute("DELETE FROM local_credentials WHERE user_id = ? OR ((user_id IS NULL OR user_id = '') AND lower(email) = lower(?))", (user_id, email))
-        conn.execute("DELETE FROM waitlist_email_tokens WHERE lower(email) = lower(?)", (email,))
-        conn.execute("DELETE FROM waitlist_signups WHERE lower(email) = lower(?)", (email,))
+        conn.execute("DELETE FROM local_credentials WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM users WHERE google_id = ?", (user_id,))
-        conn.execute("DELETE FROM age_confirmations WHERE email = ?", (email,))
         conn.execute("DELETE FROM age_eligibility WHERE user_id = ?", (user_id,))
-        conn.execute("DELETE FROM pending_age_signins WHERE lower(email) = lower(?)", (email,))
     return True
 
 

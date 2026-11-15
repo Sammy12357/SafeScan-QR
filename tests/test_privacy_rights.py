@@ -73,10 +73,48 @@ def test_export_includes_owner_records_but_withholds_credentials_and_third_party
     assert export["wallets"][0]["address"] == "wallet-a"
     assert len(export["sessions"]) == 1
     assert "auditLogs" in export["manualReview"]
-    assert "referrals" in export["manualReview"]
-    assert "apiKeys" in export["manualReview"]
+    assert "records matched by email require ownership review" in export["manualReview"]
     for secret in ("SECRET_SESSION", "SECRET_PASSWORD_HASH", "SECRET_AUDIT_DETAIL", "SECRET_API_KEY_HASH", "third-party@example.com", "wallet-b"):
         assert secret not in serialized
+
+
+def test_email_only_records_cannot_be_exported_or_erased_by_account_email_match(rights_db):
+    legal, path = rights_db
+    with sqlite3.connect(path) as conn:
+        conn.execute("""INSERT INTO data_requests
+            (id,email,request_type,details,status,submitted_at)
+            VALUES (?,?,?,?,?,?)""", (
+            "unverified-request", "a@example.com", "access", "OTHER_PERSON_PRIVATE_DETAIL", "submitted", "now",
+        ))
+        conn.execute("""INSERT INTO scan_history
+            (id,email,url,created_at,user_id) VALUES (?,?,?,?,?)""", (
+            "unbound-scan", "a@example.com", "https://third-party.example/private", "now", None,
+        ))
+        conn.execute("INSERT INTO waitlist_signups (email,created_at) VALUES (?,?)", ("a@example.com", "now"))
+    exported = legal.get_user_export("a@example.com", "a")
+    serialized = json.dumps(exported)
+    assert "OTHER_PERSON_PRIVATE_DETAIL" not in serialized
+    assert "third-party.example" not in serialized
+    assert exported["dataRequests"] == []
+    assert exported["scanHistory"] == []
+    assert "records matched by email require ownership review" in exported["manualReview"]
+    before = snapshot(path)
+    assert legal.delete_user_data("a@example.com", "a") is False
+    assert snapshot(path) == before
+
+
+def test_other_account_scan_with_same_email_requires_review(rights_db):
+    legal, path = rights_db
+    with sqlite3.connect(path) as conn:
+        conn.execute("INSERT INTO scan_history (id,email,url,created_at,user_id) VALUES (?,?,?,?,?)", (
+            "foreign-scan", "a@example.com", "https://foreign.example/private", "now", "b",
+        ))
+    exported = legal.get_user_export("a@example.com", "a")
+    assert exported["scanHistory"] == []
+    assert "records matched by email require ownership review" in exported["manualReview"]
+    before = snapshot(path)
+    assert legal.delete_user_data("a@example.com", "a") is False
+    assert snapshot(path) == before
 
 
 def test_billing_review_keeps_every_row_for_manual_decision(rights_db):
@@ -140,11 +178,10 @@ def test_clean_erasure_removes_bound_rows_and_credentials(rights_db):
     with sqlite3.connect(path) as conn:
         conn.execute("INSERT INTO wallets (id,user_id,address,connected_at) VALUES (?,?,?,?)", ("wa", "a", "wallet-a", "now"))
         conn.execute("INSERT INTO local_credentials (email,password_hash,created_at,user_id) VALUES (?,?,?,?)", ("a@example.com", "hash", "now", "a"))
-        conn.execute("INSERT INTO waitlist_signups (email,created_at) VALUES (?,?)", ("a@example.com", "now"))
         conn.execute("INSERT INTO scan_history (id,email,url,created_at,user_id) VALUES (?,?,?,?,?)", ("scan", "a@example.com", "https://example.com", "now", "a"))
     assert legal.delete_user_data("a@example.com", "a") is True
     assert rows(path, "SELECT google_id FROM users") == [("b",)]
-    for table in ("wallets", "local_credentials", "waitlist_signups", "scan_history"):
+    for table in ("wallets", "local_credentials", "scan_history"):
         assert rows(path, f"SELECT * FROM {table}") == []
 
 
