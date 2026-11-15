@@ -1,7 +1,7 @@
 {
   "_format": "JSON-compatible YAML 1.2; parsed with the Python standard json module",
   "_status": "Phase 0 engineering inventory, not an approved privacy-policy statement",
-  "_source": "Isolated SQLite schema generated from hackabull/schema.py at current main; no production records read",
+  "_source": "Isolated SQLite schema generated from hackabull/schema.py at Phase 1 age-gate branch; no production records read",
   "_known_gaps": [
     "Retention periods have not been tied to deletion jobs.",
     "URL query strings can be stored or sent to reputation providers.",
@@ -25,6 +25,20 @@
       "retention": "Not verified against an automated deletion job",
       "status": "active schema"
     },
+    "adult_age_challenges": {
+      "fields": [
+        "ticket_hash",
+        "user_id",
+        "return_to",
+        "expires_at"
+      ],
+      "source": "adult feature entry page",
+      "purpose": "bind an 18+ attestation to one browser or account",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "10-minute expiry; expired rows removed lazily; backup retention unverified",
+      "status": "active schema"
+    },
     "age_confirmations": {
       "fields": [
         "email",
@@ -32,11 +46,37 @@
         "locale",
         "confirmed_at"
       ],
-      "source": "age form",
-      "purpose": "record claimed age threshold outcome; current flow is not an enforced sign-in gate",
+      "source": "legacy email-keyed age form (route removed)",
+      "purpose": "historical self-report only; does not grant account access",
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
+      "status": "legacy table retained for existing records"
+    },
+    "age_denials": {
+      "fields": [
+        "identity_hash",
+        "expires_at"
+      ],
+      "source": "HMAC of verified provider identity after an underage answer",
+      "purpose": "prevent immediate repeat of a denied account sign-in",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "24-hour expiry; expired rows removed lazily; backup retention unverified",
+      "status": "active schema"
+    },
+    "age_eligibility": {
+      "fields": [
+        "user_id",
+        "minimum_age",
+        "confirmed_at",
+        "adult_attested_at"
+      ],
+      "source": "server-checked age form and adult attestation",
+      "purpose": "permit age-eligible account access and 18+ features; no birth year or birthday answer retained",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "until account deletion; automated retention job not yet verified",
       "status": "active schema"
     },
     "alpha_solana_payment_references": {
@@ -313,6 +353,18 @@
       "retention": "Not verified against an automated deletion job",
       "status": "legacy/inactive"
     },
+    "guest_adult_tickets": {
+      "fields": [
+        "ticket_hash",
+        "expires_at"
+      ],
+      "source": "guest adult attestation",
+      "purpose": "allow age-attested guest access to Go Ghost and payment pages",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "24-hour expiry; expired rows removed lazily; backup retention unverified",
+      "status": "active schema"
+    },
     "ip_registry": {
       "fields": [
         "id",
@@ -341,6 +393,26 @@
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
       "status": "legacy/inactive"
+    },
+    "pending_age_signins": {
+      "fields": [
+        "ticket_hash",
+        "provider",
+        "subject",
+        "email",
+        "display_name",
+        "picture",
+        "client_kind",
+        "return_to",
+        "remember_me",
+        "expires_at"
+      ],
+      "source": "verified Google or Auth0 ID token claims",
+      "purpose": "hold a verified sign-in for a one-time age decision before account creation",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "10-minute expiry; expired rows removed lazily; backup retention unverified",
+      "status": "active schema"
     },
     "persistent_sessions": {
       "fields": [

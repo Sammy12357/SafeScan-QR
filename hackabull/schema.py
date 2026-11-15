@@ -112,6 +112,24 @@ def init_db():
     cursor.execute('''CREATE TABLE IF NOT EXISTS age_confirmations
                         (email TEXT PRIMARY KEY, threshold INTEGER NOT NULL,
                          locale TEXT, confirmed_at TEXT NOT NULL)''')
+    # `age_confirmations` is a legacy, email-keyed self-report and must not
+    # grant account access. New eligibility is bound to the resolved account.
+    cursor.execute('''CREATE TABLE IF NOT EXISTS age_eligibility
+                        (user_id TEXT PRIMARY KEY, minimum_age INTEGER NOT NULL,
+                         confirmed_at TEXT NOT NULL, adult_attested_at TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS pending_age_signins
+                        (ticket_hash TEXT PRIMARY KEY, provider TEXT NOT NULL,
+                         subject TEXT NOT NULL, email TEXT NOT NULL,
+                         display_name TEXT, picture TEXT, client_kind TEXT NOT NULL,
+                         return_to TEXT NOT NULL, remember_me INTEGER NOT NULL,
+                         expires_at TEXT NOT NULL)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS age_denials
+                        (identity_hash TEXT PRIMARY KEY, expires_at TEXT NOT NULL)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS adult_age_challenges
+                        (ticket_hash TEXT PRIMARY KEY, user_id TEXT,
+                         return_to TEXT NOT NULL, expires_at TEXT NOT NULL)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS guest_adult_tickets
+                        (ticket_hash TEXT PRIMARY KEY, expires_at TEXT NOT NULL)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS privacy_opt_outs
                         (id TEXT PRIMARY KEY, email TEXT NOT NULL, region TEXT,
                          opt_out_type TEXT NOT NULL, timestamp TEXT NOT NULL)''')

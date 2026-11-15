@@ -1,5 +1,3 @@
-{# Age-gate page. Asks the visitor to confirm they meet the minimum age
-   threshold (locale-dependent) before continuing — COPPA/age compliance. #}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,35 +5,39 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <script src="/static/ui-states.js?v=ui-loading-v1"></script>
-  <title>Confirm Age | SafeScan QR</title>
+  <title>Age check | SafeScan QR</title>
   <link rel="stylesheet" href="/static/styles.css?v=legal-font-v1">
 </head>
 <body>
   <div class="page-shell legal-shell">
     <section class="legal-document age-gate">
       <p class="eyebrow">SafeScan QR</p>
-      <h1>Confirm Age</h1>
-      {% if blocked %}
-      <p>SafeScan is not available for users under {{ threshold }} in your region. We did not create an account.</p>
+      <h1>Age check</h1>
+      {% if expired %}
+      <p>This age check has expired. Please sign in again to continue.</p>
+      <a class="secondary-button" href="/login">Sign in</a>
+      {% elif blocked %}
+      <p>This part of SafeScan is unavailable to people below its minimum age. No birth year or birthday answer was saved.</p>
       <a class="secondary-button" href="/">Return home</a>
       {% else %}
-      <p>Please confirm you are {{ threshold }} or older to use SafeScan.</p>
-      <form class="legal-form" action="/auth/confirm-age" method="post">
-        <input type="hidden" name="email" value="{{ email }}">
-        <input type="hidden" name="locale" value="{{ locale }}">
-        <input type="hidden" name="threshold" value="{{ threshold }}">
+      <p>We ask everyone the same questions before using this part of SafeScan. We keep only the age-check outcome, not your birth year or birthday answer.</p>
+      {% if error %}<p role="alert" class="form-field-error">{{ error }}</p>{% endif %}
+      <form class="legal-form" action="{{ '/auth/confirm-adult' if mode == 'adult' else '/auth/confirm-age' }}" method="post">
+        <label for="birthYear">What year were you born?</label>
+        <input id="birthYear" name="birth_year" type="text" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="bday-year" required>
+        <label for="birthdayThisYear">Have you already had your birthday this calendar year?</label>
+        <select id="birthdayThisYear" name="birthday_this_year" required>
+          <option value="">Choose one</option>
+          <option value="yes">Yes</option>
+          <option value="no">No</option>
+        </select>
+        {% if mode == 'adult' %}
         <label class="checkbox-row">
-          <input type="checkbox" name="confirmed" value="yes" required>
-          <span>I confirm I am {{ threshold }} or older and agree to SafeScan's Terms and Privacy Policy.</span>
+          <input type="checkbox" name="adult_attestation" value="yes" required>
+          <span>I confirm that I am at least 18 years old.</span>
         </label>
+        {% endif %}
         <button class="primary-button" type="submit">Continue</button>
-      </form>
-      <form action="/auth/confirm-age" method="post">
-        <input type="hidden" name="email" value="{{ email }}">
-        <input type="hidden" name="locale" value="{{ locale }}">
-        <input type="hidden" name="threshold" value="{{ threshold }}">
-        <input type="hidden" name="confirmed" value="no">
-        <button class="secondary-button" type="submit">I am under {{ threshold }}</button>
       </form>
       {% endif %}
     </section>

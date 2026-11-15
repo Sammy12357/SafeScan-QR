@@ -81,6 +81,17 @@ def login(client, email="person@example.com", password="password123"):
     return client.post("/auth/login", data={"email": email, "password": password})
 
 
+def attest_adult(client):
+    """Move an existing test account through the new 18+ feature gate."""
+    from datetime import datetime, timezone
+    assert client.get("/auth/confirm-adult").status_code == 200
+    response = client.post("/auth/confirm-adult", data={
+        "birth_year": str(datetime.now(timezone.utc).year - 25),
+        "birthday_this_year": "yes", "adult_attestation": "yes",
+    }, follow_redirects=False)
+    assert response.status_code == 303
+
+
 def stripe_signature(payload, secret="whsec_test_secret"):
     timestamp = str(int(time.time()))
     signature = hmac.new(secret.encode("utf-8"), f"{timestamp}.{payload}".encode("utf-8"), hashlib.sha256).hexdigest()
@@ -163,6 +174,7 @@ def payment_token(page, action):
 
 
 def start_card_checkout(client, user_email):
+    attest_adult(client)
     page = client.get("/pay/alpha")
     assert page.status_code == 200
     assert "US$1 per month" in page.text
@@ -186,6 +198,7 @@ def test_success_page_and_unlinked_webhook_cannot_activate_access(auth_app):
     _, client, db_path = auth_app
     register(client, "alpha@example.com")
     user_id = db_rows(db_path, "SELECT google_id FROM users WHERE email = ?", ("alpha@example.com",))[0]["google_id"]
+    attest_adult(client)
     success = client.get("/pay/alpha/success")
     assert success.status_code == 200
     assert "does not activate access" in success.text
@@ -252,6 +265,7 @@ def test_stripe_rejects_bad_signatures_unpaid_and_wrong_product(auth_app):
 def test_card_checkout_requires_verified_business_and_stripe_settings(auth_app):
     _, client, db_path = auth_app
     register(client, "stripe@example.com")
+    attest_adult(client)
     set_everywhere("STRIPE_BILLING_SETTINGS_CONFIRMED", False)
     page = client.get("/pay/alpha")
     assert page.status_code == 200
@@ -279,6 +293,7 @@ def test_billing_record_blocks_automatic_account_erasure(auth_app):
 def test_solana_payment_link_and_verification_store_subscription(auth_app):
     module, client, db_path = auth_app
     register(client, "solana@example.com")
+    attest_adult(client)
 
     payment = client.get("/pay/alpha")
 
@@ -434,7 +449,14 @@ def test_google_login_persists_provider_user_and_session(auth_app, monkeypatch):
             "picture": "https://example.com/avatar.png",
         },
     )
-    response = client.post("/auth/google", data={"credential": "valid-token"})
+    challenge = client.post("/auth/google", data={"credential": "valid-token"})
+    assert challenge.status_code == 200
+    assert "What year were you born?" in challenge.text
+    from datetime import datetime, timezone
+    response = client.post("/auth/confirm-age", data={
+        "birth_year": str(datetime.now(timezone.utc).year - 25),
+        "birthday_this_year": "yes",
+    })
 
     assert response.status_code == 200
     assert module.SESSION_COOKIE_NAME in client.cookies
@@ -457,7 +479,13 @@ def test_google_then_local_registration_blocks_duplicate_email(auth_app, monkeyp
         },
     )
 
-    google_response = client.post("/auth/google", data={"credential": "valid-token"})
+    challenge = client.post("/auth/google", data={"credential": "valid-token"})
+    assert "What year were you born?" in challenge.text
+    from datetime import datetime, timezone
+    google_response = client.post("/auth/confirm-age", data={
+        "birth_year": str(datetime.now(timezone.utc).year - 25),
+        "birthday_this_year": "yes",
+    })
     local_response = register(TestClient(module.qr_app, base_url="https://testserver"), "shared@example.com")
 
     assert google_response.status_code == 200
@@ -482,7 +510,14 @@ def test_mobile_sign_in_then_local_registration_blocks_duplicate_email(auth_app,
         },
     )
 
-    verify_response = client.post("/auth/verify", json={"token": "valid-token"})
+    challenge = client.post("/auth/verify", json={"token": "valid-token"})
+    assert challenge.status_code == 202
+    from datetime import datetime, timezone
+    verify_response = client.post("/auth/confirm-age/mobile", json={
+        "ageTicket": challenge.json()["ageTicket"],
+        "birthYear": str(datetime.now(timezone.utc).year - 25),
+        "birthdayThisYear": "yes",
+    })
     local_response = register(TestClient(module.qr_app, base_url="https://testserver"), "mobile-shared@example.com")
 
     assert verify_response.status_code == 200
@@ -636,6 +671,7 @@ def test_profile_redirect_notice_uses_allowlisted_copy(auth_app, monkeypatch):
 def test_solana_verification_hides_provider_detail(auth_app, monkeypatch, caplog):
     module, client, _ = auth_app
     register(client, "payment-error@example.com")
+    attest_adult(client)
     from hackabull.audit import SafeScanError
     routes = importlib.import_module("hackabull.routes_pages")
     monkeypatch.setattr(routes, "get_or_create_alpha_solana_reference", lambda _user: {"reference": "test-reference"})

@@ -58,6 +58,11 @@ from .audit import SafeScanError
 from .errors import error_response, request_id_for
 from .auth import create_session
 from .auth import get_session_user
+from .age_gate import GUEST_ADULT_COOKIE
+from .age_gate import PENDING_SECONDS
+from .age_gate import account_is_adult
+from .age_gate import create_adult_challenge
+from .age_gate import guest_is_adult
 from .config import ACTIVE_SCANS
 from .config import ALLOWED_ORIGINS
 from .config import CONTENT_TYPE_LATEST
@@ -289,6 +294,42 @@ def apply_security_headers(request: Request, response):
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
     return apply_security_headers(request, response)
+
+
+def _requires_adult_attestation(path):
+    # Reserved status-sync routes are permanently unavailable. Preserve their
+    # explicit 503 response rather than turning them into an age prompt.
+    if path == "/api/go-ghost/status" or path.startswith("/api/go-ghost/status/") or path.startswith("/api/go-ghost/subjects"):
+        return False
+    # Existing subscribers must retain access to cancellation and billing
+    # management. Return pages and verified payment events are also not new
+    # purchases; the checkout entry point below remains gated.
+    if path in ("/pay/alpha/manage", "/pay/alpha/success"):
+        return False
+    return (
+        path in ("/token", "/tokenomics", "/go-ghost", "/api/referral", "/api/airdrop/status")
+        or path == "/pay/alpha" or path.startswith("/pay/alpha/")
+        or path == "/api/wallet" or path.startswith("/api/wallet/")
+        or path.startswith("/api/go-ghost/")
+    )
+
+
+@qr_app.middleware("http")
+async def adult_feature_gate(request: Request, call_next):
+    path = request.url.path
+    if not _requires_adult_attestation(path):
+        return await call_next(request)
+    user = get_session_user(request)
+    allowed = account_is_adult(user["google_id"]) if user else guest_is_adult(request.cookies.get(GUEST_ADULT_COOKIE, ""))
+    if allowed:
+        return await call_next(request)
+    if path.startswith("/api/") or request.method != "GET":
+        ticket = create_adult_challenge(user["google_id"] if user else None, path)
+        return JSONResponse({"ageConfirmationRequired": True, "ageTicket": ticket,
+                             "minimumAge": 18, "expiresInSeconds": PENDING_SECONDS},
+                            status_code=403, headers={"Cache-Control": "no-store"})
+    return RedirectResponse(f"/auth/confirm-adult?next={quote(str(request.url.path) + ('?' + request.url.query if request.url.query else ''), safe='')}",
+                            status_code=303, headers={"Cache-Control": "no-store"})
 
 async def wallet_nonce_cleanup_loop():
     while True:

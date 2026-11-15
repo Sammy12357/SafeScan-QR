@@ -430,6 +430,13 @@ def test_breach_form_keeps_input_and_escapes_saved_report(security_app):
 def test_go_ghost_page_prompts_before_workflow(security_app):
     _, client, _ = security_app
 
+    # Reach the workflow after its separate guest 18+ attestation.
+    assert client.get("/auth/confirm-adult?next=/go-ghost").status_code == 200
+    assert client.post("/auth/confirm-adult", data={
+        "birth_year": "1990", "birthday_this_year": "yes",
+        "adult_attestation": "yes",
+    }, follow_redirects=False).status_code == 303
+
     response = client.get("/go-ghost")
 
     assert response.status_code == 200
