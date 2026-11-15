@@ -12,7 +12,9 @@ function renderAirdropProfile(profile) {
   renderWalletState(profile);
 }
 
-renderAirdropProfile(getCurrentProfile());
+const initialAirdropProfile = getCurrentProfile();
+renderAirdropProfile(initialAirdropProfile ? { email: initialAirdropProfile.email } : null);
+if (initialAirdropProfile && dom.walletStatus) dom.walletStatus.textContent = "Checking wallet status…";
 syncWalletFromServer();
 hydrateSplineShowcase();
 
@@ -109,7 +111,8 @@ function closeRiskModal() {
   document.getElementById("scanner")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-blockReportButton?.addEventListener("click", async () => {
+blockReportButton?.addEventListener("click", () => {
+  if (blockReportButton.disabled) return;
   const payload = blockReportButton.dataset.reportUrl?.trim() || "";
   let parsed;
   try {
@@ -118,27 +121,44 @@ blockReportButton?.addEventListener("click", async () => {
     parsed = null;
   }
   if (!parsed || !["http:", "https:"].includes(parsed.protocol)) {
-    if (reportStatus) reportStatus.textContent = "Only web URLs can be reported here. This payload was not submitted.";
+    if (reportStatus) {
+      reportStatus.setAttribute("role", "alert");
+      reportStatus.textContent = "Only web URLs can be reported here. This payload was not submitted.";
+    }
     return;
   }
 
-  blockReportButton.disabled = true;
-  if (reportStatus) reportStatus.textContent = "Submitting report...";
-  try {
-    const response = await fetch("/api/report", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: payload, reason: "other" })
-    });
-    if (!response.ok) throw new Error(`Report request failed: ${response.status}`);
-    const result = await response.json();
-    if (!result.id || result.status !== "pending") throw new Error("Report was not confirmed");
-    if (reportStatus) reportStatus.textContent = "Report submitted for review. This does not block the link on your device.";
-  } catch (_err) {
-    if (reportStatus) reportStatus.textContent = "We could not confirm this report was received. Please try again.";
-  } finally {
-    blockReportButton.disabled = false;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 15000);
+  if (reportStatus) {
+    reportStatus.removeAttribute("role");
+    reportStatus.textContent = "Submitting report…";
   }
+  UIStates.busy(blockReportButton, async () => {
+    try {
+      const response = await fetch("/api/report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({ url: payload, reason: "other" })
+      });
+      if (!response.ok) throw new Error(`Report request failed: ${response.status}`);
+      const result = await response.json();
+      if (!result.id || result.status !== "pending") throw new Error("Report was not confirmed");
+      if (reportStatus) reportStatus.textContent = "Report submitted for review. This does not block the link on your device.";
+    } catch (error) {
+      if (reportStatus) {
+        reportStatus.setAttribute("role", "alert");
+        reportStatus.textContent = error?.name === "AbortError"
+          ? "We couldn't confirm the report after 15 seconds. Check whether it was received before submitting again."
+          : navigator.onLine === false
+            ? "You're offline. Reconnect and submit the report again."
+            : "We couldn't confirm this report was received. Check your connection and try again.";
+      }
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }, { label: "Submitting…" });
 });
 
 const cautionOpenConsent = document.getElementById("cautionOpenConsent");
@@ -190,26 +210,84 @@ function showConsentBannerIfNeeded() {
   }
 }
 
+function showConsentCacheWarning() {
+  const title = cookieConsentBanner?.querySelector(".consent-title");
+  const copy = cookieConsentBanner?.querySelector(".consent-copy");
+  const actions = cookieConsentBanner?.querySelector(".consent-actions");
+  if (title) title.textContent = "Privacy choice recorded";
+  if (copy) {
+    copy.textContent = "SafeScan recorded your choice, but this browser couldn't remember it. You may be asked again on another visit.";
+    copy.setAttribute("role", "status");
+  }
+  if (actions) {
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "secondary-button";
+    close.textContent = "Close";
+    close.addEventListener("click", () => cookieConsentBanner.classList.add("hidden"));
+    actions.replaceChildren(close);
+    close.focus();
+  }
+}
+
+let consentSaving = false;
 cookieConsentBanner?.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-consent-choice]");
-  if (!button) return;
+  if (!button || button.disabled || consentSaving) return;
+  consentSaving = true;
+  const otherButtons = Array.from(cookieConsentBanner.querySelectorAll("[data-consent-choice]"))
+    .filter((choice) => choice !== button).map((choice) => [choice, choice.disabled]);
+  otherButtons.forEach(([choice]) => { choice.disabled = true; });
   const consentType = button.dataset.consentChoice;
   const bannerVersion = cookieConsentBanner.dataset.version || "consent-v1";
   const record = { consentType, bannerVersion, timestamp: new Date().toISOString() };
-  window.localStorage.setItem("safeScanConsent", JSON.stringify(record));
-  cookieConsentBanner.classList.add("hidden");
-
-  try {
-    const response = await fetch("/api/consent", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ consentType, bannerVersion })
-    });
-    const body = await response.json();
-    if (body.id) window.localStorage.setItem("safeScanConsentId", body.id);
-  } catch {
-    cookieConsentBanner.classList.remove("hidden");
-  }
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 15000);
+  UIStates.busy(button, async () => {
+    try {
+      const response = await fetch("/api/consent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ consentType, bannerVersion }),
+        signal: controller.signal
+      });
+      if (!response.ok) throw new Error("Consent save failed");
+      const parsedBody = await response.json().catch(() => ({}));
+      const body = parsedBody && typeof parsedBody === "object" ? parsedBody : {};
+      let cached = true;
+      try {
+        window.localStorage.setItem("safeScanConsent", JSON.stringify(record));
+      } catch {
+        cached = false;
+      }
+      if (body.id) {
+        try { window.localStorage.setItem("safeScanConsentId", body.id); }
+        catch { /* The choice itself may still be remembered. */ }
+      }
+      document.getElementById("consentSaveFeedback")?.remove();
+      if (cached) cookieConsentBanner.classList.add("hidden");
+      else showConsentCacheWarning();
+    } catch {
+      let feedback = document.getElementById("consentSaveFeedback");
+      if (!feedback) {
+        feedback = document.createElement("div");
+        feedback.id = "consentSaveFeedback";
+        cookieConsentBanner.firstElementChild?.appendChild(feedback);
+      }
+      UIStates.notice(feedback, {
+        type: "danger",
+        message: controller.signal.aborted
+          ? "Saving your privacy choice took too long. Check your connection and try again."
+          : navigator.onLine === false
+            ? "You're offline. Reconnect and save your privacy choice again."
+            : "We couldn't confirm your privacy choice was recorded. Check your connection and try again."
+      });
+    } finally {
+      window.clearTimeout(timeout);
+      otherButtons.forEach(([choice, wasDisabled]) => { choice.disabled = wasDisabled; });
+      consentSaving = false;
+    }
+  }, { label: "Saving…" });
 });
 
 showConsentBannerIfNeeded();

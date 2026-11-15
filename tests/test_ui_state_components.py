@@ -34,7 +34,7 @@ def test_state_gallery_only_exists_in_mock_mode(state_app):
         assert 'role="alert"' in response.text
         assert 'role="status"' in response.text
         assert 'href="/static/icons/states.svg#scan"' in response.text
-        assert "ui-states.js?v=ui-states-v1" in response.text
+        assert "/static/ui-states.js?v=" in response.text
     else:
         assert response.status_code == 404
         assert "UI state gallery" not in response.text

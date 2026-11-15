@@ -7,16 +7,16 @@
   var body = document.getElementById("lbBody");
   var shell = document.querySelector(".lb-shell");
   if (!shell) return;
+  var refreshState = document.createElement("div");
+  refreshState.id = "lbRefreshState";
+  refreshState.hidden = true;
+  shell.querySelector(".lb-sub")?.after(refreshState);
+  var refreshInFlight = false;
   function medal(rank) {
     if (rank === 1) return "\u{1F947}";
     if (rank === 2) return "\u{1F948}";
     if (rank === 3) return "\u{1F949}";
     return String(rank);
-  }
-  function esc(s) {
-    var d = document.createElement("div");
-    d.textContent = s == null ? "" : String(s);
-    return d.innerHTML;
   }
   function formatLocal(iso) {
     if (!iso) return "—";
@@ -56,25 +56,93 @@
     if (table) table.style.display = "";
     var tbody = document.getElementById("lbBody");
     if (!tbody) return;
-    tbody.innerHTML = entries.map(function (row) {
-      var rank = row.rank || 0;
-      var top = rank <= 3 ? " lb-rank-top" : "";
-      var youRow = row.isCurrentUser ? " current-user" : "";
-      var youName = row.isCurrentUser ? " lb-username-you" : "";
-      return "<tr class=\"" + youRow.trim() + "\">" +
-        "<td class=\"lb-rank" + top + "\">" + medal(rank) + "</td>" +
-        "<td class=\"lb-username" + youName + "\">" + esc(row.name) + "</td>" +
-        "<td class=\"lb-num\">" + (row.scans || 0) + "</td>" +
-        "<td class=\"lb-num\">" + (row.totalSaved || 0) + "</td>" +
-        "<td class=\"lb-date\">" + esc(formatLocal(row.lastScannedAt)) + "</td>" +
-        "</tr>";
-    }).join("");
+    var rows = entries.map(function (row) {
+      var rank = Number(row.rank);
+      var tr = document.createElement("tr");
+      if (row.isCurrentUser) tr.classList.add("current-user");
+      function cell(className, value) {
+        var td = document.createElement("td");
+        td.className = className;
+        td.textContent = String(value);
+        tr.appendChild(td);
+      }
+      cell("lb-rank" + (Number.isFinite(rank) && rank >= 1 && rank <= 3 ? " lb-rank-top" : ""), Number.isFinite(rank) ? medal(rank) : "—");
+      cell("lb-username" + (row.isCurrentUser ? " lb-username-you" : ""), row.name || "Anonymous");
+      cell("lb-num", Number.isFinite(Number(row.scans)) ? Number(row.scans) : 0);
+      cell("lb-num", Number.isFinite(Number(row.totalSaved)) ? Number(row.totalSaved) : 0);
+      cell("lb-date", formatLocal(row.lastScannedAt));
+      return tr;
+    });
+    tbody.replaceChildren(...rows);
   }
   function refresh() {
-    fetch("/api/leaderboard?limit=50", { credentials: "same-origin", headers: { "Accept": "application/json" } })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (data) { if (data && data.entries) render(data.entries); })
-      .catch(function () { /* keep the last good board on transient errors */ });
+    if (refreshInFlight) return;
+    refreshInFlight = true;
+    var hadRows = Boolean(body && body.querySelector("tr"));
+    refreshState.hidden = false;
+    if (body) body.setAttribute("aria-busy", "true");
+    var controller = new AbortController();
+    var timedOut = false;
+    var operation = UIStates.loading(refreshState, {
+      label: "Refreshing leaderboard",
+      compact: true,
+      delayMs: 1000,
+      timeoutTitle: hadRows ? "Leaderboard didn't refresh" : "Leaderboard didn't load",
+      timeoutBody: hadRows ? "These are previous results. Try again to update them." : "Check your connection and try again.",
+      retry: refresh,
+      onTimeout: function () {
+        timedOut = true;
+        controller.abort();
+        refreshInFlight = false;
+        if (body) body.removeAttribute("aria-busy");
+        if (!hadRows) {
+          var empty = document.querySelector(".lb-empty");
+          if (empty) empty.style.display = "none";
+        }
+      }
+    });
+    UIStates.fetchJson("/api/leaderboard?limit=50", { credentials: "same-origin", signal: controller.signal })
+      .then(function (data) {
+        if (timedOut) return;
+        if (!data || !Array.isArray(data.entries)) throw new Error("Unexpected leaderboard response");
+        operation.finish();
+        refreshState.replaceChildren();
+        refreshState.hidden = true;
+        render(data.entries);
+        refreshInFlight = false;
+        if (body) body.removeAttribute("aria-busy");
+      })
+      .catch(function (problem) {
+        if (timedOut) return;
+        operation.finish();
+        refreshInFlight = false;
+        if (body) body.removeAttribute("aria-busy");
+        var hasRows = Boolean(body && body.querySelector("tr"));
+        if (!hasRows) {
+          var empty = document.querySelector(".lb-empty");
+          if (empty) empty.style.display = "none";
+        }
+        refreshState.hidden = false;
+        UIStates.notice(refreshState, {
+          type: "warning",
+          message: hasRows
+            ? problem && problem.code === "offline"
+              ? "You're offline. Showing the last results."
+              : "The leaderboard didn't refresh. Showing the last results."
+            : problem && problem.code === "offline"
+              ? "You're offline. Reconnect to load the leaderboard."
+              : "The leaderboard didn't load. Check your connection and try again."
+        });
+        var retry = document.createElement("button");
+        retry.type = "button";
+        retry.className = "secondary-button";
+        retry.textContent = "Try again";
+        retry.addEventListener("click", refresh);
+        var actions = document.createElement("div");
+        actions.className = "state-actions";
+        actions.appendChild(retry);
+        refreshState.appendChild(actions);
+      });
   }
   localizeStaticDates();
   refresh();
@@ -82,4 +150,5 @@
   document.addEventListener("visibilitychange", function () {
     if (document.visibilityState === "visible") refresh();
   });
+  window.addEventListener("online", refresh);
 })();

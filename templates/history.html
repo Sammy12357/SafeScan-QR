@@ -1,14 +1,13 @@
-{# Scan history page: lists the signed-in user's past scans. Populated client
-   side by static/history.js from the scan-history API. #}
+{# Scan history page: lists the signed-in user's past scans rendered by the server. #}
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
-  <script src="/static/ui-states.js?v=ui-states-v1"></script>
+  <script src="/static/ui-states.js?v=ui-loading-v1"></script>
   <title>Scan History | SafeScan QR</title>
-  <link rel="stylesheet" href="/static/styles.css?v=ui-states-v2">
+  <link rel="stylesheet" href="/static/styles.css?v=ui-loading-v2">
   <link rel="stylesheet" href="/static/styles-history.css?v=ui-spacing-v2">
 </head>
 <body>
@@ -47,10 +46,10 @@
     {% endif %}
   </div>
   {% include "footer.html" %}
-  <script src="/static/app-core.js?v=native-scroll-v3"></script>
-  <script src="/static/app-widgets.js?v=native-scroll-v3"></script>
-  <script src="/static/app-go-ghost.js?v=native-scroll-v3"></script>
-  <script src="/static/app-go-ghost-ui.js?v=native-scroll-v3"></script>
-  <script src="/static/app-generate-qr.js?v=native-scroll-v3"></script>
+  <script src="/static/app-core.js?v=ui-loading-v2"></script>
+  <script src="/static/app-widgets.js?v=consent-cache-v1"></script>
+  <script src="/static/app-go-ghost.js?v=ghost-inline-errors-v1"></script>
+  <script src="/static/app-go-ghost-ui.js?v=ghost-account-check-v1"></script>
+  <script src="/static/app-generate-qr.js?v=ui-loading-v1"></script>
 </body>
 </html>

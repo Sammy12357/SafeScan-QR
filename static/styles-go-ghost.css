@@ -11,6 +11,11 @@
 .ghost-scope-guidance-action { border-color: rgba(255, 187, 85, 0.34); background: rgba(255, 187, 85, 0.08); }
 .ghost-scope-guidance-done { border-color: rgba(80, 227, 164, 0.34); background: rgba(80, 227, 164, 0.08); }
 .ghost-scope-guidance-action span, .ghost-scope-guidance-done span { color: var(--accent); }
+.ghost-inline-issue { margin-top: var(--space-4); }
+.ghost-inline-issue[hidden] { display: none !important; }
+#goGhostWorkspace[hidden] { display: none !important; }
+.ghost-inline-issue .notice { width: 100%; }
+.ghost-inline-issue:focus-visible { outline: 2px solid var(--danger); outline-offset: var(--space-1); }
 .ghost-automation-site-row { cursor: pointer; transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease; }
 .ghost-automation-site-row:hover, .ghost-automation-site-row:focus-visible { border-color: rgba(var(--accent-rgb), 0.42); background: rgba(var(--accent-rgb), 0.08); outline: none; transform: translateY(-1px); }
 .ghost-group-brand-status { display: block; margin-top: var(--space-2); color: var(--muted); font-size: 0.7rem; font-weight: 600; line-height: 1.35; }

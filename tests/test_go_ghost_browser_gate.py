@@ -95,6 +95,10 @@ def test_production_page_keeps_manual_opt_out_controls(go_ghost_app):
     assert 'id="goGhostScopeSearchButton"' in response.text
     assert 'id="goGhostScopeOptOutButton"' in response.text
     assert 'id="goGhostScopeCopyButton"' in response.text
+    assert '<meta name="referrer" content="no-referrer">' in response.text
+    assert 'id="goGhostActionError"' in response.text
+    assert 'id="ghostProfileError"' in response.text
+    assert 'id="goGhostScopeError"' in response.text
     assert 'id="startGhostQueueButton"' not in response.text
     assert 'id="goGhostScopeAutoFillButton"' not in response.text
     assert "Backend does" not in response.text
