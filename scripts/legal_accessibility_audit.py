@@ -13,9 +13,11 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from playwright.sync_api import sync_playwright
 
+from legal_network_gate import first_party_request, record_attempt
 from ui_screenshots import (
     ROOT,
     View,
@@ -93,31 +95,67 @@ def check_public_route_inventory() -> None:
 
 def audit(base_url: str, axe_path: Path, views: tuple[View, ...]) -> dict:
     findings = []
+    outbound_attempts = []
     checked = 0
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         contexts = {audience: context_for(browser, base_url, audience) for audience in sorted({v.audience for v in views})}
+        active_views = {}
         try:
-            for context in contexts.values():
-                context.route("**/*", lambda route: route.continue_() if route.request.url.startswith(base_url) else route.abort())
+            for audience, context in contexts.items():
+                # Keep the run local even for the one permitted login script.
+                context.route("**/*", lambda route: route.continue_() if first_party_request(route.request.url, base_url) else route.abort())
+                def handle_websocket(route, audience=audience):
+                    if active := active_views.get(audience):
+                        view_name, path, theme, attempts = active
+                        record_attempt(route.url, "websocket", base_url,
+                                       view_name, path, theme, attempts)
+                    if first_party_request(route.url, base_url):
+                        route.connect_to_server()
+                    else:
+                        route.close()
+                context.route_web_socket("**/*", handle_websocket)
                 context.add_init_script(path=str(axe_path))
             for index, view in enumerate(views, start=1):
                 context = contexts[view.audience]
                 for theme in THEMES:
+                    page_attempts = []
+                    page_path = view.path.split("?", 1)[0]
+
+                    def record_request(request):
+                        record_attempt(request.url, request.resource_type, base_url,
+                                       view.name, page_path, theme, page_attempts)
+
+                    # Context listeners also see requests from workers and popups.
+                    active_views[view.audience] = (view.name, page_path, theme, page_attempts)
+                    context.on("request", record_request)
                     page = context.new_page()
                     page.add_init_script(
                         "localStorage.setItem('safescan_theme', " + json.dumps(theme) + ");"
-                        "localStorage.setItem('safeScanConsent', JSON.stringify({"
-                        "consentType: 'essential_only', bannerVersion: 'consent-v1', timestamp: new Date().toISOString()}));"
+                        + (
+                            # A fresh anonymous visit has not made a consent choice.
+                            "localStorage.removeItem('safeScanConsent');"
+                            if view.audience == "guest" or view.consent_prompt else
+                            "localStorage.setItem('safeScanConsent', JSON.stringify({"
+                            "consentType: 'essential_only', bannerVersion: 'consent-v1', timestamp: new Date().toISOString()}));"
+                        )
                     )
                     try:
-                        response = page.goto(base_url + view.path, wait_until="networkidle", timeout=20_000)
+                        try:
+                            response = page.goto(base_url + view.path, wait_until="networkidle", timeout=20_000)
+                        except Exception:
+                            if page_attempts:
+                                destinations = ", ".join(sorted({item["destination"] for item in page_attempts}))
+                                raise RuntimeError(f"{view.name} {theme} {page_path}: "
+                                                   f"attempted outbound request to {destinations}") from None
+                            raise
                         status = response.status if response else None
                         expected = view.final_path or view.path.split("?", 1)[0]
-                        final_path = page.url.removeprefix(base_url).split("?", 1)[0]
+                        final_path = urlsplit(page.url).path if first_party_request(page.url, base_url) else "<external origin>"
                         expected_status = EXPECTED_STATUSES.get(view.name, 200)
                         if status != expected_status or final_path != expected:
-                            raise RuntimeError(f"{view.name}: expected {expected_status} at {expected}; got {status} at {page.url}")
+                            raise RuntimeError(f"{view.name}: expected {expected_status} at {expected}; "
+                                               f"got {status} at {final_path}")
                         if page.locator("html").get_attribute("data-theme") != theme:
                             raise RuntimeError(f"{view.name}: {theme} theme did not render")
                         for width in WIDTHS:
@@ -137,6 +175,9 @@ def audit(base_url: str, axe_path: Path, views: tuple[View, ...]) -> dict:
                                                  "width": width, "violations": results})
                     finally:
                         page.close()
+                        context.remove_listener("request", record_request)
+                        active_views.pop(view.audience, None)
+                        outbound_attempts.extend(page_attempts)
                 if index % 10 == 0 or index == len(views):
                     print(f"Audited {index}/{len(views)} public views", flush=True)
         finally:
@@ -144,7 +185,8 @@ def audit(base_url: str, axe_path: Path, views: tuple[View, ...]) -> dict:
                 context.close()
             browser.close()
     return {"checked": checked, "pages": len(views), "widths": WIDTHS,
-            "axe_version": "4.14.0", "findings": findings}
+            "axe_version": "4.14.0", "findings": findings,
+            "outbound_attempts": outbound_attempts}
 
 
 def main():
@@ -193,10 +235,15 @@ def main():
     print(f"Axe {report['axe_version']} checked {report['checked']} renders of {report['pages']} public views at widths {WIDTHS} in dark/light themes")
     for finding, violation in blocking[:20]:
         print(f"{finding['view']} {finding['theme']} {finding['width']}px: {violation['impact']} {violation['id']} {violation['nodes'][0]['target']}")
-    if blocking:
-        print(f"{len(blocking)} serious/critical rule hits; full report: {args.output}")
+    for attempt in report["outbound_attempts"][:20]:
+        print(f"{attempt['view']} {attempt['theme']} {attempt['path']}: "
+              f"attempted {attempt['resource_type']} to {attempt['destination']}")
+    if blocking or report["outbound_attempts"]:
+        print(f"{len(blocking)} serious/critical axe hits; "
+              f"{len(report['outbound_attempts'])} unexpected pre-action outbound requests; "
+              f"full report: {args.output}")
         raise SystemExit(1)
-    print(f"No serious or critical axe findings; full report: {args.output}")
+    print(f"No serious/critical axe findings or unexpected pre-action outbound requests; full report: {args.output}")
 
 
 if __name__ == "__main__":

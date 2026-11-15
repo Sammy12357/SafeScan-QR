@@ -102,6 +102,7 @@ jobs:
           npm ci --prefix scripts/a11y
       - name: Audit public pages in dark and light themes
         run: |
+          SAFESCAN_REQUIRE_BROWSER=1 python -m pytest tests/test_legal_network_gate.py -q
           python scripts/legal_accessibility_audit.py
           python scripts/legal_keyboard_audit.py
 
