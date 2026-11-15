@@ -24,7 +24,7 @@ The token page already presents wallet connection with its own button, and the p
 
 ## Visual review
 
-The [comparison matrix](screenshots/ui-phase-7/README.md) covers 24 before and after views at 375, 768, and 1440 pixels in both themes, using synthetic data and no application server. The [capture script](../../scripts/ui_phase7_screenshots.py) reproduces the set with each version's own static assets. Representative pairs:
+The [comparison matrix](screenshots/ui-phase-7/README.md) covers 26 before and after views at 375, 768, and 1440 pixels in both themes, using synthetic data and no application server. The [capture script](../../scripts/ui_phase7_screenshots.py) reproduces the set with each version's own static assets. Representative pairs:
 
 - [History before](screenshots/ui-phase-7/before/dark/375/history.jpg) · [after](screenshots/ui-phase-7/after/dark/375/history.jpg)
 - [Leaderboard before](screenshots/ui-phase-7/before/dark/768/leaderboard.jpg) · [after](screenshots/ui-phase-7/after/dark/768/leaderboard.jpg)

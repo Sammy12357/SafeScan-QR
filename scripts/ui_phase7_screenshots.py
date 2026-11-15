@@ -94,6 +94,7 @@ def fixture_contexts() -> dict[str, tuple[str, dict]]:
             "stats": [], "chart_rows": [], "verdict_rows": [], "recent_users": [],
             "recent_reports": [], "activity": [],
         }, "/admin"),
+        "admin_activity": admin_fixture("Activity Feed", "logs", {"rows": [], "actions": []}, "/admin/activity"),
         "admin_users": admin_fixture("All Users", "users", empty_users, "/admin/users"),
         "admin_users_filtered": admin_fixture("All Users", "users", filtered_users, "/admin/users", {"search": "no-match@example.test"}),
         "admin_user_drawer": admin_fixture("User Detail", "user_drawer", {
@@ -109,6 +110,7 @@ def fixture_contexts() -> dict[str, tuple[str, dict]]:
         "admin_reports": admin_fixture("Reported URLs", "reports", {"tab": "reports", "reports": []}, "/admin/reports"),
         "admin_blocklist": admin_fixture("Blocklist", "reports", {"tab": "blocklist", "blocklist": []}, "/admin/reports", {"tab": "blocklist"}),
         "admin_airdrop": admin_fixture("Tier Overview", "airdrop", empty_airdrop, "/admin/airdrop"),
+        "admin_wallet_registry": admin_fixture("Wallet Registry", "airdrop", empty_airdrop, "/admin/airdrop/wallets"),
         "admin_fraud": admin_fixture("Fraud Flags", "fraud", {"rows": []}, "/admin/airdrop/fraud"),
         "admin_logs": admin_fixture("Audit Logs", "logs", {"rows": [], "actions": []}, "/admin/logs"),
         "admin_logs_filtered": admin_fixture("Audit Logs", "logs", {"rows": [], "actions": []}, "/admin/logs", {"action": "no-match"}),
