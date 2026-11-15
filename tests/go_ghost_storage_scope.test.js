@@ -47,7 +47,8 @@ function page(accountId, local, session, {
   automation = false, accountName = '', accountEmail = '', legacyEraseBlocked = false
 } = {}) {
   const ids = [
-    'goGhostWorkspace', 'goGhostConsentModal', 'goGhostSessionNotice', 'goGhostLegacyNotice',
+    'goGhostWorkspace', 'goGhostConsentModal', 'goGhostSessionNotice', 'goGhostAccountCheckStatus',
+    'goGhostSessionActions', 'goGhostSessionRetryButton', 'goGhostLegacyNotice',
     'goGhostLegacyActions', 'eraseGhostLegacyButton',
     'startGoGhostButton', 'goGhostProfileForm', 'clearGhostDataButton', 'goGhostAutomationRows',
     'goGhostBrokerList', 'goGhostScopeModal', 'goGhostScopeTitle', 'goGhostScopePriority',
@@ -70,6 +71,10 @@ function page(accountId, local, session, {
   elements.goGhostBrokerRegistry = element();
   elements.goGhostBrokerRegistry.textContent = fs.readFileSync('data/go_ghost/brokers.json', 'utf8');
   elements.goGhostWorkspace.hidden = true;
+  elements.goGhostAccountCheckStatus.hidden = true;
+  elements.goGhostSessionNotice.hidden = true;
+  elements.goGhostSessionNotice.textContent = 'Your sign-in changed. Reload this page before using Go Ghost.';
+  elements.goGhostSessionActions.hidden = true;
   elements.goGhostWorkspace.dataset.accountId = accountId;
   elements.goGhostWorkspace.dataset.accountName = accountName;
   elements.goGhostWorkspace.dataset.accountEmail = accountEmail;
@@ -84,7 +89,10 @@ function page(accountId, local, session, {
   let confirmResult = true;
   let signedInAs = accountId;
   const blockedDeletes = new Set(legacyEraseBlocked ? ['safeScanGoGhostProfile'] : []);
-  const controls = {popupAllowed: true, clipboardAllowed: true, writesAllowed: true};
+  const controls = {
+    popupAllowed: true, clipboardAllowed: true, writesAllowed: true,
+    accountCheck: 'ok', checkTimeoutMs: 15000, reloads: 0
+  };
   const window = {
     localStorage: storage(local, blockedDeletes, () => controls.writesAllowed),
     sessionStorage: storage(session, new Set(), () => controls.writesAllowed),
@@ -92,6 +100,9 @@ function page(accountId, local, session, {
     crypto: {randomUUID: () => `00000000-0000-4000-8000-${String(uuid++).padStart(12, '0')}`},
     matchMedia: () => ({matches: false}),
     confirm: question => { confirmQuestions.push(question); return confirmResult; },
+    setTimeout: (callback, delay) => setTimeout(callback, delay === 15000 ? controls.checkTimeoutMs : delay),
+    clearTimeout,
+    location: {reload: () => { controls.reloads += 1; }},
     addEventListener(name, callback) { windowEvents[name] = callback; },
     open(url) {
       assert.equal(url, 'about:blank', 'the broker tab starts on a blank same-origin document');
@@ -111,10 +122,17 @@ function page(accountId, local, session, {
   };
   const context = vm.createContext({
     window, document, URL, AbortController,
-    fetch: async url => {
+    fetch: async (url, options = {}) => {
       if (url.startsWith('/api/go-ghost/removals/')) {
         removalRequests.push(url);
         return {status: 503, ok: false, json: async () => ({error: 'Unavailable'})};
+      }
+      if (controls.accountCheck === 'offline') throw new Error('Network unavailable');
+      if (controls.accountCheck === 'unavailable') return {status: 503, ok: false};
+      if (controls.accountCheck === 'hang') {
+        return new Promise((resolve, reject) => {
+          options.signal.addEventListener('abort', () => reject(new Error('Aborted')), {once: true});
+        });
       }
       return signedInAs
         ? {status: 200, ok: true, json: async () => ({user: {id: signedInAs}})}
@@ -182,6 +200,9 @@ async function main() {
   assert.equal(a.elements.goGhostWorkspace.hidden, true, 'stale A tab must lock after account switch');
   assert.equal(a.elements.ghostFirstNameInput.value, '');
   assert.equal(a.elements.goGhostSessionNotice.hidden, false);
+  assert.match(a.elements.goGhostSessionNotice.textContent, /sign-in changed/i);
+  assert.equal(a.elements.goGhostSessionActions.hidden, true,
+    'a confirmed account switch must not offer a retry against old account data');
   assert.equal(vm.runInContext('goGhostState', a.context), null, 'old subject state must leave page memory');
   assert.equal(a.elements.ghostSubjectSelect.innerHTML, '', 'old subject names must leave the DOM');
   assert.equal(a.elements.goGhostScopeKeywords.innerHTML, '', 'old profile values must leave hidden modal markup');
@@ -189,6 +210,24 @@ async function main() {
   const beforeStaleWrite = local.get(aKey);
   vm.runInContext("setGhostManualStatus('whitepages', 'submitted')", a.context);
   assert.equal(local.get(aKey), beforeStaleWrite, 'locked tab cannot write an old account’s progress');
+
+  for (const failure of ['offline', 'unavailable', 'hang']) {
+    const uncertain = page(`account-${failure}`, local, new Map());
+    uncertain.elements.startGoGhostButton.events.click();
+    enterProfile(uncertain, 'Private', 'Person');
+    uncertain.controls.accountCheck = failure;
+    if (failure === 'hang') uncertain.controls.checkTimeoutMs = 10;
+    await uncertain.windowEvents.focus();
+    assert.equal(uncertain.elements.goGhostWorkspace.hidden, true,
+      `${failure}: private details stay hidden without a verified account`);
+    assert.equal(uncertain.elements.ghostFirstNameInput.value, '', `${failure}: private input is cleared`);
+    assert.match(uncertain.elements.goGhostSessionNotice.textContent, /couldn't confirm your sign-in/i);
+    assert.doesNotMatch(uncertain.elements.goGhostSessionNotice.textContent, /sign-in changed/i);
+    assert.equal(uncertain.elements.goGhostSessionActions.hidden, false, `${failure}: retry is offered`);
+    assert.equal(uncertain.elements.goGhostAccountCheckStatus.hidden, true, `${failure}: loading ends`);
+    uncertain.elements.goGhostSessionRetryButton.events.click();
+    assert.equal(uncertain.controls.reloads, 1, `${failure}: retry reloads the page`);
+  }
 
   const guestSession = new Map();
   const guest = page('', local, guestSession);

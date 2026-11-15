@@ -210,6 +210,26 @@ function showConsentBannerIfNeeded() {
   }
 }
 
+function showConsentCacheWarning() {
+  const title = cookieConsentBanner?.querySelector(".consent-title");
+  const copy = cookieConsentBanner?.querySelector(".consent-copy");
+  const actions = cookieConsentBanner?.querySelector(".consent-actions");
+  if (title) title.textContent = "Privacy choice recorded";
+  if (copy) {
+    copy.textContent = "SafeScan recorded your choice, but this browser couldn't remember it. You may be asked again on another visit.";
+    copy.setAttribute("role", "status");
+  }
+  if (actions) {
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "secondary-button";
+    close.textContent = "Close";
+    close.addEventListener("click", () => cookieConsentBanner.classList.add("hidden"));
+    actions.replaceChildren(close);
+    close.focus();
+  }
+}
+
 let consentSaving = false;
 cookieConsentBanner?.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-consent-choice]");
@@ -232,11 +252,18 @@ cookieConsentBanner?.addEventListener("click", async (event) => {
         signal: controller.signal
       });
       if (!response.ok) throw new Error("Consent save failed");
-      const body = await response.json();
-      window.localStorage.setItem("safeScanConsent", JSON.stringify(record));
-      if (body.id) window.localStorage.setItem("safeScanConsentId", body.id);
+      const parsedBody = await response.json().catch(() => ({}));
+      const body = parsedBody && typeof parsedBody === "object" ? parsedBody : {};
+      let cached = true;
+      try {
+        window.localStorage.setItem("safeScanConsent", JSON.stringify(record));
+        if (body.id) window.localStorage.setItem("safeScanConsentId", body.id);
+      } catch {
+        cached = false;
+      }
       document.getElementById("consentSaveFeedback")?.remove();
-      cookieConsentBanner.classList.add("hidden");
+      if (cached) cookieConsentBanner.classList.add("hidden");
+      else showConsentCacheWarning();
     } catch {
       let feedback = document.getElementById("consentSaveFeedback");
       if (!feedback) {
@@ -250,7 +277,7 @@ cookieConsentBanner?.addEventListener("click", async (event) => {
           ? "Saving your privacy choice took too long. Check your connection and try again."
           : navigator.onLine === false
             ? "You're offline. Reconnect and save your privacy choice again."
-            : "We couldn't save your privacy choice. Try again."
+            : "We couldn't confirm your privacy choice was recorded. Check your connection and try again."
       });
     } finally {
       window.clearTimeout(timeout);

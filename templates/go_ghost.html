@@ -33,7 +33,9 @@
         <p id="ghostProgressBreakdown" class="ghost-progress-breakdown">0 submitted · 0 reported gone · 0 not found · 0 other active</p>
       </div>
     </header>
+    <p id="goGhostAccountCheckStatus" class="go-ghost-copy" role="status" hidden>Checking your sign-in before showing Go Ghost details…</p>
     <p id="goGhostSessionNotice" class="go-ghost-copy" role="alert" hidden>Your sign-in changed. Reload this page before using Go Ghost.</p>
+    <div id="goGhostSessionActions" class="go-ghost-actions" hidden><button id="goGhostSessionRetryButton" class="secondary-button" type="button">Reload and retry</button></div>
     <p id="goGhostLegacyNotice" class="go-ghost-copy" role="alert" hidden>Older Go Ghost details could not be erased from this browser. Try again or clear this site's browser storage.</p>
     <div id="goGhostLegacyActions" class="go-ghost-actions" hidden><button id="eraseGhostLegacyButton" class="secondary-button" type="button">Retry erasing older details</button></div>
 
@@ -227,10 +229,10 @@
 
   <script id="goGhostBrokerRegistry" type="application/json">{{ go_ghost_brokers | tojson }}</script>
   <script src="/static/app-core.js?v=ui-loading-v1"></script>
-  <script src="/static/app-widgets.js?v=ui-loading-v1"></script>
+  <script src="/static/app-widgets.js?v=consent-cache-v1"></script>
   <script src="/static/go-ghost-state.js?v=ghost-state-ui-v3"></script>
   <script src="/static/app-go-ghost.js?v=ghost-inline-errors-v1"></script>
-  <script src="/static/app-go-ghost-ui.js?v=ghost-inline-errors-v1"></script>
+  <script src="/static/app-go-ghost-ui.js?v=ghost-account-check-v1"></script>
   <script src="/static/app-generate-qr.js?v=ui-loading-v1"></script>
 </body>
 </html>

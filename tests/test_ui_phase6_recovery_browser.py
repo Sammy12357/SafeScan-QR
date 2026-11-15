@@ -1,0 +1,119 @@
+"""Browser checks for account recheck privacy and consent save feedback."""
+
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+import pytest
+
+from scripts.ui_screenshots import context_for, free_port, isolated_server_env, wait_for_server
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture(scope="module")
+def browser_site():
+    playwright_api = pytest.importorskip("playwright.sync_api")
+    with tempfile.TemporaryDirectory(prefix="safescan-ui-recovery-") as temp_dir:
+        port = free_port()
+        base_url = f"http://localhost:{port}"
+        process = subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", "hackabull:qr_app", "--host", "127.0.0.1", "--port", str(port), "--no-access-log"],
+            cwd=ROOT,
+            env=isolated_server_env(temp_dir, base_url),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            wait_for_server(base_url, process)
+            with playwright_api.sync_playwright() as playwright:
+                try:
+                    browser = playwright.chromium.launch(headless=True)
+                except playwright_api.Error as exc:
+                    pytest.skip(f"Chromium unavailable for browser check: {exc}")
+                try:
+                    yield browser, base_url
+                finally:
+                    browser.close()
+        finally:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.communicate()
+
+
+def test_go_ghost_network_failure_hides_details_and_offers_retry(browser_site):
+    browser, base_url = browser_site
+    context = context_for(browser, base_url, "member")
+    try:
+        page = context.new_page()
+        page.goto("/go-ghost", wait_until="domcontentloaded")
+        page.locator("#startGoGhostButton").click()
+        page.locator("#ghostFirstNameInput").fill("Private")
+        assert page.locator("#goGhostWorkspace").is_visible()
+
+        page.route("**/api/me", lambda route: route.abort("failed"))
+        page.evaluate("() => checkGhostAccount()")
+        assert page.locator("#goGhostWorkspace").is_hidden()
+        assert page.locator("#ghostFirstNameInput").input_value() == ""
+        assert "couldn't confirm your sign-in" in page.locator("#goGhostSessionNotice").inner_text()
+        assert page.locator("#goGhostSessionRetryButton").is_visible()
+        assert page.locator("#goGhostAccountCheckStatus").is_hidden()
+
+        page.unroute("**/api/me")
+        with page.expect_navigation():
+            page.locator("#goGhostSessionRetryButton").click()
+        assert page.locator("#goGhostWorkspace").is_visible()
+    finally:
+        context.close()
+
+
+def test_consent_success_with_blocked_storage_is_reported_as_recorded(browser_site):
+    browser, base_url = browser_site
+    context = browser.new_context(base_url=base_url)
+    try:
+        page = context.new_page()
+        page.add_init_script("""
+            const originalSetItem = Storage.prototype.setItem;
+            Storage.prototype.setItem = function(key, value) {
+                if (key === 'safeScanConsent' || key === 'safeScanConsentId') {
+                    throw new DOMException('Storage blocked', 'QuotaExceededError');
+                }
+                return originalSetItem.call(this, key, value);
+            };
+        """)
+        page.goto("/", wait_until="domcontentloaded")
+        with page.expect_response("**/api/consent") as saved:
+            page.locator("[data-consent-choice='essential_only']").click()
+        assert saved.value.status == 200
+        assert page.locator(".consent-title").inner_text() == "Privacy choice recorded"
+        assert "couldn't remember it" in page.locator(".consent-copy").inner_text()
+        assert page.locator("#consentSaveFeedback").count() == 0
+        assert page.locator("#cookieConsentBanner").is_visible()
+        page.get_by_role("button", name="Close", exact=True).click()
+        assert page.locator("#cookieConsentBanner").is_hidden()
+    finally:
+        context.close()
+
+
+def test_consent_server_failure_keeps_choice_available(browser_site):
+    browser, base_url = browser_site
+    context = browser.new_context(base_url=base_url)
+    try:
+        page = context.new_page()
+        page.route("**/api/consent", lambda route: route.fulfill(status=503, body='{"error":"Unavailable"}', content_type="application/json"))
+        page.goto("/", wait_until="domcontentloaded")
+        page.locator("[data-consent-choice='essential_only']").click()
+        page.locator("#consentSaveFeedback").wait_for(state="visible")
+        assert page.locator("#consentSaveFeedback").is_visible()
+        assert "couldn't confirm" in page.locator("#consentSaveFeedback").inner_text()
+        assert page.locator("[data-consent-choice='essential_only']").is_visible()
+        assert page.locator("#cookieConsentBanner").is_visible()
+    finally:
+        context.close()

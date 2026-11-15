@@ -3,6 +3,9 @@
 // load in this order: app-core.js -> app-widgets.js -> app-go-ghost.js -> app-go-ghost-ui.js -> app-generate-qr.js.
 const ghostCaliforniaDropCard = document.getElementById("ghostCaliforniaDropCard");
 const ghostDropFamilyNote = document.getElementById("ghostDropFamilyNote");
+const goGhostAccountCheckStatus = document.getElementById("goGhostAccountCheckStatus");
+const goGhostSessionActions = document.getElementById("goGhostSessionActions");
+const goGhostSessionRetryButton = document.getElementById("goGhostSessionRetryButton");
 const GHOST_PROFILE_VALIDATION_MESSAGE =
   "Enter a valid first name, last name, city, region, email, and optional birth year.";
 
@@ -672,33 +675,63 @@ function lockGhostWorkspace() {
   goGhostScopeModal?.classList.add("hidden");
   goGhostConsentModal?.classList.add("hidden");
   if (goGhostSessionNotice) goGhostSessionNotice.hidden = false;
+  if (goGhostSessionActions) goGhostSessionActions.hidden = true;
 }
 
 let goGhostCheckSerial = 0;
 let goGhostVisibleBeforeCheck = false;
+let goGhostCheckController = null;
+function showGhostAccountCheckFailure() {
+  lockGhostWorkspace();
+  if (goGhostSessionNotice) {
+    goGhostSessionNotice.textContent = "We couldn't confirm your sign-in. Your Go Ghost details are hidden. Check your connection, then reload to try again.";
+    goGhostSessionNotice.hidden = false;
+  }
+  if (goGhostSessionActions) goGhostSessionActions.hidden = false;
+}
+
 async function checkGhostAccount() {
   if (goGhostStoreLocked) return;
   const serial = ++goGhostCheckSerial;
+  goGhostCheckController?.abort();
+  const controller = new AbortController();
+  goGhostCheckController = controller;
+  const timeout = window.setTimeout(() => controller.abort(), 15000);
+  const showChecking = window.setTimeout(() => {
+    if (serial === goGhostCheckSerial && !goGhostStoreLocked && goGhostAccountCheckStatus) {
+      goGhostAccountCheckStatus.hidden = false;
+    }
+  }, 300);
   // Hide personal details before waiting for the server to confirm this tab's owner.
   if (goGhostWorkspace && !goGhostWorkspace.hidden) goGhostVisibleBeforeCheck = true;
   if (goGhostWorkspace) goGhostWorkspace.hidden = true;
   goGhostScopeModal?.classList.add("hidden");
   try {
-    const response = await fetch("/api/me", { credentials: "same-origin", cache: "no-store" });
+    const response = await fetch("/api/me", {
+      credentials: "same-origin", cache: "no-store", signal: controller.signal
+    });
     if (goGhostStoreLocked || serial !== goGhostCheckSerial) return;
+    if (controller.signal.aborted) return showGhostAccountCheckFailure();
     if (!goGhostAccountId && response.status === 401) {
       if (goGhostVisibleBeforeCheck && goGhostWorkspace) goGhostWorkspace.hidden = false;
       goGhostVisibleBeforeCheck = false;
       return;
     }
-    if (!response.ok) return lockGhostWorkspace();
+    if (response.status === 401 || response.status === 403) return lockGhostWorkspace();
+    if (!response.ok) return showGhostAccountCheckFailure();
     const body = await response.json();
     if (goGhostStoreLocked || serial !== goGhostCheckSerial) return;
+    if (controller.signal.aborted) return showGhostAccountCheckFailure();
     if (body?.user?.id !== goGhostAccountId) return lockGhostWorkspace();
     if (goGhostVisibleBeforeCheck && goGhostWorkspace) goGhostWorkspace.hidden = false;
     goGhostVisibleBeforeCheck = false;
   } catch {
-    if (serial === goGhostCheckSerial) lockGhostWorkspace();
+    if (serial === goGhostCheckSerial && !goGhostStoreLocked) showGhostAccountCheckFailure();
+  } finally {
+    window.clearTimeout(timeout);
+    window.clearTimeout(showChecking);
+    if (goGhostCheckController === controller) goGhostCheckController = null;
+    if (serial === goGhostCheckSerial && goGhostAccountCheckStatus) goGhostAccountCheckStatus.hidden = true;
   }
 }
 
@@ -807,6 +840,7 @@ if (goGhostWorkspace) {
   });
 
   window.addEventListener("focus", checkGhostAccount);
+  goGhostSessionRetryButton?.addEventListener("click", () => window.location.reload());
   window.addEventListener("pageshow", checkGhostAccount);
   window.addEventListener("pagehide", lockGhostWorkspace);
   window.addEventListener("storage", (event) => {
