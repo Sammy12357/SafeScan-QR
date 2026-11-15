@@ -1,6 +1,6 @@
 # Outbound host and vendor register
 
-Baseline: repository commit `a2ce01b`, reviewed 2026-11-15. This is a **code-path inventory**, not a claim that every optional integration is enabled in production, that a provider's contract permits a use, or that no other network traffic occurs. Render environment values, DNS/CDN configuration, browser network captures, package behavior and vendor agreements remain unverified. “Automatic” means a normal page or scan may contact the host without an additional vendor-specific click.
+Baseline: repository commit `ad3e52a` (merged Phase 1), reviewed 2026-11-15. This is a **code-path inventory**, not a claim that every optional integration is enabled in production, that a provider's contract permits a use, or that no other network traffic occurs. Render environment values, DNS/CDN configuration, browser network captures, package behavior and vendor agreements remain unverified. “Automatic” means a normal page or scan may contact the host without an additional vendor-specific click.
 
 ## Browser requests and navigations
 

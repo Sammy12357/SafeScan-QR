@@ -52,5 +52,7 @@ def test_dynamic_browser_keys_and_server_cookies_are_in_inventory():
     assert "safescan:actor-email:" in admin and "safescan:actor-email:" in INVENTORY
     config = (ROOT / "hackabull/config.py").read_text()
     cookies = re.findall(r"\b\w*COOKIE_NAME\s*=\s*['\"]([^'\"]+)['\"]", config)
+    age_gate = (ROOT / "hackabull/age_gate.py").read_text()
+    cookies += re.findall(r"\b\w*COOKIE\s*=\s*['\"]([^'\"]+)['\"]", age_gate)
     assert cookies
     assert all(cookie in INVENTORY for cookie in cookies), set(cookies) - {c for c in cookies if c in INVENTORY}

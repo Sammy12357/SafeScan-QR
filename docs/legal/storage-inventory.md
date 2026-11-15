@@ -1,8 +1,8 @@
 # Browser storage inventory
 
-Baseline: repository commit `a2ce01b`, reviewed 2026-11-15. This records keys the application code reads or writes; it does not establish what a particular browser, Google, CDN, or hosting provider stores. Production environment settings and browser traffic still need verification. Server-side database and upload fields belong in `data-map.yaml`.
+Baseline: repository commit `ad3e52a` (Phase 1 merged), reviewed 2026-11-15. This records keys the application code reads or writes; it does not establish what a particular browser, Google, CDN, or hosting provider stores. Production environment settings and browser traffic still need verification. Server-side database and upload fields belong in `data-map.yaml`.
 
-Phase 4 adds `tests/test_legal_privacy_gate.py` to catch newly written literal browser keys, the currently known dynamic key families, server cookie-name constants and a denylist of unreviewed tracker hosts. This is a source-level guard, not a complete browser traffic capture. Phase 1's pending-age/adult cookies and any later keys must be added here when its branch is integrated.
+Phase 4 adds `tests/test_legal_privacy_gate.py` to catch newly written literal browser keys, the currently known dynamic key families, server cookie-name constants (including Phase 1 age cookies), and a denylist of unreviewed tracker hosts. This is a source-level guard, not a complete browser traffic capture.
 
 ## First-party cookies
 

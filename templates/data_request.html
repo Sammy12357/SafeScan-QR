@@ -20,7 +20,7 @@
       <p class="legal-meta">Version {{ version }} - Last updated {{ last_updated }}</p>
       {% if message %}<div class="request-message" role="status">{{ message }}</div>{% endif %}
       {% if field_errors %}<div class="request-message" role="alert" data-server-error-focus><strong>Check these fields:</strong><ul>{% for field, error in field_errors.items() %}<li><a href="#request-{{ field }}">{{ error }}</a></li>{% endfor %}</ul></div>{% endif %}
-      <p>Use this portal to submit GDPR, CCPA/CPRA, LGPD, PIPEDA, or general privacy requests. SafeScan logs the request timestamp and targets completion within 30 days.</p>
+      <p>Use this portal to submit privacy requests. SafeScan records the submission time and reviews identity, applicable timing, and any records that must be retained before completing a request.</p>
 
       <div class="rights-grid">
         <article>
@@ -69,11 +69,25 @@
           <textarea id="request-details" name="details" rows="5" placeholder="Tell us what you want SafeScan to review or change." {% if field_errors.details %}aria-invalid="true" aria-describedby="request-details-error"{% endif %}>{{ details | default('') }}</textarea>
           {% if field_errors.details %}<span id="request-details-error" class="form-field-error">{{ field_errors.details }}</span>{% endif %}
         </div>
+        <div class="form-field">
+          <label for="request-correction-field">For a correction request, choose the field</label>
+          <select id="request-correction-field" name="correction_field" {% if field_errors.correction_field %}aria-invalid="true" aria-describedby="request-correction-field-error"{% endif %}>
+            <option value="other" {% if correction_field != 'display_name' %}selected{% endif %}>Other data — manual review</option>
+            <option value="display_name" {% if correction_field == 'display_name' %}selected{% endif %}>My display name</option>
+          </select>
+          {% if field_errors.correction_field %}<span id="request-correction-field-error" class="form-field-error">{{ field_errors.correction_field }}</span>{% endif %}
+        </div>
+        <div class="form-field">
+          <label for="request-correction-value">Corrected display name (if selected)</label>
+          <input id="request-correction-value" type="text" name="correction_value" maxlength="120" value="{{ correction_value | default('') }}" {% if field_errors.correction_value %}aria-invalid="true" aria-describedby="request-correction-value-error"{% endif %}>
+          {% if field_errors.correction_value %}<span id="request-correction-value-error" class="form-field-error">{{ field_errors.correction_value }}</span>{% endif %}
+        </div>
         <button class="primary-button" type="submit">Submit request</button>
       </form>
 
       {% if export_data %}
       <h2>Your Data Export</h2>
+      <form action="/legal/data-export" method="post"><button class="secondary-button" type="submit">Download JSON</button></form>
       <pre class="legal-json">{{ export_data }}</pre>
       {% endif %}
     </section>
