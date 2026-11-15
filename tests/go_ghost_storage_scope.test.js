@@ -21,7 +21,7 @@ function element() {
   };
 }
 
-function storage(map) {
+function storage(map, blockedDeletes = new Set()) {
   return {
     get length() { return map.size; },
     key: index => [...map.keys()][index] ?? null,
@@ -32,11 +32,14 @@ function storage(map) {
       return map.get(key) ?? null;
     },
     setItem: (key, value) => map.set(key, value),
-    removeItem: key => map.delete(key)
+    removeItem: key => {
+      if (blockedDeletes.has(key)) throw new Error('Browser storage removal failed');
+      map.delete(key);
+    }
   };
 }
 
-function page(accountId, local, session, {automation = false} = {}) {
+function page(accountId, local, session, {automation = false, legacyEraseBlocked = false} = {}) {
   const ids = [
     'goGhostWorkspace', 'goGhostConsentModal', 'goGhostSessionNotice', 'goGhostLegacyNotice',
     'goGhostLegacyActions', 'eraseGhostLegacyButton',
@@ -65,8 +68,9 @@ function page(accountId, local, session, {automation = false} = {}) {
   const confirmQuestions = [];
   let confirmResult = true;
   let signedInAs = accountId;
+  const blockedDeletes = new Set(legacyEraseBlocked ? ['safeScanGoGhostProfile'] : []);
   const window = {
-    localStorage: storage(local), sessionStorage: storage(session),
+    localStorage: storage(local, blockedDeletes), sessionStorage: storage(session),
     crypto: {randomUUID: () => `00000000-0000-4000-8000-${String(uuid++).padStart(12, '0')}`},
     matchMedia: () => ({matches: false}),
     confirm: question => { confirmQuestions.push(question); return confirmResult; },
@@ -100,16 +104,17 @@ function page(accountId, local, session, {automation = false} = {}) {
   vm.runInContext(source, context);
   vm.runInContext(uiSource, context);
   return {elements, windowEvents, opened, messages, removalRequests, confirmQuestions, context,
-    setSession: id => { signedInAs = id; }, setConfirmResult: result => { confirmResult = result; }};
+    setSession: id => { signedInAs = id; }, setConfirmResult: result => { confirmResult = result; },
+    allowLegacyErase: () => blockedDeletes.clear()};
 }
 
 async function main() {
   const local = new Map([['safeScanGoGhostProfile', JSON.stringify({name: 'Legacy Secret'})]]);
   const a = page('account-A', local, new Map());
-  assert.equal(a.elements.goGhostLegacyNotice.hidden, false);
-  assert.equal(a.elements.goGhostLegacyActions.hidden, false);
+  assert.equal(a.elements.goGhostLegacyNotice.hidden, true);
+  assert.equal(a.elements.goGhostLegacyActions.hidden, true);
   assert.equal(a.elements.ghostNameInput.value, '', 'legacy profile must not be shown or imported');
-  assert.equal(local.has('safeScanGoGhostProfile'), true, 'quarantine preserves legacy data pending the migration decision');
+  assert.equal(local.has('safeScanGoGhostProfile'), false, 'unowned legacy data is erased on page load');
   a.elements.startGoGhostButton.events.click();
   a.elements.ghostNameInput.value = 'Alice Person';
   a.elements.ghostNameInput.events.input();
@@ -199,14 +204,21 @@ async function main() {
   family.setConfirmResult(true);
   family.elements.clearGhostDataButton.events.click();
   assert.equal(local.has('safeScanGoGhostV2:account:account-C'), false);
-  assert.equal(local.has('safeScanGoGhostProfile'), true, 'account clear must preserve unowned legacy data');
-  family.elements.eraseGhostLegacyButton.events.click();
-  assert.equal(local.has('safeScanGoGhostProfile'), false, 'separate confirmed action erases legacy data');
+  assert.equal(local.has('safeScanGoGhostProfile'), false, 'old unowned details remain erased');
 
   const oldLocal = new Map([['safeScanGoGhostProfile', JSON.stringify({name: 'Do not import'})]]);
-  const migration = page('account-D', oldLocal, new Map());
-  vm.runInContext("ghostApplyLegacyPolicy('erase')", migration.context);
-  assert.equal(oldLocal.has('safeScanGoGhostProfile'), false, 'erase policy can be selected without importing old data');
+  page('account-D', oldLocal, new Map());
+  assert.equal(oldLocal.has('safeScanGoGhostProfile'), false, 'old data is erased without importing it');
+
+  const blockedLocal = new Map([['safeScanGoGhostProfile', 'unowned details']]);
+  const blocked = page('account-F', blockedLocal, new Map(), {legacyEraseBlocked: true});
+  assert.equal(blockedLocal.has('safeScanGoGhostProfile'), true);
+  assert.equal(blocked.elements.goGhostLegacyNotice.hidden, false, 'failure must be visible');
+  assert.equal(blocked.elements.goGhostLegacyActions.hidden, false, 'failure offers retry');
+  blocked.allowLegacyErase();
+  blocked.elements.eraseGhostLegacyButton.events.click();
+  assert.equal(blockedLocal.has('safeScanGoGhostProfile'), false);
+  assert.equal(blocked.elements.goGhostLegacyNotice.hidden, true);
 
   const automation = page('account-E', local, new Map(), {automation: true});
   automation.elements.startGoGhostButton.events.click();
