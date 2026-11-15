@@ -69,9 +69,6 @@ def init_db():
     conn = sqlite3.connect(database_path())
     cursor = conn.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS scan_results (url TEXT PRIMARY KEY, status TEXT, timestamp TEXT)''')
-    # Earlier result-cache rows used raw URLs, including possible auth query
-    # values. The cache is disposable, so purge these on upgrade.
-    cursor.execute("DELETE FROM scan_results WHERE url NOT LIKE 'hmac:%'")
     cursor.execute('''CREATE TABLE IF NOT EXISTS domain_age_cache (
                         domain TEXT PRIMARY KEY,
                         creation_date TEXT,
@@ -437,6 +434,9 @@ def init_db():
                          guild_member INTEGER DEFAULT 0,
                          role_granted INTEGER DEFAULT 0,
                          linked_at TEXT NOT NULL)''')
+    # Earlier result-cache rows used raw URLs, including possible auth query
+    # values. The cache is disposable, so purge these on upgrade.
+    cursor.execute("DELETE FROM scan_results WHERE url NOT LIKE 'hmac:%'")
     conn.commit()
     conn.close()
 

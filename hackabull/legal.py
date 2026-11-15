@@ -273,11 +273,12 @@ def delete_user_data(email, user_id):
         # an active subscriber can reach the cancellation portal.
         if review_reasons and set(review_reasons) & {"documented legal hold", "fraud evidence", "abuse evidence"}:
             return False
-        for table in ("scans", "scan_events", "scan_history"):
-            conn.execute(
-                f"DELETE FROM {table} WHERE user_id = ? OR ((user_id IS NULL OR user_id = '') AND lower(email) = lower(?))",
-                (user_id, email),
-            )
+        for sql in (
+            "DELETE FROM scans WHERE user_id = ? OR ((user_id IS NULL OR user_id = '') AND lower(email) = lower(?))",
+            "DELETE FROM scan_events WHERE user_id = ? OR ((user_id IS NULL OR user_id = '') AND lower(email) = lower(?))",
+            "DELETE FROM scan_history WHERE user_id = ? OR ((user_id IS NULL OR user_id = '') AND lower(email) = lower(?))",
+        ):
+            conn.execute(sql, (user_id, email))
         for table in ("go_ghost_requests", "go_ghost_consents", "go_ghost_subjects"):
             if _go_ghost_status_table_exists(conn, table):
                 conn.execute(_GO_GHOST_STATUS_SQL[table][1], (user_id,))
@@ -287,14 +288,18 @@ def delete_user_data(email, user_id):
         # This path is reachable only when none of the review-only rows above
         # exist. Remove token/session material first so a deleted user cannot
         # continue to authenticate while their account is being removed.
-        for table, column in (
-            ("sessions", "google_id"), ("persistent_sessions", "user_id"),
-            ("discord_links", "user_id"), ("wallet_nonces", "user_id"),
-            ("wallets", "user_id"), ("scan_velocity", "user_id"),
-            ("device_fingerprints", "user_id"), ("payment_form_tokens", "user_id"),
-            ("adult_age_challenges", "user_id"),
+        for sql in (
+            "DELETE FROM sessions WHERE google_id = ?",
+            "DELETE FROM persistent_sessions WHERE user_id = ?",
+            "DELETE FROM discord_links WHERE user_id = ?",
+            "DELETE FROM wallet_nonces WHERE user_id = ?",
+            "DELETE FROM wallets WHERE user_id = ?",
+            "DELETE FROM scan_velocity WHERE user_id = ?",
+            "DELETE FROM device_fingerprints WHERE user_id = ?",
+            "DELETE FROM payment_form_tokens WHERE user_id = ?",
+            "DELETE FROM adult_age_challenges WHERE user_id = ?",
         ):
-            conn.execute(f"DELETE FROM {table} WHERE {column} = ?", (user_id,))
+            conn.execute(sql, (user_id,))
         conn.execute("DELETE FROM local_credentials WHERE user_id = ? OR ((user_id IS NULL OR user_id = '') AND lower(email) = lower(?))", (user_id, email))
         conn.execute("DELETE FROM waitlist_email_tokens WHERE lower(email) = lower(?)", (email,))
         conn.execute("DELETE FROM waitlist_signups WHERE lower(email) = lower(?)", (email,))
