@@ -74,23 +74,10 @@ let goGhostState = null;
 let activeGhostScopeBrokerId = "";
 const goGhostAutomationControllers = new Map();
 
-function ghostSearchFromRegistry(broker, profile) {
-  const search = broker.search;
-  if (search.kind === "path") {
-    const name = ghostPathSlug(profile.name);
-    const location = ghostPathSlug(profile.location);
-    return `${search.baseUrl}${name}${location ? `${search.locationSeparator}${location}` : ""}`;
-  }
-  if (search.kind === "query") {
-    const url = new URL(search.baseUrl);
-    url.searchParams.set(search.nameParam, profile.name || "");
-    url.searchParams.set(search.locationParam, profile.location || "");
-    return url.toString();
-  }
-  if (search.kind === "google") {
-    return ghostBrokerGoogleSearch(profile, broker.name, search.domain);
-  }
-  return search.url;
+function ghostSearchFromRegistry(broker) {
+  // These are fixed broker pages. A name or location must never be placed in
+  // a URL constructed by SafeScan; the person enters it on the broker site.
+  return broker.search.url;
 }
 
 function loadGoGhostBrokerRegistry() {
@@ -103,7 +90,7 @@ function loadGoGhostBrokerRegistry() {
     if (!Array.isArray(records)) return [];
     return records.map((broker) => ({
       ...broker,
-      searchUrl: (profile) => ghostSearchFromRegistry(broker, profile)
+      searchUrl: () => ghostSearchFromRegistry(broker)
     }));
   } catch {
     return [];
@@ -301,15 +288,6 @@ function cleanGhostText(value) {
   return String(value || "").trim().replace(/\s+/g, " ");
 }
 
-function ghostPathSlug(value) {
-  return cleanGhostText(value)
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
 function getGhostProfile() {
   if (goGhostStoreLocked || !goGhostWorkspace) return ghostEmptyProfile();
   return ghostActionProfile();
@@ -457,26 +435,8 @@ function goGhostAutomationScope(broker) {
   };
 }
 
-// Use only a recognized region from the free-text city/state field. A street
-// address entered there must not be sent to a search engine in the URL.
+// Only a reviewed state code can be selected in the profile form.
 const ghostSearchRegionCodes = new Set("AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY".split(" "));
-const ghostSearchRegionNames = new Set("alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|district of columbia|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new hampshire|new jersey|new mexico|new york|north carolina|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|south carolina|south dakota|tennessee|texas|utah|vermont|virginia|washington|west virginia|wisconsin|wyoming".split("|"));
-
-function ghostSearchRegion(location) {
-  const candidate = String(location || "").split(",").pop().trim();
-  if (/^[A-Z]{2}$/i.test(candidate)) return ghostSearchRegionCodes.has(candidate.toUpperCase()) ? candidate.toUpperCase() : "";
-  return ghostSearchRegionNames.has(candidate.toLowerCase()) ? candidate : "";
-}
-
-function ghostSearchFallback(profile, brokerName) {
-  const query = [profile.name, ghostSearchRegion(profile.location), brokerName].filter(Boolean).join(" ");
-  return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
-}
-
-function ghostBrokerGoogleSearch(profile, brokerName, domain) {
-  const query = [profile.name, ghostSearchRegion(profile.location), brokerName, `site:${domain}`].filter(Boolean).join(" ");
-  return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
-}
 
 function goGhostBrokerOptOutUrl(broker) {
   // Open the published form without putting profile details in its URL.
@@ -500,7 +460,7 @@ function goGhostCopyPacket(broker, profile, searchUrl) {
 
 function goGhostBrokerSearchUrl(broker, profile) {
   if (profile.state === "OUTSIDE_US") return broker.removalUrl;
-  return profile.name ? broker.searchUrl(profile) : ghostSearchFallback(profile, broker.name);
+  return broker.searchUrl();
 }
 
 function openGhostUrl(url) {

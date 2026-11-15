@@ -14,9 +14,8 @@
     "group": "fastpeoplesearch",
     "lastVerified": null,
     "search": {
-      "kind": "path",
-      "baseUrl": "https://www.fastpeoplesearch.com/name/",
-      "locationSeparator": "_"
+      "kind": "static",
+      "url": "https://www.fastpeoplesearch.com/"
     }
   },
   {
@@ -34,9 +33,8 @@
     "group": "whitepages",
     "lastVerified": null,
     "search": {
-      "kind": "path",
-      "baseUrl": "https://www.whitepages.com/name/",
-      "locationSeparator": "/"
+      "kind": "static",
+      "url": "https://www.whitepages.com/"
     }
   },
   {
@@ -52,9 +50,8 @@
     "group": "spokeo",
     "lastVerified": null,
     "search": {
-      "kind": "path",
-      "baseUrl": "https://www.spokeo.com/",
-      "locationSeparator": "/"
+      "kind": "static",
+      "url": "https://www.spokeo.com/"
     }
   },
   {
@@ -94,10 +91,8 @@
     "group": "truepeoplesearch",
     "lastVerified": null,
     "search": {
-      "kind": "query",
-      "baseUrl": "https://www.truepeoplesearch.com/results",
-      "nameParam": "name",
-      "locationParam": "citystatezip"
+      "kind": "static",
+      "url": "https://www.truepeoplesearch.com/"
     }
   },
   {
@@ -114,9 +109,8 @@
     "group": "thatsthem",
     "lastVerified": null,
     "search": {
-      "kind": "path",
-      "baseUrl": "https://thatsthem.com/name/",
-      "locationSeparator": "/"
+      "kind": "static",
+      "url": "https://thatsthem.com/"
     }
   },
   {
@@ -132,10 +126,8 @@
     "group": "nuwber",
     "lastVerified": null,
     "search": {
-      "kind": "query",
-      "baseUrl": "https://nuwber.com/search",
-      "nameParam": "name",
-      "locationParam": "location"
+      "kind": "static",
+      "url": "https://nuwber.com/"
     }
   },
   {
@@ -152,8 +144,8 @@
     "group": "radaris",
     "lastVerified": null,
     "search": {
-      "kind": "google",
-      "domain": "radaris.com"
+      "kind": "static",
+      "url": "https://radaris.com/"
     }
   },
   {
@@ -170,8 +162,8 @@
     "group": "peoplefinders",
     "lastVerified": null,
     "search": {
-      "kind": "google",
-      "domain": "peoplefinders.com"
+      "kind": "static",
+      "url": "https://www.peoplefinders.com/"
     }
   },
   {
@@ -315,8 +307,8 @@
     "group": "clustrmaps",
     "lastVerified": null,
     "search": {
-      "kind": "google",
-      "domain": "clustrmaps.com"
+      "kind": "static",
+      "url": "https://clustrmaps.com/"
     }
   },
   {
@@ -333,8 +325,8 @@
     "group": "familytreenow",
     "lastVerified": null,
     "search": {
-      "kind": "google",
-      "domain": "familytreenow.com"
+      "kind": "static",
+      "url": "https://www.familytreenow.com/"
     }
   },
   {
@@ -352,8 +344,8 @@
     "group": "cyberbackgroundchecks",
     "lastVerified": null,
     "search": {
-      "kind": "google",
-      "domain": "cyberbackgroundchecks.com"
+      "kind": "static",
+      "url": "https://www.cyberbackgroundchecks.com/"
     }
   }
 ]

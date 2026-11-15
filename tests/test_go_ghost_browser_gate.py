@@ -90,7 +90,7 @@ def test_production_page_keeps_manual_opt_out_controls(go_ghost_app):
     assert response.status_code == 200
     assert 'data-browser-automation-available="false"' in response.text
     assert "Assisted browser submissions are temporarily unavailable." in response.text
-    assert "Broker search links may include your name and city/state" in response.text
+    assert "without putting your details in the link" in response.text
     assert "Search next broker" in response.text
     assert 'id="goGhostScopeSearchButton"' in response.text
     assert 'id="goGhostScopeOptOutButton"' in response.text
@@ -175,7 +175,7 @@ def test_public_broker_registry_rejects_profile_fields_and_offsite_links(tmp_pat
     sample = tmp_path / "brokers.json"
     monkeypatch.setattr(registry, "REGISTRY_PATH", sample)
     try:
-        for change in ("profile", "userinfo", "search_fields", "offsite_search"):
+        for change in ("profile", "userinfo", "search_fields", "offsite_search", "templated_search"):
             records = json.loads(json.dumps(original_records))
             if change == "profile":
                 records[0]["email"] = "person@example.test"
@@ -183,8 +183,10 @@ def test_public_broker_registry_rejects_profile_fields_and_offsite_links(tmp_pat
                 records[0]["removalUrl"] = "https://person:secret@www.fastpeoplesearch.com/optout"
             elif change == "search_fields":
                 records[0]["search"]["profile"] = {"name": "Example Person"}
+            elif change == "templated_search":
+                records[0]["search"]["url"] = "https://www.fastpeoplesearch.com/name/{name}"
             else:
-                records[0]["search"]["baseUrl"] = "https://other.example/name/"
+                records[0]["search"]["url"] = "https://other.example/"
             sample.write_text(json.dumps(records), encoding="utf-8")
             registry.load_brokers.cache_clear()
             with pytest.raises(ValueError):
