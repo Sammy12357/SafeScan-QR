@@ -16,6 +16,9 @@ The production image excludes Playwright and Chromium while this gate is
 closed. Playwright remains a development dependency for isolated tests; the
 web service cannot start a broker browser even if a route is called directly.
 
+On-device broker automation has a separate permission and extension policy
+gate. See [Go Ghost on-device automation release gate](go-ghost-on-device-release-gate.md).
+
 Before enabling assisted submissions, move browser work to an isolated service
 without access to SafeScan's database or application secrets. Enforce outbound
 network policy outside the browser process: deny loopback, private/link-local,
