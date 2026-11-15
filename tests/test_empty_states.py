@@ -188,6 +188,7 @@ def test_fetch_user_detail_resolves_account_id_and_keeps_other_users_out(tmp_pat
             INSERT INTO users VALUES ('account-1', 'one@example.test', 'One', 'user', 'active', '2026-11-01', NULL, NULL);
             INSERT INTO users VALUES ('account-2', 'two@example.test', 'Two', 'user', 'active', '2026-11-01', NULL, NULL);
             INSERT INTO scans VALUES ('one@example.test', 'stale-unverified-wallet', 1);
+            INSERT INTO wallets VALUES ('account-2', 'verified-legacy-wallet', 1, 0, 0, 0, '2026-11-01');
             INSERT INTO fraud_flags VALUES ('flag-1', 'account-1', 'scan_velocity', 'medium', 'Burst of scans', '{}', 0, '2026-11-02');
             INSERT INTO fraud_flags VALUES ('flag-2', 'account-2', 'scan_velocity', 'medium', 'Other account', '{}', 0, '2026-11-02');
             INSERT INTO audit_logs VALUES ('log-1', 'account-1', 'user.login', NULL, '2026-11-03');
@@ -211,4 +212,7 @@ def test_fetch_user_detail_resolves_account_id_and_keeps_other_users_out(tmp_pat
     assert [flag["id"] for flag in detail["flags"]] == ["flag-1"]
     assert [log["id"] for log in detail["logs"]] == ["log-1"]
     assert [scan["id"] for scan in detail["scans"]] == ["scan-1"]
+    legacy_detail = admin_data.fetch_user_detail("account-2")
+    assert legacy_detail["user"]["wallet_address"] == "verified-legacy-wallet"
+    assert legacy_detail["user"]["wallet_verified"] == 1
     assert admin_data.fetch_user_detail("missing@example.test") == {"user": None, "flags": [], "logs": [], "scans": []}

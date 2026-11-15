@@ -148,7 +148,10 @@ def fetch_user_detail(email):
                    COALESCE(s.scan_count, 0) AS scan_count
             FROM users u
             LEFT JOIN scans s ON s.email = u.email
-            LEFT JOIN wallets w ON w.user_id = u.email AND w.verified = 1
+            LEFT JOIN wallets w ON w.user_id = COALESCE(
+                (SELECT user_id FROM wallets WHERE user_id = u.email AND verified = 1),
+                u.google_id
+            ) AND w.verified = 1
             WHERE lower(u.email) = lower(?) OR u.google_id = ?
             """,
             (email, email)
