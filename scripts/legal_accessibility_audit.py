@@ -31,6 +31,7 @@ THEMES = ("dark", "light")
 WIDTHS = (375, 1440)
 EXTRA_PUBLIC_VIEWS = (
     View("accessibility", "/accessibility"),
+    View("not_found", "/__accessibility_missing_page__"),
     View("waitlist", "/waitlist"),
     View("waitlist_joined", "/waitlist?joined=1"),
     View("waitlist_confirm_expired", "/waitlist/confirm"),
@@ -55,6 +56,7 @@ PUBLIC_VIEWS = tuple(
 ) + EXTRA_PUBLIC_VIEWS
 FAIL_IMPACTS = {"serious", "critical"}
 EXPECTED_STATUSES = {
+    "not_found": 404,
     "confirm_age_expired": 410,
     "waitlist_confirm_expired": 410,
     "waitlist_unsubscribe_expired": 410,

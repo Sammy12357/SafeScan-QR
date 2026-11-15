@@ -2,7 +2,7 @@
 
 The work started from `origin/main` at `ad3e52a` and was rebased onto `068183c` after Phase 6 was released. An initial desktop-width axe run of 44 public views in dark and light mode found 87 serious or critical rule hits. The repeated causes were footer consent and link contrast, the login "Remember me" label, a contact note, and inline links in legal text that relied on color alone.
 
-The new CI audit inventories public GET HTML routes and checks 49 route variants in both themes at 375 and 1440 CSS pixels (196 renders). It runs every axe 4.14.0 rule and fails on serious or critical findings. A separate keyboard audit checks focus containment and return focus in the menu, camera, scan result, wallet, and Go Ghost dialogs. These are automated browser checks, not a WCAG conformance audit.
+The new CI audit inventories public GET HTML routes and checks 50 route variants, including the public 404 page, in both themes at 375 and 1440 CSS pixels (200 renders). It runs every axe 4.14.0 rule and fails on serious or critical findings. A separate keyboard audit checks focus containment and return focus in the menu, camera, scan result, wallet, and Go Ghost dialogs. These are automated browser checks, not a WCAG conformance audit.
 
 The all-rules audit still reports moderate best-practice findings for heading order and region/main landmarks. They are recorded as known issues on `/accessibility` and need a separate template-wide cleanup and manual screen-reader review. They are not classified by axe as serious or critical.
 
