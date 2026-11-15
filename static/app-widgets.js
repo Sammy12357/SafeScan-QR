@@ -12,7 +12,9 @@ function renderAirdropProfile(profile) {
   renderWalletState(profile);
 }
 
-renderAirdropProfile(getCurrentProfile());
+const initialAirdropProfile = getCurrentProfile();
+renderAirdropProfile(initialAirdropProfile ? { email: initialAirdropProfile.email } : null);
+if (initialAirdropProfile && dom.walletStatus) dom.walletStatus.textContent = "Checking wallet status…";
 syncWalletFromServer();
 hydrateSplineShowcase();
 

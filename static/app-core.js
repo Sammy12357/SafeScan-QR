@@ -150,19 +150,28 @@ function getStoredAirdropProfile() {
 }
 
 function setStoredAirdropProfile(profile) {
-  if (!profile) {
-    window.localStorage.removeItem(AIRDROP_STORAGE_KEY);
-    return;
+  try {
+    if (!profile) {
+      window.localStorage.removeItem(AIRDROP_STORAGE_KEY);
+      return true;
+    }
+    window.localStorage.setItem(AIRDROP_STORAGE_KEY, JSON.stringify(profile));
+    return true;
+  } catch {
+    // The server owns wallet verification; unavailable browser storage must
+    // not stop the rest of the scanner or privacy controls from loading.
+    return false;
   }
-  window.localStorage.setItem(AIRDROP_STORAGE_KEY, JSON.stringify(profile));
 }
 
 function getCurrentProfile() {
-  const stored = getStoredAirdropProfile() || {};
   const profileEmail = document.querySelector(".profile-email");
   const email = profileEmail?.dataset?.email || profileEmail?.textContent?.trim();
   if (!email) return null;
-  const profile = { ...stored, email };
+  const stored = getStoredAirdropProfile();
+  const sameAccount = stored && typeof stored === "object" && !Array.isArray(stored) &&
+    String(stored.email || "").toLowerCase() === email.toLowerCase();
+  const profile = sameAccount ? { ...stored, email } : { email };
   setStoredAirdropProfile(profile);
   return profile;
 }
@@ -418,16 +427,19 @@ function renderWalletState(profile = getCurrentProfile()) {
   }
 }
 
+let walletMutationVersion = 0;
 async function syncWalletFromServer() {
   const profile = getCurrentProfile();
   if (!profile) {
     renderWalletState(null);
     return;
   }
+  const startedAtVersion = walletMutationVersion;
   try {
     const response = await fetch("/api/wallet");
     if (!response.ok) throw new Error("wallet status unavailable");
     const body = await response.json();
+    if (startedAtVersion !== walletMutationVersion) return;
     const updatedProfile = { ...profile };
     if (body.connected && body.walletAddress) {
       updatedProfile.walletAddress = body.walletAddress;
@@ -439,7 +451,11 @@ async function syncWalletFromServer() {
     setStoredAirdropProfile(updatedProfile);
     renderWalletState(updatedProfile);
   } catch {
-    renderWalletState(profile);
+    if (startedAtVersion !== walletMutationVersion) return;
+    const unverifiedProfile = { email: profile.email };
+    setStoredAirdropProfile(unverifiedProfile);
+    renderWalletState(unverifiedProfile);
+    showWalletFeedback("warning", "Wallet status couldn't be checked. Check your connection and refresh before using wallet features.");
   }
 }
 
@@ -485,6 +501,7 @@ async function verifySelectedWallet(wallet) {
     const verifyBody = await verifyResponse.json();
     if (!verifyResponse.ok) throw new Error(verifyBody.error || "Wallet connection failed.");
 
+    walletMutationVersion += 1;
     const updatedProfile = { ...profile, walletAddress: verifyBody.walletAddress, walletVerified: true };
     setStoredAirdropProfile(updatedProfile);
     renderWalletState(updatedProfile);
@@ -582,6 +599,7 @@ async function disconnectWalletConnection(wallet = null, options = {}) {
         body = {};
       }
       if (!response.ok && response.status !== 404) throw new Error(body.error || "Wallet disconnect failed.");
+      walletMutationVersion += 1;
       const updatedProfile = { ...profile };
       delete updatedProfile.walletAddress;
       delete updatedProfile.walletVerified;
