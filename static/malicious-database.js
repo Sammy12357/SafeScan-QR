@@ -151,7 +151,7 @@
         grid.removeAttribute("aria-busy");
         render(data);
       })
-      .catch(function () {
+      .catch(function (problem) {
         if (seq !== requestSeq || timedOut) return;
         activeOperation.finish();
         state.loading = false;
@@ -160,9 +160,13 @@
         stateEl.hidden = false;
         UIStates.error(stateEl, {
           title: hasRows ? "Threat database didn't update" : "Threat database didn't load",
-          body: hasRows
-            ? "These are previous results and may not match your search. Try again to update them."
-            : "Check your connection and try again.",
+          body: problem && problem.code === "offline"
+            ? hasRows
+              ? "You're offline. These are previous results and may not match your search. Reconnect to update them."
+              : "You're offline. Reconnect and try again."
+            : hasRows
+              ? "These are previous results and may not match your search. Try again to update them."
+              : "Check your connection and try again.",
           retry: function () { load(page); },
           focus: true
         });
