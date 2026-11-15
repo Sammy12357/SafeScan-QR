@@ -8,7 +8,7 @@
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <title>Go Ghost | SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg?v=rose-theme-v1" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=ghost-profile-v2">
+  <link rel="stylesheet" href="/static/styles.css?v=ghost-state-ui-v3">
 </head>
 <body>
   <div class="page-shell go-ghost-shell">
@@ -27,7 +27,8 @@
       </div>
       <div class="go-ghost-status" aria-label="Go Ghost progress">
         <span id="ghostProgressCount">0 / 0</span>
-        <p>user-confirmed removals</p>
+        <p>rechecked absent (you reported)</p>
+        <p id="ghostProgressBreakdown" class="ghost-progress-breakdown">0 submitted · 0 reported gone · 0 not found · 0 other active</p>
       </div>
     </header>
     <p id="goGhostSessionNotice" class="go-ghost-copy" role="alert" hidden>Your sign-in changed. Reload this page before using Go Ghost.</p>
@@ -149,7 +150,6 @@
           <div class="ghost-automation-row ghost-automation-head"><span>Site</span><span>Effort</span><span>You do</span><span>Status</span></div>
           <div id="goGhostAutomationRows" class="ghost-automation-rows"></div>
         </div>
-        <div id="goGhostBrokerList" class="broker-list hidden" aria-hidden="true"></div>
       </section>
     </main>
 
@@ -183,6 +183,9 @@
       <p id="goGhostScopePriority" class="eyebrow"></p>
       <h2 id="goGhostScopeTitle"></h2>
       <p id="goGhostScopeDescription" class="go-ghost-copy"></p>
+      <label id="goGhostScopeBrandPicker" class="ghost-brand-picker" hidden>Track each site separately
+        <select id="goGhostScopeBrandSelect" aria-label="PeopleConnect site"></select>
+      </label>
       <div id="goGhostScopeKeywords" class="ghost-scope-keywords"></div>
       <div id="goGhostScopeDetails" class="ghost-scope-details"></div>
       <div class="go-ghost-actions ghost-scope-actions">
@@ -192,13 +195,16 @@
         <button id="goGhostScopeAutoFillButton" class="primary-button" type="button">Run auto fill</button>
         {% endif %}
         <button id="goGhostScopeFinishButton" class="primary-button" type="button" hidden>Finish in browser</button>
-        <button id="goGhostScopeNoMatchButton" class="secondary-button" type="button">No match / mark finished</button>
+        <button id="goGhostScopeNoMatchButton" class="secondary-button" type="button">No matching listing</button>
         <button id="goGhostScopeCopyButton" class="secondary-button" type="button">Copy details</button>
       </div>
-      <p class="go-ghost-copy">Track a request after submitting it. Confirm removal only after the listing is gone.</p>
+      <p class="go-ghost-copy">Record your work for the selected site. A reported removal stays separate until you open a new search and recheck it.</p>
       <div class="go-ghost-actions ghost-scope-actions">
         <button id="goGhostScopeSubmittedButton" class="secondary-button" type="button">Mark submitted</button>
-        <button id="goGhostScopeRemovedButton" class="secondary-button" type="button">Confirm removed</button>
+        <button id="goGhostScopeRemovedButton" class="secondary-button" type="button">Report gone</button>
+        <button id="goGhostScopeRecheckButton" class="secondary-button" type="button" hidden>Start recheck</button>
+        <button id="goGhostScopeAbsentButton" class="secondary-button" type="button" hidden>Listing absent after recheck</button>
+        <button id="goGhostScopePresentButton" class="secondary-button" type="button" hidden>Still listed</button>
         <button id="goGhostScopeResetButton" class="secondary-button" type="button">Reset status</button>
       </div>
     </div>
@@ -207,8 +213,9 @@
   <script id="goGhostBrokerRegistry" type="application/json">{{ go_ghost_brokers | tojson }}</script>
   <script src="/static/app-core.js?v=ghost-assist-v1"></script>
   <script src="/static/app-widgets.js?v=ghost-assist-v1"></script>
-  <script src="/static/app-go-ghost.js?v=ghost-static-links-v2"></script>
-  <script src="/static/app-go-ghost-ui.js?v=ghost-static-links-v2"></script>
+  <script src="/static/go-ghost-state.js?v=ghost-state-ui-v3"></script>
+  <script src="/static/app-go-ghost.js?v=ghost-state-ui-v3"></script>
+  <script src="/static/app-go-ghost-ui.js?v=ghost-state-ui-v3"></script>
   <script src="/static/app-generate-qr.js?v=ghost-assist-v1"></script>
 </body>
 </html>

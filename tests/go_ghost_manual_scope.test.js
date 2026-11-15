@@ -27,9 +27,11 @@ const ids = [
   'goGhostScopeSearchButton', 'goGhostScopeOptOutButton',
   'goGhostScopeFinishButton', 'goGhostScopeNoMatchButton',
   'goGhostScopeSubmittedButton', 'goGhostScopeRemovedButton',
-  'goGhostScopeResetButton', 'goGhostScopeCopyButton',
+  'goGhostScopeResetButton', 'goGhostScopeRecheckButton', 'goGhostScopeAbsentButton',
+  'goGhostScopePresentButton', 'goGhostScopeBrandSelect', 'goGhostScopeBrandPicker',
+  'goGhostScopeCopyButton',
   'openNextGhostBrokerButton',
-  'ghostProgressCount', 'ghostFirstNameInput', 'ghostMiddleNameInput', 'ghostLastNameInput',
+  'ghostProgressCount', 'ghostProgressBreakdown', 'ghostFirstNameInput', 'ghostMiddleNameInput', 'ghostLastNameInput',
   'ghostCityInput', 'ghostStateInput', 'ghostBirthYearInput', 'ghostAddressInput',
   'ghostPhoneInput', 'ghostEmailInput', 'ghostPreviousCitiesInput', 'ghostOtherNamesInput',
   'ghostProfileReviewNotice', 'ghostSavedProfileHint', 'ghostAccountNameHint',
@@ -47,7 +49,7 @@ elements.goGhostScopeModal.classList.add('hidden');
 let closeFocusCount = 0;
 elements.goGhostScopeModal.querySelector = selector => selector === '.ghost-scope-close'
   ? {focus() { closeFocusCount += 1; }} : null;
-const saved = new Map();
+const saved = new Map([['safeScanGoGhostProfile', JSON.stringify({name: 'Legacy Person'})]]);
 const sessionSaved = new Map();
 const opened = [];
 const copied = [];
@@ -84,10 +86,12 @@ const context = vm.createContext({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'
   })[char])
 });
+vm.runInContext(fs.readFileSync('static/go-ghost-state.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('static/app-go-ghost.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('static/app-go-ghost-ui.js', 'utf8'), context);
 
 async function main() {
+  assert.equal(saved.has('safeScanGoGhostProfile'), false, 'unowned browser details are erased on page load');
   assert.equal(vm.runInContext('GO_GHOST_BROWSER_AUTOMATION_AVAILABLE', context), false);
   assert.equal(elements.goGhostWorkspace.hidden, true, 'consent should gate the workspace');
   assert.equal(elements.goGhostAutomationRows.innerHTML, '', 'rows should wait for consent');
@@ -98,8 +102,10 @@ async function main() {
   assert.equal(elements.ghostProgressCount.textContent, '0 / 18');
   const rows = elements.goGhostAutomationRows.innerHTML;
   const brokerIds = [...rows.matchAll(/data-ghost-scope="([^"]+)"/g)].map(match => match[1]);
-  assert.equal(brokerIds.length, 18, 'all tracked brokers must have a visible row');
-  assert.equal(new Set(brokerIds).size, 18);
+  assert.equal(brokerIds.length, 15, 'PeopleConnect uses one shared action row');
+  assert.equal(new Set(brokerIds).size, 15);
+  assert.equal(rows.includes('PeopleConnect (4 sites)'), true);
+  assert.match(rows, /Intelius: Pending · US Search: Pending/);
   assert.equal(brokerIds.at(-1), 'cyberbackgroundchecks');
   assert.equal(rows.includes('Manual'), true);
   assert.equal(rows.includes('Run auto fill'), false);
@@ -124,6 +130,18 @@ async function main() {
   for (const id of ['intelius', 'ussearch', 'instantcheckmate', 'truthfinder']) {
     assert.equal(brokerUrlById[id], 'https://suppression.peopleconnect.us/');
   }
+  vm.runInContext("openGoGhostScopeModal('intelius')", context);
+  assert.equal(elements.goGhostScopeTitle.textContent, 'PeopleConnect');
+  assert.equal(elements.goGhostScopeBrandPicker.hidden, false);
+  assert.match(elements.goGhostScopeBrandSelect.innerHTML, /TruthFinder — Pending/);
+  await elements.goGhostScopeSubmittedButton.handlers.click();
+  assert.equal(vm.runInContext("getGhostProgress().intelius.state", context), 'submitted');
+  assert.equal(vm.runInContext("getGhostProgress().truthfinder", context), undefined,
+    'the shared group action cannot mark another brand');
+  elements.goGhostScopeBrandSelect.value = 'truthfinder';
+  elements.goGhostScopeBrandSelect.handlers.change();
+  assert.match(elements.goGhostScopeDetails.innerHTML, /TruthFinder: Pending/);
+  assert.match(elements.goGhostAutomationRows.innerHTML, /Intelius: Submitted · US Search: Pending/);
   assert.equal(brokerUrlById.beenverified, 'https://www.beenverified.com/svc/optout/search/optouts');
   assert.equal(brokerUrlById.peoplelooker, 'https://www.peoplelooker.com/svc/optout/search/optouts');
   assert.equal(brokerUrlById.neighborwho, 'https://www.neighborwho.com/svc/optout/search/optouts');
@@ -150,7 +168,7 @@ async function main() {
       ? {dataset: {ghostScope: lastId}} : null}
   });
   assert.equal(elements.goGhostScopeModal.classList.contains('hidden'), false);
-  assert.equal(closeFocusCount, 1, 'opening a broker should focus the close button');
+  assert.equal(closeFocusCount, 2, 'opening a broker should focus the close button');
   assert.equal(elements.goGhostScopeTitle.textContent, 'CyberBackgroundChecks');
   assert.match(elements.goGhostScopeKeywords.innerHTML, /Example Person/);
   assert.match(elements.goGhostScopeDetails.innerHTML, /Find your matching listing/);
@@ -169,8 +187,8 @@ async function main() {
 
   vm.runInContext(`updateGhostAutomationState('${lastId}', {status: 'failed'})`, context);
   await elements.goGhostScopeSubmittedButton.handlers.click();
-  assert.equal(closeFocusCount, 1, 'updating status should not move keyboard focus');
-  assert.equal(vm.runInContext(`getGhostProgress()['${lastId}'].automation`, context), null);
+  assert.equal(closeFocusCount, 2, 'updating status should not move keyboard focus');
+  assert.equal(vm.runInContext(`getGhostProgress()['${lastId}'].automation`, context), undefined);
   assert.equal(elements.ghostProgressCount.textContent, '0 / 18');
   const finalRow = elements.goGhostAutomationRows.innerHTML.match(
     /<button[^>]+data-ghost-scope="cyberbackgroundchecks"[\s\S]*?<\/button>/
@@ -179,30 +197,39 @@ async function main() {
   assert.match(finalRow[0], /Submitted/);
 
   await elements.goGhostScopeRemovedButton.handlers.click();
+  assert.equal(elements.ghostProgressCount.textContent, '0 / 18', 'a report is not a later recheck');
+  assert.match(elements.goGhostAutomationRows.innerHTML, /data-ghost-scope="cyberbackgroundchecks"[\s\S]*?You reported gone/);
+  assert.equal(elements.goGhostScopeAbsentButton.hidden, true, 'absence requires a started recheck');
+  await elements.goGhostScopeRecheckButton.handlers.click();
+  assert.equal(elements.goGhostScopeAbsentButton.hidden, false);
+  assert.equal(elements.goGhostScopePresentButton.hidden, false);
+  await elements.goGhostScopeAbsentButton.handlers.click();
   assert.equal(elements.ghostProgressCount.textContent, '1 / 18');
-  assert.match(elements.goGhostAutomationRows.innerHTML, /data-ghost-scope="cyberbackgroundchecks"[\s\S]*?Removed/);
+  assert.match(elements.goGhostAutomationRows.innerHTML, /data-ghost-scope="cyberbackgroundchecks"[\s\S]*?You rechecked absent/);
+  assert.match(elements.ghostProgressBreakdown.textContent, /0 reported gone/);
+  assert.match(elements.ghostProgressBreakdown.textContent, /1 submitted/);
   await elements.goGhostScopeResetButton.handlers.click();
   assert.equal(elements.ghostProgressCount.textContent, '0 / 18');
   assert.match(elements.goGhostAutomationRows.innerHTML, /data-ghost-scope="cyberbackgroundchecks"[\s\S]*?Pending/);
 
   await elements.goGhostScopeNoMatchButton.handlers.click();
   assert.equal(elements.ghostProgressCount.textContent, '0 / 18', 'no match is not a removal');
-  assert.match(elements.goGhostAutomationRows.innerHTML, /data-ghost-scope="cyberbackgroundchecks"[\s\S]*?No match/);
+  assert.match(elements.goGhostAutomationRows.innerHTML, /data-ghost-scope="cyberbackgroundchecks"[\s\S]*?Not found/);
   assert.equal(vm.runInContext("nextPendingGhostBroker().id", context), 'fastpeoplesearch');
+  vm.runInContext("goGhostBrokers.slice(0, 9).forEach(broker => setGhostManualStatus(broker.id, 'no_match'))", context);
+  assert.equal(vm.runInContext("nextPendingGhostBroker().id", context), 'ussearch',
+    'the next search must advance to an untracked PeopleConnect brand');
 
   vm.runInContext(`ghostSaveProgress({
     '${lastId}': {submitted: true, removed: true, finishReason: 'No matching profile found.'}
   }); renderGoGhostAutomationScope(); renderGoGhostProgress();`, context);
   assert.equal(elements.ghostProgressCount.textContent, '0 / 18', 'legacy no-match is not a removal');
-  assert.match(elements.goGhostAutomationRows.innerHTML, /data-ghost-scope="cyberbackgroundchecks"[\s\S]*?No match/);
+  assert.match(elements.goGhostAutomationRows.innerHTML, /data-ghost-scope="cyberbackgroundchecks"[\s\S]*?Not found/);
   assert.equal(opened.some(url => url.includes('safescan_prefill')), false);
 
   assert.equal(sessionSaved.has('safeScanGoGhostV2:guest'), true);
-  saved.set('safeScanGoGhostProfile', JSON.stringify({name: 'Legacy Person'}));
   elements.clearGhostDataButton.handlers.click();
-  assert.equal(saved.has('safeScanGoGhostProfile'), true, 'account clear must not erase unowned legacy data');
   assert.equal(sessionSaved.has('safeScanGoGhostV2:guest'), false);
-  elements.eraseGhostLegacyButton.handlers.click();
   assert.equal(saved.has('safeScanGoGhostProfile'), false);
   assert.equal(elements.goGhostWorkspace.hidden, true);
   assert.equal(elements.goGhostConsentModal.classList.contains('hidden'), false);

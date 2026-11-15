@@ -13,6 +13,12 @@
 .ghost-scope-guidance-action span, .ghost-scope-guidance-done span { color: var(--accent); }
 .ghost-automation-site-row { cursor: pointer; transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease; }
 .ghost-automation-site-row:hover, .ghost-automation-site-row:focus-visible { border-color: rgba(var(--accent-rgb), 0.42); background: rgba(var(--accent-rgb), 0.08); outline: none; transform: translateY(-1px); }
+.ghost-group-brand-status { display: block; margin-top: 5px; color: var(--muted); font-size: 0.7rem; font-weight: 600; line-height: 1.35; }
+.ghost-progress-breakdown { max-width: 260px; font-size: 0.76rem; line-height: 1.4; }
+.ghost-brand-picker { display: grid; gap: 6px; margin: 14px 0; color: var(--text); font-weight: 800; }
+.ghost-brand-picker[hidden] { display: none; }
+.ghost-brand-picker select { width: 100%; min-height: 46px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-strong); color: var(--text); font: inherit; }
+.ghost-scope-actions [hidden] { display: none !important; }
 .go-ghost-keyword-form { margin-top: 16px; padding: 14px; border: 1px solid rgba(var(--accent-rgb), 0.18); border-radius: 8px; background: rgba(var(--accent-rgb), 0.045); }
 .go-ghost-form select, .go-ghost-form textarea { width: 100%; padding: 14px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-strong); color: var(--text); font: inherit; }
 .go-ghost-form textarea { resize: vertical; min-height: 76px; }
@@ -52,6 +58,10 @@
 .go-ghost-mobile .broker-actions .primary-button, .go-ghost-mobile .broker-actions .secondary-button, .go-ghost-mobile .go-ghost-actions button, .go-ghost-mobile .go-ghost-actions a, .go-ghost-mobile .ghost-automation-actions button { flex: 1 1 100%; min-height: 48px; text-align: center; }
 .go-ghost-mobile .broker-card { grid-template-columns: 1fr; align-items: stretch; }
 .go-ghost-mobile .broker-actions, .go-ghost-mobile .ghost-automation-actions { justify-content: stretch; }
+@media (max-width: 600px) {
+  .ghost-automation-row.ghost-group-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ghost-group-row > span:first-child { grid-column: 1 / -1; }
+}
 
 :root[data-theme="light"] .sidenav,
 :root[data-theme="light"] .hero,

@@ -200,7 +200,6 @@ def test_manual_browser_ui_has_no_automation_button_or_personal_details_in_url()
 const fs = require('fs');
 const vm = require('vm');
 const elements = {
-  goGhostBrokerList: {innerHTML: ''},
   goGhostAutomationRows: {innerHTML: ''},
   goGhostBrokerRegistry: {textContent: fs.readFileSync('data/go_ghost/brokers.json', 'utf8')}
 };
@@ -208,9 +207,10 @@ const context = vm.createContext({
   document: {getElementById: id => elements[id] || null}, window: {}, URL,
   readJsonStorage: (_key, fallback) => fallback, escapeHtml: value => String(value)
 });
+vm.runInContext(fs.readFileSync('static/go-ghost-state.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('static/app-go-ghost.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('static/app-go-ghost-ui.js', 'utf8'), context);
-vm.runInContext('renderGoGhostBrokers(); renderGoGhostAutomationScope();', context);
+vm.runInContext('renderGoGhostAutomationScope();', context);
 const result = vm.runInContext(`({
   available: GO_GHOST_BROWSER_AUTOMATION_AVAILABLE,
   url: goGhostBrokerOptOutUrl({removalUrl: 'https://broker.example/optout'},
@@ -221,9 +221,7 @@ const result = vm.runInContext(`({
 })`, context);
 if (result.available !== false || result.url !== 'https://broker.example/optout' ||
     result.lane !== 'Manual' || !result.packet.includes('complete the request in your browser.') ||
-    elements.goGhostBrokerList.innerHTML.includes('data-ghost-auto=') ||
-    !elements.goGhostBrokerList.innerHTML.includes('data-ghost-copy=') ||
-    !elements.goGhostBrokerList.innerHTML.includes('data-ghost-optout=') ||
+    elements.goGhostAutomationRows.innerHTML.includes('data-ghost-auto=') ||
     !elements.goGhostAutomationRows.innerHTML.includes('Manual')) {
   process.exit(1);
 }
