@@ -73,6 +73,8 @@ from .config import BILLING_REFUND_POLICY_TEXT
 from .config import BILLING_SUPPORT_EMAIL
 from .config import CLIENT_ID
 from .config import CONSENT_BANNER_VERSION
+from .config import COOKIE_POLICY_LAST_UPDATED
+from .config import COOKIE_POLICY_VERSION
 from .config import GO_GHOST_BROWSER_AUTOMATION_AVAILABLE
 from .config import LEGAL_LAST_UPDATED
 from .config import LEGAL_VERSION
@@ -395,7 +397,9 @@ async def terms_of_use_alias(request: Request):
 
 @qr_app.get("/legal/cookie-policy", response_class=HTMLResponse)
 async def cookie_policy(request: Request):
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Cookie Policy", COOKIE_POLICY_HTML))
+    context = legal_context(request, "Cookie Policy", COOKIE_POLICY_HTML)
+    context.update(version=COOKIE_POLICY_VERSION, last_updated=COOKIE_POLICY_LAST_UPDATED)
+    return templates.TemplateResponse("legal_page.html", context)
 
 @qr_app.get("/legal/terms-history", response_class=HTMLResponse)
 async def terms_history(request: Request):

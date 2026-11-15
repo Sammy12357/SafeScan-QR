@@ -34,6 +34,10 @@ The entries below retain the original Phase 0 baseline for context. Their “cur
 
 **ATTORNEY REVIEW NEEDED.** The published `/accessibility` page states a WCAG 2.2 AA target, identifies the remaining heading/landmark issues plus unverified screen reader, hardware, third-party handoff, and mobile-app coverage, and gives a contact path for barriers. It does not claim full conformance. Counsel and the business owner should review this statement and how feedback is handled before treating it as an approved legal disclosure.
 
+## Phase 4 Cookie Policy v1.1 draft — November 15, 2026
+
+**ATTORNEY REVIEW NEEDED.** The proposed Cookie Policy v1.1 reconciles first-party code-level cookie and browser storage names, purposes, and apparent lifetimes with `docs/legal/storage-inventory.md`. The prior v1.0 text is archived. Review an actual production browser/network capture, Google/provider cookies, hosting and CDN behavior, the remembered-consent and Go Ghost data, GPC legal applicability, and the proposed effective date. GPC is implemented conservatively for optional first-party scanner counts and server consent recording; this does **not** establish whether SafeScan sells or shares personal information. Decide whether revised notice or renewed consent is needed before publishing v1.1; no such notice or acceptance flow has been approved by this draft.
+
 **ATTORNEY REVIEW NEEDED.** Internal briefing, not legal advice or approved public policy. Prepared 2026-11-15 from code baseline `a2ce01b` and the supplied `SAFESCAN_LEGAL_RISK_PLAN.md`. It records questions and evidence for qualified counsel and the business owner. No legal text was published or approved by creating this packet.
 
 ## Public documents and review queue

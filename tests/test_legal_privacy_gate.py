@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import ast
+from html import unescape
+import importlib
 import re
 from pathlib import Path
 
@@ -56,3 +59,58 @@ def test_dynamic_browser_keys_and_server_cookies_are_in_inventory():
     cookies += re.findall(r"\b\w*COOKIE\s*=\s*['\"]([^'\"]+)['\"]", age_gate)
     assert cookies
     assert all(cookie in INVENTORY for cookie in cookies), set(cookies) - {c for c in cookies if c in INVENTORY}
+
+
+def test_cookie_policy_table_matches_first_party_storage_inventory_and_runtime_names():
+    """Source and runtime guard; production browser/provider storage still needs audit."""
+    admin_source = (ROOT / "hackabull/admin_data.py").read_text()
+    assignment = next(node for node in ast.parse(admin_source).body
+                      if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name)
+                      and target.id == "COOKIE_POLICY_HTML" for target in node.targets))
+    policy = ast.literal_eval(assignment.value)
+    snapshot = (ROOT / "hackabull/legal_published/cookie.v1.1.html").read_text()
+    assert snapshot == policy
+    rows = re.findall(r"<tr><td><code>(.*?)</code></td><td>(Cookie|Local storage|Session storage)</td>", policy)
+    policy_by_kind = {
+        kind: {unescape(name) for name, storage in rows if storage == kind}
+        for kind in ("Cookie", "Local storage", "Session storage")
+    }
+    assert len(rows) == sum(len(names) for names in policy_by_kind.values())
+    inventory_by_kind = {}
+    section_titles = (("Cookie", "## First-party cookies", "## First-party `localStorage`"),
+                      ("Local storage", "## First-party `localStorage`", "## First-party `sessionStorage`"),
+                      ("Session storage", "## First-party `sessionStorage`", "## Legacy and policy-only keys"))
+    for kind, start, end in section_titles:
+        section = INVENTORY.split(start, 1)[1].split(end, 1)[0]
+        inventory_by_kind[kind] = set(re.findall(r"^\| `([^`]+)` \|", section, re.M))
+
+    config = importlib.import_module("hackabull.config")
+    age_gate = importlib.import_module("hackabull.age_gate")
+    cookie_names = {config.SESSION_COOKIE_NAME, config.REMEMBER_ME_COOKIE_NAME,
+                    age_gate.PENDING_COOKIE, age_gate.ADULT_CHALLENGE_COOKIE,
+                    age_gate.GUEST_ADULT_COOKIE}
+
+    literal_writes = {"Local storage": set(), "Session storage": set()}
+    for path in STATIC.glob("*.js"):
+        source = path.read_text()
+        assignments = dict(re.findall(r"\b(?:const|let|var)\s+(\w+)\s*=\s*['\"]([^'\"]+)['\"]", source))
+        for storage, key_expression in re.findall(r"\b(?:window\.)?(localStorage|sessionStorage)\.setItem\(\s*([^,]+),", source):
+            expression = key_expression.strip()
+            key = expression[1:-1] if expression.startswith(("'", '"')) else assignments.get(expression)
+            if key:
+                literal_writes["Local storage" if storage == "localStorage" else "Session storage"].add(key)
+    ghost = (STATIC / "app-go-ghost.js").read_text()
+    admin = (STATIC / "admin.js").read_text()
+    assert "safeScanGoGhostV2:account:${encodeURIComponent(goGhostAccountId)}" in ghost
+    assert '"safeScanGoGhostV2:guest"' in ghost
+    assert "safescan:actor-email:${rawActor}" in admin
+    expected_by_kind = {
+        "Cookie": cookie_names,
+        "Local storage": literal_writes["Local storage"] | {"safeScanGoGhostV2:account:<encoded account id>"},
+        "Session storage": literal_writes["Session storage"] | {"safeScanGoGhostV2:guest", "safescan:actor-email:<actor id>"},
+    }
+    for kind, expected in expected_by_kind.items():
+        assert expected, kind
+        assert policy_by_kind[kind] == expected, (kind, policy_by_kind[kind] ^ expected)
+        assert inventory_by_kind[kind] == expected, (kind, inventory_by_kind[kind] ^ expected)
+    assert "safeScanReports" not in policy
