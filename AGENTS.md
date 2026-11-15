@@ -2,7 +2,11 @@
 
 ## Agent skills
 
-Project skills live under `.agents/skills/`. Use `safescan-ship` when preparing a website or backend release, `safescan-security-gate` for security-sensitive changes, `safescan-ui-states` for frontend work, `qr-decode-bench` for camera or decoder changes, and `go-ghost-recipe` for broker workflows. Read a skill when its scope matches the task; the user's current instructions and verified code state take precedence over older plans.
+Project skills live under `.agents/skills/`. Use `safescan-ship` when preparing a website or backend release, `safescan-security-gate` for security-sensitive changes, `safescan-ui-states` for frontend work, `qr-decode-bench` for camera or decoder changes, `go-ghost-recipe` for broker workflows, and `safescan-legal-gate` for public claims, data, policies, email, billing, tokens, licenses, or listing disputes. Read a skill when its scope matches the task; the user's current instructions and verified code state take precedence over older plans.
+
+## Legal change review
+
+Use the PR checklist and `docs/legal/` registers to record new personal data, third-party hosts, public claims, email, dependencies, and legal-document versions. The Python gates in `tests/test_legal_gate_*.py` and `tests/test_legal_data_map.py` run in CI; the diff-aware legal-document check requires a new version, effective date, snapshot, change-log entry, and attorney-packet row. These are engineering checks, not legal approval. Keep unverified business identity, marketing email, card checkout, and token distribution disabled. Mark drafted public legal text **ATTORNEY REVIEW NEEDED** and obtain qualified review before treating it as approved.
 
 ## Repository Assignments
 
