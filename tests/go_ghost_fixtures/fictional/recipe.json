@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "fictional",
+  "group": "fictional",
+  "domains": ["broker.example.test"],
+  "search": [
+    {"op": "goto", "url": "https://broker.example.test/search"},
+    {"op": "fill", "selector": "#first", "field": "firstName"},
+    {"op": "fill", "selector": "#last", "field": "lastName"},
+    {"op": "click", "selector": "#search"},
+    {"op": "pickListing", "selector": ".card", "noResultsSelector": "#empty"}
+  ],
+  "optOut": [
+    {"op": "goto", "url": "https://broker.example.test/remove"},
+    {"op": "fill", "selector": "#email", "field": "email"},
+    {"op": "check", "selector": "#subject", "meaning": "i_am_the_subject"},
+    {"op": "captchaPause"},
+    {"op": "click", "selector": "#submit"},
+    {"op": "expect", "selector": "#success", "text": "Request received"}
+  ]
+}
