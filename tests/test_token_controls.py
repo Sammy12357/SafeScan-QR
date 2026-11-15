@@ -1,6 +1,7 @@
 """The public token switch and owner-only distribution gate fail closed."""
 
 import importlib
+import re
 import sqlite3
 import sys
 
@@ -83,7 +84,11 @@ def test_distribution_requires_owner_and_both_flags(token_app, monkeypatch):
         return {"status": "dry-run", "eligible": 0, "sent": [], "total_tokens_sent": 0}
 
     monkeypatch.setattr(distribute, "airdrop_sweep", fake_sweep)
-    assert owner.post("/admin/airdrop/distribute").status_code == 200
+    page = owner.get("/admin/airdrop")
+    assert page.status_code == 200
+    token = re.search(r'name="distribution_token" value="([^"]+)"', page.text).group(1)
+    assert owner.post("/admin/airdrop/distribute", data={"distribution_token": token}).status_code == 200
+    assert owner.post("/admin/airdrop/distribute", data={"distribution_token": token}).status_code == 403
     assert calls == [True]
 
 

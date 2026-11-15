@@ -223,8 +223,9 @@
           {% if data.distribution_result.error %}{{ data.distribution_result.error }}{% endif %}
         </div>
         {% endif %}
-        {% if is_owner and (token_distribution_enabled is defined and token_distribution_enabled()) %}
+        {% if is_owner and (token_distribution_enabled is defined and token_distribution_enabled()) and data.distribution_form_token %}
         <form action="/admin/airdrop/distribute" method="post">
+          <input type="hidden" name="distribution_token" value="{{ data.distribution_form_token }}">
           <button class="danger-button" type="submit" data-confirm="Distribute {{ data.estimated_total }} SQR to {{ data.qualified|length }} qualified member(s) now?" {% if not data.qualified %}disabled{% endif %}>Distribute {{ data.estimated_total }} SQR to {{ data.qualified|length }} Qualified Members</button>
         </form>
         {% else %}<p>Token distribution is unavailable.</p>{% endif %}

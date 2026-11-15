@@ -159,11 +159,11 @@
     },
     "payment_form_tokens": {
       "fields": ["token_hash", "user_id", "session_id", "purpose", "expires_at"],
-      "source": "authenticated payment page",
-      "purpose": "one-use CSRF protection for payment POST requests",
+      "source": "authenticated payment or owner distribution page",
+      "purpose": "one-use request protection for payment and token distribution POST requests",
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage",
-      "retention": "Expired tokens are removed when another payment form is issued",
+      "retention": "Expired tokens are removed when another protected form is issued",
       "status": "active schema"
     },
     "api_keys": {
