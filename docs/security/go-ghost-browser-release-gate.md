@@ -12,6 +12,10 @@ Render Starter. The current engine launches Chromium with `--no-sandbox` and
 third-party pages can navigate or request network destinations outside their
 starting broker domain, including private addresses reachable from the app.
 
+The production image excludes Playwright and Chromium while this gate is
+closed. Playwright remains a development dependency for isolated tests; the
+web service cannot start a broker browser even if a route is called directly.
+
 Before enabling assisted submissions, move browser work to an isolated service
 without access to SafeScan's database or application secrets. Enforce outbound
 network policy outside the browser process: deny loopback, private/link-local,
