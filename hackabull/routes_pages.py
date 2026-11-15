@@ -69,6 +69,7 @@ from .config import CLIENT_ID
 from .config import GO_GHOST_BROWSER_AUTOMATION_AVAILABLE
 from .config import LEGAL_LAST_UPDATED
 from .config import LEGAL_VERSION
+from .config import MOCK_MODE
 from .config import templates
 from .email_util import email_sending_configured
 from .email_util import send_email
@@ -96,6 +97,14 @@ from .wallet import expire_alpha_subscriptions
 # =============================================================================
 # ROUTES — SERVER-RENDERED HTML PAGES (home, product, legal, account, etc.)
 # =============================================================================
+@qr_app.get("/__states", response_class=HTMLResponse, include_in_schema=False)
+async def states_gallery(request: Request):
+    """Visual QA gallery, inaccessible unless the app runs in mock mode."""
+    if not MOCK_MODE:
+        raise HTTPException(status_code=404)
+    return templates.TemplateResponse("states_gallery.html", {"request": request, "logged_in": False})
+
+
 @qr_app.get("/", response_class=HTMLResponse)
 async def read_index(request: Request):
     user = get_session_user(request)
