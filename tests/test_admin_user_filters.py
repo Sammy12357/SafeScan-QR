@@ -90,12 +90,12 @@ def test_ambiguous_email_legacy_data_is_not_attributed_to_either_account(tmp_pat
         assert row["wallet_address"] is None
         assert row["referral_count"] == 0
         assert row["fraud_flags"] == 0
-        assert row["tier"] == "Registered"
+        assert row["tier"] == "Ownership review"
     assert admin_data.fetch_admin_users(tier="Guardian")["total"] == 0
     assert admin_data.fetch_admin_users(flag="review")["total"] == 0
 
 
-def test_stable_id_records_survive_email_collision_and_unique_legacy_fallback(tmp_path, monkeypatch):
+def test_id_wallet_and_flags_survive_collision_while_scans_are_withheld(tmp_path, monkeypatch):
     path = user_list_database(tmp_path, monkeypatch)
     with sqlite3.connect(path) as conn:
         conn.executemany(
@@ -113,9 +113,9 @@ def test_stable_id_records_survive_email_collision_and_unique_legacy_fallback(tm
         conn.execute("INSERT INTO fraud_flags VALUES ('unique@example.test', 0)")
 
     rows = {row["google_id"]: row for row in admin_data.fetch_admin_users()["rows"]}
-    assert rows["account-A"]["scan_count"] == 5
+    assert rows["account-A"]["scan_count"] == 0
     assert rows["account-A"]["ambiguous_email"] == 1
-    assert rows["account-A"]["tier"] == "Scanner"
+    assert rows["account-A"]["tier"] == "Ownership review"
     assert rows["account-B"]["wallet_address"] == "verified-B"
     assert rows["account-B"]["fraud_flags"] == 1
     assert rows["account-C"]["wallet_address"] == "legacy-C"

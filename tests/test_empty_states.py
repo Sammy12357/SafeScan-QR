@@ -173,6 +173,41 @@ def test_admin_user_detail_link_is_reachable_from_user_list():
     assert 'href="/admin/users/detail?account_id=auth0%7Cscanner%2F123"' in html
 
 
+def test_admin_hides_email_actions_when_account_ownership_is_ambiguous():
+    user = {
+        "google_id": "account-A", "email": "shared@example.test", "display_name": "A",
+        "role": "user", "status": "active", "tier": "Registered", "scan_count": 0,
+        "referral_count": 0, "wallet_address": None, "created_at": "2026-11-01",
+        "last_login_at": None, "last_login": None, "ambiguous_email": 1,
+    }
+    users = render_admin("users", {
+        "rows": [user], "filters": {"search": "", "status": "", "role": "", "tier": "", "flag": ""},
+        "page": 1, "pages": 1, "total": 1,
+    })
+    assert 'href="/admin/users/detail?account_id=account-A"' in users
+    assert "/admin/users/shared@example.test/suspend" not in users
+    assert "/admin/users/shared@example.test/role" not in users
+    assert "/admin/users/shared@example.test/delete" not in users
+    assert "Account ownership needs review; action unavailable" in users
+
+    airdrop = render_admin("airdrop", {
+        "wallet_users": [{**user, "wallet_address": "SyntheticWalletAddress", "estimated_sqr": 0,
+                          "distribution_status": "pending", "fraud_flags": 0}],
+        "qualified": [], "estimated_total": 0, "distributed_total": 0,
+        "tier_counts": {}, "flagged": [], "base_allocation": 0,
+    })
+    assert "/admin/airdrop/shared@example.test/status" not in airdrop
+    assert "Account ownership needs review; action unavailable" in airdrop
+
+    fraud = render_admin("fraud", {"rows": [{
+        "email": "shared@example.test", "fraud_score": 0, "signal_count": 1,
+        "highest_severity": "medium", "wallet_address": None,
+        "airdrop_status": "Unassigned", "flag_date": "2026-11-04", "ambiguous_email": 1,
+    }]})
+    assert "/admin/fraud/shared@example.test/review" not in fraud
+    assert "Account ownership needs review; action unavailable" in fraud
+
+
 def test_fetch_user_detail_resolves_account_id_and_keeps_other_users_out(tmp_path, monkeypatch):
     from hackabull import admin_data
 
@@ -236,10 +271,13 @@ def test_admin_user_detail_never_attributes_duplicate_email_records_to_another_a
             INSERT INTO users VALUES ('account-C', 'unique@example.test', 'C');
             INSERT INTO wallets VALUES ('shared@example.test', 'legacy-wallet', 1, 0, 0, 0, '2026-11-01');
             INSERT INTO wallets VALUES ('account-B', 'B-wallet', 1, 0, 0, 0, '2026-11-01');
+            INSERT INTO wallets VALUES ('UNIQUE@example.test', 'C-legacy-wallet', 1, 0, 0, 0, '2026-11-01');
             INSERT INTO fraud_flags VALUES ('B-flag', 'account-B', '{}', '2026-11-02');
             INSERT INTO fraud_flags VALUES ('legacy-flag', 'shared@example.test', '{}', '2026-11-02');
+            INSERT INTO fraud_flags VALUES ('C-legacy-flag', 'UNIQUE@example.test', '{}', '2026-11-02');
             INSERT INTO audit_logs VALUES ('B-log', 'account-B', NULL, NULL, '2026-11-03');
             INSERT INTO audit_logs VALUES ('legacy-log', 'shared@example.test', NULL, NULL, '2026-11-03');
+            INSERT INTO audit_logs VALUES ('C-legacy-log', 'UNIQUE@example.test', NULL, NULL, '2026-11-03');
             INSERT INTO audit_logs VALUES ('B-target', NULL, 'user', 'account-B', '2026-11-03');
             INSERT INTO audit_logs VALUES ('unrelated-target', NULL, 'report', 'account-A', '2026-11-03');
             INSERT INTO scan_history VALUES ('B-scan', 'shared@example.test', 'account-B', 'https://b.example.test', 10, '[]', '2026-11-04');
@@ -262,13 +300,17 @@ def test_admin_user_detail_never_attributes_duplicate_email_records_to_another_a
     assert a["scans"] == []
 
     b = admin_data.fetch_user_detail("account-B")
-    assert b["user"]["scan_count"] == 1
+    assert b["user"]["scan_count"] == 0
+    assert b["user"]["scan_history_withheld"] is True
     assert b["user"]["wallet_address"] == "B-wallet"
     assert [flag["id"] for flag in b["flags"]] == ["B-flag"]
     assert {log["id"] for log in b["logs"]} == {"B-log", "B-target"}
-    assert [scan["id"] for scan in b["scans"]] == ["B-scan"]
+    assert b["scans"] == []
     assert admin_data.fetch_user_detail("shared@example.test")["user"] is None
 
     c = admin_data.fetch_user_detail("unique@example.test")
     assert c["user"]["scan_count"] == 1
+    assert c["user"]["wallet_address"] == "C-legacy-wallet"
+    assert [flag["id"] for flag in c["flags"]] == ["C-legacy-flag"]
+    assert [log["id"] for log in c["logs"]] == ["C-legacy-log"]
     assert [scan["id"] for scan in c["scans"]] == ["C-legacy-scan"]

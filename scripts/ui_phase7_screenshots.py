@@ -64,6 +64,12 @@ def fixture_contexts() -> dict[str, tuple[str, dict]]:
         "role": "user", "created_at": "2026-11-01", "last_login_at": None,
         "last_login": None, "scan_count": 0, "wallet_address": None,
     }
+    ambiguous_user = {
+        "google_id": "account-A", "email": "shared@example.test", "display_name": "Shared Email A",
+        "status": "active", "role": "user", "tier": "Registered", "scan_count": 0,
+        "referral_count": 0, "wallet_address": None, "created_at": "2026-11-01",
+        "last_login_at": None, "last_login": None, "ambiguous_email": 1,
+    }
     ghost_context = {
         "browser_automation_available": False, "go_ghost_account_id": "",
         "go_ghost_account_name": "", "go_ghost_account_email": "",
@@ -97,9 +103,18 @@ def fixture_contexts() -> dict[str, tuple[str, dict]]:
         "admin_activity": admin_fixture("Activity Feed", "logs", {"rows": [], "actions": []}, "/admin/activity"),
         "admin_users": admin_fixture("All Users", "users", empty_users, "/admin/users"),
         "admin_users_filtered": admin_fixture("All Users", "users", filtered_users, "/admin/users", {"search": "no-match@example.test"}),
+        "admin_users_ambiguous": admin_fixture("All Users", "users", {
+            "filters": EMPTY_USER_FILTERS.copy(), "rows": [ambiguous_user],
+            "page": 1, "pages": 1, "total": 1,
+        }, "/admin/users"),
         "admin_user_drawer": admin_fixture("User Detail", "user_drawer", {
             "user": detail_user, "flags": [], "logs": [], "scans": [],
         }, "/admin/users/scanner@example.test/drawer"),
+        "admin_user_drawer_ambiguous": admin_fixture("User Detail", "user_drawer", {
+            "user": {**detail_user, "email": "shared@example.test", "display_name": "Shared Email A",
+                     "ownership_ambiguous": True, "scan_history_withheld": True},
+            "flags": [], "logs": [], "scans": [],
+        }, "/admin/users/detail", {"account_id": "account-A"}),
         "admin_scans": admin_fixture("All Scans", "scans", empty_scans, "/admin/scans"),
         "admin_scans_filtered": admin_fixture("All Scans", "scans", empty_scans, "/admin/scans", {"search": "no-match"}),
         "admin_risk_logs": admin_fixture("Risk Engine Logs", "scans", empty_scans, "/admin/risk-logs"),
@@ -110,8 +125,19 @@ def fixture_contexts() -> dict[str, tuple[str, dict]]:
         "admin_reports": admin_fixture("Reported URLs", "reports", {"tab": "reports", "reports": []}, "/admin/reports"),
         "admin_blocklist": admin_fixture("Blocklist", "reports", {"tab": "blocklist", "blocklist": []}, "/admin/reports", {"tab": "blocklist"}),
         "admin_airdrop": admin_fixture("Tier Overview", "airdrop", empty_airdrop, "/admin/airdrop"),
+        "admin_airdrop_ambiguous": admin_fixture("Tier Overview", "airdrop", {
+            **empty_airdrop, "wallet_users": [{
+                **ambiguous_user, "wallet_address": "SyntheticWalletAddress",
+                "estimated_sqr": 0, "distribution_status": "pending", "fraud_flags": 0,
+            }],
+        }, "/admin/airdrop"),
         "admin_wallet_registry": admin_fixture("Wallet Registry", "airdrop", empty_airdrop, "/admin/airdrop/wallets"),
         "admin_fraud": admin_fixture("Fraud Flags", "fraud", {"rows": []}, "/admin/airdrop/fraud"),
+        "admin_fraud_unassigned": admin_fixture("Fraud Flags", "fraud", {"rows": [{
+            "google_id": None, "email": "shared@example.test", "fraud_score": 0,
+            "signal_count": 1, "highest_severity": "medium", "wallet_address": None,
+            "airdrop_status": "Unassigned", "flag_date": "2026-11-04", "ambiguous_email": 1,
+        }]}, "/admin/airdrop/fraud"),
         "admin_logs": admin_fixture("Audit Logs", "logs", {"rows": [], "actions": []}, "/admin/logs"),
         "admin_logs_filtered": admin_fixture("Audit Logs", "logs", {"rows": [], "actions": []}, "/admin/logs", {"action": "no-match"}),
         "admin_api_keys": admin_fixture("API Keys", "api_keys", {"keys": []}, "/admin/api-keys"),
@@ -176,7 +202,7 @@ def write_readme(output: Path, fixtures: dict, before_templates: Path) -> None:
                     f"[before](before/{theme}/{width}/{name}.jpg) / [after](after/{theme}/{width}/{name}.jpg)"
                 )
         rows.append(f"| {name.replace('_', ' ').title()} | " + " | ".join(links) + " |")
-    rows.extend(["", "The `admin_user_drawer` before image shows the previously blank main area for an existing account.", ""])
+    rows.extend(["", "The `admin_user_drawer` before image shows the previously blank main area for an existing account. The ambiguous-account fixtures use synthetic rows on both sides to show how the new controls handle shared email ownership; no production account data appears in these images.", ""])
     (output / "README.md").write_text("\n".join(rows), encoding="utf-8")
 
 

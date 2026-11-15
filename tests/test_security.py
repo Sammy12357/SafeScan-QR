@@ -216,7 +216,8 @@ def test_admin_user_detail_uses_stable_account_id_and_rejects_ambiguous_email(se
     assert "https://b.example.test" not in a.text
     assert b.status_code == 200
     assert "Account B" in b.text
-    assert "https://b.example.test" in b.text
+    assert "https://b.example.test" not in b.text
+    assert "Scan history is unavailable while account ownership is reviewed" in b.text
     assert ambiguous.status_code == 404
 
 
@@ -242,7 +243,14 @@ def test_admin_email_actions_fail_closed_for_duplicate_accounts(security_app):
         ("/admin/airdrop/shared@example.test/status", {"status": "disqualified"}),
         ("/admin/fraud/shared@example.test/review", {"outcome": "disqualified"}),
     ):
-        assert client.post(path, data=payload).status_code == 409
+        response = client.post(path, data=payload)
+        assert response.status_code == 409
+        assert "This account needs ownership review" in response.text
+
+    missing = client.post("/admin/users/missing@example.test/suspend", data={"action": "suspend"})
+    assert missing.status_code == 404
+    assert "find that account" in missing.text
+    assert "All Users" in missing.text
 
     with sqlite3.connect(db_path) as conn:
         assert conn.execute(
@@ -270,7 +278,7 @@ def test_fraud_review_includes_id_flags_without_assigning_shared_email_flags(sec
             "VALUES (?, ?, 'test', 'medium', 'Review', '2026-11-04')",
             [("A-id", "account-A"), ("B-id", "account-B"),
              ("shared-legacy", "shared@example.test"),
-             ("unique-legacy", "unique@example.test")],
+             ("unique-legacy", "UNIQUE@EXAMPLE.TEST")],
         )
 
     data = module.fetch_fraud_data()
@@ -286,8 +294,13 @@ def test_fraud_review_includes_id_flags_without_assigning_shared_email_flags(sec
     assert unassigned[0]["signal_count"] == 1
     page = client.get("/admin/airdrop/fraud")
     assert page.status_code == 200
-    assert "Email is shared; action unavailable" in page.text
+    assert "Account ownership needs review; action unavailable" in page.text
     assert "No fraud flags to review" not in page.text
+    reviewed = client.post("/admin/fraud/unique@example.test/review", data={"outcome": "cleared"}, follow_redirects=False)
+    assert reviewed.status_code == 303
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT reviewed FROM fraud_flags WHERE id = 'unique-legacy'").fetchone()[0] == 1
+        assert conn.execute("SELECT reviewed FROM fraud_flags WHERE id = 'shared-legacy'").fetchone()[0] == 0
 
 
 def test_admin_user_actions_keep_invalid_input_without_mutation(security_app):

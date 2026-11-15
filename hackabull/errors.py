@@ -83,6 +83,8 @@ ERRORS: dict[str, Message] = {
     "profile_name_required": Message("Add a full name before submitting.", "Enter the name shown on the listing.", 400),
     "profile_email_required": Message("Add an email address before submitting.", "Enter an address where the broker can contact you.", 400),
     "admin_action_invalid": Message("We couldn't complete that action.", "Choose an available action and try again.", 400),
+    "admin_account_ambiguous": Message("This account needs ownership review.", "Email-based changes are unavailable until the shared address is resolved. Open the account detail to investigate.", 409),
+    "admin_account_missing": Message("We couldn't find that account.", "Return to the list and choose an available account.", 404),
     "admin_delete_confirmation": Message("Type DELETE to confirm this change.", "Check the confirmation and submit again.", 400),
     "admin_non_url_scan": Message("This scan can't be added to the URL blocklist.", "Only scans of web links can be blocked here.", 400),
     "api_key_name_required": Message("Enter a name for the API key.", "Use 1 to 80 characters.", 400),

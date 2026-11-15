@@ -96,6 +96,9 @@ def _admin_form_error(request, title, page, data, code, *, target="", field="", 
 
 def _single_email_account_id(conn, email: str) -> str:
     """Resolve legacy email actions only when one canonical account owns it."""
+    # SELECT alone does not hold a write transaction in sqlite3. Lock before
+    # checking uniqueness so an account cannot appear before the later UPDATE.
+    conn.execute("BEGIN IMMEDIATE")
     key = canonical_email_key(email)
     if key is None:
         raise HTTPException(status_code=404, detail="Account not found.")
@@ -112,6 +115,16 @@ def _single_email_account_id(conn, email: str) -> str:
 def _require_one_account_updated(cursor) -> None:
     if cursor.rowcount != 1:
         raise HTTPException(status_code=409, detail="Account action was not applied.")
+
+
+def _admin_account_error(request, title, page, data_factory, exc, *, target, values=None):
+    if exc.status_code not in (404, 409):
+        raise exc
+    code = "admin_account_missing" if exc.status_code == 404 else "admin_account_ambiguous"
+    return _admin_form_error(
+        request, title, page, data_factory(), code,
+        target=target, field="account", values=values,
+    )
 
 
 @qr_app.get("/admin", response_class=HTMLResponse)
@@ -151,9 +164,12 @@ async def admin_suspend_user(request: Request, email: str, action: str = Form("s
     if action not in ("suspend", "unsuspend"):
         return _admin_form_error(request, "All Users", "users", fetch_admin_users(search=email), "admin_action_invalid", target=email, field="action")
     new_status = "active" if action == "unsuspend" else "suspended"
-    with get_conn() as conn:
-        account_id = _single_email_account_id(conn, email)
-        _require_one_account_updated(conn.execute("UPDATE users SET status = ? WHERE google_id = ?", (new_status, account_id)))
+    try:
+        with get_conn() as conn:
+            account_id = _single_email_account_id(conn, email)
+            _require_one_account_updated(conn.execute("UPDATE users SET status = ? WHERE google_id = ?", (new_status, account_id)))
+    except HTTPException as exc:
+        return _admin_account_error(request, "All Users", "users", lambda: fetch_admin_users(search=email), exc, target=email, values={"action": action})
     audit_log("admin.user_unsuspended" if new_status == "active" else "admin.user_suspended", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=account_id)
     return RedirectResponse("/admin/users", status_code=303)
 
@@ -162,9 +178,12 @@ async def admin_change_role(request: Request, email: str, role: str = Form("")):
     admin_user = require_role_user(request, "owner")
     if role not in VALID_ROLES:
         return _admin_form_error(request, "All Users", "users", fetch_admin_users(search=email), "admin_action_invalid", target=email, field="role", values={"role": role})
-    with get_conn() as conn:
-        account_id = _single_email_account_id(conn, email)
-        _require_one_account_updated(conn.execute("UPDATE users SET role = ? WHERE google_id = ?", (role, account_id)))
+    try:
+        with get_conn() as conn:
+            account_id = _single_email_account_id(conn, email)
+            _require_one_account_updated(conn.execute("UPDATE users SET role = ? WHERE google_id = ?", (role, account_id)))
+    except HTTPException as exc:
+        return _admin_account_error(request, "All Users", "users", lambda: fetch_admin_users(search=email), exc, target=email, values={"role": role})
     audit_log("admin.role_changed", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=account_id, metadata={"role": role})
     return RedirectResponse("/admin/users", status_code=303)
 
@@ -173,9 +192,12 @@ async def admin_delete_user(request: Request, email: str, confirm: str = Form(""
     admin_user = require_role_user(request, "owner")
     if confirm != "DELETE":
         return _admin_form_error(request, "All Users", "users", fetch_admin_users(search=email), "admin_delete_confirmation", target=email, field="confirm", values={"confirm": confirm})
-    with get_conn() as conn:
-        account_id = _single_email_account_id(conn, email)
-        _require_one_account_updated(conn.execute("UPDATE users SET status = 'deleted', deleted_at = ?, airdrop_status = 'disqualified' WHERE google_id = ?", (now_iso(), account_id)))
+    try:
+        with get_conn() as conn:
+            account_id = _single_email_account_id(conn, email)
+            _require_one_account_updated(conn.execute("UPDATE users SET status = 'deleted', deleted_at = ?, airdrop_status = 'disqualified' WHERE google_id = ?", (now_iso(), account_id)))
+    except HTTPException as exc:
+        return _admin_account_error(request, "All Users", "users", lambda: fetch_admin_users(search=email), exc, target=email, values={"confirm": confirm})
     audit_log("admin.user_deleted", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=account_id)
     return RedirectResponse("/admin/users", status_code=303)
 
@@ -310,9 +332,12 @@ async def admin_airdrop_status(request: Request, email: str, status: str = Form(
     admin_user = require_role_user(request, "admin")
     if status not in ("eligible", "flagged", "disqualified", "cleared"):
         return _admin_form_error(request, "Tier Overview", "airdrop", fetch_airdrop_data(), "admin_action_invalid", target=email, field="status", values={"reason": reason})
-    with get_conn() as conn:
-        account_id = _single_email_account_id(conn, email)
-        _require_one_account_updated(conn.execute("UPDATE users SET airdrop_status = ? WHERE google_id = ?", (status, account_id)))
+    try:
+        with get_conn() as conn:
+            account_id = _single_email_account_id(conn, email)
+            _require_one_account_updated(conn.execute("UPDATE users SET airdrop_status = ? WHERE google_id = ?", (status, account_id)))
+    except HTTPException as exc:
+        return _admin_account_error(request, "Tier Overview", "airdrop", fetch_airdrop_data, exc, target=email, values={"status": status, "reason": reason})
     audit_log("admin.airdrop_status_changed", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=account_id, metadata={"status": status, "reason": reason})
     return RedirectResponse("/admin/airdrop", status_code=303)
 
@@ -322,10 +347,19 @@ async def admin_fraud_review(request: Request, email: str, outcome: str = Form("
     if outcome not in ("cleared", "disqualified", "escalated"):
         return _admin_form_error(request, "Fraud Flags", "fraud", fetch_fraud_data(), "admin_action_invalid", target=email, field="outcome", values={"reason": reason})
     status = "cleared" if outcome == "cleared" else ("disqualified" if outcome == "disqualified" else "flagged")
-    with get_conn() as conn:
-        account_id = _single_email_account_id(conn, email)
-        _require_one_account_updated(conn.execute("UPDATE users SET airdrop_status = ? WHERE google_id = ?", (status, account_id)))
-        conn.execute("UPDATE fraud_flags SET reviewed = 1, reviewed_by = ?, reviewed_at = ?, review_outcome = ? WHERE user_id IN (?, ?) AND reviewed = 0", (admin_user.get("email"), now_iso(), outcome, account_id, email))
+    try:
+        with get_conn() as conn:
+            account_id = _single_email_account_id(conn, email)
+            _require_one_account_updated(conn.execute("UPDATE users SET airdrop_status = ? WHERE google_id = ?", (status, account_id)))
+            conn.create_function("canonical_email_key", 1, canonical_email_key, deterministic=True)
+            conn.execute(
+                "UPDATE fraud_flags SET reviewed = 1, reviewed_by = ?, reviewed_at = ?, review_outcome = ? "
+                "WHERE reviewed = 0 AND (user_id = ? OR (canonical_email_key(user_id) = ? "
+                "AND user_id NOT IN (SELECT google_id FROM users)))",
+                (admin_user.get("email"), now_iso(), outcome, account_id, canonical_email_key(email)),
+            )
+    except HTTPException as exc:
+        return _admin_account_error(request, "Fraud Flags", "fraud", fetch_fraud_data, exc, target=email, values={"outcome": outcome, "reason": reason})
     audit_log("admin.fraud_reviewed", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=account_id, metadata={"outcome": outcome, "reason": reason})
     return RedirectResponse("/admin/airdrop/fraud", status_code=303)
 
