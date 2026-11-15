@@ -16,15 +16,10 @@ from urllib.parse import urlparse
 
 REGISTRY_PATH = Path(__file__).resolve().parents[1] / "data" / "go_ghost" / "brokers.json"
 BROKER_ID = re.compile(r"^[a-z][a-z0-9]*$")
-SEARCH_KINDS = {"path", "query", "google", "static"}
+SEARCH_KINDS = {"static"}
 REQUIRED_FIELDS = {"id", "name", "priority", "priorityDescription", "removalUrl", "requiredInfo", "group", "lastVerified", "search"}
 OPTIONAL_FIELDS = {"operator", "verificationSource", "sourceCheckedAt"}
-SEARCH_FIELDS = {
-    "path": {"kind", "baseUrl", "locationSeparator"},
-    "query": {"kind", "baseUrl", "nameParam", "locationParam"},
-    "google": {"kind", "domain"},
-    "static": {"kind", "url"},
-}
+SEARCH_FIELDS = {"static": {"kind", "url"}}
 
 
 def _https_url(value: object) -> bool:
@@ -81,27 +76,12 @@ def load_brokers() -> tuple[dict, ...]:
             raise ValueError(f"Invalid Go Ghost search mode: {broker_id}")
         if search.keys() != SEARCH_FIELDS[search["kind"]]:
             raise ValueError(f"Invalid Go Ghost search fields: {broker_id}")
-        if search["kind"] in {"path", "query"} and not _https_url(search.get("baseUrl")):
-            raise ValueError(f"Invalid Go Ghost search base URL: {broker_id}")
-        if search["kind"] in {"path", "query"} and urlparse(search["baseUrl"]).hostname != urlparse(record["removalUrl"]).hostname:
-            raise ValueError(f"Go Ghost search host differs from broker host: {broker_id}")
-        if search["kind"] == "path" and search.get("locationSeparator") not in {"/", "_"}:
-            raise ValueError(f"Invalid Go Ghost location separator: {broker_id}")
-        if search["kind"] == "query" and not all(isinstance(search.get(key), str) and re.fullmatch(r"[a-zA-Z][a-zA-Z0-9]*", search[key]) for key in ("nameParam", "locationParam")):
-            raise ValueError(f"Invalid Go Ghost query parameters: {broker_id}")
-        if search["kind"] == "static" and not _https_url(search.get("url")):
+        if not _https_url(search.get("url")):
             raise ValueError(f"Invalid Go Ghost static search URL: {broker_id}")
-        if search["kind"] == "static" and search["url"] != record["removalUrl"]:
-            raise ValueError(f"Go Ghost static search must use its opt-out page: {broker_id}")
-        if search["kind"] == "google" and (
-            not isinstance(search.get("domain"), str)
-            or not re.fullmatch(r"[a-z0-9]+(?:[.-][a-z0-9]+)*", search["domain"])
-            or not (
-                urlparse(record["removalUrl"]).hostname == search["domain"]
-                or urlparse(record["removalUrl"]).hostname.endswith("." + search["domain"])
-            )
-        ):
-            raise ValueError(f"Invalid Go Ghost search domain: {broker_id}")
+        search_url = urlparse(search["url"])
+        if (search_url.hostname != urlparse(record["removalUrl"]).hostname
+                or search_url.query or "{" in search["url"] or "}" in search["url"]):
+            raise ValueError(f"Go Ghost starting page must use the broker host without a query: {broker_id}")
     return tuple(records)
 
 

@@ -130,23 +130,20 @@ async function main() {
   assert.equal(brokerUrls.some(([, url]) => /Private|8135550100|person%40example|person@example/i.test(url)), false);
   const searchFor = id => vm.runInContext(`goGhostBrokerSearchUrl(goGhostBrokers.find(b => b.id === '${id}'),
     {name: 'Example Person', location: 'Tampa, FL'})`, context);
-  assert.equal(searchFor('fastpeoplesearch'), 'https://www.fastpeoplesearch.com/name/example-person_tampa-fl');
-  assert.equal(searchFor('whitepages'), 'https://www.whitepages.com/name/example-person/tampa-fl');
-  assert.equal(new URL(searchFor('truepeoplesearch')).searchParams.get('citystatezip'), 'Tampa, FL');
+  assert.equal(searchFor('fastpeoplesearch'), 'https://www.fastpeoplesearch.com/');
+  assert.equal(searchFor('whitepages'), 'https://www.whitepages.com/');
+  assert.equal(searchFor('truepeoplesearch'), 'https://www.truepeoplesearch.com/');
   assert.equal(searchFor('beenverified'), brokerUrlById.beenverified);
   const familyPacket = vm.runInContext(`goGhostCopyPacket(goGhostBrokers[0],
     {name: 'Family Member', address: '', location: '', email: ''}, 'https://example.test/search')`, context);
   assert.doesNotMatch(familyPacket, /I am the subject|Requester type:/i);
-  const googleSearchUrls = vm.runInContext(`goGhostBrokers.filter(broker => broker.searchUrl({name: 'Example Person', location: 'Tampa, FL'}).startsWith('https://www.google.com/'))
-    .map(broker => goGhostBrokerSearchUrl(broker, {name: 'Example Person', location: 'Tampa, FL', address: '123 Private Street', phone: '8135550100', email: 'person@example.com'}))`, context);
-  assert.equal(googleSearchUrls.length, 5);
-  for (const url of googleSearchUrls) {
-    const query = new URL(url).searchParams.get('q');
-    assert.match(query, /Example Person FL/);
-    assert.doesNotMatch(query, /Private|Tampa|8135550100|person@example/i);
+  const allSearchUrls = vm.runInContext(`goGhostBrokers.map(broker => goGhostBrokerSearchUrl(broker,
+    {name: 'Example Person', location: 'Tampa, FL', address: '123 Private Street', phone: '8135550100', email: 'person@example.com'}))`, context);
+  assert.equal(allSearchUrls.length, 18);
+  for (const url of allSearchUrls) {
+    assert.equal(new URL(url).search, '', 'broker starting links must have no query');
+    assert.doesNotMatch(url, /Example|Tampa|Private|8135550100|person(?:%40|@)/i);
   }
-  assert.equal(vm.runInContext("ghostSearchRegion('123 Private Street, Tampa, FL')", context), 'FL');
-  assert.equal(vm.runInContext("ghostSearchRegion('123 Private Street')", context), '');
   const lastId = brokerIds.at(-1);
   elements.goGhostAutomationRows.handlers.click({
     target: {closest: selector => selector === '[data-ghost-scope]'
@@ -160,7 +157,7 @@ async function main() {
   assert.doesNotMatch(elements.goGhostScopeDetails.innerHTML, /Backend does/);
 
   await elements.goGhostScopeSearchButton.handlers.click();
-  assert.match(opened.at(-1), /^https:\/\/www\.google\.com\/search\?/);
+  assert.equal(opened.at(-1), 'https://www.cyberbackgroundchecks.com/');
   await elements.goGhostScopeOptOutButton.handlers.click();
   assert.equal(opened.at(-1), 'https://www.cyberbackgroundchecks.com/removal');
   assert.doesNotMatch(opened.at(-1), /Example|person%40|person@/i);
