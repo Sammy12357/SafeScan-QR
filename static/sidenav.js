@@ -12,9 +12,9 @@
       .filter(function (element) { return !element.hidden && element.getClientRects().length > 0; });
   }
 
-  function setOpen(open) {
+  function setOpen(open, restoreFocus = true) {
     var wasOpen = document.body.classList.contains("sidenav-open");
-    if (!open && wasOpen) toggle.focus({ preventScroll: true });
+    if (!open && wasOpen && restoreFocus) toggle.focus({ preventScroll: true });
     nav.inert = !open;
     document.body.classList.toggle("sidenav-open", open);
     toggle.setAttribute("aria-expanded", open ? "true" : "false");
@@ -58,8 +58,26 @@
   // Close after following a link inside the drawer (so navigation feels clean).
   var links = nav.querySelectorAll(".sidenav-link[href]");
   for (var j = 0; j < links.length; j++) {
-    links[j].addEventListener("click", function () { setOpen(false); });
+    links[j].addEventListener("click", function () { setOpen(false, false); });
   }
+
+  // A fragment scroll alone does not reliably move VoiceOver's cursor on
+  // iPhone. Put focus on the scanner heading after the in-page navigation.
+  function focusScannerHeading() {
+    var heading = document.getElementById("scannerTitle");
+    if (heading) window.requestAnimationFrame(function () { heading.focus(); });
+  }
+  var scannerLinks = document.querySelectorAll('a[href="#scanner"], a[href="/#scanner"]');
+  for (var s = 0; s < scannerLinks.length; s++) {
+    scannerLinks[s].addEventListener("click", function (event) {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      var destination = new URL(this.href, window.location.href);
+      if (destination.origin === window.location.origin && destination.pathname === window.location.pathname && destination.hash === "#scanner") {
+        focusScannerHeading();
+      }
+    });
+  }
+  if (window.location.hash === "#scanner") focusScannerHeading();
 
   // Restore the previous state on load (defaults to closed).
   var saved = null;
