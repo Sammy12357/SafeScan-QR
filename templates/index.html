@@ -50,7 +50,7 @@
                 <span></span><i></i><span></span><span></span><i></i><span></span><span></span><span></span>
               </div>
             </div>
-            <div class="screen-verdict">SAFE</div>
+            <div class="screen-verdict">SCAN</div>
           </div>
           <div class="scan-beam"></div>
         </div>
@@ -106,15 +106,21 @@
       </section>
 
       {% if results_visible %}
+      {% set high_risk = status in ('MALICIOUS', 'DANGEROUS') or overall_risk == 'high' %}
+      {% set fully_checked = status == 'SAFE' and overall_risk == 'safe' and verification_status == 'complete' %}
+      {% set coverage_incomplete = verification_status not in ('complete', 'not_applicable') %}
+      {% set needs_review = status == 'CAUTION' or overall_risk == 'suspicious' %}
+      {% set public_verdict = 'High-risk indicators' if high_risk else ('No threats found in checks' if fully_checked else ('Could not fully check' if coverage_incomplete else ('Needs review' if needs_review else ('Content decoded' if verification_status == 'not_applicable' else 'Needs review')))) %}
+      {% set public_summary = 'High-risk signals were found. Review the reasons and do not open this destination.' if high_risk else ('Completed configured checks found no known threat match at scan time. A destination can change later.' if fully_checked else ('SafeScan could not complete enough checks to assess this payload. Confirm the source independently.' if coverage_incomplete else ('Some findings need review. Confirm the source independently.' if needs_review else ('This content was decoded; no website destination check applies.' if verification_status == 'not_applicable' else 'Some findings need review. Confirm the source independently.')))) %}
       <div
         id="riskVerdictModal"
         class="risk-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="riskVerdictTitle"
-        data-verdict="{{ status }}"
+        data-verdict="{{ 'MALICIOUS' if high_risk else ('SAFE' if fully_checked else 'CAUTION') }}"
       >
-        <div class="risk-modal-card {{ 'risk-modal-safe' if status == 'SAFE' else ('risk-modal-caution' if status == 'CAUTION' else 'risk-modal-dangerous') }}">
+        <div class="risk-modal-card {{ 'risk-modal-dangerous' if high_risk else ('risk-modal-safe' if fully_checked else 'risk-modal-caution') }}">
           <button id="riskModalCloseButton" class="risk-modal-close" type="button" aria-label="Close scan result">X</button>
           {% if overall_risk == 'high' %}
           <div class="risk-warning-banner">Caution: This QR code shows strong indicators of {{ (threat_class or "a QR security threat") | lower }}.</div>
@@ -125,9 +131,9 @@
             </div>
             <div>
               <p class="engine-label">Scan verdict</p>
-              <h2 id="riskVerdictTitle">{{ status }}</h2>
-              <p class="result-support">{{ verdict_summary | default("SafeScan decoded the QR and checked the payload. A scan cannot guarantee that a destination stays safe.") }}</p>
-              <p class="threat-type-line"><strong>Threat type:</strong> {{ threat_class }}</p>
+              <h2 id="riskVerdictTitle">{{ public_verdict }}</h2>
+              <p class="result-support">{{ public_summary }}</p>
+              <p class="threat-type-line"><strong>Finding:</strong> {{ threat_class if high_risk else ('No specific threat identified' if fully_checked else ('Check coverage incomplete' if coverage_incomplete else ((threat_class or 'Review decoded content') if needs_review else ('No destination check' if verification_status == 'not_applicable' else 'Review results')))) }}</p>
               {% if fast_path and fast_path.hit and verification_status == 'complete' and status == 'SAFE' %}
               <p class="fast-path-chip" role="status"><span class="fast-path-dot" aria-hidden="true"></span>Recognized destination &mdash; required checks completed</p>
               {% endif %}
@@ -171,7 +177,7 @@ ASCII (punycode): {{ host_forms.ascii }}</pre>
                 <p class="engine-label">Final risk score</p>
                 <h3>{{ score }} / 100</h3>
               </div>
-              <div class="verdict-badge {{ 'verdict-safe' if status == 'SAFE' else ('verdict-caution' if status == 'CAUTION' else 'verdict-dangerous') }}">{{ status }}</div>
+              <div class="verdict-badge {{ 'verdict-dangerous' if high_risk else ('verdict-safe' if fully_checked else 'verdict-caution') }}">{{ public_verdict }}</div>
             </div>
 
             {# Only show the ML panel when a model actually produced a signal

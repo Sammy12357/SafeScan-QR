@@ -23,3 +23,15 @@
 | C17 | Privacy rights and international transfer statements (`hackabull/admin_data.py:605-625`) | The policy makes categorical jurisdictional and safeguards claims, including transfer mechanisms and a DPO threshold. A repository review cannot establish actual contracts, geography, or legal thresholds. | **Attorney review / Phase 4:** replace unsupported absolutes with counsel-approved, evidence-backed language. |
 
 **Maintenance rule:** Every new quantitative safety, privacy, payment, token, removal, or compliance claim needs an owner, evidence, and review status before it is published. Recheck this baseline against production configuration and traffic; source line numbers refer to the code baseline above.
+
+## Phase 2 proposed copy and evidence
+
+These entries describe code prepared after the Phase 0 baseline. **ATTORNEY REVIEW NEEDED** before treating the wording as approved legal or marketing copy.
+
+| Claim | Proposed surface | Engineering evidence and limit |
+| --- | --- | --- |
+| “No threats found in checks” | Current scan modal, only when the internal status is `SAFE`, overall risk is `safe`, and verification status is `complete` | `templates/index.html` checks all three fields before displaying this label or green styling. `hackabull/pipeline.py` marks required reputation and redirect failures incomplete. This is a snapshot of configured checks, not a guarantee that a destination is harmless or will stay unchanged. |
+| “Could not fully check” / “Needs review” | Current scan modal when coverage is missing or risk signals require review | Missing coverage, including an absent legacy verification status, cannot display the clean label or green styling. `tests/test_legal_verdict_copy.py` renders the combinations. |
+| “Lower risk score at scan time” | Saved scan history | Historical rows do not preserve enough check-coverage detail to claim that every required check completed. The UI also says destinations and checks may have changed. |
+| QR generator logo identifies the generator, not the destination | QR generator page | The code generates the marked image after a current low-risk check, but the target URL can change after generation. The copy warns about that limit. |
+| Go Ghost offers manual broker workflow, with no removal promise | Go Ghost page | Current production configuration disables assisted browser submissions and relies on the person to submit and recheck. Brokers control outcomes. Family assistance requires an attestation and some brokers require the subject to act directly. |

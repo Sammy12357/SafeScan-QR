@@ -358,7 +358,7 @@ def analyze_url_payload(raw_payload):
     parsed = urlparse(normalized)
     lower_url = normalized.lower()
     score = 0
-    threat_class = "Safe Destination"
+    threat_class = "No specific threat identified"
     reasons = []
 
     cached_status = get_cached_result(normalized)
@@ -366,7 +366,7 @@ def analyze_url_payload(raw_payload):
         return {
             "status": cached_status,
             "score": "95" if cached_status == "MALICIOUS" else "0",
-            "threat_class": "Phishing/Malware Risk" if cached_status == "MALICIOUS" else "Safe Destination",
+            "threat_class": "Phishing/Malware Risk" if cached_status == "MALICIOUS" else "No specific threat identified",
             "source": "Local Cache",
             "normalized": normalized,
             "payload_type": "URL",

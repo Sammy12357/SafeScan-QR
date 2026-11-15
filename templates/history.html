@@ -9,7 +9,7 @@
   <script src="/static/ui-states.js?v=ui-loading-v1"></script>
   <title>Scan History | SafeScan QR</title>
   <link rel="stylesheet" href="/static/styles.css?v=legal-a11y-v1">
-  <link rel="stylesheet" href="/static/styles-history.css?v=host-safety-v1">
+  <link rel="stylesheet" href="/static/styles-history.css?v=legal-verdict-v2">
 </head>
 <body>
   <div class="history-shell">
@@ -17,6 +17,7 @@
     <p class="history-eyebrow">SafeScan QR</p>
     <h1>Your Scan History</h1>
     <p class="history-sub">{{ email if email else "Sign in to view saved scans" }}</p>
+    {% if email %}<p class="history-sub">Saved scores are snapshots. Older records do not retain check coverage, and destinations can change. Recheck a URL before opening it.</p>{% endif %}
 
     {% if not email %}
       {{ empty_state(icon='lock', title='Sign in to see your scans', body='Your saved scan history is linked to your account.', action_label='Sign in', action_href='/login') }}
@@ -33,15 +34,21 @@
           <div class="history-list">
             {% for scan in group.scans %}
             {% set classification = (scan.classification or 'UNKNOWN') | upper %}
-            {% set badge = 'badge-safe' if classification == 'SAFE' else ('badge-caution' if classification == 'CAUTION' else 'badge-danger') %}
+            {% set badge = 'badge-historical' if classification == 'SAFE' else ('badge-caution' if classification == 'CAUTION' else 'badge-danger') %}
             <div class="history-card">
-              {% set can_open = classification == 'SAFE' and scan.url and (scan.url.startswith('https://') or scan.url.startswith('http://')) %}
-              {% if can_open %}<a class="history-url" href="{{ scan.url }}" target="_blank" rel="noopener noreferrer">{{ scan.url }}</a>
-              {% else %}<span class="history-url history-url-text">{{ scan.url }}</span>{% endif %}
+              {% set is_web_url = scan.url and (scan.url.startswith('https://') or scan.url.startswith('http://')) %}
+              <span class="history-url history-url-text">{{ scan.url }}</span>
               {% if scan.hostForms and scan.hostForms.unicode != scan.hostForms.ascii %}
               <div class="history-host-identity">Unicode host: {{ scan.hostForms.unicode }}<br>ASCII (punycode): {{ scan.hostForms.ascii }}</div>
               {% endif %}
               <div class="history-meta">Risk score: {{ scan.risk_score or 0 }}/100 &middot; {{ scan.created_at[:16].replace('T', ' ') if scan.created_at else 'Unknown' }}</div>
+              {% if is_web_url %}
+              <div class="history-actions">
+                <button class="history-copy-button secondary-button" type="button">Copy URL</button>
+                <a class="history-rescan-link" href="/#scanner">Scan it again</a>
+                <span class="history-copy-feedback" role="status" aria-live="polite"></span>
+              </div>
+              {% endif %}
               <span class="history-badge {{ badge }}">{{ scan.classificationLabel or classification }}</span>
             </div>
             {% endfor %}
@@ -53,6 +60,7 @@
   </div>
   {% include "footer.html" %}
   <script src="/static/app-core.js?v=legal-a11y-v1"></script>
+  <script src="/static/app-history.js?v=legal-verdict-v1"></script>
   <script src="/static/app-widgets.js?v=legal-a11y-v1"></script>
   <script src="/static/app-go-ghost.js?v=ghost-inline-errors-v1"></script>
   <script src="/static/app-go-ghost-ui.js?v=legal-a11y-v1"></script>

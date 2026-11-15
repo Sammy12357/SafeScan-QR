@@ -223,9 +223,9 @@ def lookup_user_id_by_email(email):
     return None
 
 SCAN_CLASSIFICATIONS = (
-    ("MALICIOUS", "Dangerous"),
-    ("CAUTION", "Needs Review"),
-    ("SAFE", "Safe"),
+    ("MALICIOUS", "High-risk indicators"),
+    ("CAUTION", "Needs review"),
+    ("SAFE", "Lower risk score at scan time"),
     ("UNKNOWN", "Unknown"),
 )
 
