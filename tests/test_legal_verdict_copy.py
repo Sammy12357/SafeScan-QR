@@ -21,7 +21,8 @@ TEMPLATES = Environment(
         ("SAFE", "safe", "incomplete", "Could not fully check", "risk-modal-caution"),
         ("SAFE", "safe", None, "Could not fully check", "risk-modal-caution"),
         ("SAFE", "safe", "not_applicable", "Content decoded", "risk-modal-caution"),
-        ("CAUTION", "suspicious", "incomplete", "Needs review", "risk-modal-caution"),
+        ("CAUTION", "suspicious", "complete", "Needs review", "risk-modal-caution"),
+        ("CAUTION", "suspicious", "incomplete", "Could not fully check", "risk-modal-caution"),
         ("MALICIOUS", "high", "incomplete", "High-risk indicators", "risk-modal-dangerous"),
     ],
 )
