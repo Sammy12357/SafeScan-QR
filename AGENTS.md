@@ -1,5 +1,9 @@
 # SafeScan QR Agent Instructions
 
+## Agent skills
+
+Project skills live under `.agents/skills/`. Use `safescan-ship` when preparing a website or backend release, `safescan-security-gate` for security-sensitive changes, `safescan-ui-states` for frontend work, `qr-decode-bench` for camera or decoder changes, and `go-ghost-recipe` for broker workflows. Read a skill when its scope matches the task; the user's current instructions and verified code state take precedence over older plans.
+
 ## Repository Assignments
 
 - Main website and Render backend: https://github.com/Sammy12357/SafeScan-QR/tree/main
