@@ -32,10 +32,14 @@ def listing_rows(conn: sqlite3.Connection, listing_id: str, *, include_removed: 
     """Resolve an opaque public ID to its confirmed apex domain and rows."""
     if not re.fullmatch(r"[0-9a-f]{16}", listing_id or ""):
         return None, []
-    where = "" if include_removed else "WHERE removed_at IS NULL"
-    rows = conn.execute(
-        f"SELECT id, url, reason, added_by, created_at, removed_at FROM url_blocklist {where} ORDER BY created_at DESC"
-    ).fetchall()
+    if include_removed:
+        rows = conn.execute(
+            "SELECT id, url, reason, added_by, created_at, removed_at FROM url_blocklist ORDER BY created_at DESC"
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, url, reason, added_by, created_at, removed_at FROM url_blocklist WHERE removed_at IS NULL ORDER BY created_at DESC"
+        ).fetchall()
     matches = []
     domain = None
     for row in rows:
