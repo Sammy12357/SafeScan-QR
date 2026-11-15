@@ -14,6 +14,7 @@ This follows the [Carbon empty-state pattern](https://www.carbondesignsystem.com
 | Scan result | No visible risk-reason rows | Scan another QR |
 | Go Ghost | No reviewed details; empty broker registry | Add details; use search cleanup links |
 | Dashboard | No scan chart, verdicts, signups, reports, or activity | Open the corresponding admin view |
+| Admin user detail | No verified wallet, fraud flags, scans, or activity for an existing account | Open the related admin view |
 | Admin tables | Users, scans, waitlist, reports, blocklist, wallets, fraud flags, audit logs, API keys, consent log | Open a relevant view or create an API key |
 | Admin filtered tables | Users, scans, waitlist, audit logs | Clear filters |
 
@@ -23,13 +24,14 @@ The token page already presents wallet connection with its own button, and the p
 
 ## Visual review
 
-The [screenshot set](screenshots/ui-phase-7) contains before and after views at 375, 768, and 1440 pixels in both themes, using synthetic data and no application server. The [capture script](../../scripts/ui_phase7_screenshots.py) reproduces the set. Representative pairs:
+The [comparison matrix](screenshots/ui-phase-7/README.md) covers 24 before and after views at 375, 768, and 1440 pixels in both themes, using synthetic data and no application server. The [capture script](../../scripts/ui_phase7_screenshots.py) reproduces the set with each version's own static assets. Representative pairs:
 
 - [History before](screenshots/ui-phase-7/before/dark/375/history.jpg) · [after](screenshots/ui-phase-7/after/dark/375/history.jpg)
 - [Leaderboard before](screenshots/ui-phase-7/before/dark/768/leaderboard.jpg) · [after](screenshots/ui-phase-7/after/dark/768/leaderboard.jpg)
 - [Profile before](screenshots/ui-phase-7/before/light/1440/profile.jpg) · [after](screenshots/ui-phase-7/after/light/1440/profile.jpg)
 - [Go Ghost before](screenshots/ui-phase-7/before/light/1440/go_ghost.jpg) · [after](screenshots/ui-phase-7/after/light/1440/go_ghost.jpg)
 - [Admin users before](screenshots/ui-phase-7/before/dark/375/admin_users.jpg) · [after](screenshots/ui-phase-7/after/dark/375/admin_users.jpg)
+- [Admin user detail before](screenshots/ui-phase-7/before/dark/1440/admin_user_drawer.jpg) · [after](screenshots/ui-phase-7/after/dark/1440/admin_user_drawer.jpg)
 - [Consent log before](screenshots/ui-phase-7/before/light/768/consent_log.jpg) · [after](screenshots/ui-phase-7/after/light/768/consent_log.jpg)
 
 The capture script blocks application JavaScript and hides consent overlays to isolate the empty-state layout. Runtime toggling is checked by the existing Go Ghost and leaderboard tests.
