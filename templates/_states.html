@@ -1,0 +1,45 @@
+{# Shared server-rendered states. Text values are autoescaped by Jinja. #}
+{% macro state_icon(name='info', class_name='state-icon') -%}
+<svg class="{{ class_name }}" aria-hidden="true" focusable="false"><use href="/static/icons/states.svg#{{ name }}"></use></svg>
+{%- endmacro %}
+
+{% macro empty_state(icon='scan', title='Nothing here yet', body='', action_label='', action_href='', secondary=none, compact=false) -%}
+<section class="state state-empty{% if compact %} state-compact{% endif %}" role="status">
+  {{ state_icon(icon) }}
+  <h2 class="state-title">{{ title }}</h2>
+  {% if body %}<p class="state-body">{{ body }}</p>{% endif %}
+  {% if action_label or secondary %}
+  <div class="state-actions">
+    {% if action_label %}<a class="primary-button" href="{{ action_href }}">{{ action_label }}</a>{% endif %}
+    {% if secondary %}<a class="secondary-button" href="{{ secondary.href }}">{{ secondary.label }}</a>{% endif %}
+  </div>
+  {% endif %}
+</section>
+{%- endmacro %}
+
+{% macro loading_state(label='Loading', rows=0, compact=false) -%}
+<section class="state state-loading{% if compact %} state-compact{% endif %}" role="status" aria-label="{{ label }}">
+  <span class="state-spinner" aria-hidden="true"></span>
+  <p class="state-body">{{ label }}</p>
+  {% if rows %}<div class="skeleton" aria-hidden="true">
+    {% for _ in range(rows) %}<div class="skeleton-row"><span class="skeleton-line"></span><span class="skeleton-line"></span></div>{% endfor %}
+  </div>{% endif %}
+</section>
+{%- endmacro %}
+
+{% macro error_state(title, body, retry_href='', ref='', compact=false) -%}
+<section class="state state-error{% if compact %} state-compact{% endif %}" role="alert">
+  {{ state_icon('warning') }}
+  <h2 class="state-title">{{ title }}</h2>
+  <p class="state-body">{{ body }}</p>
+  {% if retry_href %}<div class="state-actions"><a class="primary-button" href="{{ retry_href }}">Try again</a></div>{% endif %}
+  {% if ref %}<p class="state-ref">Reference: {{ ref }}</p>{% endif %}
+</section>
+{%- endmacro %}
+
+{% macro notice(type='info', message='') -%}
+<div class="notice notice-{{ type }}" role="{{ 'alert' if type == 'danger' else 'status' }}">
+  {{ state_icon('check' if type == 'success' else ('warning' if type in ('warning', 'danger') else 'info'), 'notice-icon') }}
+  <p class="notice-body">{{ message }}</p>
+</div>
+{%- endmacro %}

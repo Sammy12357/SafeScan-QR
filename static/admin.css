@@ -1,5 +1,21 @@
+@import url("/static/styles-states.css?v=ui-states-v1");
+
 :root {
   color-scheme: dark;
+  /* Match the shared spacing scale used by the public shell. */
+  --space-0: 0;
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 20px;
+  --space-7: 24px;
+  --space-8: 32px;
+  --space-9: 40px;
+  --space-10: 48px;
+  --space-11: 64px;
+  --space-12: 96px;
   --admin-bg: #0b0e11;
   --admin-surface: #141820;
   --admin-sidebar: #11141a;
