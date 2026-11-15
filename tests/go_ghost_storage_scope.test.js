@@ -62,12 +62,14 @@ function page(accountId, local, session, {automation = false} = {}) {
   const opened = [];
   const messages = [];
   const removalRequests = [];
+  const confirmQuestions = [];
+  let confirmResult = true;
   let signedInAs = accountId;
   const window = {
     localStorage: storage(local), sessionStorage: storage(session),
     crypto: {randomUUID: () => `00000000-0000-4000-8000-${String(uuid++).padStart(12, '0')}`},
     matchMedia: () => ({matches: false}),
-    confirm: () => true,
+    confirm: question => { confirmQuestions.push(question); return confirmResult; },
     addEventListener(name, callback) { windowEvents[name] = callback; },
     open(url) { opened.push(url); return {opener: null}; }
   };
@@ -97,7 +99,8 @@ function page(accountId, local, session, {automation = false} = {}) {
   });
   vm.runInContext(source, context);
   vm.runInContext(uiSource, context);
-  return {elements, windowEvents, opened, messages, removalRequests, context, setSession: id => { signedInAs = id; }};
+  return {elements, windowEvents, opened, messages, removalRequests, confirmQuestions, context,
+    setSession: id => { signedInAs = id; }, setConfirmResult: result => { confirmResult = result; }};
 }
 
 async function main() {
@@ -187,6 +190,13 @@ async function main() {
   assert.equal(family.elements.ghostNameInput.value, 'Self Person');
   assert.equal(family.elements.ghostProgressCount.textContent, '0 / 18', 'family progress must not count for self');
 
+  const beforeAccountClear = local.get('safeScanGoGhostV2:account:account-C');
+  family.setConfirmResult(false);
+  family.elements.clearGhostDataButton.events.click();
+  assert.equal(local.get('safeScanGoGhostV2:account:account-C'), beforeAccountClear,
+    'cancelling all-people account clear must preserve data');
+  assert.match(family.confirmQuestions.at(-1), /all people in this account/);
+  family.setConfirmResult(true);
   family.elements.clearGhostDataButton.events.click();
   assert.equal(local.has('safeScanGoGhostV2:account:account-C'), false);
   assert.equal(local.has('safeScanGoGhostProfile'), true, 'account clear must preserve unowned legacy data');

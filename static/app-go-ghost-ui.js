@@ -545,6 +545,8 @@ if (goGhostWorkspace) {
 
   clearGhostDataButton?.addEventListener("click", () => {
     if (goGhostStoreLocked) return;
+    const scope = goGhostAccountId ? "this account" : "this guest tab";
+    if (!window.confirm(`Clear Go Ghost details and progress for all people in ${scope} from this browser? This cannot be undone.`)) return;
     try { goGhostStorageArea.removeItem(GO_GHOST_STORE_KEY); } catch { /* Storage unavailable. */ }
     goGhostState = null;
     goGhostFamilyAttestedThisVisit.clear();
