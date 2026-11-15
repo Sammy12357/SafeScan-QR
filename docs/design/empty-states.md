@@ -40,3 +40,5 @@ The [comparison matrix](screenshots/ui-phase-7/README.md) covers 30 before and a
 - [Consent log before](screenshots/ui-phase-7/before/light/768/consent_log.jpg) · [after](screenshots/ui-phase-7/after/light/768/consent_log.jpg)
 
 The capture script blocks application JavaScript and hides consent overlays to isolate the empty-state layout. Runtime toggling is checked by the existing Go Ghost and leaderboard tests.
+
+The unassigned fraud table can scroll horizontally at 375 px and has no row action to focus. Its card is keyboard focusable, with a visible ring; [focused dark and light captures](screenshots/ui-phase-7/focus/README.md) document the state.

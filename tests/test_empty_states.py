@@ -206,6 +206,7 @@ def test_admin_hides_email_actions_when_account_ownership_is_ambiguous():
     }]})
     assert "/admin/fraud/shared@example.test/review" not in fraud
     assert "Account ownership needs review; action unavailable" in fraud
+    assert '<section class="admin-card" tabindex="0" aria-label="Fraud review results">' in fraud
 
 
 def test_fetch_user_detail_resolves_account_id_and_keeps_other_users_out(tmp_path, monkeypatch):
