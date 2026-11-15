@@ -8,72 +8,8 @@
   <title>Malicious QR Database | SafeScan QR</title>
   <meta name="description" content="Browse domains associated with admin-confirmed malicious QR reports. Personal scan URLs are never published.">
   <link rel="icon" href="/static/safescan-logo.svg?v=rose-theme-v1" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=ui-spacing-v1">
-  <style>
-    :root { --danger-strong: #dc2626; --warn: #f59e0b; }
-    body { background: var(--bg); color: var(--text); font-family: var(--body-font); margin: 0; }
-    .mq-shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 80px; }
-    .mq-back { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 28px; font-size: 0.85rem; color: var(--muted); text-decoration: none; }
-    .mq-back:hover { color: var(--text); }
-    .mq-eyebrow { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.16em; color: var(--danger); margin: 0 0 6px; }
-    .mq-shell h1 { margin: 0 0 6px; font-size: 2rem; font-weight: 700; }
-    .mq-sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 20px; max-width: 70ch; }
-    .mq-warning {
-      display: flex; gap: 10px; align-items: flex-start;
-      background: rgba(220,38,38,0.10); border: 1px solid rgba(220,38,38,0.35);
-      border-radius: 12px; padding: 12px 16px; margin: 0 0 24px; font-size: 0.85rem; color: var(--text);
-    }
-    .mq-warning strong { color: var(--text); }
-    .mq-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 0 0 22px; }
-    .mq-stat-card {
-      background: var(--panel-strong); border: 1px solid var(--line); border-radius: 12px;
-      padding: 14px 16px;
-    }
-    .mq-stat-value { font-size: 1.5rem; font-weight: 800; line-height: 1.2; }
-    .mq-stat-label { color: var(--muted); font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 4px; }
-    .mq-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 0 0 22px; }
-    .mq-search {
-      flex: 1 1 280px; min-width: 200px; padding: 11px 14px; border-radius: 10px;
-      border: 1px solid var(--line); background: var(--panel-strong); color: var(--text);
-      font: inherit; font-size: 0.9rem;
-    }
-    .mq-search:focus { outline: none; border-color: var(--accent); }
-    .mq-count { color: var(--muted); font-size: 0.82rem; white-space: nowrap; }
-    .mq-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
-    .mq-card {
-      background: var(--panel-strong); border: 1px solid var(--line); border-radius: 14px;
-      padding: 16px;
-    }
-    .mq-body { min-width: 0; }
-    .mq-cat {
-      display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 20px;
-      font-size: 0.7rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 8px;
-    }
-    .cat-critical { background: rgba(220,38,38,0.16); color: #ff8a93; border: 1px solid rgba(220,38,38,0.45); }
-    .cat-malicious { background: rgba(255,110,127,0.12); color: var(--danger); border: 1px solid rgba(255,110,127,0.3); }
-    .cat-suspicious { background: rgba(245,158,11,0.12); color: var(--warn); border: 1px solid rgba(245,158,11,0.3); }
-    .mq-url {
-      color: var(--text); word-break: break-all; font-size: 0.85rem; font-family: "SFMono-Regular",Consolas,monospace;
-      line-height: 1.4; margin: 0 0 10px; user-select: all;
-    }
-    .mq-meta { color: var(--muted); font-size: 0.76rem; line-height: 1.6; }
-    .mq-meta b { color: var(--text); font-weight: 600; }
-    .mq-state { text-align: center; padding: 64px 0; color: var(--muted); font-size: 0.95rem; }
-    .mq-state.error { color: var(--danger); }
-    .mq-pager { display: flex; justify-content: center; align-items: center; gap: 14px; margin-top: 28px; }
-    .mq-pager button {
-      min-width: 96px; min-height: 40px; padding: 0 16px; border-radius: 9px; border: 1px solid var(--line);
-      background: var(--panel); color: var(--text); font: inherit; font-weight: 700; cursor: pointer;
-    }
-    .mq-pager button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-    .mq-pager button:disabled { opacity: 0.4; cursor: not-allowed; }
-    .mq-pageinfo { color: var(--muted); font-size: 0.82rem; min-width: 120px; text-align: center; }
-    .site-footer { margin-left: 0; width: 100%; }
-    @media (max-width: 540px) {
-      .mq-grid { grid-template-columns: 1fr; }
-      .mq-shell h1 { font-size: 1.6rem; }
-    }
-  </style>
+  <link rel="stylesheet" href="/static/styles.css?v=ui-spacing-v2">
+  <link rel="stylesheet" href="/static/styles-malicious-database.css?v=ui-spacing-v2">
 </head>
 <body>
   <div class="mq-shell">
@@ -86,7 +22,7 @@
       <span><strong>Use caution.</strong> A confirmed malicious QR URL was reported on each listed domain. Other pages on the same domain may be unrelated. Check the exact QR destination before opening it.</span>
     </div>
 
-    <div id="mqStats" class="mq-stats" aria-live="polite" style="display:none">
+    <div id="mqStats" class="mq-stats mq-initially-hidden" aria-live="polite">
       <div class="mq-stat-card"><div id="mqStatTotal" class="mq-stat-value">—</div><div class="mq-stat-label">Confirmed domains</div></div>
       <div class="mq-stat-card"><div id="mqStatReports" class="mq-stat-value">—</div><div class="mq-stat-label">Confirmed URLs</div></div>
       <div class="mq-stat-card"><div id="mqStatUpdated" class="mq-stat-value">—</div><div class="mq-stat-label">Last updated</div></div>
@@ -98,7 +34,7 @@
     </div>
 
     <div id="mqGrid" class="mq-grid" aria-live="polite" data-limit="{{ limit }}"></div>
-    <div id="mqState" class="mq-state" style="display:none"></div>
+    <div id="mqState" class="mq-state mq-initially-hidden"></div>
 
     <div class="mq-pager">
       <button id="mqPrev" type="button" disabled>&#8592; Prev</button>
@@ -113,6 +49,6 @@
   <script src="/static/app-go-ghost.js?v=native-scroll-v3"></script>
   <script src="/static/app-go-ghost-ui.js?v=native-scroll-v3"></script>
   <script src="/static/app-generate-qr.js?v=native-scroll-v3"></script>
-  <script src="/static/malicious-database.js?v=malicious-db-v3" defer></script>
+  <script src="/static/malicious-database.js?v=ui-spacing-v2" defer></script>
 </body>
 </html>

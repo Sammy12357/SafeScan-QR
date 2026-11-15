@@ -6,7 +6,7 @@ The values and names are shared by dark and light themes.
 
 | Token | Value | Use |
 | --- | ---: | --- |
-| `--space-0` | `0` | No space or flush edges |
+| `--space-0` | `0px` | No space or flush edges; a length so it works in negative `calc()` offsets |
 | `--space-1` | `2px` | Fine alignment inside small controls |
 | `--space-2` | `4px` | Tight icon and text gaps |
 | `--space-3` | `8px` | Inline gaps and compact rows |
@@ -36,8 +36,9 @@ unusual layout, use the nearest numbered token and note why a semantic alias
 does not fit. Admin pages use the same numbered scale and may set tighter
 aliases within their own scope.
 
-Phase 1 only declares tokens. Existing declarations keep their current values,
-so this phase has no intended visual change. Phase 2 will migrate `padding`,
-`margin`, `gap`, `row-gap`, `column-gap`, and `inset`, with screenshot comparison
-at phone, tablet, and desktop widths in both themes. Borders, outlines, font
-sizes, and fixed component dimensions are outside the spacing rule.
+Phase 2 migrated `padding`, `margin`, `gap`, `row-gap`, `column-gap`, and `inset`
+in the site and admin styles. Page-specific styles now live in static stylesheets.
+The spacing test enforces tokens in these properties, with a documented exception
+for the scanner's viewport-based full-bleed offset. Borders, outlines, font sizes,
+and fixed component dimensions are outside the spacing rule. The [visual review](spacing-review/README.md)
+compares phone, tablet, and desktop screenshots in both themes.

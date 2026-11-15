@@ -1,0 +1,26 @@
+/* Page-specific styles for profile.html. Loaded after styles.css. */
+body { margin: var(--space-0); background: var(--bg); color: var(--text); font-family: var(--body-font); }
+.profile-shell { width: min(980px, calc(100% - 32px)); margin: var(--space-0) auto; padding: var(--space-10) var(--space-0) calc(var(--space-11) + var(--space-5)); }
+.profile-back { display: inline-flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-8); color: var(--muted); text-decoration: none; }
+.profile-back:hover { color: var(--text); }
+.profile-layout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-6); align-items: start; }
+.profile-card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: var(--shadow); padding: var(--pad-card); }
+.profile-card h1, .profile-card h2 { margin: var(--space-0) var(--space-0) var(--space-3); }
+.profile-muted { margin: var(--space-0) var(--space-0) var(--space-6); color: var(--muted); line-height: 1.55; overflow-wrap: anywhere; }
+.profile-form { display: grid; gap: var(--space-4); margin-top: var(--space-6); }
+.profile-form label { display: grid; gap: var(--space-3); font-weight: 800; }
+.profile-form input { width: 100%; padding: var(--pad-control-y) var(--pad-control-x); border-radius: 8px; border: 1px solid var(--line); background: var(--panel-strong); color: var(--text); font: inherit; }
+.profile-link-list { display: grid; gap: var(--space-3); margin-top: var(--space-5); }
+.profile-link-list a { display: grid; place-items: center; min-height: 44px; padding: var(--space-0) var(--space-4); border-radius: 8px; border: 1px solid var(--line); color: var(--text); text-decoration: none; background: var(--panel-strong); font-weight: 800; }
+.profile-link-list a:hover { border-color: color-mix(in srgb, var(--accent) 42%, transparent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.profile-menu-actions { display: grid; gap: var(--space-3); margin-top: var(--space-6); padding-top: var(--space-5); border-top: 1px solid var(--line); }
+.profile-menu-actions .profile-button,
+.profile-menu-actions .admin-dashboard-button,
+.profile-menu-actions .sign-out-button { width: 100%; min-height: 44px; justify-content: center; border-radius: 8px; }
+.profile-menu-actions .sign-out-form { width: 100%; }
+.error-text { color: var(--danger); font-weight: 800; }
+.success-text { color: var(--safe); font-weight: 800; }
+@media (max-width: 760px) {
+  .profile-layout { grid-template-columns: 1fr; }
+  .profile-shell { width: min(100% - 20px, 980px); padding-top: var(--space-8); }
+}

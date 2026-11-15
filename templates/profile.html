@@ -7,34 +7,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <title>Profile | SafeScan QR</title>
-  <link rel="stylesheet" href="/static/styles.css?v=ui-spacing-v1">
-  <style>
-    body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--body-font); }
-    .profile-shell { width: min(980px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 80px; }
-    .profile-back { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 28px; color: var(--muted); text-decoration: none; }
-    .profile-back:hover { color: var(--text); }
-    .profile-layout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
-    .profile-card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: var(--shadow); padding: 24px; }
-    .profile-card h1, .profile-card h2 { margin: 0 0 10px; }
-    .profile-muted { margin: 0 0 18px; color: var(--muted); line-height: 1.55; overflow-wrap: anywhere; }
-    .profile-form { display: grid; gap: 12px; margin-top: 18px; }
-    .profile-form label { display: grid; gap: 8px; font-weight: 800; }
-    .profile-form input { width: 100%; padding: 14px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-strong); color: var(--text); font: inherit; }
-    .profile-link-list { display: grid; gap: 10px; margin-top: 16px; }
-    .profile-link-list a { display: grid; place-items: center; min-height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--line); color: var(--text); text-decoration: none; background: var(--panel-strong); font-weight: 800; }
-    .profile-link-list a:hover { border-color: color-mix(in srgb, var(--accent) 42%, transparent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
-    .profile-menu-actions { display: grid; gap: 10px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
-    .profile-menu-actions .profile-button,
-    .profile-menu-actions .admin-dashboard-button,
-    .profile-menu-actions .sign-out-button { width: 100%; min-height: 44px; justify-content: center; border-radius: 8px; }
-    .profile-menu-actions .sign-out-form { width: 100%; }
-    .error-text { color: var(--danger); font-weight: 800; }
-    .success-text { color: var(--safe); font-weight: 800; }
-    @media (max-width: 760px) {
-      .profile-layout { grid-template-columns: 1fr; }
-      .profile-shell { width: min(100% - 20px, 980px); padding-top: 28px; }
-    }
-  </style>
+  <link rel="stylesheet" href="/static/styles.css?v=ui-spacing-v2">
+  <link rel="stylesheet" href="/static/styles-profile.css?v=ui-spacing-v2">
 </head>
 <body>
   <div class="profile-shell">
