@@ -10,10 +10,11 @@ from threading import Lock
 import time
 
 from fastapi import Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import Response
 
 from .app_module import qr_app
 from .config import SCANNER_CAPTURE_SECONDS, SCANNER_EVENTS, SCANNER_GUIDANCE
+from .errors import error_response
 
 
 MAX_BODY_BYTES = 512
@@ -61,14 +62,14 @@ def _admit_count():
 @qr_app.post("/api/telemetry/scan", include_in_schema=False)
 async def scanner_telemetry(request: Request):
     if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
-        return JSONResponse({"error": "Expected JSON."}, status_code=415)
+        return error_response(request, 415, message="Expected JSON.")
     declared = request.headers.get("content-length")
     if declared:
         try:
             if int(declared) < 0 or int(declared) > MAX_BODY_BYTES:
-                return JSONResponse({"error": "Event is too large."}, status_code=413)
+                return error_response(request, 413, message="Event is too large.")
         except ValueError:
-            return JSONResponse({"error": "Invalid content length."}, status_code=400)
+            return error_response(request, 400, message="Invalid content length.")
 
     received = bytearray()
     try:
@@ -76,17 +77,17 @@ async def scanner_telemetry(request: Request):
             async for chunk in request.stream():
                 received.extend(chunk)
                 if len(received) > MAX_BODY_BYTES:
-                    return JSONResponse({"error": "Event is too large."}, status_code=413)
+                    return error_response(request, 413, message="Event is too large.")
     except TimeoutError:
-        return JSONResponse({"error": "Event timed out."}, status_code=408)
+        return error_response(request, 408, message="Event timed out.")
     try:
         event = json.loads(received)
     except (UnicodeDecodeError, json.JSONDecodeError):
-        return JSONResponse({"error": "Invalid event."}, status_code=400)
+        return error_response(request, 400, message="Invalid event.")
     if not _valid_event(event):
-        return JSONResponse({"error": "Invalid event."}, status_code=400)
+        return error_response(request, 400, message="Invalid event.")
     if not _admit_count():
-        return JSONResponse({"error": "Telemetry is busy."}, status_code=429, headers={"Retry-After": "60"})
+        return error_response(request, 429, message="Telemetry is busy.", headers={"Retry-After": "60"})
 
     SCANNER_EVENTS.labels(engine=event["engine"], stage=event["stage"], outcome=event["outcome"]).inc()
     SCANNER_CAPTURE_SECONDS.labels(stage=event["stage"]).observe(event["ms"] / 1000)

@@ -1,0 +1,8 @@
+{% extends "errors/_base.html" %}
+{% block page_title %}Access unavailable{% endblock %}
+{% block heading %}You don't have access to this page{% endblock %}
+{% block description %}{% if logged_in %}This area needs a different account or permission.{% else %}Sign in to continue.{% endif %}{% endblock %}
+{% block actions %}
+  {% if not logged_in %}<a class="primary-button" href="/login">Sign in</a>{% endif %}
+  <a class="secondary-button" href="/">Go home</a>
+{% endblock %}

@@ -58,9 +58,12 @@ from .request_helpers import request_ip
 # ERRORS, AUDIT LOGGING & METADATA HELPERS
 # =============================================================================
 class SafeScanError(Exception):
-    def __init__(self, message, status_code=400):
+    def __init__(self, message, status_code=400, *, code=None, hint=None, field=None):
         super().__init__(message)
         self.status_code = status_code
+        self.code = code
+        self.hint = hint
+        self.field = field
 
 def now_iso():
     return datetime.utcnow().isoformat() + "Z"
