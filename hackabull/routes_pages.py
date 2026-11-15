@@ -267,7 +267,7 @@ def _waitlist_page(request: Request, *, email: str = "", error: str = "", joined
         body = "<h2>You're on the list</h2><p>Thanks for joining the SafeScan QR waitlist. We'll send only major product updates.</p><p><a href='/'>Return to SafeScan QR</a></p>"
     else:
         value = escape_html(email, quote=True)
-        error_markup = f"<p class='form-field-error' id='waitlist-email-error' role='alert'>{escape_html(error)}</p>" if error else ""
+        error_markup = f"<p class='form-field-error' id='waitlist-email-error' role='alert' data-server-error-focus>{escape_html(error)}</p>" if error else ""
         invalid = " aria-invalid='true' aria-describedby='waitlist-email-error'" if error else ""
         body = (
             "<h2>Join the waitlist</h2><p>Get an email when SafeScan ships major updates.</p>"

@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="/static/styles-login.css?v=ui-spacing-v2">
   {% if not local_auth_enabled %}<script src="https://accounts.google.com/gsi/client" async defer></script>{% endif %}
   <script src="/static/auth.js?v=google-clean-v1" defer></script>
+  <script src="/static/server-error-focus.js?v=form-error-focus-v1" defer></script>
 </head>
 <body data-init-error="{{ error }}" data-init-tab="{{ tab if tab else 'login' }}">
   {% set active_tab = tab if tab in ['login', 'register'] else 'login' %}
@@ -28,7 +29,7 @@
         <button class="auth-tab {{ 'active' if active_tab == 'register' else '' }}" data-for="register" type="button">Create account</button>
       </div>
 
-      <div class="auth-error {{ 'visible' if error else '' }}" id="authError" role="alert">{{ error }}</div>
+      <div class="auth-error {{ 'visible' if error else '' }}" id="authError" role="alert" {% if error %}data-server-error-focus{% endif %}>{{ error }}</div>
 
       <!-- Sign in panel -->
       <div data-panel="login" class="{{ 'active' if active_tab == 'login' else '' }}">

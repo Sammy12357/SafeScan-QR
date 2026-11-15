@@ -8,6 +8,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <script src="/static/ui-states.js?v=ui-loading-v1"></script>
+  <script src="/static/server-error-focus.js?v=form-error-focus-v1" defer></script>
   <title>Profile | SafeScan QR</title>
   <link rel="stylesheet" href="/static/styles.css?v=ui-a11y-v2">
   <link rel="stylesheet" href="/static/styles-profile.css?v=ui-spacing-v2">
@@ -20,14 +21,14 @@
         <p class="eyebrow">SafeScan QR</p>
         <h1>Your Profile</h1>
         <p class="profile-muted">{{ email }}</p>
-        {% if error and entered_username is not defined %}<div class="profile-notice" role="alert">{{ error }}</div>{% endif %}
+        {% if error and entered_username is not defined %}<div class="profile-notice" role="alert" data-server-error-focus>{{ error }}</div>{% endif %}
 
         {% if username %}
           <p class="success-text">Username set: {{ username }}</p>
           <p class="profile-muted">Your username appears on the leaderboard instead of your email.</p>
         {% else %}
           {{ empty_state(icon='info', title='No public username yet', body='Choose a name for the leaderboard without showing your email.', action_label='Choose a username', action_href='#usernameForm', compact=true) }}
-          {% if error and entered_username is defined %}<p class="error-text" role="alert">{{ error }}</p>{% endif %}
+          {% if error and entered_username is defined %}<p class="error-text" role="alert" data-server-error-focus>{{ error }}</p>{% endif %}
           <form id="usernameForm" action="/profile/username" method="post" class="profile-form">
             <label>
               Username
@@ -43,7 +44,7 @@
       <section class="profile-card">
         <p class="eyebrow">Community</p>
         <h2>Discord</h2>
-        {% if discord_error %}<div class="profile-notice" role="alert">{{ discord_error }}</div>{% endif %}
+        {% if discord_error %}<div class="profile-notice" role="alert" data-server-error-focus>{{ discord_error }}</div>{% endif %}
         {% if discord_link %}
           <p class="success-text">Linked: @{{ discord_link.discord_username or discord_link.discord_id }}</p>
           <p class="profile-muted">
