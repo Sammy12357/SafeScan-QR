@@ -1,6 +1,7 @@
 """The state gallery and mock fixtures must never surface in production."""
 
 import importlib
+import html
 import sys
 
 import pytest
@@ -48,3 +49,45 @@ def test_mock_state_query_does_not_change_production_home(state_app):
     injected = client.get("/?__state=error")
     assert regular.status_code == injected.status_code == 200
     assert regular.text == injected.text
+
+
+def test_mock_gallery_fixture_switch_is_allowlisted(state_app):
+    client, mock = state_app
+    fixtures = {
+        "empty": ("No scans yet", "Scan history didn't load"),
+        "first-use": ("No scans yet", "No results for"),
+        "no-results": ("No results for", "No scans yet"),
+        "no-access": ("Sign in to see your history", "No scans yet"),
+        "loading": ("Loading scan history", "No scans yet"),
+        "loading-compact": ("Checking the QR code", "Loading scan history"),
+        "error": ("Scan history didn't load", "No scans yet"),
+        "offline": ("You're offline", "Scan history didn't load"),
+        "notice": ("Your preference was saved", "No scans yet"),
+        "info": ("Your scan is ready to review", "Your preference was saved"),
+        "success": ("Your preference was saved", "Your scan is ready to review"),
+        "warning": ("We could not verify this destination", "Your preference was saved"),
+        "danger": ("We could not complete that request", "Your preference was saved"),
+        "content": ("Example content loaded", "No scans yet"),
+    }
+    for state, (present, absent) in fixtures.items():
+        response = client.get(f"/__states?__state={state}", headers={"Accept": "text/html"})
+        if mock:
+            assert response.status_code == 200, state
+            rendered = html.unescape(response.text)
+            assert present in rendered, state
+            assert absent not in rendered, state
+        else:
+            assert response.status_code == 404, state
+            assert present not in response.text, state
+
+    all_states = client.get("/__states", headers={"Accept": "text/html"})
+    if mock:
+        assert all_states.status_code == 200
+        assert "JavaScript states" in all_states.text
+        assert "No scans yet" in all_states.text
+    else:
+        assert all_states.status_code == 404
+
+    invalid = client.get("/__states?__state=%3Cscript%3Ebad%3C/script%3E", headers={"Accept": "text/html"})
+    assert invalid.status_code == 404
+    assert "<script>bad</script>" not in invalid.text

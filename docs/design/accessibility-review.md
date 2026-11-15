@@ -20,3 +20,20 @@ The before and after captures use the isolated mock server, synthetic accounts, 
 - Calculated contrast is 7.55:1 for dark footer labels, 5.15:1 for the dark focus ring against a panel, 6.32:1 for the light focus ring against white, and 5.60:1 for the light active admin badge.
 
 These checks use headless Chromium and synthetic local data. The merged camera and navigation behavior should also be checked with VoiceOver in iPhone Safari before a release claim about screen-reader support.
+
+## Mock state fixtures
+
+The mock-only `/__states?__state=` switch renders allowlisted synthetic empty, loading, error, notice, and content samples without using request text in the page. The screenshot harness captured all five groups at each width and theme below. The route is 404 outside `MOCK_MODE`; the production home page ignores the query parameter.
+
+Headless Chromium returned HTTP 200 for all 30 fixture views, and axe found zero WCAG 2, 2.1, or 2.2 A/AA violations in those 30 renders.
+
+| Theme and width | Empty | Loading | Error | Notice | Content |
+| --- | --- | --- | --- | --- | --- |
+| Dark 375 | [View](screenshots/ui-phase-8/fixtures/dark/375/states_empty.jpg) | [View](screenshots/ui-phase-8/fixtures/dark/375/states_loading.jpg) | [View](screenshots/ui-phase-8/fixtures/dark/375/states_error.jpg) | [View](screenshots/ui-phase-8/fixtures/dark/375/states_notice.jpg) | [View](screenshots/ui-phase-8/fixtures/dark/375/states_content.jpg) |
+| Dark 768 | [View](screenshots/ui-phase-8/fixtures/dark/768/states_empty.jpg) | [View](screenshots/ui-phase-8/fixtures/dark/768/states_loading.jpg) | [View](screenshots/ui-phase-8/fixtures/dark/768/states_error.jpg) | [View](screenshots/ui-phase-8/fixtures/dark/768/states_notice.jpg) | [View](screenshots/ui-phase-8/fixtures/dark/768/states_content.jpg) |
+| Dark 1440 | [View](screenshots/ui-phase-8/fixtures/dark/1440/states_empty.jpg) | [View](screenshots/ui-phase-8/fixtures/dark/1440/states_loading.jpg) | [View](screenshots/ui-phase-8/fixtures/dark/1440/states_error.jpg) | [View](screenshots/ui-phase-8/fixtures/dark/1440/states_notice.jpg) | [View](screenshots/ui-phase-8/fixtures/dark/1440/states_content.jpg) |
+| Light 375 | [View](screenshots/ui-phase-8/fixtures/light/375/states_empty.jpg) | [View](screenshots/ui-phase-8/fixtures/light/375/states_loading.jpg) | [View](screenshots/ui-phase-8/fixtures/light/375/states_error.jpg) | [View](screenshots/ui-phase-8/fixtures/light/375/states_notice.jpg) | [View](screenshots/ui-phase-8/fixtures/light/375/states_content.jpg) |
+| Light 768 | [View](screenshots/ui-phase-8/fixtures/light/768/states_empty.jpg) | [View](screenshots/ui-phase-8/fixtures/light/768/states_loading.jpg) | [View](screenshots/ui-phase-8/fixtures/light/768/states_error.jpg) | [View](screenshots/ui-phase-8/fixtures/light/768/states_notice.jpg) | [View](screenshots/ui-phase-8/fixtures/light/768/states_content.jpg) |
+| Light 1440 | [View](screenshots/ui-phase-8/fixtures/light/1440/states_empty.jpg) | [View](screenshots/ui-phase-8/fixtures/light/1440/states_loading.jpg) | [View](screenshots/ui-phase-8/fixtures/light/1440/states_error.jpg) | [View](screenshots/ui-phase-8/fixtures/light/1440/states_notice.jpg) | [View](screenshots/ui-phase-8/fixtures/light/1440/states_content.jpg) |
+
+The current fixtures cover shared component states. Page-specific transitions across the [state inventory](state-inventory.md), slow-network behavior, and iPhone VoiceOver remain to be checked after the later phase branches are integrated.
