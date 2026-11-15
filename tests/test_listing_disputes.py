@@ -160,6 +160,7 @@ def test_user_report_alone_cannot_publish_and_admin_must_record_evidence(listing
                          "observation": "Administrator independently observed a credential collection prompt."}]
     feed = client.get("/api/malicious-qr")
     assert feed.json()["entries"][0]["evidenceSource"] == "SafeScan administrator review"
+    assert feed.json()["entries"][0]["observedAt"] == rows(db_path, "SELECT observed_at FROM listing_evidence")[0]["observed_at"]
     assert "reporter@example.net" not in feed.text
     assert "PRIVATE" not in feed.text
 

@@ -69,8 +69,8 @@ def get_malicious_qr_codes(page: int = 1, limit: int = 20, query: str = "") -> d
     with get_conn() as conn:
         conn.row_factory = sqlite3.Row
         evidence = {
-            row["block_id"]: row["source"] for row in conn.execute(
-                "SELECT block_id, source FROM listing_evidence ORDER BY observed_at"
+            row["block_id"]: dict(row) for row in conn.execute(
+                "SELECT block_id, source, observed_at FROM listing_evidence ORDER BY observed_at"
             )
         }
         under_review = {
@@ -98,8 +98,9 @@ def get_malicious_qr_codes(page: int = 1, limit: int = 20, query: str = "") -> d
             entry["reports"] += 1
             if row["created_at"] >= entry["lastReportedAt"]:
                 entry["lastReportedAt"] = row["created_at"]
-                entry["observedAt"] = row["created_at"]
-                source = evidence.get(row["id"])
+                review = evidence.get(row["id"])
+                entry["observedAt"] = review["observed_at"] if review else row["created_at"]
+                source = review["source"] if review else None
                 if source in {"admin_review", "safescan_analysis"}:
                     entry["category"] = "Reviewed QR URL observation"
                 entry["evidenceSource"] = {
@@ -109,7 +110,7 @@ def get_malicious_qr_codes(page: int = 1, limit: int = 20, query: str = "") -> d
 
     ordered = sorted(domains.values(), key=lambda entry: (entry["lastReportedAt"], entry["domain"]), reverse=True)
     total_reports = sum(entry["reports"] for entry in ordered)
-    last_updated = ordered[0]["lastReportedAt"] if ordered else None
+    last_updated = max((entry["observedAt"] for entry in ordered), default=None)
     if search:
         ordered = [entry for entry in ordered if search in entry["domain"]]
     total = len(ordered)

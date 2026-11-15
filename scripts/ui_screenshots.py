@@ -46,6 +46,7 @@ class View:
     audience: str = "guest"  # guest, member, owner
     final_path: str | None = None
     consent_prompt: bool = False
+    route_template: str | None = None  # For a seeded dynamic route in audits.
 
 
 # Distinct current page views and route variants. Secret-bearing POST responses,

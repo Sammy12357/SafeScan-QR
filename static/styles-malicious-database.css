@@ -42,6 +42,9 @@ body { background: var(--bg); color: var(--text); font-family: var(--body-font);
 .cat-critical { background: rgba(220,38,38,0.16); color: #ff8a93; border: 1px solid rgba(220,38,38,0.45); }
 .cat-malicious { background: rgba(255,110,127,0.12); color: var(--danger); border: 1px solid rgba(255,110,127,0.3); }
 .cat-suspicious { background: rgba(245,158,11,0.12); color: var(--warn); border: 1px solid rgba(245,158,11,0.3); }
+:root[data-theme="light"] .cat-critical,
+:root[data-theme="light"] .cat-malicious { color: #941b2b; }
+:root[data-theme="light"] .cat-suspicious { color: #744500; }
 .mq-review-badge { margin-left: var(--space-2); background: rgba(110,130,150,0.14); color: var(--text); border: 1px solid var(--line); }
 .mq-url {
   color: var(--text); word-break: break-all; font-size: 0.85rem; font-family: "SFMono-Regular",Consolas,monospace;
