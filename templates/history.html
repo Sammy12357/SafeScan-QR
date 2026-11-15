@@ -9,7 +9,7 @@
   <script src="/static/ui-states.js?v=ui-loading-v1"></script>
   <title>Scan History | SafeScan QR</title>
   <link rel="stylesheet" href="/static/styles.css?v=ui-a11y-v2">
-  <link rel="stylesheet" href="/static/styles-history.css?v=ui-spacing-v2">
+  <link rel="stylesheet" href="/static/styles-history.css?v=host-safety-v1">
 </head>
 <body>
   <div class="history-shell">
@@ -35,7 +35,12 @@
             {% set classification = (scan.classification or 'UNKNOWN') | upper %}
             {% set badge = 'badge-safe' if classification == 'SAFE' else ('badge-caution' if classification == 'CAUTION' else 'badge-danger') %}
             <div class="history-card">
-              <a class="history-url" href="{{ scan.url }}" target="_blank" rel="noopener noreferrer">{{ scan.url }}</a>
+              {% set can_open = classification == 'SAFE' and scan.url and (scan.url.startswith('https://') or scan.url.startswith('http://')) %}
+              {% if can_open %}<a class="history-url" href="{{ scan.url }}" target="_blank" rel="noopener noreferrer">{{ scan.url }}</a>
+              {% else %}<span class="history-url history-url-text">{{ scan.url }}</span>{% endif %}
+              {% if scan.hostForms and scan.hostForms.unicode != scan.hostForms.ascii %}
+              <div class="history-host-identity">Unicode host: {{ scan.hostForms.unicode }}<br>ASCII (punycode): {{ scan.hostForms.ascii }}</div>
+              {% endif %}
               <div class="history-meta">Risk score: {{ scan.risk_score or 0 }}/100 &middot; {{ scan.created_at[:16].replace('T', ' ') if scan.created_at else 'Unknown' }}</div>
               <span class="history-badge {{ badge }}">{{ scan.classificationLabel or classification }}</span>
             </div>

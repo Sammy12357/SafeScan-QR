@@ -101,6 +101,43 @@ def test_non_url_payload_is_shown_exactly_and_cannot_be_reported_as_url():
     assert "&lt;script&gt;alert(1)&lt;/script&gt;\nT:WPA;;" in html
 
 
+def test_internationalized_hostname_shows_both_non_clickable_forms():
+    html, elements = render_result(
+        "MALICIOUS", "high", "URL", "https://xn--pple-43d.com/login",
+        host_forms={"unicode": "аpple.com", "ascii": "xn--pple-43d.com"},
+    )
+
+    assert "hostIdentityBox" in elements
+    box = html.split('id="hostIdentityBox"', 1)[1].split("</div>", 1)[0]
+    assert "аpple.com" in box
+    assert "xn--pple-43d.com" in box
+    assert "href=" not in box
+
+
+def test_host_identity_box_only_appears_for_different_url_host_forms():
+    _, ascii_elements = render_result(
+        "CAUTION", "suspicious", "URL", "https://paypal.com.evil.net/",
+        host_forms={"unicode": "paypal.com.evil.net", "ascii": "paypal.com.evil.net"},
+    )
+    _, private_elements = render_result(
+        "CAUTION", "suspicious", "Wi-Fi", "WIFI:S:Cafe;;",
+        host_forms={"unicode": "аpple.com", "ascii": "xn--pple-43d.com"},
+    )
+
+    assert "hostIdentityBox" not in ascii_elements
+    assert "hostIdentityBox" not in private_elements
+
+
+def test_host_identity_text_is_escaped():
+    html, _ = render_result(
+        "CAUTION", "suspicious", "URL", "https://example.com/",
+        host_forms={"unicode": "<script>alert(1)</script>", "ascii": "xn--example.com"},
+    )
+
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+    assert "<script>alert(1)</script>" not in html
+
+
 def test_manual_entry_accepts_qr_payload_text():
     _, elements = render_result("CAUTION", "suspicious", "Wi-Fi", "WIFI:S:Cafe;;")
 

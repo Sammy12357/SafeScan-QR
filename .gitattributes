@@ -1,0 +1,2 @@
+# Preserve Unicode's pinned upstream data byte-for-byte, including its spacing.
+hackabull/data/confusables-18.0.0.txt -whitespace

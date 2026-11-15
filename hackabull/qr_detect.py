@@ -51,6 +51,7 @@ from safescan_allowlist import should_short_circuit, registrable_domain as allow
 import safescan_model_calibration as sm_calibration
 from .config import ML_SIGNAL_VISIBLE
 from .lowlevel import normalize_url
+from .homograph import check_url_deception_signals
 from .pipeline import analyze_full_pipeline
 from .pipeline import is_url_like
 from .qr_image import blend_ml_score
@@ -127,10 +128,15 @@ def local_embedded_url_risk(url):
         address = None
     if host == "localhost" or host.endswith(".local") or (address and not address.is_global):
         return 80, risk_reason("Internal embedded link", "high", "An embedded link points at a local or non-public address.")
+    deception = check_url_deception_signals(url)
+    high_deception = next((item for item in deception if item["severity"] == "high"), None)
+    if high_deception:
+        return 85, risk_reason(high_deception["check"], "high", high_deception["detail"])
     if any(marker in url.lower() for marker in ("drain", "seed", "recovery", "password", "sign-message", "permit")):
         return 70, risk_reason("Sensitive embedded link wording", "high", "An embedded link contains wallet-drain or credential-related wording.")
-    if "xn--" in host:
-        return 65, risk_reason("Encoded embedded domain", "medium", "An embedded link uses an internationalized domain encoding that should be reviewed.")
+    if deception:
+        finding = deception[0]
+        return 55, risk_reason(finding["check"], finding["severity"], finding["detail"])
     if parsed.scheme != "https":
         return 55, risk_reason("Non-HTTPS embedded link", "medium", "An embedded link does not use HTTPS.")
     return 45, risk_reason("Embedded link not fetched", "medium", "A URL-shaped value was found, but its destination was not contacted because this QR may contain private data.")

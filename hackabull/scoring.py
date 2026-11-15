@@ -76,6 +76,7 @@ def score_from_signals(signals):
     score = min(80, high_count * 40) + medium_count * 15 + low_count * 5
     malicious_signal_checks = {
         "Brand Impersonation",
+        "Hidden Direction Control",
         "Google Safe Browsing",
         "Google Web Risk",
         "PhishTank",
@@ -92,6 +93,9 @@ def score_from_signals(signals):
     )
     if has_malicious_signal:
         score = max(score, 85)
+    if any(item.get("check") in {"Mixed Script Host", "Invisible Character"}
+           and item.get("severity") == "medium" for item in signals):
+        score = max(score, 40)
     if high_count >= 2 and medium_count >= 1:
         score = max(score, 90)
     elif high_count == 1 and medium_count >= 2:

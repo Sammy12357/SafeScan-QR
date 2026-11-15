@@ -64,6 +64,7 @@ from .errors import error_response
 from .history import group_scan_history
 from .history import index_user_context
 from .history import serialize_scan_history_row
+from .homograph import host_forms
 from .leaderboard import get_global_leaderboard
 from .legal import legal_context
 from .malicious_db import get_malicious_qr_codes
@@ -82,6 +83,8 @@ async def history_page(request: Request):
             rows = user_scoped_select(conn, "scan_history")
             rows = sorted(rows, key=lambda row: row["created_at"] or "", reverse=True)[:100]
             scans = [serialize_scan_history_row(row) for row in rows]
+            for scan in scans:
+                scan["hostForms"] = host_forms(scan["url"])
             scan_groups = group_scan_history(scans)
     return templates.TemplateResponse("history.html", {"request": request, "email": email, "scans": scans, "scan_groups": scan_groups})
 

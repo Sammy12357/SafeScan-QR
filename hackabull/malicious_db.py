@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 import tldextract
 
 from db import get_conn
+from .idna_hosts import canonical_ascii_host
 
 
 _EXTRACT_DOMAIN = tldextract.TLDExtract(
@@ -28,7 +29,7 @@ def _public_domain(value: str) -> str:
         parsed = urlsplit((value or "").strip())
         if parsed.scheme.lower() not in {"http", "https"}:
             return ""
-        host = (parsed.hostname or "").rstrip(".").encode("idna").decode("ascii").lower()
+        host = canonical_ascii_host(parsed.hostname or "")
         if not host or len(host) > 253 or any(len(label) > 63 for label in host.split(".")):
             return ""
         if not all(label and label[0].isalnum() and label[-1].isalnum() and

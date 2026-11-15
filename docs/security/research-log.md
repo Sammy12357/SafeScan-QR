@@ -1,5 +1,16 @@
 # Security research log
 
+## 2026-11-15 — QR lookalike-domain detection
+
+| Primary source | Finding | SafeScan decision |
+| --- | --- | --- |
+| [Unicode UTS #39, confusable detection](https://www.unicode.org/reports/tr39/tr39-34.html#Confusable_Detection) and [Unicode 18 confusables data](https://www.unicode.org/Public/18.0.0/security/confusables.txt) | Visual similarity is wider than edit distance: cross-script letters and ASCII sequences can have the same confusable skeleton. Broad comparisons against every domain can produce false positives. | Pin the Unicode 18 table (SHA-256 `6ed3ee967c9dfdf6677d563c9985182fbc50a2efb7d6059cd57b2e2ce18f5b92`) and compare registrable labels only against selected protected brands. Warn separately about mixed Latin/Cyrillic or Greek scripts and invisible controls. This is a targeted LTR brand check, not a claim of full UTS #39 identifier-profile or whole-script classification. |
+| [Unicode License v3](https://www.unicode.org/license.txt) | Commercial redistribution is allowed with the copyright and permission notice retained. | Ship the upstream notice beside the vendored data. |
+| [Python IDNA codec docs](https://docs.python.org/3/library/codecs.html#encodings-idna) and [the `idna` project's documentation](https://github.com/kjd/idna/blob/master/README.md) | Python's built-in IDNA codec is IDNA 2003; the pinned `idna` package implements IDNA 2008 and UTS #46. The detector and outbound fetch must resolve the same A-label. | Use one `canonical_ascii_host` helper for URL validation, pinned-address fetching, local feed matching, and public threat-domain extraction. Keep the raw QR host's case for visual checks such as `paypaI.com`. |
+| [Chromium IDN display policy](https://chromium.googlesource.com/chromium/src/+/HEAD/docs/idn.md) | Browsers may show Unicode or punycode depending on spoof rules. | Show both forms as plain text in the scan result when they differ. Never use the displayed Unicode string as a link target. |
+
+This phase does not inspect account display names. Those surfaces belong to the deferred identity work. The corpus under `tests/qr_corpus/edge_cases/url_threat_payloads.json` covers deceptive and ordinary internationalized hosts.
+
 ## 2026-11-14 — Phase 1: dependencies and CI
 
 This entry records the supply-chain research used for the Phase 1 PR. The remaining security-plan phases need their own research and review before implementation.

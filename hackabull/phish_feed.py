@@ -20,6 +20,7 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 import requests
 
 from db import database_path
+from .idna_hosts import canonical_ascii_host
 from .scoring import signal
 
 
@@ -58,7 +59,7 @@ def canonical_feed_url(value):
     try:
         parsed = urlsplit(value.strip())
         scheme = parsed.scheme.lower()
-        host = (parsed.hostname or "").encode("idna").decode("ascii").lower().rstrip(".")
+        host = canonical_ascii_host(parsed.hostname or "")
         port = parsed.port
     except (UnicodeError, ValueError):
         return None

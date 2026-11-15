@@ -29,6 +29,7 @@ from fastapi.staticfiles import StaticFiles
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 import os
+import idna
 from dotenv import load_dotenv
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
@@ -55,6 +56,7 @@ from .audit import now_iso
 from .errors import error_response
 from .config import RATE_LIMITS
 from .lowlevel import normalize_url
+from .idna_hosts import canonical_ascii_host
 from .request_helpers import make_id
 from .request_helpers import request_ip
 import certifi
@@ -133,8 +135,8 @@ def validate_public_url(target_url):
     if username is not None or password is not None:
         raise SafeScanError(code="url_credentials", field="url")
     try:
-        ascii_host = hostname.rstrip(".").encode("idna").decode("ascii")
-    except UnicodeError:
+        ascii_host = canonical_ascii_host(hostname)
+    except (idna.IDNAError, UnicodeError):
         raise SafeScanError(code="url_invalid", field="url") from None
     if is_private_hostname(ascii_host):
         raise SafeScanError(code="url_private", field="url")
@@ -171,8 +173,8 @@ def _fetch_pinned_url(target_url, timeout):
     parsed = urlparse(target_url)
     hostname = parsed.hostname or ""
     try:
-        ascii_host = hostname.rstrip(".").encode("idna").decode("ascii")
-    except UnicodeError:
+        ascii_host = canonical_ascii_host(hostname)
+    except (idna.IDNAError, UnicodeError):
         raise SafeScanError(code="url_invalid", field="url") from None
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
     pinned_ip = _public_address_for_connection(ascii_host, port)
