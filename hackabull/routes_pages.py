@@ -47,6 +47,7 @@ from storage import download_file as storage_download_file
 from storage import object_key as storage_object_key
 from storage import upload_bytes as storage_upload_bytes
 from removals.registry import load_brokers
+from removals.regions import US_STATES
 
 from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party
 import safescan_model_calibration as sm_calibration
@@ -138,6 +139,9 @@ async def go_ghost_page(request: Request):
         "email": user["email"] if user else "",
         "go_ghost_brokers": load_brokers(),
         "go_ghost_account_id": account_id,
+        "go_ghost_account_name": (user.get("display_name") or "") if user else "",
+        "go_ghost_account_email": (user.get("email") or "") if user else "",
+        "go_ghost_us_states": US_STATES,
         "browser_automation_available": GO_GHOST_BROWSER_AUTOMATION_AVAILABLE,
         "version": LEGAL_VERSION,
         **index_user_context(user),

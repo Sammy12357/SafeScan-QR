@@ -39,7 +39,9 @@ function storage(map, blockedDeletes = new Set()) {
   };
 }
 
-function page(accountId, local, session, {automation = false, legacyEraseBlocked = false} = {}) {
+function page(accountId, local, session, {
+  automation = false, accountName = '', accountEmail = '', legacyEraseBlocked = false
+} = {}) {
   const ids = [
     'goGhostWorkspace', 'goGhostConsentModal', 'goGhostSessionNotice', 'goGhostLegacyNotice',
     'goGhostLegacyActions', 'eraseGhostLegacyButton',
@@ -49,8 +51,11 @@ function page(accountId, local, session, {automation = false, legacyEraseBlocked
     'goGhostScopeSearchButton', 'goGhostScopeOptOutButton', 'goGhostScopeCopyButton',
     'goGhostScopeNoMatchButton', 'goGhostScopeSubmittedButton', 'goGhostScopeRemovedButton',
     'goGhostScopeResetButton', 'goGhostScopeFinishButton', 'openNextGhostBrokerButton',
-    'ghostProgressCount', 'ghostNameInput', 'ghostLocationInput', 'ghostAddressInput',
-    'ghostPhoneInput', 'ghostEmailInput', 'goGhostDeviceNotice', 'ghostSubjectSelect',
+    'ghostProgressCount', 'ghostFirstNameInput', 'ghostMiddleNameInput', 'ghostLastNameInput',
+    'ghostCityInput', 'ghostStateInput', 'ghostBirthYearInput', 'ghostAddressInput',
+    'ghostPhoneInput', 'ghostEmailInput', 'ghostPreviousCitiesInput', 'ghostOtherNamesInput',
+    'ghostProfileReviewNotice', 'ghostSavedProfileHint', 'ghostAccountNameHint',
+    'goGhostDeviceNotice', 'ghostSubjectSelect',
     'addGhostFamilyButton', 'removeGhostSubjectButton', 'ghostFamilyAttestationLabel',
     'ghostFamilyAttestationInput'
   ];
@@ -59,10 +64,13 @@ function page(accountId, local, session, {automation = false, legacyEraseBlocked
   elements.goGhostBrokerRegistry.textContent = fs.readFileSync('data/go_ghost/brokers.json', 'utf8');
   elements.goGhostWorkspace.hidden = true;
   elements.goGhostWorkspace.dataset.accountId = accountId;
+  elements.goGhostWorkspace.dataset.accountName = accountName;
+  elements.goGhostWorkspace.dataset.accountEmail = accountEmail;
   elements.goGhostWorkspace.dataset.browserAutomationAvailable = String(automation);
   elements.goGhostScopeModal.classList.add('hidden');
   const windowEvents = {};
   const opened = [];
+  const copied = [];
   const messages = [];
   const removalRequests = [];
   const confirmQuestions = [];
@@ -96,16 +104,31 @@ function page(accountId, local, session, {automation = false, legacyEraseBlocked
     },
     isMobileDevice: () => false,
     showCopyToast: message => messages.push(message),
-    copyTextToClipboard: async () => true,
+    copyTextToClipboard: async value => { copied.push(value); return true; },
     escapeHtml: value => String(value ?? '').replace(/[&<>"]/g, char => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'
     })[char])
   });
   vm.runInContext(source, context);
   vm.runInContext(uiSource, context);
-  return {elements, windowEvents, opened, messages, removalRequests, confirmQuestions, context,
+  return {elements, windowEvents, opened, copied, messages, removalRequests, confirmQuestions, context,
     setSession: id => { signedInAs = id; }, setConfirmResult: result => { confirmResult = result; },
     allowLegacyErase: () => blockedDeletes.clear()};
+}
+
+function enterProfile(page, firstName, lastName, save = true) {
+  const fields = {
+    ghostFirstNameInput: firstName,
+    ghostLastNameInput: lastName,
+    ghostCityInput: 'Tampa',
+    ghostStateInput: 'FL',
+    ghostEmailInput: 'person@example.com'
+  };
+  for (const [id, value] of Object.entries(fields)) {
+    page.elements[id].value = value;
+    page.elements[id].events[id === 'ghostStateInput' ? 'change' : 'input']();
+  }
+  if (save) page.elements.goGhostProfileForm.events.submit({preventDefault() {}});
 }
 
 async function main() {
@@ -113,11 +136,10 @@ async function main() {
   const a = page('account-A', local, new Map());
   assert.equal(a.elements.goGhostLegacyNotice.hidden, true);
   assert.equal(a.elements.goGhostLegacyActions.hidden, true);
-  assert.equal(a.elements.ghostNameInput.value, '', 'legacy profile must not be shown or imported');
+  assert.equal(a.elements.ghostFirstNameInput.value, '', 'legacy profile must not be shown or imported');
   assert.equal(local.has('safeScanGoGhostProfile'), false, 'unowned legacy data is erased on page load');
   a.elements.startGoGhostButton.events.click();
-  a.elements.ghostNameInput.value = 'Alice Person';
-  a.elements.ghostNameInput.events.input();
+  enterProfile(a, 'Alice', 'Person');
   vm.runInContext("setGhostManualStatus('fastpeoplesearch', 'removed')", a.context);
   assert.equal(a.elements.ghostProgressCount.textContent, '1 / 18');
   const aKey = 'safeScanGoGhostV2:account:account-A';
@@ -125,10 +147,9 @@ async function main() {
 
   const b = page('account-B', local, new Map());
   b.elements.startGoGhostButton.events.click();
-  assert.equal(b.elements.ghostNameInput.value, '', 'B must not see A’s profile');
+  assert.equal(b.elements.ghostFirstNameInput.value, '', 'B must not see A’s profile');
   assert.equal(b.elements.ghostProgressCount.textContent, '0 / 18', 'B must not see A’s progress');
-  b.elements.ghostNameInput.value = 'Bob Person';
-  b.elements.ghostNameInput.events.input();
+  enterProfile(b, 'Bob', 'Person');
   assert.ok(local.has('safeScanGoGhostV2:account:account-B'));
   assert.equal(JSON.parse(local.get(aKey)).subjects[JSON.parse(local.get(aKey)).activeSubjectId].profile.name, 'Alice Person');
 
@@ -137,7 +158,7 @@ async function main() {
   assert.equal(a.elements.goGhostWorkspace.hidden, true, 'focus must hide A details before the server responds');
   await accountCheck;
   assert.equal(a.elements.goGhostWorkspace.hidden, true, 'stale A tab must lock after account switch');
-  assert.equal(a.elements.ghostNameInput.value, '');
+  assert.equal(a.elements.ghostFirstNameInput.value, '');
   assert.equal(a.elements.goGhostSessionNotice.hidden, false);
   assert.equal(vm.runInContext('goGhostState', a.context), null, 'old subject state must leave page memory');
   assert.equal(a.elements.ghostSubjectSelect.innerHTML, '', 'old subject names must leave the DOM');
@@ -150,8 +171,7 @@ async function main() {
   const guestSession = new Map();
   const guest = page('', local, guestSession);
   guest.elements.startGoGhostButton.events.click();
-  guest.elements.ghostNameInput.value = 'Guest Person';
-  guest.elements.ghostNameInput.events.input();
+  enterProfile(guest, 'Guest', 'Person');
   assert.ok(guestSession.has('safeScanGoGhostV2:guest'));
   assert.equal(local.has('safeScanGoGhostV2:guest'), false, 'guest data must be tab-only');
   page('account-A', local, guestSession);
@@ -159,14 +179,12 @@ async function main() {
 
   const family = page('account-C', local, new Map());
   family.elements.startGoGhostButton.events.click();
-  family.elements.ghostNameInput.value = 'Self Person';
-  family.elements.ghostNameInput.events.input();
+  enterProfile(family, 'Self', 'Person');
   family.elements.addGhostFamilyButton.events.click();
   assert.equal(family.elements.goGhostWorkspace.hidden, true, 'new subject needs its own consent');
   family.elements.startGoGhostButton.events.click();
   assert.equal(family.elements.ghostFamilyAttestationLabel.hidden, false);
-  family.elements.ghostNameInput.value = 'Family Person';
-  family.elements.ghostNameInput.events.input();
+  enterProfile(family, 'Family', 'Person');
   vm.runInContext("openGoGhostScopeModal('fastpeoplesearch')", family.context);
   await family.elements.goGhostScopeSearchButton.events.click();
   assert.equal(family.opened.length, 0, 'family search requires attestation');
@@ -174,8 +192,8 @@ async function main() {
   family.elements.ghostFamilyAttestationInput.events.change();
   await family.elements.goGhostScopeSearchButton.events.click();
   assert.equal(family.opened.length, 1);
-  family.elements.ghostNameInput.value = 'Different Family Person';
-  family.elements.ghostNameInput.events.input();
+  family.elements.ghostFirstNameInput.value = 'Different';
+  family.elements.ghostFirstNameInput.events.input();
   await family.elements.goGhostScopeSearchButton.events.click();
   assert.equal(family.opened.length, 1, 'changing family identity revokes the current attestation');
   family.elements.ghostFamilyAttestationInput.checked = true;
@@ -192,7 +210,8 @@ async function main() {
   const selfId = Object.values(familyState.subjects).find(subject => subject.kind === 'self').id;
   family.elements.ghostSubjectSelect.value = selfId;
   family.elements.ghostSubjectSelect.events.change();
-  assert.equal(family.elements.ghostNameInput.value, 'Self Person');
+  assert.equal(family.elements.ghostFirstNameInput.value, 'Self');
+  assert.equal(family.elements.ghostLastNameInput.value, 'Person');
   assert.equal(family.elements.ghostProgressCount.textContent, '0 / 18', 'family progress must not count for self');
 
   const beforeAccountClear = local.get('safeScanGoGhostV2:account:account-C');
@@ -219,6 +238,91 @@ async function main() {
   blocked.elements.eraseGhostLegacyButton.events.click();
   assert.equal(blockedLocal.has('safeScanGoGhostProfile'), false);
   assert.equal(blocked.elements.goGhostLegacyNotice.hidden, true);
+
+  const prefill = page('account-F', local, new Map(), {
+    accountName: 'Amy Lee', accountEmail: 'amy@example.com'
+  });
+  prefill.elements.startGoGhostButton.events.click();
+  assert.equal(prefill.elements.ghostFirstNameInput.value, 'Amy');
+  assert.equal(prefill.elements.ghostLastNameInput.value, 'Lee');
+  assert.equal(prefill.elements.ghostEmailInput.value, 'amy@example.com');
+  assert.equal(vm.runInContext('ghostProfileIsReviewed()', prefill.context), false,
+    'account metadata must not become a reviewed broker identity');
+  prefill.elements.addGhostFamilyButton.events.click();
+  prefill.elements.startGoGhostButton.events.click();
+  assert.equal(prefill.elements.ghostFirstNameInput.value, '', 'family profile starts without the account name');
+  assert.equal(prefill.elements.ghostEmailInput.value, '', 'family profile starts without the account email');
+
+  const ambiguous = page('account-G', local, new Map(), {
+    accountName: 'Mary Ann Smith', accountEmail: 'mary@example.com'
+  });
+  ambiguous.elements.startGoGhostButton.events.click();
+  assert.equal(ambiguous.elements.ghostFirstNameInput.value, '', 'compound account name needs review');
+  assert.equal(ambiguous.elements.ghostLastNameInput.value, '');
+  assert.match(ambiguous.elements.ghostAccountNameHint.textContent, /Mary Ann Smith/);
+
+  const oldId = '11111111-1111-4111-8111-111111111111';
+  const oldKey = 'safeScanGoGhostV2:account:account-H';
+  const oldProfile = {
+    name: 'Mary Ann Doe', location: 'Tampa, FL', email: 'old@example.com',
+    address: '123 Legacy Avenue', identifier: '555-0100'
+  };
+  local.set(oldKey, JSON.stringify({version: 2, activeSubjectId: oldId, subjects: {
+    [oldId]: {id: oldId, kind: 'self', profile: oldProfile, progress: {},
+      consentAcceptedAt: '2026-11-10T00:00:00.000Z', familyAttestedAt: ''}
+  }}));
+  const older = page('account-H', local, new Map(), {accountName: 'Different Name'});
+  assert.equal(older.elements.ghostFirstNameInput.value, '', 'old scoped name must not be split by guessing');
+  assert.equal(older.elements.ghostLastNameInput.value, '');
+  assert.equal(older.elements.ghostCityInput.value, '', 'old scoped location must not be guessed');
+  assert.equal(older.elements.ghostAddressInput.value, '123 Legacy Avenue');
+  assert.equal(older.elements.ghostPhoneInput.value, '555-0100');
+  assert.match(older.elements.ghostSavedProfileHint.textContent, /Mary Ann Doe.*Tampa, FL/);
+  assert.equal(vm.runInContext('getGhostProfile().name', older.context), '');
+  vm.runInContext("openGoGhostScopeModal('fastpeoplesearch')", older.context);
+  await older.elements.goGhostScopeSearchButton.events.click();
+  assert.equal(older.opened.length, 0, 'old unreviewed scoped profile cannot trigger a broker search');
+
+  older.elements.ghostFirstNameInput.value = 'Mary Ann';
+  older.elements.ghostFirstNameInput.events.input();
+  older.elements.ghostLastNameInput.value = 'Doe';
+  older.elements.ghostLastNameInput.events.input();
+  older.elements.ghostCityInput.value = 'Tampa';
+  older.elements.ghostCityInput.events.input();
+  older.elements.ghostStateInput.value = 'FL';
+  older.elements.ghostStateInput.events.change();
+  older.elements.ghostMiddleNameInput.value = 'PrivateMiddle';
+  older.elements.ghostMiddleNameInput.events.input();
+  older.elements.ghostBirthYearInput.value = '1978';
+  older.elements.ghostBirthYearInput.events.input();
+  older.elements.ghostPreviousCitiesInput.value = 'PrivatePrevious';
+  older.elements.ghostPreviousCitiesInput.events.input();
+  older.elements.ghostOtherNamesInput.value = 'PrivateAlias';
+  older.elements.ghostOtherNamesInput.events.input();
+  older.elements.goGhostProfileForm.events.submit({preventDefault() {}});
+  assert.equal(vm.runInContext('ghostProfileIsReviewed()', older.context), true);
+  assert.equal(JSON.parse(local.get(oldKey)).subjects[oldId].profile.name, 'Mary Ann Doe');
+  await older.elements.goGhostScopeSearchButton.events.click();
+  assert.equal(older.opened.length, 1);
+  assert.match(older.opened[0], /mary-ann-doe/);
+  assert.doesNotMatch(older.opened[0], /Private|123|555|1978|old%40|old@/i);
+  await older.elements.goGhostScopeCopyButton.events.click();
+  assert.match(older.copied.at(-1), /Name: Mary Ann Doe/);
+  assert.doesNotMatch(older.copied.at(-1), /PrivateMiddle|PrivatePrevious|PrivateAlias|123 Legacy|555-0100|1978/);
+
+  older.elements.ghostCityInput.value = 'Miami';
+  older.elements.ghostCityInput.events.input();
+  await older.elements.goGhostScopeSearchButton.events.click();
+  assert.equal(older.opened.length, 1, 'editing a reviewed field requires saving again');
+  older.elements.goGhostProfileForm.events.submit({preventDefault() {}});
+  older.elements.ghostStateInput.value = 'OUTSIDE_US';
+  older.elements.ghostStateInput.events.change();
+  older.elements.ghostCityInput.value = 'Toronto';
+  older.elements.ghostCityInput.events.input();
+  older.elements.goGhostProfileForm.events.submit({preventDefault() {}});
+  await older.elements.goGhostScopeSearchButton.events.click();
+  assert.equal(older.opened.at(-1), 'https://www.fastpeoplesearch.com/optout',
+    'outside U.S. search opens static broker instructions');
 
   const automation = page('account-E', local, new Map(), {automation: true});
   automation.elements.startGoGhostButton.events.click();
