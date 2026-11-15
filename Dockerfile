@@ -1,5 +1,5 @@
 # -- Stage 1: builder ------------------------------------------------
-FROM python:3.11-slim AS builder
+FROM python:3.15-slim AS builder
 
 WORKDIR /build
 
@@ -12,7 +12,7 @@ COPY requirements.lock .
 RUN pip install --no-cache-dir --only-binary=:all: --require-hashes --prefix=/install -r requirements.lock
 
 # -- Stage 2: runtime ------------------------------------------------
-FROM python:3.11-slim AS runtime
+FROM python:3.15-slim AS runtime
 
 # System deps only - no build tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
