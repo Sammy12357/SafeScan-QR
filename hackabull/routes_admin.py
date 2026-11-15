@@ -72,7 +72,10 @@ from .config import OWNER_EMAILS
 from .config import VALID_ROLES
 from .config import templates
 from .errors import ERRORS
+from .email_util import email_sending_configured, send_email
 from .history import admin_avatar
+from .listing_review import SOURCE_CHOICES, dispute_detail, evidence_note, listing_rows, public_listing_id, record_listing_evidence
+from .malicious_db import _public_domain
 from .pipeline import analyze_full_pipeline
 from .request_helpers import make_id
 from .token_flags import token_distribution_enabled, token_features_enabled
@@ -241,7 +244,7 @@ async def admin_export_waitlist(request: Request):
     return Response(out.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=safescan-waitlist.csv"})
 
 @qr_app.post("/admin/scans/{scan_id}/flag")
-async def admin_flag_scan(request: Request, scan_id: str):
+async def admin_flag_scan(request: Request, scan_id: str, evidence_source: str = Form(""), observation: str = Form("")):
     admin_user = require_role_user(request, "admin")
     with get_conn() as conn:
         conn.row_factory = sqlite3.Row
@@ -251,8 +254,19 @@ async def admin_flag_scan(request: Request, scan_id: str):
             raise HTTPException(status_code=404, detail="Not found.")
         if not str(scan["url"] or "").lower().startswith(("https://", "http://")):
             return _admin_form_error(request, "All Scans", "scans", fetch_scans(), "admin_non_url_scan", target=scan_id)
+        if evidence_source not in SOURCE_CHOICES or evidence_note(observation) is None:
+            return _admin_form_error(request, "All Scans", "scans", fetch_scans(), "listing_evidence_required", target=scan_id, field="observation")
         conn.execute("UPDATE scan_history SET verdict = 'MALICIOUS', risk_score = 100 WHERE id = ?", (scan_id,))
-        conn.execute("INSERT OR IGNORE INTO url_blocklist VALUES (?, ?, ?, ?, ?, NULL)", (make_id("block"), scan["url"], "Admin confirmed malicious scan", admin_user.get("email"), now_iso()))
+        conn.execute(
+            """INSERT INTO url_blocklist (id, url, reason, added_by, created_at, removed_at)
+               VALUES (?, ?, ?, ?, ?, NULL)
+               ON CONFLICT(url) DO UPDATE SET reason = excluded.reason, added_by = excluded.added_by,
+               created_at = excluded.created_at, removed_at = NULL""",
+            (make_id("block"), scan["url"], "Administrator reviewed scan evidence", admin_user.get("email"), now_iso()),
+        )
+        block_id = conn.execute("SELECT id FROM url_blocklist WHERE url = ?", (scan["url"],)).fetchone()[0]
+        record_listing_evidence(conn, block_id, source=evidence_source, observation=observation,
+                                source_ref=scan_id, recorded_by=admin_user.get("email") or "admin")
     audit_log("admin.url_flagged", request=request, actor_user_id=admin_user.get("google_id"), target_type="scan", target_id=scan_id)
     return RedirectResponse("/admin/scans", status_code=303)
 
@@ -261,7 +275,7 @@ async def admin_reports(request: Request, tab: str = Query("reports")):
     return admin_context(request, "Reported URLs", "reports", fetch_reports(tab=tab))
 
 @qr_app.post("/admin/reports/{report_id}/action")
-async def admin_report_action(request: Request, report_id: str, action: str = Form("")):
+async def admin_report_action(request: Request, report_id: str, action: str = Form(""), evidence_source: str = Form(""), observation: str = Form("")):
     admin_user = require_role_user(request, "admin")
     if action not in ("confirm", "dismiss", "reanalyze"):
         return _admin_form_error(request, "Reported URLs", "reports", fetch_reports(), "admin_action_invalid", target=report_id, field="action")
@@ -272,8 +286,21 @@ async def admin_report_action(request: Request, report_id: str, action: str = Fo
         if not report:
             raise HTTPException(status_code=404, detail="Not found.")
         if action == "confirm":
+            if report["status"] != "pending":
+                raise HTTPException(status_code=409, detail="Report has already been reviewed.")
+            if evidence_source not in SOURCE_CHOICES or evidence_note(observation) is None:
+                return _admin_form_error(request, "Reported URLs", "reports", fetch_reports(), "listing_evidence_required", target=report_id, field="observation")
             conn.execute("UPDATE url_reports SET status = 'confirmed_malicious', reviewed_at = ?, reviewed_by = ? WHERE id = ?", (now_iso(), admin_user.get("email"), report_id))
-            conn.execute("INSERT OR IGNORE INTO url_blocklist VALUES (?, ?, ?, ?, ?, NULL)", (make_id("block"), report["url"], report["reason"], admin_user.get("email"), now_iso()))
+            conn.execute(
+                """INSERT INTO url_blocklist (id, url, reason, added_by, created_at, removed_at)
+                   VALUES (?, ?, ?, ?, ?, NULL)
+                   ON CONFLICT(url) DO UPDATE SET reason = excluded.reason, added_by = excluded.added_by,
+                   created_at = excluded.created_at, removed_at = NULL""",
+                (make_id("block"), report["url"], "Administrator reviewed reported QR URL", admin_user.get("email"), now_iso()),
+            )
+            block_id = conn.execute("SELECT id FROM url_blocklist WHERE url = ?", (report["url"],)).fetchone()[0]
+            record_listing_evidence(conn, block_id, source=evidence_source, observation=observation,
+                                    source_ref=report_id, recorded_by=admin_user.get("email") or "admin")
         elif action == "dismiss":
             conn.execute("UPDATE url_reports SET status = 'dismissed', reviewed_at = ?, reviewed_by = ? WHERE id = ?", (now_iso(), admin_user.get("email"), report_id))
         elif action == "reanalyze":
@@ -290,6 +317,116 @@ async def admin_remove_block(request: Request, block_id: str):
         conn.execute("UPDATE url_blocklist SET removed_at = ? WHERE id = ?", (now_iso(), block_id))
     audit_log("admin.blocklist_removed", request=request, actor_user_id=admin_user.get("google_id"), target_type="blocklist", target_id=block_id)
     return RedirectResponse("/admin/reports?tab=blocklist", status_code=303)
+
+
+@qr_app.get("/admin/listings/{listing_id}", response_class=HTMLResponse)
+async def admin_listing_detail(request: Request, listing_id: str):
+    require_role_user(request, "admin")
+    with get_conn() as conn:
+        conn.row_factory = sqlite3.Row
+        detail = dispute_detail(conn, listing_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Listing unavailable.")
+    return admin_context(request, "Listing Evidence and Disputes", "listing_detail", detail)
+
+
+@qr_app.post("/admin/listings/{listing_id}/evidence")
+async def admin_listing_add_evidence(
+    request: Request, listing_id: str, block_id: str = Form(""),
+    evidence_source: str = Form(""), observation: str = Form("")
+):
+    admin_user = require_role_user(request, "admin")
+    with get_conn() as conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute("BEGIN IMMEDIATE")
+        _, blocks = listing_rows(conn, listing_id)
+        if not blocks:
+            raise HTTPException(status_code=404, detail="Listing unavailable.")
+        if block_id not in {block["id"] for block in blocks}:
+            raise HTTPException(status_code=404, detail="URL record unavailable.")
+        if evidence_source not in SOURCE_CHOICES or evidence_note(observation) is None:
+            return _admin_form_error(request, "Listing Evidence and Disputes", "listing_detail",
+                                     dispute_detail(conn, listing_id), "listing_evidence_required",
+                                     target=block_id, field="observation")
+        record_listing_evidence(conn, block_id, source=evidence_source, observation=observation,
+                                source_ref=block_id, recorded_by=admin_user.get("email") or "admin")
+    audit_log("listing.evidence_added", request=request, actor_user_id=admin_user.get("google_id"),
+              target_type="url_blocklist", target_id=block_id)
+    return RedirectResponse(f"/admin/listings/{listing_id}", status_code=303)
+
+
+@qr_app.post("/admin/listing-disputes/{dispute_id}/action")
+async def admin_listing_dispute_action(
+    request: Request, dispute_id: str, action: str = Form(""), decision_reason: str = Form("")
+):
+    admin_user = require_role_user(request, "admin")
+    if action not in {"acknowledge", "retain", "remove"}:
+        return _admin_form_error(request, "Reported URLs", "reports", fetch_reports(tab="disputes"),
+                                 "admin_action_invalid", target=dispute_id, field="action")
+    if action != "acknowledge" and evidence_note(decision_reason) is None:
+        return _admin_form_error(request, "Reported URLs", "reports", fetch_reports(tab="disputes"),
+                                 "listing_decision_reason_required", target=dispute_id, field="decision_reason")
+    now = now_iso()
+    contacts = []
+    removed_count = 0
+    with get_conn() as conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute("BEGIN IMMEDIATE")
+        dispute = conn.execute("SELECT * FROM listing_disputes WHERE id = ?", (dispute_id,)).fetchone()
+        if dispute is None:
+            raise HTTPException(status_code=404, detail="Dispute unavailable.")
+        if dispute["status"] != "under_review" or (action == "acknowledge" and dispute["first_reviewed_at"]):
+            raise HTTPException(status_code=409, detail="Dispute has already been reviewed.")
+        domain = dispute["domain"]
+        listing_id = public_listing_id(domain)
+        if action == "acknowledge":
+            conn.execute("UPDATE listing_disputes SET first_reviewed_at = ? WHERE id = ?", (now, dispute_id))
+            contacts = [dispute["contact_email"]]
+        elif action == "retain":
+            _, active_blocks = listing_rows(conn, listing_id)
+            if not any(conn.execute(
+                "SELECT 1 FROM listing_evidence WHERE block_id = ? LIMIT 1", (block["id"],)
+            ).fetchone() for block in active_blocks):
+                return _admin_form_error(request, "Listing Evidence and Disputes", "listing_detail",
+                                         dispute_detail(conn, listing_id), "listing_evidence_required",
+                                         target=dispute_id, field="observation")
+            conn.execute(
+                """UPDATE listing_disputes SET status = 'retained', first_reviewed_at = COALESCE(first_reviewed_at, ?),
+                   decided_at = ?, decided_by = ?, decision_reason = ? WHERE id = ?""",
+                (now, now, admin_user.get("email"), decision_reason.strip(), dispute_id),
+            )
+            contacts = [dispute["contact_email"]]
+        else:
+            # A domain-level public entry may aggregate multiple URL rows.
+            # Remove all of them atomically, so no stale entry survives the decision.
+            for block in conn.execute("SELECT id, url FROM url_blocklist WHERE removed_at IS NULL").fetchall():
+                if _public_domain(block["url"]) == domain:
+                    conn.execute("UPDATE url_blocklist SET removed_at = ? WHERE id = ?", (now, block["id"]))
+                    removed_count += 1
+            contacts = [row[0] for row in conn.execute(
+                "SELECT DISTINCT contact_email FROM listing_disputes WHERE domain = ? AND status = 'under_review'",
+                (domain,),
+            )]
+            conn.execute(
+                """UPDATE listing_disputes SET status = 'removed', first_reviewed_at = COALESCE(first_reviewed_at, ?),
+                   decided_at = ?, decided_by = ?, decision_reason = ?
+                   WHERE domain = ? AND status = 'under_review'""",
+                (now, now, admin_user.get("email"), decision_reason.strip(), domain),
+            )
+    audit_log("listing.dispute_reviewed", request=request, actor_user_id=admin_user.get("google_id"),
+              target_type="listing_dispute", target_id=dispute_id,
+              metadata={"action": action, "removedCount": removed_count})
+    if email_sending_configured():
+        subject = "SafeScan listing dispute review"
+        if action == "acknowledge":
+            message = f"We have begun reviewing your dispute about {domain}."
+        elif action == "remove":
+            message = f"The {domain} entry was removed. Decision reason: {decision_reason.strip()}"
+        else:
+            message = f"The {domain} entry remains listed. Decision reason: {decision_reason.strip()}"
+        for contact in contacts:
+            await asyncio.to_thread(send_email, contact, subject, f"<p>{escape_html(message)}</p>", message)
+    return RedirectResponse(f"/admin/listings/{listing_id}", status_code=303)
 
 @qr_app.get("/admin/risk-logs", response_class=HTMLResponse)
 async def admin_risk_logs(request: Request):

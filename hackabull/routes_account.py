@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import math
 import re
+from urllib.parse import parse_qs
 import asyncio
 import base64
 import ipaddress
@@ -73,6 +74,7 @@ from .audit import now_iso
 from .auth import get_session_user
 from .auth import require_role_user
 from .auth import require_user
+from .config import APP_URL
 from .config import APP_STARTED_AT
 from .config import CLIENT_ID
 from .config import LEGAL_VERSION
@@ -84,14 +86,19 @@ from .history import serialize_scan_history_row
 from .homograph import host_forms
 from .leaderboard import get_global_leaderboard
 from .legal import legal_context
+from .listing_review import listing_rows
 from .malicious_db import get_malicious_qr_codes
 from .referrals import get_scan_count
 from .routes_scan_auth import finish_verified_sign_in
 from .routes_scan_auth import mobile_sign_in_body
 from .sessions import issue_remember_me_cookie
 from .sessions import set_session_cookie
+from .request_helpers import is_eu_locale
+from .request_helpers import make_id
 from .security import enforce_rate_limit
 from .token_flags import token_features_enabled
+from .email_util import send_email, email_sending_configured
+from .config import ADMIN_EMAILS
 
 @qr_app.get("/history", response_class=HTMLResponse)
 async def history_page(request: Request):
@@ -194,7 +201,7 @@ async def api_malicious_qr_image(request: Request):
 
 @qr_app.get("/malicious-database", response_class=HTMLResponse)
 async def malicious_database_page(request: Request):
-    """Public board of admin-confirmed domain indicators.
+    """Public board of reviewed QR URL observations.
 
     The list itself is fetched client-side from /api/malicious-qr so search and
     pagination work without page reloads; the template only needs the page size.
@@ -203,6 +210,98 @@ async def malicious_database_page(request: Request):
         "request": request,
         "limit": 20,
     })
+
+
+@qr_app.get("/malicious-database/policy", response_class=HTMLResponse)
+async def listing_policy_page(request: Request):
+    return templates.TemplateResponse("listing_policy.html", {"request": request})
+
+
+@qr_app.get("/malicious-database/dispute/{listing_id}", response_class=HTMLResponse)
+async def listing_dispute_form(request: Request, listing_id: str):
+    with get_conn() as conn:
+        conn.row_factory = sqlite3.Row
+        domain, rows = listing_rows(conn, listing_id)
+    if not rows:
+        raise HTTPException(status_code=404, detail="Listing unavailable.")
+    response = templates.TemplateResponse("listing_dispute.html", {
+        "request": request, "listing_id": listing_id, "domain": domain,
+        "submitted": request.query_params.get("submitted") == "1", "error": "",
+        "claim": "", "contact_email": "",
+    })
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+_DISPUTE_EMAIL = re.compile(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+\Z")
+
+
+@qr_app.post("/malicious-database/dispute/{listing_id}", response_class=HTMLResponse)
+async def submit_listing_dispute(request: Request, listing_id: str):
+    rate_limit = enforce_rate_limit(request, "listing_dispute", 3, 60 * 60)
+    if rate_limit:
+        return rate_limit
+    if request.headers.get("content-type", "").split(";", 1)[0].lower() != "application/x-www-form-urlencoded":
+        raise HTTPException(status_code=415, detail="Use the listing dispute form.")
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > 8192:
+            raise HTTPException(status_code=413, detail="Dispute form is too large.")
+    try:
+        values = parse_qs(body.decode("utf-8"), keep_blank_values=True, max_num_fields=4)
+    except (UnicodeDecodeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid dispute form.")
+    if any(len(items) != 1 for items in values.values()) or set(values) - {"contact_email", "claim", "website"}:
+        raise HTTPException(status_code=400, detail="Invalid dispute form.")
+    email = (values.get("contact_email") or [""])[0].strip().lower()
+    claim = (values.get("claim") or [""])[0].strip()
+    website = (values.get("website") or [""])[0].strip()
+    with get_conn() as conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute("BEGIN IMMEDIATE")
+        domain, rows = listing_rows(conn, listing_id)
+        if not rows:
+            raise HTTPException(status_code=404, detail="Listing unavailable.")
+        if website:
+            return RedirectResponse(f"/malicious-database/dispute/{listing_id}?submitted=1", status_code=303)
+        error = ""
+        if len(email) > 254 or not _DISPUTE_EMAIL.fullmatch(email) or any(len(part) > 63 for part in email.rsplit("@", 1)[1].split(".")):
+            error = "Enter a valid contact email address."
+        elif not 20 <= len(claim) <= 2000 or any(ord(char) < 32 and char not in "\r\n\t" for char in claim):
+            error = "Explain the listing error in 20 to 2,000 characters."
+        if error:
+            response = templates.TemplateResponse("listing_dispute.html", {
+                "request": request, "listing_id": listing_id, "domain": domain,
+                "submitted": False, "error": error, "claim": claim[:2000],
+                "contact_email": email[:254],
+            }, status_code=400)
+            response.headers["Cache-Control"] = "no-store"
+            return response
+        recent = conn.execute(
+            "SELECT COUNT(*) FROM listing_disputes WHERE domain = ? AND created_at >= ?",
+            (domain, (datetime.utcnow() - timedelta(days=1)).isoformat() + "Z"),
+        ).fetchone()[0]
+        if recent >= 10:
+            raise HTTPException(status_code=429, detail="Too many disputes for this listing today.")
+        dispute_id = make_id("dispute")
+        conn.execute(
+            """INSERT INTO listing_disputes
+               (id, domain, contact_email, claim, status, created_at)
+               VALUES (?, ?, ?, ?, 'under_review', ?)""",
+            (dispute_id, domain, email, claim, now_iso()),
+        )
+    audit_log("listing.disputed", request=request, target_type="listing_dispute", target_id=dispute_id)
+    # Email is transactional. The administrator queue remains authoritative if
+    # SMTP is not configured; never include the private claim or contact data.
+    if email_sending_configured():
+        for admin_email in sorted(ADMIN_EMAILS)[:5]:
+            await asyncio.to_thread(
+                send_email, admin_email, "SafeScan listing dispute needs review",
+                f"<p>A dispute for {domain} needs review.</p><p><a href=\"{APP_URL}/admin/reports?tab=disputes\">Open the admin dispute queue</a>.</p>",
+                f"A dispute for {domain} needs review. Open {APP_URL}/admin/reports?tab=disputes",
+            )
+    return RedirectResponse(f"/malicious-database/dispute/{listing_id}?submitted=1", status_code=303)
 
 @qr_app.get("/generate-qr", response_class=HTMLResponse)
 async def generate_qr_page(request: Request):

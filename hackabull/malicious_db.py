@@ -1,4 +1,4 @@
-"""Public threat indicators approved by an administrator.
+"""Public QR URL observations approved by an administrator.
 
 Personal scan history can contain password-reset links, access tokens and
 other secrets in otherwise ordinary web URLs. It must never be a source for a
@@ -68,8 +68,18 @@ def get_malicious_qr_codes(page: int = 1, limit: int = 20, query: str = "") -> d
 
     with get_conn() as conn:
         conn.row_factory = sqlite3.Row
+        evidence = {
+            row["block_id"]: row["source"] for row in conn.execute(
+                "SELECT block_id, source FROM listing_evidence ORDER BY observed_at"
+            )
+        }
+        under_review = {
+            row["domain"] for row in conn.execute(
+                "SELECT DISTINCT domain FROM listing_disputes WHERE status = 'under_review'"
+            )
+        }
         rows = conn.execute(
-            "SELECT url, created_at FROM url_blocklist WHERE removed_at IS NULL ORDER BY created_at DESC"
+            "SELECT id, url, created_at FROM url_blocklist WHERE removed_at IS NULL ORDER BY created_at DESC"
         )
         for row in rows:
             domain = _public_domain(row["url"])
@@ -78,13 +88,24 @@ def get_malicious_qr_codes(page: int = 1, limit: int = 20, query: str = "") -> d
             entry = domains.setdefault(domain, {
                 "id": hashlib.sha256(domain.encode("ascii")).hexdigest()[:16],
                 "domain": domain,
-                "category": "Admin confirmed",
+                "category": "Administrator listing record",
                 "lastReportedAt": row["created_at"],
+                "observedAt": row["created_at"],
+                "evidenceSource": "SafeScan administrator listing record",
+                "underReview": domain in under_review,
                 "reports": 0,
             })
             entry["reports"] += 1
-            if row["created_at"] > entry["lastReportedAt"]:
+            if row["created_at"] >= entry["lastReportedAt"]:
                 entry["lastReportedAt"] = row["created_at"]
+                entry["observedAt"] = row["created_at"]
+                source = evidence.get(row["id"])
+                if source in {"admin_review", "safescan_analysis"}:
+                    entry["category"] = "Reviewed QR URL observation"
+                entry["evidenceSource"] = {
+                    "admin_review": "SafeScan administrator review",
+                    "safescan_analysis": "SafeScan URL analysis reviewed by an administrator",
+                }.get(source, "SafeScan administrator listing record")
 
     ordered = sorted(domains.values(), key=lambda entry: (entry["lastReportedAt"], entry["domain"]), reverse=True)
     total_reports = sum(entry["reports"] for entry in ordered)

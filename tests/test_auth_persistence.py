@@ -839,7 +839,7 @@ def test_malicious_qr_database_is_public_and_filters_scans(auth_app):
     response = client.get("/api/malicious-qr")
 
     assert page.status_code == 200
-    assert "Malicious QR Database" in page.text
+    assert "QR URL Observations" in page.text
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
     data = response.json()

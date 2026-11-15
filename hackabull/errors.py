@@ -87,6 +87,8 @@ ERRORS: dict[str, Message] = {
     "admin_account_missing": Message("We couldn't find that account.", "Return to the list and choose an available account.", 404),
     "admin_delete_confirmation": Message("Type DELETE to confirm this change.", "Check the confirmation and submit again.", 400),
     "admin_non_url_scan": Message("This scan can't be added to the URL blocklist.", "Only scans of web links can be blocked here.", 400),
+    "listing_evidence_required": Message("Record the independent review before publishing this URL.", "Choose an evidence source and describe what you observed in 20 to 500 characters.", 400),
+    "listing_decision_reason_required": Message("Explain the listing decision.", "Enter a reason in 20 to 500 characters, without personal data or URL tokens.", 400),
     "api_key_name_required": Message("Enter a name for the API key.", "Use 1 to 80 characters.", 400),
     "api_key_scope_invalid": Message("Choose an available API key scope.", "Review the scope choices and try again.", 400),
     "api_key_expiry_invalid": Message("Enter a valid expiry date.", "Use an ISO date or timestamp, or leave this blank.", 400),

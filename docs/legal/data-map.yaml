@@ -380,6 +380,44 @@
       "retention": "Not verified against an automated deletion job",
       "status": "active schema"
     },
+    "listing_disputes": {
+      "fields": [
+        "id",
+        "domain",
+        "contact_email",
+        "claim",
+        "status",
+        "created_at",
+        "first_reviewed_at",
+        "decided_at",
+        "decided_by",
+        "decision_reason"
+      ],
+      "source": "public listing dispute form and administrator review",
+      "purpose": "review and correct QR URL domain observations; contact_email and claim are staff-only",
+      "storage": "SQLite persistent disk",
+      "recipients": "Staff; transactional email may be sent to the claimant if SMTP is configured",
+      "retention": "Not yet covered by an automated retention job; counsel and operations must set a period",
+      "status": "active schema"
+    },
+    "listing_evidence": {
+      "fields": [
+        "id",
+        "block_id",
+        "source",
+        "source_ref",
+        "observation",
+        "observed_at",
+        "recorded_at",
+        "recorded_by"
+      ],
+      "source": "administrator review of a reported or scanned QR URL",
+      "purpose": "substantiate listing decisions and support corrections; raw observations are staff-only",
+      "storage": "SQLite persistent disk",
+      "recipients": "Staff only; public feed shows source category and observation date, never the private note",
+      "retention": "Not yet covered by an automated retention job; counsel and operations must set a period",
+      "status": "active schema"
+    },
     "local_credentials": {
       "fields": [
         "email",

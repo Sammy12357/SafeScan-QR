@@ -1,4 +1,4 @@
-// Malicious QR Database page: fetches the public threat feed and renders it
+// QR URL observations page: fetches the public, reviewed domain feed and renders it
 // with client-side search and pagination. Lives in /static (external script)
 // because the site CSP is script-src 'self' with no inline scripts allowed.
 (function () {
@@ -41,12 +41,15 @@
   function cardHtml(row) {
     return '<div class="mq-card">' +
       '<div class="mq-body">' +
-        '<span class="mq-cat cat-malicious">⚠ Admin confirmed</span>' +
+        '<span class="mq-cat cat-suspicious">' + esc(row.category || 'Administrator listing record') + '</span>' +
+        (row.underReview ? '<span class="mq-cat mq-review-badge">Under review</span>' : '') +
         '<p class="mq-url">' + esc(row.domain) + '</p>' +
         '<div class="mq-meta">' +
-          '<div>Last confirmed: <b>' + esc(formatLocal(row.lastReportedAt)) + '</b></div>' +
-          '<div>Confirmed URLs: <b>' + esc(row.reports || 1) + '</b></div>' +
+          '<div>Recorded: <b>' + esc(formatLocal(row.observedAt || row.lastReportedAt)) + '</b></div>' +
+          '<div>Source: <b>' + esc(row.evidenceSource || 'SafeScan administrator listing record') + '</b></div>' +
+          '<div>Reviewed URL records: <b>' + esc(row.reports || 1) + '</b></div>' +
         '</div>' +
+        '<a class="mq-dispute-link" href="/malicious-database/dispute/' + esc(row.id) + '">Dispute this listing</a>' +
       '</div>' +
     '</div>';
   }
@@ -87,8 +90,8 @@
         }, "empty");
       } else {
         showState({
-          title: "No confirmed domains yet",
-          body: "Admin-confirmed domains will appear here. You can still check a QR code before opening it.",
+          title: "No listed domains yet",
+          body: "Administrator QR URL records will appear here. You can still check a QR code before opening it.",
           actionLabel: "Scan a QR code",
           actionHref: "/#scanner"
         }, "empty");
@@ -121,10 +124,10 @@
     stateEl.hidden = false;
     stateEl.replaceChildren();
     activeOperation = UIStates.loading(stateEl, {
-      label: hasRows ? "Updating threat database" : "Loading threat database",
+      label: hasRows ? "Updating QR observations" : "Loading QR observations",
       skeletonRows: hasRows ? 0 : 3,
       compact: hasRows,
-      timeoutTitle: hasRows ? "Threat database didn't update" : "Threat database didn't load",
+      timeoutTitle: hasRows ? "QR observations didn't update" : "QR observations didn't load",
       timeoutBody: hasRows
         ? "These are previous results and may not match your search. Try again to update them."
         : "Check your connection and try again.",
@@ -145,7 +148,7 @@
     UIStates.fetchJson(url, { credentials: "same-origin", signal: controller.signal })
       .then(function (data) {
         if (seq !== requestSeq || timedOut) return;
-        if (!data || !Array.isArray(data.entries)) throw new Error("Unexpected threat database response");
+        if (!data || !Array.isArray(data.entries)) throw new Error("Unexpected QR observations response");
         activeOperation.finish();
         state.loading = false;
         grid.removeAttribute("aria-busy");
@@ -159,7 +162,7 @@
         stateEl.style.display = "";
         stateEl.hidden = false;
         UIStates.error(stateEl, {
-          title: hasRows ? "Threat database didn't update" : "Threat database didn't load",
+          title: hasRows ? "QR observations didn't update" : "QR observations didn't load",
           body: problem && problem.code === "offline"
             ? hasRows
               ? "You're offline. These are previous results and may not match your search. Reconnect to update them."

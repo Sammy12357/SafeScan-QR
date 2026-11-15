@@ -85,6 +85,8 @@ button[value="disqualified"], button[value="suspended"], button[value="deleted"]
 .admin-theme-toggle { white-space: nowrap; font-size: 12px; font-weight: 700; }
 .crown { color: var(--admin-gold); margin-right: var(--space-3); }
 .global-search input, .filters input, .filters select, .row-actions input, .row-actions select { width: 100%; min-height: 36px; border: 1px solid var(--admin-line); border-radius: 8px; background: var(--admin-input); color: var(--admin-text); padding: var(--space-0) var(--space-4); }
+.admin-table textarea, .admin-table select, .admin-card textarea, .admin-card select { display: block; width: min(100%, 40rem); box-sizing: border-box; margin: var(--space-2) var(--space-0); padding: var(--space-3); border: 1px solid var(--admin-line); border-radius: 8px; background: var(--admin-input); color: var(--admin-text); font: inherit; }
+.admin-table textarea, .admin-card textarea { min-height: 5rem; resize: vertical; }
 .global-search input::placeholder, .filters input::placeholder, .row-actions input::placeholder { color: var(--admin-muted); opacity: 1; }
 .bell { color: var(--admin-accent); }
 .admin-content { padding: var(--space-8); display: grid; gap: var(--space-6); }

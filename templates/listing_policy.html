@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="/static/theme-init.js?v=rose-theme-v1"></script>
+  <title>QR URL listing and correction policy | SafeScan QR</title>
+  <link rel="icon" href="/static/safescan-logo.svg?v=rose-theme-v1" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css?v=legal-font-v1">
+  <link rel="stylesheet" href="/static/styles-malicious-database.css?v=listing-disputes-v1">
+</head>
+<body>
+  <main class="mq-shell mq-copy">
+    <a class="mq-back" href="/malicious-database">&#8592; Back to QR URL observations</a>
+    <p class="mq-eyebrow">Listing policy</p>
+    <h1>How listings and corrections work</h1>
+    <p>SafeScan publishes broad domains associated with QR URLs after an administrator adds a URL to its blocklist. The listing shows the source category and date of the record. A listing is not a finding about every page on a domain or the business that operates it. We do not publish private scan URLs, tokens, or reporter details.</p>
+    <h2>Before an entry appears</h2>
+    <p>A user report by itself does not create a public entry. A SafeScan administrator must review the URL and record the evidence source, what was observed, and when. Older entries may have only the original administrator listing record; we examine those records when a dispute is raised.</p>
+    <h2>Disputes and corrections</h2>
+    <p>Use “Dispute this listing” on an entry to describe an error and provide a contact email. The entry will display “Under review” while the dispute is open. We aim to begin reviewing disputes within two business days. An administrator checks the stored evidence and the submitted claim, records a reason, and either retains or removes the entry. When removal is chosen, every active URL record behind that domain entry is removed from the public feed immediately.</p>
+    <p>A review may need more information. If email delivery is available, SafeScan may contact the address supplied in the dispute. Dispute text and contact information are visible to staff, not in the public feed. See the <a href="/privacy">privacy policy</a> for data practices.</p>
+  </main>
+  {% include "footer.html" %}
+  <script src="/static/app-core.js?v=ui-loading-v2"></script>
+  <script src="/static/app-widgets.js?v=consent-cache-v1"></script>
+</body>
+</html>

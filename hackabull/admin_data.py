@@ -62,6 +62,8 @@ from .history import admin_avatar
 from .history import safe_scan_history_record
 from .payload_privacy import safe_legacy_scan_value
 from .waitlist_email import confirmation_available
+from .listing_review import first_response_due, public_listing_id
+from .malicious_db import _public_domain
 
 # =============================================================================
 # ADMIN CONSOLE — data-access helpers (the admin routes follow further below)
@@ -315,6 +317,9 @@ def dashboard_data():
             if not owned_email:
                 user["scan_count"] = 0
         recent_reports = [dict(row) for row in conn.execute("SELECT * FROM url_reports ORDER BY created_at DESC LIMIT 10")]
+        open_listing_disputes = conn.execute(
+            "SELECT COUNT(*) FROM listing_disputes WHERE status = 'under_review'"
+        ).fetchone()[0]
         activity = [dict(row) for row in conn.execute(
             """
             SELECT a.*,
@@ -340,6 +345,7 @@ def dashboard_data():
         ],
         "recent_users": recent_users,
         "recent_reports": recent_reports,
+        "open_listing_disputes": open_listing_disputes,
         "activity": activity,
         "chart_rows": chart_rows,
         "verdict_rows": verdict_rows,
@@ -371,9 +377,21 @@ def fetch_reports(tab="reports"):
         conn.row_factory = sqlite3.Row
         reports = [dict(row) for row in conn.execute("SELECT * FROM url_reports ORDER BY created_at DESC LIMIT 200")]
         blocklist = [dict(row) for row in conn.execute("SELECT * FROM url_blocklist WHERE removed_at IS NULL ORDER BY created_at DESC LIMIT 200")]
+        disputes = [dict(row) for row in conn.execute(
+            "SELECT * FROM listing_disputes ORDER BY CASE WHEN status = 'under_review' THEN 0 ELSE 1 END, created_at DESC LIMIT 200"
+        )]
+        open_disputes = conn.execute(
+            "SELECT COUNT(*) FROM listing_disputes WHERE status = 'under_review'"
+        ).fetchone()[0]
     for row in blocklist:
         row["url"] = safe_legacy_scan_value(row.get("url"))
-    return {"reports": reports, "blocklist": blocklist, "tab": tab}
+        domain = _public_domain(row.get("url") or "")
+        row["listing_id"] = public_listing_id(domain) if domain else None
+    for row in disputes:
+        row["listing_id"] = public_listing_id(row["domain"])
+        row["first_response_due"] = first_response_due(row["created_at"])
+    return {"reports": reports, "blocklist": blocklist, "disputes": disputes,
+            "open_disputes": open_disputes, "tab": tab}
 
 def fetch_waitlist(search="", limit=500):
     bounded_limit = max(1, min(int(limit or 500), 5000))
