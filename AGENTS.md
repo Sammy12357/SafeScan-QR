@@ -38,18 +38,14 @@ To deploy a website or backend change:
 Manual Deploy > Deploy latest commit
 ```
 
-7. Verify the live site at:
+7. Verify the live health endpoint and public site at:
 
 ```text
-https://sqafe.com
+https://sqafe.com/api/health
+https://sqafe.com/
 ```
 
-For the Alpha Premium payment flow, verify:
-
-```text
-https://sqafe.com/pay/alpha
-https://sqafe.com/pay/alpha/success
-```
+For billing changes, inspect `https://sqafe.com/pay/alpha` without initiating a real payment. Verify checkout, webhook, portal, and cancellation paths with isolated test fixtures. A checkout return page is not proof of payment.
 
 ## Important Render Settings
 
@@ -73,15 +69,15 @@ The old Stripe Payment Link must be disabled before card billing opens. The succ
 
 Use the bundled or local Python runtime available in the environment.
 
-Focused payment persistence test:
+Focused verified billing tests (after installing the project test dependencies):
 
 ```text
-python -m pytest tests/test_auth_persistence.py -q
+python3 -m pytest tests/test_auth_persistence.py::test_stripe_checkout_webhook_receipt_portal_and_cancel tests/test_auth_persistence.py::test_stripe_rejects_bad_signatures_unpaid_and_wrong_product tests/test_auth_persistence.py::test_card_checkout_requires_verified_business_and_stripe_settings -q
 ```
 
 Broader auth persistence suite:
 
 ```text
-python -m pytest tests/test_auth_persistence.py -q
+python3 -m pytest tests/test_auth_persistence.py -q
 ```
 
