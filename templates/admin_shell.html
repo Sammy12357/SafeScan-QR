@@ -10,9 +10,10 @@
   <title>{{ title }} | SafeScan Admin</title>
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <script src="/static/ui-states.js?v=ui-loading-v1"></script>
-  <link rel="stylesheet" href="/static/admin.css?v=ui-a11y-v1">
+  <link rel="stylesheet" href="/static/admin.css?v=ui-a11y-v2">
 </head>
 <body class="admin-body">
+  <a class="admin-skip-link" href="#admin-main">Skip to main content</a>
   {% set owner_pages = ['/admin/api-keys', '/admin/settings'] %}
   <aside class="admin-sidebar">
     <a class="admin-brand" href="/" aria-label="Back to SafeScan QR home"><span>SafeScan QR</span><b>ADMIN</b></a>
@@ -49,7 +50,7 @@
     </div>
   </aside>
 
-  <main class="admin-main">
+  <main class="admin-main" id="admin-main" tabindex="-1">
     <header class="admin-topbar">
       <h1>{% if title in ['API Keys', 'Settings'] %}<span class="crown">♛</span>{% endif %}{{ title }}</h1>
       <form class="global-search" action="/admin/users" method="get">
