@@ -1,0 +1,19 @@
+{
+  "before_commit": "2681459",
+  "after_commit": "ab46275",
+  "mode": "local MOCK_MODE servers, synthetic account, external requests blocked",
+  "widths": [
+    375,
+    768,
+    1440
+  ],
+  "themes": [
+    "dark",
+    "light"
+  ],
+  "states": [
+    "go_ghost_check_failure",
+    "consent_server_failure",
+    "consent_cache_blocked"
+  ]
+}

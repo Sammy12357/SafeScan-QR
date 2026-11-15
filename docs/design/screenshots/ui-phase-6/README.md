@@ -24,3 +24,27 @@ Scan history and admin tables render with their page responses, so there is no l
 - The scanner progress panel appears inside the form being submitted and has one live status message.
 - The QR generator shows `aria-busy` and a spinner while its network request is pending.
 - `UIStates.busy` restores the original button and keyboard focus after an async action.
+## Account and consent recovery evidence
+
+These matched viewport captures compare Phase 6 before the recovery fixes (`2681459`) with the fixes (`ab46275`). Each frame is 900 CSS pixels tall. All accounts are synthetic, both app servers run in `MOCK_MODE` with temporary SQLite databases and empty provider credentials, and the browser blocks external requests.
+
+| State | Dark 375 | Dark 768 | Dark 1440 | Light 375 | Light 768 | Light 1440 |
+|---|---|---|---|---|---|---|
+| Go Ghost account check fails | [before](recovery/before/dark/375/go_ghost_check_failure.jpg) / [after](recovery/after/dark/375/go_ghost_check_failure.jpg) | [before](recovery/before/dark/768/go_ghost_check_failure.jpg) / [after](recovery/after/dark/768/go_ghost_check_failure.jpg) | [before](recovery/before/dark/1440/go_ghost_check_failure.jpg) / [after](recovery/after/dark/1440/go_ghost_check_failure.jpg) | [before](recovery/before/light/375/go_ghost_check_failure.jpg) / [after](recovery/after/light/375/go_ghost_check_failure.jpg) | [before](recovery/before/light/768/go_ghost_check_failure.jpg) / [after](recovery/after/light/768/go_ghost_check_failure.jpg) | [before](recovery/before/light/1440/go_ghost_check_failure.jpg) / [after](recovery/after/light/1440/go_ghost_check_failure.jpg) |
+| Consent server returns 503 | [before](recovery/before/dark/375/consent_server_failure.jpg) / [after](recovery/after/dark/375/consent_server_failure.jpg) | [before](recovery/before/dark/768/consent_server_failure.jpg) / [after](recovery/after/dark/768/consent_server_failure.jpg) | [before](recovery/before/dark/1440/consent_server_failure.jpg) / [after](recovery/after/dark/1440/consent_server_failure.jpg) | [before](recovery/before/light/375/consent_server_failure.jpg) / [after](recovery/after/light/375/consent_server_failure.jpg) | [before](recovery/before/light/768/consent_server_failure.jpg) / [after](recovery/after/light/768/consent_server_failure.jpg) | [before](recovery/before/light/1440/consent_server_failure.jpg) / [after](recovery/after/light/1440/consent_server_failure.jpg) |
+| Consent saved, browser cache blocked | [before](recovery/before/dark/375/consent_cache_blocked.jpg) / [after](recovery/after/dark/375/consent_cache_blocked.jpg) | [before](recovery/before/dark/768/consent_cache_blocked.jpg) / [after](recovery/after/dark/768/consent_cache_blocked.jpg) | [before](recovery/before/dark/1440/consent_cache_blocked.jpg) / [after](recovery/after/dark/1440/consent_cache_blocked.jpg) | [before](recovery/before/light/375/consent_cache_blocked.jpg) / [after](recovery/after/light/375/consent_cache_blocked.jpg) | [before](recovery/before/light/768/consent_cache_blocked.jpg) / [after](recovery/after/light/768/consent_cache_blocked.jpg) | [before](recovery/before/light/1440/consent_cache_blocked.jpg) / [after](recovery/after/light/1440/consent_cache_blocked.jpg) |
+
+The Go Ghost pair shows the old workspace still visible despite its `hidden` attribute after a failed account check. The corrected state hides it, states that verification could not be confirmed, and offers **Reload and retry**. For consent, a server failure keeps the choice available; a successful server response with blocked local storage now says the choice was recorded and offers **Close**.
+
+### Reproduce
+
+From the Phase 6 worktree with the recovery fixes:
+
+```bash
+git worktree add --detach ../safescan-qr-ui-phase-6-visual-before 2681459
+python -m pip install -r requirements-dev.txt
+python -m playwright install chromium
+python docs/design/screenshots/ui-phase-6/capture_recovery.py --before-root ../safescan-qr-ui-phase-6-visual-before --after-root .
+```
+
+The script asserts each UI state before saving it. It starts both servers locally with isolated environment variables, induces `/api/me` network failure or a consent 503 response where needed, and blocks only the browser’s consent storage for the successful-save case. The generated [manifest](recovery/manifest.json) records the source commits and capture matrix.
