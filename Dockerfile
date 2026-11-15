@@ -14,8 +14,6 @@ RUN pip install --no-cache-dir --only-binary=:all: --require-hashes --prefix=/in
 # -- Stage 2: runtime ------------------------------------------------
 FROM python:3.11-slim AS runtime
 
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-
 # System deps only - no build tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libzbar0 \
@@ -44,13 +42,11 @@ COPY removals/ ./removals/
 # hermetic - no external fetch at boot, no failure mode if Tranco is down.
 COPY data/ ./data/
 
-RUN python -m playwright install --with-deps chromium
-
 # /app/data already exists from the COPY above; /var/data is the Render
 # persistent volume mount and only appears at runtime, so we have to
 # create it here before chowning. -p so re-runs / cached layers don't
 # fail if the dir already exists.
-RUN mkdir -p /var/data && chown -R safescan:safescan /app/data /var/data /ms-playwright
+RUN mkdir -p /var/data && chown -R safescan:safescan /app/data /var/data
 
 USER safescan
 

@@ -1,6 +1,7 @@
 """The public web service must not start a third-party browser session."""
 
 import importlib
+import re
 import sqlite3
 import subprocess
 import sys
@@ -12,6 +13,23 @@ from fastapi.testclient import TestClient
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_production_image_excludes_unused_browser_runtime():
+    """The fixed-off server automation gate must not ship Chromium or Playwright."""
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    runtime_requirements = (ROOT / "requirements.txt").read_text()
+    runtime_lock = (ROOT / "requirements.lock").read_text()
+    dev_requirements = (ROOT / "requirements-dev.txt").read_text()
+    dev_lock = (ROOT / "requirements-dev.lock").read_text()
+
+    assert "playwright" not in dockerfile.lower()
+    assert "chromium" not in dockerfile.lower()
+    assert "ms-playwright" not in dockerfile.lower()
+    assert not re.search(r"^playwright(?:[=<>]|$)", runtime_requirements, re.MULTILINE)
+    assert not re.search(r"^playwright==", runtime_lock, re.MULTILINE)
+    assert re.search(r"^playwright(?:[=<>]|$)", dev_requirements, re.MULTILINE)
+    assert re.search(r"^playwright==", dev_lock, re.MULTILINE)
 
 
 @pytest.fixture()
