@@ -498,7 +498,6 @@ async function checkGhostAccount() {
 if (goGhostWorkspace) {
   applyGoGhostDeviceFormatting();
   window.addEventListener("resize", applyGoGhostDeviceFormatting);
-  ghostApplyLegacyPolicy();
   // Guest details must not reappear after a sign-in on this tab.
   if (goGhostAccountId) {
     try { window.sessionStorage.removeItem("safeScanGoGhostV2:guest"); } catch { /* Storage unavailable. */ }
@@ -561,8 +560,7 @@ if (goGhostWorkspace) {
   });
 
   eraseGhostLegacyButton?.addEventListener("click", () => {
-    if (!window.confirm("Erase older Go Ghost details from this browser? Their owner cannot be identified, and this cannot be undone.")) return;
-    const erased = ghostApplyLegacyPolicy("erase");
+    const erased = ghostEraseLegacyData();
     showCopyToast(erased ? "Older browser details erased" : "Could not erase older browser details");
   });
 

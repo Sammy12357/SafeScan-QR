@@ -46,9 +46,7 @@ const GO_GHOST_PROFILE_KEY = "safeScanGoGhostProfile";
 const GO_GHOST_PROGRESS_KEY = "safeScanGoGhostProgress";
 const GO_GHOST_CONSENT_KEY = "safeScanGoGhostConsent";
 const GO_GHOST_LEGACY_KEYS = [GO_GHOST_PROFILE_KEY, GO_GHOST_PROGRESS_KEY, GO_GHOST_CONSENT_KEY];
-// The old keys have no owner. Never read or import their contents into v2.
-// Change this one value to "erase" only after the migration choice is settled.
-const GO_GHOST_LEGACY_POLICY = "quarantine";
+// The old keys have no owner. Erase them without reading or importing values.
 const goGhostAccountId = goGhostWorkspace?.dataset.accountId || "";
 const GO_GHOST_STORE_KEY = goGhostAccountId
   ? `safeScanGoGhostV2:account:${encodeURIComponent(goGhostAccountId)}`
@@ -199,8 +197,7 @@ function ghostSaveProgress(progress) {
   ghostSaveState();
 }
 
-function ghostApplyLegacyPolicy(policy = GO_GHOST_LEGACY_POLICY) {
-  let found = false;
+function ghostEraseLegacyData() {
   let eraseFailed = false;
   try {
     const area = window.localStorage;
@@ -212,20 +209,19 @@ function ghostApplyLegacyPolicy(policy = GO_GHOST_LEGACY_POLICY) {
       }
       return names;
     };
-    const present = presentKeys();
-    found = present.size > 0;
-    if (policy === "erase") {
-      for (const key of present) area.removeItem(key);
-      eraseFailed = presentKeys().size > 0;
-    }
+    for (const key of presentKeys()) area.removeItem(key);
+    eraseFailed = presentKeys().size > 0;
   } catch {
-    if (policy === "erase") eraseFailed = true;
+    eraseFailed = true;
   }
-  const showNotice = policy === "erase" ? eraseFailed : found;
-  if (goGhostLegacyNotice) goGhostLegacyNotice.hidden = !showNotice;
-  if (goGhostLegacyActions) goGhostLegacyActions.hidden = !showNotice;
-  return policy === "erase" ? !eraseFailed : found;
+  if (goGhostLegacyNotice) goGhostLegacyNotice.hidden = !eraseFailed;
+  if (goGhostLegacyActions) goGhostLegacyActions.hidden = !eraseFailed;
+  return !eraseFailed;
 }
+
+// This shared script also loads on the account profile page. Erase as soon as
+// either page opens, without waiting for consent or reading the legacy values.
+ghostEraseLegacyData();
 
 function cleanGhostText(value) {
   return String(value || "").trim().replace(/\s+/g, " ");

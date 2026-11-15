@@ -8,7 +8,7 @@
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <title>Go Ghost | SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg?v=rose-theme-v1" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=ghost-storage-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=ghost-legacy-erase-v1">
 </head>
 <body>
   <div class="page-shell go-ghost-shell">
@@ -31,8 +31,8 @@
       </div>
     </header>
     <p id="goGhostSessionNotice" class="go-ghost-copy" role="alert" hidden>Your sign-in changed. Reload this page before using Go Ghost.</p>
-    <p id="goGhostLegacyNotice" class="go-ghost-copy" role="status" hidden>Older Go Ghost details cannot be assigned safely to an account, so they are hidden. You can erase them separately from this browser.</p>
-    <div id="goGhostLegacyActions" class="go-ghost-actions" hidden><button id="eraseGhostLegacyButton" class="secondary-button" type="button">Erase older browser details</button></div>
+    <p id="goGhostLegacyNotice" class="go-ghost-copy" role="alert" hidden>Older Go Ghost details could not be erased from this browser. Try again or clear this site's browser storage.</p>
+    <div id="goGhostLegacyActions" class="go-ghost-actions" hidden><button id="eraseGhostLegacyButton" class="secondary-button" type="button">Retry erasing older details</button></div>
 
     <main class="go-ghost-layout" id="goGhostWorkspace" hidden data-browser-automation-available="{{ 'true' if browser_automation_available else 'false' }}" data-account-id="{{ go_ghost_account_id }}">
       <section class="go-ghost-card result-card-wide">
@@ -175,8 +175,8 @@
   <script id="goGhostBrokerRegistry" type="application/json">{{ go_ghost_brokers | tojson }}</script>
   <script src="/static/app-core.js?v=ghost-assist-v1"></script>
   <script src="/static/app-widgets.js?v=ghost-assist-v1"></script>
-  <script src="/static/app-go-ghost.js?v=ghost-storage-v1"></script>
-  <script src="/static/app-go-ghost-ui.js?v=ghost-storage-v1"></script>
+  <script src="/static/app-go-ghost.js?v=ghost-legacy-erase-v1"></script>
+  <script src="/static/app-go-ghost-ui.js?v=ghost-legacy-erase-v1"></script>
   <script src="/static/app-generate-qr.js?v=ghost-assist-v1"></script>
 </body>
 </html>
