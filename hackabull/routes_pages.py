@@ -874,28 +874,47 @@ async def data_processing_log(request: Request, secret: str = Query("")):
 @qr_app.get("/admin/report-breach", response_class=HTMLResponse)
 async def report_breach_form(request: Request, secret: str = Query("")):
     require_role_user(request, "admin")
-    body = """
-    <form class="legal-form" action="/admin/report-breach" method="post">
-      <label>Breach discovery date <input name="discovery_date" required placeholder="2026-05-05T14:32:00Z"></label>
-      <label>Data categories affected <textarea name="data_categories" required rows="3"></textarea></label>
-      <label>Estimated users affected <input name="users_affected" required></label>
-      <label>Likely consequences <textarea name="likely_consequences" required rows="4"></textarea></label>
-      <label>Measures taken <textarea name="measures_taken" required rows="4"></textarea></label>
-      <button class="primary-button" type="submit">Generate breach template</button>
-    </form>
-    """
-    return templates.TemplateResponse("admin_table.html", {"request": request, "title": "Report Breach", "body_html": body, "message": ""})
+    return templates.TemplateResponse("admin_table.html", {
+        "request": request, "title": "Report Breach", "breach_form": True,
+        "form_values": {}, "field_errors": {}, "message": "",
+    })
 
 @qr_app.post("/admin/report-breach", response_class=HTMLResponse)
 async def report_breach(
     request: Request,
-    discovery_date: str = Form(...),
-    data_categories: str = Form(...),
-    users_affected: str = Form(...),
-    likely_consequences: str = Form(...),
-    measures_taken: str = Form(...)
+    discovery_date: str = Form(""),
+    data_categories: str = Form(""),
+    users_affected: str = Form(""),
+    likely_consequences: str = Form(""),
+    measures_taken: str = Form("")
 ):
     admin_user = require_role_user(request, "admin")
+    values = {
+        "discovery_date": discovery_date.strip(),
+        "data_categories": data_categories.strip(),
+        "users_affected": users_affected.strip(),
+        "likely_consequences": likely_consequences.strip(),
+        "measures_taken": measures_taken.strip(),
+    }
+    errors = {}
+    try:
+        datetime.fromisoformat(values["discovery_date"].replace("Z", "+00:00"))
+    except ValueError:
+        errors["discovery_date"] = "Enter the discovery date as an ISO date or timestamp."
+    if not values["data_categories"] or len(values["data_categories"]) > 2000:
+        errors["data_categories"] = "Describe the affected data in 2,000 characters or fewer."
+    if not values["users_affected"] or len(values["users_affected"]) > 80:
+        errors["users_affected"] = "Enter an estimate or say unknown, in 80 characters or fewer."
+    if not values["likely_consequences"] or len(values["likely_consequences"]) > 4000:
+        errors["likely_consequences"] = "Describe likely consequences in 4,000 characters or fewer."
+    if not values["measures_taken"] or len(values["measures_taken"]) > 4000:
+        errors["measures_taken"] = "Describe measures taken in 4,000 characters or fewer."
+    if errors:
+        return templates.TemplateResponse("admin_table.html", {
+            "request": request, "title": "Report Breach", "breach_form": True,
+            "form_values": values, "field_errors": errors, "message": "",
+        }, status_code=400, headers={"Cache-Control": "no-store"})
+    discovery_date, data_categories, users_affected, likely_consequences, measures_taken = values.values()
     template = f"""GDPR Article 33/34 Breach Notification Draft\nDiscovery date: {discovery_date}\nData categories affected: {data_categories}\nEstimated users affected: {users_affected}\nLikely consequences: {likely_consequences}\nMeasures taken: {measures_taken}\nAdmin contact: {ADMIN_EMAIL}\nReview whether supervisory authority notice is required within 72 hours and whether user notice is required for high-risk impact."""
     report_id = make_id("breach")
     now = datetime.utcnow().isoformat() + "Z"
@@ -903,7 +922,7 @@ async def report_breach(
         conn.execute("INSERT INTO breach_reports VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (report_id, discovery_date, data_categories, users_affected, likely_consequences, measures_taken, now, template))
     audit_log("admin.breach_report_created", request=request, actor_user_id=admin_user.get("google_id"), target_type="breach_report", target_id=report_id)
     body = f"<h2>Breach Report {escape_html(report_id)}</h2><pre class='legal-json'>{escape_html(template)}</pre>"
-    return templates.TemplateResponse("admin_table.html", {"request": request, "title": "Breach Template", "body_html": body, "message": "Report logged. Connect email provider for live admin notifications."})
+    return templates.TemplateResponse("admin_table.html", {"request": request, "title": "Breach Template", "body_html": body, "message": "Report logged. Keep this record for incident review."}, headers={"Cache-Control": "no-store"})
 
 @qr_app.get("/api/health")
 async def api_health():
