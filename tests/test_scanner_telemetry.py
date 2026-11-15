@@ -82,3 +82,23 @@ def test_rate_budget_only_drops_telemetry_not_scans(tmp_path, monkeypatch):
     assert module.RATE_LIMITS == {}, "generic IP-linked audit limiter must not process telemetry"
     assert client.get("/health").status_code == 200
     assert client.post("/search_qr_api", data={"manual_url": "WIFI:T:WPA;S:Test;P:test;;"}).status_code == 200
+
+
+def test_gpc_suppresses_counts_before_admission_and_coerces_consent(tmp_path, monkeypatch):
+    module, telemetry, client = load_app(tmp_path, monkeypatch)
+    assert client.post("/api/telemetry/scan", json=sample_event(), headers={"Sec-GPC": "1"}).status_code == 204
+    assert len(telemetry._recent_events) == 0
+    consent = client.post("/api/consent", json={"consentType": "all"}, headers={"Sec-GPC": "1"})
+    assert consent.status_code == 200
+    assert consent.json()["effectiveConsentType"] == "essential_only"
+    with module.get_conn() as conn:
+        row = conn.execute("SELECT consent_type, consent_given FROM consent_logs WHERE id = ?", (consent.json()["id"],)).fetchone()
+    assert tuple(row) == ("essential_only", 0)
+    assert client.post("/api/consent", json={"consentType": "bogus"}).status_code == 400
+
+
+def test_camera_count_sender_checks_browser_gpc():
+    source = (Path(__file__).resolve().parents[1] / "static/qr-camera.js").read_text()
+    sender = source[source.index("function postScanCount(event)"):source.index("function cameraCapabilities(")]
+    assert "navigator.globalPrivacyControl === true" in sender
+    assert sender.index("navigator.globalPrivacyControl === true") < sender.index("window.fetch(\"/api/telemetry/scan\"")

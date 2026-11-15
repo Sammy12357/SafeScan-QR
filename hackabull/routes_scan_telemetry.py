@@ -61,6 +61,9 @@ def _admit_count():
 
 @qr_app.post("/api/telemetry/scan", include_in_schema=False)
 async def scanner_telemetry(request: Request):
+    # GPC overrides any prior browser choice. Do not parse or count the event.
+    if request.headers.get("sec-gpc", "").strip() == "1":
+        return Response(status_code=204)
     if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
         return error_response(request, 415, message="Expected JSON.")
     declared = request.headers.get("content-length")

@@ -25,6 +25,7 @@
 
   function postScanCount(event) {
     if (typeof window.fetch !== "function") return;
+    if (navigator.globalPrivacyControl === true) return;
     // The site's privacy banner makes scanner analytics optional. Treat an
     // absent, expired, essential-only, or custom choice as no consent.
     try {

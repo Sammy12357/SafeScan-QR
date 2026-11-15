@@ -983,6 +983,10 @@ async def submit_data_request(
 @qr_app.post("/api/consent")
 async def log_consent(request: Request, payload: dict = Body(...)):
     consent_type = payload.get("consentType", "essential_only")
+    if consent_type not in {"all", "custom", "essential_only"}:
+        raise HTTPException(status_code=400, detail="Invalid consent choice.")
+    if request.headers.get("sec-gpc", "").strip() == "1":
+        consent_type = "essential_only"
     consent_given = consent_type != "essential_only"
     now = datetime.utcnow()
     consent_id = make_id("consent")
@@ -1002,7 +1006,7 @@ async def log_consent(request: Request, payload: dict = Body(...)):
                 (now + timedelta(days=365)).isoformat() + "Z"
             )
         )
-    return {"id": consent_id, "expiresInDays": 365}
+    return {"id": consent_id, "expiresInDays": 365, "effectiveConsentType": consent_type}
 
 @qr_app.get("/legal/consent-log", response_class=HTMLResponse)
 async def consent_log(request: Request, secret: str = Query("")):
