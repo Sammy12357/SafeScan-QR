@@ -8,8 +8,10 @@ Requires the development dependency ``playwright`` and an installed Chromium:
     python scripts/ui_screenshots.py
     python scripts/ui_screenshots.py --app-root ../safescan-qr-ui-phase-3 --views none --extra-view states=/__states
 
-The script uses a throwaway SQLite database and synthetic local-only accounts.
-It never calls a production URL, changes app behavior, or injects UI states.
+The script uses a throwaway SQLite database, synthetic local-only accounts,
+and a child process without inherited credentials or .env loading. It never
+targets the production SafeScan service, changes app behavior, or injects UI
+states. Existing external font requests in the templates may still load.
 Future mock-only state fixtures can be added after their views exist.
 """
 
@@ -149,6 +151,58 @@ def git_sha(root: Path) -> str:
     return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], cwd=root, text=True).strip()
 
 
+def isolated_server_env(temp_dir: str, base_url: str) -> dict[str, str]:
+    """Give the mock server no inherited secrets or access to a worktree .env."""
+    runtime_names = ("PATH", "PYTHONPATH", "TMPDIR", "VIRTUAL_ENV")
+    env = {name: os.environ[name] for name in runtime_names if name in os.environ}
+    # A private home also prevents SDKs from finding ~/.aws or similar files.
+    env["HOME"] = temp_dir
+    env["XDG_CACHE_HOME"] = str(Path(temp_dir) / "cache")
+    env["TMPDIR"] = temp_dir
+    env["PYTHON_DOTENV_DISABLED"] = "1"
+    env.update({
+        "APP_URL": base_url,
+        "MOCK_MODE": "true",
+        "ENVIRONMENT": "development",
+        "DATABASE_URL": f"sqlite:///{Path(temp_dir) / 'ui-shots.db'}",
+        "DATA_DIR": temp_dir,
+        "OWNER_EMAILS": "ui-shots-owner@example.test",
+        "ADMIN_EMAILS": "ui-shots-owner@example.test",
+        "ADMIN_EMAIL": "ui-shots-owner@example.test",
+        "ADMIN_ACCESS_DENYLIST": "",
+        "SAFESCAN_ML_ENABLED": "false",
+        "SAFESCAN_ML2_ENABLED": "false",
+        "SAFESCAN_PHISHTANK_TERMS_CONFIRMED": "false",
+        "DOMAIN_AGE_CHECK_ENABLED": "false",
+        "STORAGE_BACKEND": "local",
+        "AIRDROP_ENABLED": "false",
+        "SOLANA_MAINNET_ENABLED": "false",
+        "SOLANA_RPC_URL": "http://127.0.0.1:9",
+    })
+    # These are empty even if a future config path reads one directly. The
+    # allowlist above and PYTHON_DOTENV_DISABLED are the primary safeguards.
+    credential_names = (
+        "GOOGLE_CLIENT_ID", "googe_client_id", "GOOGLE_WEB_RISK_API_KEY",
+        "GOOGLE_SAFE_BROWSING_API_KEY", "googe_api_key", "AUTH0_DOMAIN",
+        "AUTH0_CLIENT_ID", "AUTH0_CLIENT_IDS", "AUTH0_CLIENT_SECRET",
+        "VIRUSTOTAL_API_KEY", "PHISHTANK_APP_KEY", "WHOISXML_API_KEY",
+        "SECURITYTRAILS_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY",
+        "STRIPE_WEBHOOK_SECRET", "ALPHA_STRIPE_PAYMENT_LINK",
+        "ALPHA_SOLANA_RECIPIENT", "ALPHA_SOLANA_AMOUNT_SOL",
+        "SOLANA_USD_PRICE_URL", "SOLANA_USD_PRICE_FALLBACK",
+        "DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET", "DISCORD_BOT_TOKEN",
+        "SMTP_HOST", "SMTP_USERNAME", "SMTP_PASSWORD", "EMAIL_FROM",
+        "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
+        "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY", "S3_BUCKET_NAME",
+        "S3_ENDPOINT_URL", "S3_REGION", "SOLANA_PRIVATE_KEY",
+        "AIRDROP_ADMIN_SECRET", "SESSION_SECRET", "PRIVACY_HASH_SALT",
+        "QR_PAYLOAD_FINGERPRINT_KEY",
+        "METRICS_TOKEN", "TURNSTILE_SECRET_KEY", "TURNSTILE_SITE_KEY",
+    )
+    env.update({name: "" for name in credential_names})
+    return env
+
+
 def context_for(browser, base_url: str, audience: str):
     context = browser.new_context(
         base_url=base_url,
@@ -267,22 +321,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="safescan-ui-shots-") as temp_dir:
         port = free_port()
         base_url = f"http://localhost:{port}"
-        env = os.environ.copy()
-        env.pop("RENDER", None)
-        env.update({
-            "APP_URL": base_url,
-            "MOCK_MODE": "true",
-            "ENVIRONMENT": "development",
-            "DATABASE_URL": f"sqlite:///{Path(temp_dir) / 'ui-shots.db'}",
-            "DATA_DIR": temp_dir,
-            "OWNER_EMAILS": "ui-shots-owner@example.test",
-            "ADMIN_EMAILS": "ui-shots-owner@example.test",
-            "ADMIN_ACCESS_DENYLIST": "",
-            "SAFESCAN_ML_ENABLED": "false",
-            "SAFESCAN_PHISHTANK_TERMS_CONFIRMED": "false",
-            "PHISHTANK_APP_KEY": "",
-            "GOOGLE_WEB_RISK_API_KEY": "",
-        })
+        env = isolated_server_env(temp_dir, base_url)
         process = subprocess.Popen(
             [sys.executable, "-m", "uvicorn", "hackabull:qr_app", "--host", "127.0.0.1", "--port", str(port), "--no-access-log"],
             cwd=app_root,

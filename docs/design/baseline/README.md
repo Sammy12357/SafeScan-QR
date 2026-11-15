@@ -1,8 +1,8 @@
 # Phase 0 visual baseline
 
-Captured locally from `83eed0a` in `MOCK_MODE` with a throwaway SQLite database and synthetic accounts. These 48 images are a reviewable sample across the main scanner, first-use, public data, profile, and admin views. They contain no customer QR payloads or account data.
+Captured locally from `83eed0a` in `MOCK_MODE` with a throwaway SQLite database and synthetic accounts. The screenshot server has a temporary home, cannot inherit API credentials, and does not load `.env`. These 48 images are a reviewable sample across the main scanner, first-use, public data, profile, and admin views. They contain no customer QR payloads or account data.
 
-The capture script also produced **294 images for 49 view variants** at the same three widths and two themes in ignored `.cache/ui-shots/full-final/` in the Phase 0 worktree. The full local manifest validates route, status, rendered theme, and image presence. Run `python scripts/ui_screenshots.py` to regenerate it after installing the development dependencies and Chromium.
+The capture script also produced **294 images for 49 view variants** at the same three widths and two themes in ignored `.cache/ui-shots/isolated-final/` in the Phase 0 worktree. The full local manifest validates route, status, rendered theme, and image presence. Run `python scripts/ui_screenshots.py` to regenerate it after installing the development dependencies and Chromium.
 
 This is the unchanged pre-polish UI. Later visual PRs should attach before/after pairs for the views and states they modify. No `?__state=` fixture exists in Phase 0; the mock-only state gallery begins in Phase 3.
 
