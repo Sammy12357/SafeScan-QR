@@ -7,6 +7,7 @@ establish legal compliance or what production vendors actually receive.
 from __future__ import annotations
 
 import ast
+import importlib.util
 import json
 import re
 from pathlib import Path
@@ -137,6 +138,21 @@ def test_license_and_no_biometric_gates_when_license_phase_exists():
     assert (ROOT / "docs/legal/runtime-dependency-licenses.json").exists()
     assert (ROOT / "tests/test_legal_gate_licenses.py").exists()
     assert (ROOT / "docs/legal/data-rules.md").exists()
+
+
+def test_token_features_and_distribution_remain_off_by_default(monkeypatch):
+    monkeypatch.delenv("TOKEN_FEATURES_ENABLED", raising=False)
+    monkeypatch.delenv("TOKEN_DISTRIBUTION_ENABLED", raising=False)
+    spec = importlib.util.spec_from_file_location("legal_gate_token_flags", ROOT / "hackabull/token_flags.py")
+    flags = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(flags)
+    assert flags.token_features_enabled() is False
+    assert flags.token_distribution_enabled() is False
+    monkeypatch.setenv("TOKEN_FEATURES_ENABLED", "true")
+    assert flags.token_distribution_enabled() is False
+    assert "if not token_features_enabled():" in _source("hackabull/routes_account.py")
+    assert "token_unavailable.html" in _source("hackabull/routes_account.py")
+    assert (ROOT / "templates/token_unavailable.html").is_file()
 
 
 def test_no_face_voice_or_fingerprint_analysis_is_added():
