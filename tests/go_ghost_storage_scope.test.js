@@ -304,7 +304,7 @@ async function main() {
   assert.equal(JSON.parse(local.get(oldKey)).subjects[oldId].profile.name, 'Mary Ann Doe');
   await older.elements.goGhostScopeSearchButton.events.click();
   assert.equal(older.opened.length, 1);
-  assert.match(older.opened[0], /mary-ann-doe/);
+  assert.equal(older.opened[0], 'https://www.fastpeoplesearch.com/');
   assert.doesNotMatch(older.opened[0], /Private|123|555|1978|old%40|old@/i);
   await older.elements.goGhostScopeCopyButton.events.click();
   assert.match(older.copied.at(-1), /Name: Mary Ann Doe/);

@@ -62,7 +62,7 @@
         <p class="go-ghost-copy">Go Ghost can prepare searches and submissions for supported opt-outs using the minimum local details you choose. Email confirmation, CAPTCHA, and exact profile matching still need user-approved checkpoints.</p>
         {% else %}
         <p class="go-ghost-copy">Add only the details you need. Use Search to find your listing, Opt out to open the broker form, and Copy details to paste your information. You complete and submit each request in your browser.</p>
-        <p class="go-ghost-copy">Search opens a broker site or Google. Broker search links may include your name and city/state; Google fallback searches include your name and state.</p>
+        <p class="go-ghost-copy">Search opens a broker starting page without putting your details in the link. Enter your search details on the broker's site.</p>
         <p class="go-ghost-copy" role="status">Assisted browser submissions are temporarily unavailable.</p>
         {% endif %}
         <p id="goGhostDeviceNotice" class="go-ghost-device-notice" role="status" aria-live="polite">Desktop layout active.</p>
@@ -207,8 +207,8 @@
   <script id="goGhostBrokerRegistry" type="application/json">{{ go_ghost_brokers | tojson }}</script>
   <script src="/static/app-core.js?v=ghost-assist-v1"></script>
   <script src="/static/app-widgets.js?v=ghost-assist-v1"></script>
-  <script src="/static/app-go-ghost.js?v=ghost-profile-v2"></script>
-  <script src="/static/app-go-ghost-ui.js?v=ghost-profile-v2"></script>
+  <script src="/static/app-go-ghost.js?v=ghost-static-links-v2"></script>
+  <script src="/static/app-go-ghost-ui.js?v=ghost-static-links-v2"></script>
   <script src="/static/app-generate-qr.js?v=ghost-assist-v1"></script>
 </body>
 </html>
