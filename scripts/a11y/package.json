@@ -1,0 +1,9 @@
+{
+  "name": "safescan-a11y-audit",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Pinned axe-core for local and CI accessibility checks",
+  "devDependencies": {
+    "axe-core": "4.14.0"
+  }
+}

@@ -62,6 +62,45 @@ let scanSubmitterNodes = null;
 let copyToastTimer = 0;
 let riskModalScrollGuard = 0;
 
+// A dialog must keep keyboard focus inside it and make the page behind it inert.
+// Return the cleanup so callers can restore the exact previous inert state.
+function trapModalFocus(modal, onEscape) {
+  const outside = [];
+  for (let branch = modal; branch.parentElement && branch !== document.body; branch = branch.parentElement) {
+    for (const sibling of branch.parentElement.children) {
+      if (sibling !== branch) {
+        outside.push({ element: sibling, inert: sibling.inert });
+        sibling.inert = true;
+      }
+    }
+  }
+  const onKeyDown = (event) => {
+    if (!modal.isConnected || modal.classList.contains("hidden") || modal.closest("[inert]")) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onEscape();
+    } else if (event.key === "Tab") {
+      const focusable = Array.from(modal.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+        .filter((element) => !element.hidden && element.getClientRects().length > 0);
+      if (!focusable.length) { event.preventDefault(); return; }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && (document.activeElement === first || !modal.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !modal.contains(document.activeElement))) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+  };
+  document.addEventListener("keydown", onKeyDown);
+  return () => {
+    document.removeEventListener("keydown", onKeyDown);
+    outside.forEach(({ element, inert }) => { if (element.isConnected) element.inert = inert; });
+  };
+}
+
 // Keep wheel and touch scrolling native. Intercepting wheel events here
 // competes with smooth scrolling and nested modal/menu scroll containers.
 
@@ -358,6 +397,7 @@ const WALLET_API_TIMEOUT_MS = 12000;
 const WALLET_PROVIDER_TIMEOUT_MS = 30000;
 let activeWalletOperation = null;
 let walletReturnFocus = null;
+let walletModalFocusCleanup = null;
 let walletMutationVersion = 0;
 let confirmedWalletProfile = null;
 let walletBusyButtons = [];
@@ -462,6 +502,8 @@ function removeWalletModal() {
     walletMutationVersion += 1;
     clearWalletBusy();
   }
+  walletModalFocusCleanup?.();
+  walletModalFocusCleanup = null;
   document.querySelector(".wallet-modal")?.remove();
   const target = walletReturnFocus?.isConnected && !walletReturnFocus.disabled
     ? walletReturnFocus
@@ -476,6 +518,7 @@ function removeWalletModal() {
 }
 
 function showWalletModal(content) {
+  walletModalFocusCleanup?.();
   document.querySelector(".wallet-modal")?.remove();
   const modal = document.createElement("div");
   modal.className = "wallet-modal";
@@ -492,6 +535,7 @@ function showWalletModal(content) {
   });
   modal.querySelector(".wallet-modal-close")?.addEventListener("click", removeWalletModal);
   document.body.appendChild(modal);
+  walletModalFocusCleanup = trapModalFocus(modal, removeWalletModal);
   const close = modal.querySelector(".wallet-modal-close");
   try { close?.focus({ preventScroll: true }); } catch (_) { close?.focus(); }
   return modal;

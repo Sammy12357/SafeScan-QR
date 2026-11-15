@@ -66,7 +66,7 @@ VIEWS = (
     View("profile", "/profile", "member"),
     View("onboarding_redirect", "/onboarding/username", "member", "/profile"),
     View("data_request", "/legal/data-request"),
-    View("token_guest", "/token", final_path="/auth/confirm-adult"),
+    View("token_guest", "/token"),
     View("token_member", "/token", "member"),
     View("plans", "/plans"),
     View("learn", "/learn"),

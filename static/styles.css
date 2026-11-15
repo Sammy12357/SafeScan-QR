@@ -2,10 +2,10 @@
    order. Rules live in the styles-*.css files; edit those, not this list. */
 @import url("/static/styles-base.css?v=ui-a11y-v1");
 @import url("/static/styles-layout.css?v=ui-a11y-v1");
-@import url("/static/styles-scanner.css?v=camera-viewport-v1");
+@import url("/static/styles-scanner.css?v=legal-a11y-v1");
 @import url("/static/styles-go-ghost.css?v=ui-phase7-v1");
 @import url("/static/styles-panels.css?v=ui-spacing-v2");
-@import url("/static/styles-theme-light.css?v=ui-a11y-v1");
+@import url("/static/styles-theme-light.css?v=legal-a11y-v1");
 @import url("/static/styles-states.css?v=ui-loading-v1");
 @font-face {
   font-family: "Orbitron";
