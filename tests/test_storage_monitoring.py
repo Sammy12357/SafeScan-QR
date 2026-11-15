@@ -167,13 +167,15 @@ def test_production_schema_and_probe_details_are_private(tmp_path, monkeypatch):
     monkeypatch.setattr(app_module, "database_path", fail)
     failed_ready = client.get("/health/ready")
     assert failed_ready.status_code == 503
-    assert failed_ready.json() == {"status": "not_ready"}
+    assert failed_ready.json()["status"] == "not_ready"
+    assert failed_ready.json()["request_id"] == failed_ready.headers["X-Request-ID"]
     assert "private" not in failed_ready.text
 
     monkeypatch.setattr(app_module, "reputation_configuration", fail)
     failed_providers = client.get("/health/providers")
     assert failed_providers.status_code == 503
-    assert failed_providers.json() == {"status": "unavailable"}
+    assert failed_providers.json()["status"] == "unavailable"
+    assert failed_providers.json()["request_id"] == failed_providers.headers["X-Request-ID"]
     assert "credential" not in failed_providers.text
 
 

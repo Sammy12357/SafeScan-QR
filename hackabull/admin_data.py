@@ -74,7 +74,7 @@ def safe_fraud_flag_record(row):
     return result
 
 
-def admin_context(request, title, page, data=None, owner_only=False):
+def admin_context(request, title, page, data=None, owner_only=False, status_code=200):
     admin_user = get_session_user(request)
     if not admin_user or not has_role(admin_user, "admin"):
         return RedirectResponse("/", status_code=303)
@@ -89,7 +89,7 @@ def admin_context(request, title, page, data=None, owner_only=False):
         "is_owner": has_role(admin_user, "owner"),
         "avatar": admin_avatar(admin_user.get("email")),
     }
-    return templates.TemplateResponse("admin_shell.html", context)
+    return templates.TemplateResponse("admin_shell.html", context, status_code=status_code)
 
 def fetch_admin_users(search="", status="", role="", tier="", page=1, limit=25):
     clauses = []

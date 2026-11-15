@@ -48,7 +48,7 @@ def test_dns_rebinding_to_private_address_is_blocked_before_connect(security, mo
     monkeypatch.setattr(security.socket, "getaddrinfo", lambda *args, **kwargs: next(lookups))
     monkeypatch.setattr(security.urllib3, "HTTPSConnectionPool", lambda *args, **kwargs: pytest.fail("Network connection attempted"))
 
-    with pytest.raises(security.SafeScanError, match="Private"):
+    with pytest.raises(security.SafeScanError, match="private or local"):
         security.follow_safe_redirects("https://example.org/path")
 
 
@@ -57,7 +57,7 @@ def test_mixed_public_private_dns_answers_are_rejected(security, monkeypatch):
     monkeypatch.setattr(security.socket, "getaddrinfo", lambda *args, **kwargs: answers)
     monkeypatch.setattr(security.urllib3, "HTTPSConnectionPool", lambda *args, **kwargs: pytest.fail("Network connection attempted"))
 
-    with pytest.raises(security.SafeScanError, match="Private"):
+    with pytest.raises(security.SafeScanError, match="private or local"):
         security.follow_safe_redirects("https://example.org/path")
 
 
@@ -113,14 +113,14 @@ def test_internal_redirect_is_rejected_before_second_fetch(security, monkeypatch
 
     monkeypatch.setattr(security.urllib3, "HTTPSConnectionPool", FakePool)
 
-    with pytest.raises(security.SafeScanError, match="Private"):
+    with pytest.raises(security.SafeScanError, match="private or local"):
         security.follow_safe_redirects("https://example.org/redirect")
 
     assert calls == ["93.184.215.14"]
 
 
 def test_unsupported_redirect_scheme_is_rejected(security):
-    with pytest.raises(security.SafeScanError, match="http and https"):
+    with pytest.raises(security.SafeScanError, match="web address"):
         security.validate_public_url("ftp://example.org/file")
 
 

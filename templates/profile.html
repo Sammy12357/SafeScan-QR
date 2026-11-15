@@ -8,7 +8,7 @@
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <script src="/static/ui-states.js?v=ui-loading-v1"></script>
   <title>Profile | SafeScan QR</title>
-  <link rel="stylesheet" href="/static/styles.css?v=ui-loading-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=ui-loading-v2">
   <link rel="stylesheet" href="/static/styles-profile.css?v=ui-spacing-v2">
 </head>
 <body>
@@ -19,6 +19,7 @@
         <p class="eyebrow">SafeScan QR</p>
         <h1>Your Profile</h1>
         <p class="profile-muted">{{ email }}</p>
+        {% if error and entered_username is not defined %}<div class="profile-notice" role="alert">{{ error }}</div>{% endif %}
 
         {% if username %}
           <p class="success-text">Username set: {{ username }}</p>
@@ -26,11 +27,12 @@
         {% else %}
           <h2>Choose a username</h2>
           <p class="profile-muted">Set this once so the leaderboard can show a public name without exposing your email.</p>
-          {% if error %}<p class="error-text">{{ error }}</p>{% endif %}
+          {% if error and entered_username is defined %}<p class="error-text" role="alert">{{ error }}</p>{% endif %}
           <form action="/profile/username" method="post" class="profile-form">
             <label>
               Username
-              <input name="username" autocomplete="username" minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" placeholder="safescanner" required>
+              <input name="username" autocomplete="username" minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" placeholder="safescanner" required value="{{ entered_username | default('') }}" {% if error %}aria-invalid="true" aria-describedby="username-error"{% endif %}>
+              {% if error %}<span id="username-error" class="form-field-error">{{ error }}</span>{% endif %}
             </label>
             <button class="primary-button" type="submit">Save username</button>
           </form>
@@ -41,7 +43,7 @@
       <section class="profile-card">
         <p class="eyebrow">Community</p>
         <h2>Discord</h2>
-        {% if discord_error %}<p class="error-text">{{ discord_error }}</p>{% endif %}
+        {% if discord_error %}<div class="profile-notice" role="alert">{{ discord_error }}</div>{% endif %}
         {% if discord_link %}
           <p class="success-text">Linked: @{{ discord_link.discord_username or discord_link.discord_id }}</p>
           <p class="profile-muted">

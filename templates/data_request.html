@@ -8,7 +8,7 @@
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <script src="/static/ui-states.js?v=ui-loading-v1"></script>
   <title>Data Request | SafeScan QR</title>
-  <link rel="stylesheet" href="/static/styles.css?v=ui-loading-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=ui-loading-v2">
 </head>
 <body>
   <div class="page-shell legal-shell">
@@ -17,7 +17,8 @@
       <p class="eyebrow">Privacy rights portal</p>
       <h1>Data Request</h1>
       <p class="legal-meta">Version {{ version }} - Last updated {{ last_updated }}</p>
-      {% if message %}<div class="request-message">{{ message }}</div>{% endif %}
+      {% if message %}<div class="request-message" role="status">{{ message }}</div>{% endif %}
+      {% if field_errors %}<div class="request-message" role="alert"><strong>Check these fields:</strong><ul>{% for field, error in field_errors.items() %}<li><a href="#request-{{ field }}">{{ error }}</a></li>{% endfor %}</ul></div>{% endif %}
       <p>Use this portal to submit GDPR, CCPA/CPRA, LGPD, PIPEDA, or general privacy requests. SafeScan logs the request timestamp and targets completion within 30 days.</p>
 
       <div class="rights-grid">
@@ -36,28 +37,37 @@
       </div>
 
       <form class="legal-form" action="/legal/data-request" method="post">
-        <label>Email
-          <input type="email" name="email" required placeholder="you@example.com" value="{{ email | default('') }}">
-        </label>
-        <label>Region
-          <input type="text" name="region" placeholder="EU, California, Brazil, Canada, other">
-        </label>
-        <label>Request type
-          <select name="request_type" required>
-            <option value="access">Access / download my data</option>
-            <option value="erasure">Delete my account and data</option>
-            <option value="rectification">Correct inaccurate data</option>
-            <option value="restriction">Restrict processing</option>
-            <option value="portability">Portable machine-readable export</option>
-            <option value="object">Object to legitimate-interest processing</option>
-            <option value="do_not_sell">Do Not Sell or Share opt-out</option>
-            <option value="limit_sensitive">Limit sensitive personal information</option>
-            <option value="revoke_consent">Revoke consent</option>
+        <div class="form-field">
+        <label for="request-email">Email</label>
+          <input id="request-email" type="email" name="email" required placeholder="you@example.com" value="{{ email | default('') }}" {% if field_errors.email %}aria-invalid="true" aria-describedby="request-email-error"{% endif %}>
+          {% if field_errors.email %}<span id="request-email-error" class="form-field-error">{{ field_errors.email }}</span>{% endif %}
+        </div>
+        <div class="form-field">
+        <label for="request-region">Region</label>
+          <input id="request-region" type="text" name="region" placeholder="EU, California, Brazil, Canada, other" value="{{ region | default('') }}" {% if field_errors.region %}aria-invalid="true" aria-describedby="request-region-error"{% endif %}>
+          {% if field_errors.region %}<span id="request-region-error" class="form-field-error">{{ field_errors.region }}</span>{% endif %}
+        </div>
+        <div class="form-field">
+        <label for="request-type">Request type</label>
+          <select id="request-type" name="request_type" required {% if field_errors.request_type %}aria-invalid="true" aria-describedby="request-type-error"{% endif %}>
+            {% if field_errors.request_type %}<option value="" selected disabled>Choose request type</option>{% endif %}
+            <option value="access" {% if request_type == 'access' %}selected{% endif %}>Access / download my data</option>
+            <option value="erasure" {% if request_type == 'erasure' %}selected{% endif %}>Delete my account and data</option>
+            <option value="rectification" {% if request_type == 'rectification' %}selected{% endif %}>Correct inaccurate data</option>
+            <option value="restriction" {% if request_type == 'restriction' %}selected{% endif %}>Restrict processing</option>
+            <option value="portability" {% if request_type == 'portability' %}selected{% endif %}>Portable machine-readable export</option>
+            <option value="object" {% if request_type == 'object' %}selected{% endif %}>Object to legitimate-interest processing</option>
+            <option value="do_not_sell" {% if request_type == 'do_not_sell' %}selected{% endif %}>Do Not Sell or Share opt-out</option>
+            <option value="limit_sensitive" {% if request_type == 'limit_sensitive' %}selected{% endif %}>Limit sensitive personal information</option>
+            <option value="revoke_consent" {% if request_type == 'revoke_consent' %}selected{% endif %}>Revoke consent</option>
           </select>
-        </label>
-        <label>Details
-          <textarea name="details" rows="5" placeholder="Tell us what you want SafeScan to review or change."></textarea>
-        </label>
+          {% if field_errors.request_type %}<span id="request-type-error" class="form-field-error">{{ field_errors.request_type }}</span>{% endif %}
+        </div>
+        <div class="form-field">
+        <label for="request-details">Details</label>
+          <textarea id="request-details" name="details" rows="5" placeholder="Tell us what you want SafeScan to review or change." {% if field_errors.details %}aria-invalid="true" aria-describedby="request-details-error"{% endif %}>{{ details | default('') }}</textarea>
+          {% if field_errors.details %}<span id="request-details-error" class="form-field-error">{{ field_errors.details }}</span>{% endif %}
+        </div>
         <button class="primary-button" type="submit">Submit request</button>
       </form>
 

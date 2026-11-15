@@ -126,9 +126,9 @@ async def api_scan(request: Request, response: Response, payload: dict = Body(..
     validate_strict_payload(payload, {"payload"})
     raw_payload = payload.get("payload")
     if not isinstance(raw_payload, str) or not raw_payload.strip():
-        raise SafeScanError("No QR payload supplied.", 400)
+        raise SafeScanError(code="qr_payload_missing", field="payload")
     if len(raw_payload) > 4096:
-        raise SafeScanError("QR payload is too large.", 400)
+        raise SafeScanError(code="qr_payload_too_large", field="payload")
 
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
@@ -142,7 +142,10 @@ async def api_scan_file(request: Request, response: Response, file: UploadFile =
         return rate_limit
     contents = await file.read(MAX_QR_UPLOAD_BYTES + 1)
     if len(contents) > MAX_QR_UPLOAD_BYTES:
-        raise SafeScanError(f"Uploaded file is too large. Use a file under {MAX_QR_UPLOAD_BYTES // (1024 * 1024)} MB.", 400)
+        raise SafeScanError(
+            f"That image is too large. Choose one under {MAX_QR_UPLOAD_BYTES // (1024 * 1024)} MB.",
+            400, code="upload_too_large", field="file",
+        )
 
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
@@ -152,9 +155,10 @@ async def api_scan_file(request: Request, response: Response, file: UploadFile =
                 decode_qr_upload, contents, file.filename, file.content_type
             )
     except (QRDecodeAmbiguityError, QRDecodeSafetyError) as exc:
-        raise SafeScanError(str(exc), 400) from exc
+        code = "qr_ambiguous" if isinstance(exc, QRDecodeAmbiguityError) else "qr_unreadable"
+        raise SafeScanError(code=code, field="file") from exc
     if not raw_payload:
-        raise SafeScanError("No QR code or valid payload detected in this file.", 400)
+        raise SafeScanError(code="qr_not_found", field="file")
 
     try:
         return await analyze_and_record_scan(request, user, raw_payload, request.headers.get("x-device-fingerprint", ""), qr_image_for_ml)
@@ -187,16 +191,10 @@ async def api_qr_generate(request: Request, payload: dict = Body(...)):
     analysis = await analyze_full_pipeline(target_url)
     overall_risk = (analysis.get("overallRisk") or "").lower()
     verification_status = analysis.get("verificationStatus")
-    if overall_risk != "safe":
-        raise SafeScanError(
-            "SafeScan only generates branded QR codes for destinations with a safe scan verdict.",
-            400,
-        )
     if verification_status != "complete":
-        raise SafeScanError(
-            "SafeScan could not complete every required check for this destination. Try again later.",
-            503,
-        )
+        raise SafeScanError(code="scan_incomplete")
+    if overall_risk != "safe":
+        raise SafeScanError(code="qr_generation_blocked")
 
     # Lazy-imports keep boot-time fast for non-generator requests.
     import qrcode
@@ -280,7 +278,7 @@ async def api_qr_generate(request: Request, payload: dict = Body(...)):
 
 async def analyze_and_record_scan(request, user, raw_payload, device_fingerprint="", qr_image_for_ml=None):
     if len(raw_payload) > 4096:
-        raise SafeScanError("QR payload is too large.", 400)
+        raise SafeScanError(code="qr_payload_too_large", field="payload")
 
     email = user["email"]
     verified_wallet = get_verified_wallet(email)
@@ -396,7 +394,7 @@ async def api_report_url(request: Request, payload: dict = Body(...)):
     validate_strict_payload(payload, {"url", "reason"})
     reason = payload.get("reason")
     if reason not in ("phishing", "wallet_drain", "malware", "spam", "other"):
-        raise SafeScanError("Invalid report reason.", 400)
+        raise SafeScanError(code="report_reason_invalid", field="reason")
     target_url = validate_public_url(payload.get("url", ""))
     analysis = await analyze_full_pipeline(target_url)
     report_id = make_id("report")
@@ -535,7 +533,7 @@ async def api_wallet_nonce(request: Request, payload: dict = Body(...)):
     validate_strict_payload(payload, {"walletAddress"})
     wallet_address = (payload.get("walletAddress") or "").strip()
     if not is_valid_solana_address(wallet_address):
-        raise SafeScanError("Invalid Solana address format.", 400)
+        raise SafeScanError(code="wallet_address_invalid", field="walletAddress")
     rate_limit = enforce_rate_limit(request, "wallet_nonce", 5, 60 * 60, user_key=wallet_address.lower())
     if rate_limit:
         with get_conn() as conn:
@@ -565,7 +563,7 @@ async def api_wallet_nonce(request: Request, payload: dict = Body(...)):
             (wallet_address, user["email"], wallet_address, user["email"])
         ).fetchone()
     if existing:
-        raise HTTPException(status_code=409, detail="This wallet is already linked to another account.")
+        raise SafeScanError(code="wallet_already_linked", field="walletAddress")
     nonce = secrets.token_hex(32)
     issued_at = now_iso()
     expires_at = (datetime.utcnow() + timedelta(minutes=5)).isoformat() + "Z"
@@ -598,7 +596,7 @@ async def api_wallet_verify(request: Request, payload: dict = Body(...)):
     wallet_address = (payload.get("walletAddress") or "").strip()
     signature = (payload.get("signature") or "").strip()
     if not is_valid_solana_address(wallet_address):
-        raise SafeScanError("Invalid Solana address format.", 400)
+        raise SafeScanError(code="wallet_address_invalid", field="walletAddress")
     with get_conn() as conn:
         conn.row_factory = sqlite3.Row
         stored = conn.execute(
@@ -606,16 +604,16 @@ async def api_wallet_verify(request: Request, payload: dict = Body(...)):
             (user["email"], wallet_address)
         ).fetchone()
     if not stored:
-        raise SafeScanError("No pending verification for this wallet.", 400)
+        raise SafeScanError(code="wallet_challenge_missing")
     try:
         issued_at = datetime.fromisoformat(str(stored["issued_at"]).replace("Z", ""))
         expires_at = datetime.fromisoformat(str(stored["expires_at"]).replace("Z", ""))
     except ValueError:
-        raise SafeScanError("Verification expired. Please try again.", 400)
+        raise SafeScanError(code="wallet_challenge_expired")
     if datetime.utcnow() > expires_at or datetime.utcnow() - issued_at > timedelta(minutes=5):
         with get_conn() as conn:
             conn.execute("DELETE FROM wallet_nonces WHERE user_id = ?", (user["email"],))
-        raise SafeScanError("Verification expired. Please try again.", 400)
+        raise SafeScanError(code="wallet_challenge_expired")
     message = wallet_verification_message(stored["nonce"], user["email"], stored["issued_at"], stored["expires_at"])
     try:
         verify_solana_signature(wallet_address, signature, message)
@@ -630,14 +628,14 @@ async def api_wallet_verify(request: Request, payload: dict = Body(...)):
             target_id=wallet_address[:8] + "...",
             metadata={"reason": "signature_invalid"}
         )
-        raise SafeScanError("Signature verification failed. Request a new challenge and try again.", 400)
+        raise SafeScanError(code="wallet_signature_invalid")
     with get_conn() as conn:
         existing = conn.execute(
             "SELECT user_id FROM wallets WHERE address = ? AND user_id != ? AND verified = 1 LIMIT 1",
             (wallet_address, user["email"])
         ).fetchone()
     if existing:
-        raise HTTPException(status_code=409, detail="This wallet is already linked to another account.")
+        raise SafeScanError(code="wallet_already_linked", field="walletAddress")
     signals = run_fraud_checks(
         "wallet_connect",
         user["email"],
@@ -645,7 +643,7 @@ async def api_wallet_verify(request: Request, payload: dict = Body(...)):
         {"walletAddress": wallet_address, "deviceFingerprint": request.headers.get("x-device-fingerprint", "")}
     )
     if any(signal.get("autoDisqualify") for signal in signals):
-        raise HTTPException(status_code=403, detail="Wallet connection could not be completed. Contact support.")
+        raise SafeScanError(code="wallet_connection_blocked")
     connected_at = now_iso()
     with get_conn() as conn:
         conn.execute("UPDATE wallet_nonces SET used = 1 WHERE user_id = ?", (user["email"],))
@@ -679,7 +677,7 @@ async def api_wallet_disconnect(request: Request):
     _require_unique_email_account(user)
     wallet = get_verified_wallet(user["email"])
     if not wallet:
-        raise HTTPException(status_code=404, detail="No connected wallet found.")
+        raise SafeScanError(code="wallet_not_found")
     with get_conn() as conn:
         conn.execute("DELETE FROM wallets WHERE user_id = ?", (user["email"],))
         conn.execute("DELETE FROM wallet_nonces WHERE user_id = ?", (user["email"],))

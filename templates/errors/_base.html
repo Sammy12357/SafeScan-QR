@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <script src="/static/theme-init.js?v=rose-theme-v1"></script>
+  <script src="/static/ui-states.js?v=ui-states-v1"></script>
+  <title>{% block page_title %}SafeScan needs a moment{% endblock %} | SafeScan QR</title>
+  <link rel="icon" href="/static/safescan-logo.svg?v=rose-theme-v1" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css?v=ui-loading-v2">
+  <link rel="stylesheet" href="/static/styles-errors.css?v=ui-error-v2">
+</head>
+<body class="error-page" data-error-method="{{ request_method }}">
+  <div class="page-shell">
+    {% include "_topnav.html" %}
+    <main class="error-main" id="main">
+      <section class="error-card" aria-labelledby="error-title">
+        <p class="error-eyebrow">SafeScan QR · {{ status_code }}</p>
+        <h1 id="error-title">{% block heading %}SafeScan needs a moment{% endblock %}</h1>
+        <p class="error-description">{% block description %}{{ error_message }}{% endblock %}</p>
+        {% block extra %}{% endblock %}
+        <div class="error-actions">{% block actions %}<a class="primary-button" href="/">Go home</a>{% endblock %}</div>
+        <p class="error-reference">Reference: <code>{{ request_id }}</code></p>
+      </section>
+    </main>
+    {% include "footer.html" %}
+  </div>
+  <script src="/static/error-pages.js?v=ui-error-v1" defer></script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 from __future__ import annotations
 import requests
 import json
+import logging
 import warnings
 import io
 import sqlite3
@@ -23,11 +24,13 @@ from datetime import datetime, timedelta, timezone
 from xml.etree import ElementTree
 
 from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.formparsers import MultiPartParser
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 import os
@@ -52,6 +55,7 @@ from storage import upload_bytes as storage_upload_bytes
 from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party
 import safescan_model_calibration as sm_calibration
 from .audit import SafeScanError
+from .errors import error_response, request_id_for
 from .auth import create_session
 from .auth import get_session_user
 from .config import ACTIVE_SCANS
@@ -102,7 +106,7 @@ async def health_live():
 
 
 @qr_app.get("/health/ready", include_in_schema=False)
-async def health_ready():
+async def health_ready(request: Request):
     try:
         with sqlite3.connect(database_path(), timeout=2) as conn:
             conn.execute("SELECT 1")
@@ -110,16 +114,16 @@ async def health_ready():
         database_storage_status()
         return {"status": "ready"}
     except Exception:
-        return JSONResponse({"status": "not_ready"}, status_code=503)
+        return error_response(request, 503, extra={"status": "not_ready"})
 
 
 @qr_app.get("/health/providers", include_in_schema=False)
-async def health_providers():
+async def health_providers(request: Request):
     """Configuration and local-feed coverage; provider uptime is checked per scan."""
     try:
         configuration = reputation_configuration()
     except Exception:
-        return JSONResponse({"status": "unavailable"}, status_code=503)
+        return error_response(request, 503, extra={"status": "unavailable"})
     return {"status": "configured" if configuration["completeChecksConfigured"] else "incomplete"}
 
 
@@ -169,7 +173,7 @@ qr_app.add_middleware(
     allow_origin_regex=None,
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-Device-Fingerprint"],
+    allow_headers=["Content-Type", "Authorization", "X-Device-Fingerprint", "X-Requested-With"],
     expose_headers=["X-Request-Id"],
     max_age=600,
 )
@@ -180,7 +184,7 @@ async def enforce_origin(request: Request, call_next):
     if request.method in ("POST", "PUT", "PATCH", "DELETE") and origin:
         google_sign_in_callback = request.url.path == "/auth/google"
         if origin not in ALLOWED_ORIGINS and not google_sign_in_callback:
-            return JSONResponse({"error": "Origin not allowed."}, status_code=403)
+            return error_response(request, 403, code="origin_not_allowed", message="Origin not allowed.")
     return await call_next(request)
 
 @qr_app.middleware("http")
@@ -322,7 +326,7 @@ async def security_headers_and_rate_limits(request: Request, call_next):
             except ValueError:
                 declared_length = -1
             if declared_length < 0 or declared_length > QR_REQUEST_BODY_LIMIT:
-                return apply_security_headers(request, JSONResponse({"error": "QR scan request is too large."}, status_code=413))
+                return apply_security_headers(request, error_response(request, 413, code="upload_too_large", message="QR scan request is too large."))
         client_identity = qr_request_client_identity(request)
         if client_identity:
             scan_limit = enforce_rate_limit(request, "qr_upload_client", 90, 15 * 60, user_key=client_identity)
@@ -331,13 +335,13 @@ async def security_headers_and_rate_limits(request: Request, call_next):
             # One visitor may use two tabs, but cannot occupy every upload
             # slot with slow bodies. Keep one slot available for other users.
             if QR_REQUEST_ACTIVE_BY_CLIENT.get(client_identity, 0) >= 2:
-                return apply_security_headers(request, JSONResponse({"error": "Scanner is busy. Please retry."}, status_code=503))
+                return apply_security_headers(request, error_response(request, 503, code="scanner_busy"))
             QR_REQUEST_ACTIVE_BY_CLIENT[client_identity] = QR_REQUEST_ACTIVE_BY_CLIENT.get(client_identity, 0) + 1
         try:
             try:
                 await asyncio.wait_for(QR_REQUEST_SLOTS.acquire(), timeout=2.0)
             except asyncio.TimeoutError:
-                return apply_security_headers(request, JSONResponse({"error": "Scanner is busy. Please retry."}, status_code=503))
+                return apply_security_headers(request, error_response(request, 503, code="scanner_busy"))
             try:
                 # Content-Length is optional and untrusted. Bound actual
                 # streamed bytes and time before multipart parsing. The read
@@ -349,10 +353,10 @@ async def security_headers_and_rate_limits(request: Request, call_next):
                         async for chunk in request.stream():
                             received += len(chunk)
                             if received > QR_REQUEST_BODY_LIMIT:
-                                return apply_security_headers(request, JSONResponse({"error": "QR scan request is too large."}, status_code=413))
+                                return apply_security_headers(request, error_response(request, 413, code="upload_too_large", message="QR scan request is too large."))
                             chunks.append(chunk)
                 except TimeoutError:
-                    return apply_security_headers(request, JSONResponse({"error": "QR scan upload timed out. Please retry."}, status_code=408))
+                    return apply_security_headers(request, error_response(request, 408, code="upload_timed_out", message="QR scan upload timed out. Please retry."))
                 request._body = b"".join(chunks)
                 return await call_next(request)
             finally:
@@ -404,27 +408,60 @@ async def metrics_middleware(request: Request, call_next):
         if request.url.path in ("/api/scan", "/api/scan/file", "/search_qr_api"):
             ACTIVE_SCANS.dec()
 
+error_logger = logging.getLogger("safescan.errors")
+
+
+def _error_route_pattern(request: Request) -> str:
+    route = request.scope.get("route")
+    return getattr(route, "path", None) or "unmatched"
+
+
+def _log_known_server_error(request: Request, exc: Exception):
+    error_logger.error(json.dumps({
+        "event": "handled_server_error", "request_id": request_id_for(request),
+        "method": request.method, "route": _error_route_pattern(request),
+        "exception_type": type(exc).__name__,
+        "status_code": getattr(exc, "status_code", 500),
+        "code": getattr(exc, "code", None),
+    }))
+
+
 @qr_app.exception_handler(SafeScanError)
 async def safe_scan_error_handler(request: Request, exc: SafeScanError):
-    return JSONResponse({"error": str(exc)}, status_code=exc.status_code)
+    if exc.status_code >= 500:
+        _log_known_server_error(request, exc)
+    return error_response(request, exc.status_code, code=exc.code, message=str(exc), hint=exc.hint, field=exc.field)
 
-@qr_app.exception_handler(HTTPException)
-async def http_error_handler(request: Request, exc: HTTPException):
-    safe_messages = {
-        400: "Invalid request.",
-        401: "Authentication required.",
-        403: "You do not have permission to do this.",
-        404: "Not found.",
-        429: "Too many requests. Please slow down.",
-    }
-    return JSONResponse({"error": safe_messages.get(exc.status_code, exc.detail)}, status_code=exc.status_code)
+@qr_app.exception_handler(StarletteHTTPException)
+async def http_error_handler(request: Request, exc: StarletteHTTPException):
+    if exc.status_code >= 500:
+        _log_known_server_error(request, exc)
+    detail = exc.detail if isinstance(exc.detail, str) else None
+    # Generic HTTP failures use catalogue wording. Route-specific 409 details
+    # remain useful to clients, while 5xx detail is redacted by error_response.
+    public_detail = detail if exc.status_code == 409 else None
+    return error_response(request, exc.status_code, message=public_detail, headers=exc.headers)
+
+@qr_app.exception_handler(RequestValidationError)
+async def request_validation_error_handler(request: Request, exc: RequestValidationError):
+    return error_response(request, 422, code="invalid_fields")
 
 @qr_app.exception_handler(PermissionError)
 async def permission_error_handler(request: Request, exc: PermissionError):
-    return JSONResponse({"error": str(exc) or "You do not have permission to do this."}, status_code=403)
+    return error_response(request, 403, code="access_denied")
 
 @qr_app.exception_handler(Exception)
 async def unhandled_error_handler(request: Request, exc: Exception):
-    print({"error": str(exc), "path": request.url.path})
-    return JSONResponse({"error": "Something went wrong on our end."}, status_code=500)
+    error_logger.error(
+        json.dumps({"event": "unhandled_error", "request_id": request_id_for(request), "method": request.method, "route": _error_route_pattern(request), "exception_type": type(exc).__name__}),
+        exc_info=(type(exc), exc, exc.__traceback__),
+    )
+    return apply_security_headers(request, error_response(request, 500, code="internal_error"))
+
+@qr_app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    request_id = request_id_for(request)
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
 

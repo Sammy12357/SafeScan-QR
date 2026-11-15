@@ -1,0 +1,28 @@
+{% if field_errors %}
+<div class="request-message" role="alert"><strong>Check these fields:</strong>
+  <ul>{% for field, error in field_errors.items() %}<li><a href="#breach-{{ field }}">{{ error }}</a></li>{% endfor %}</ul>
+</div>
+{% endif %}
+<form class="legal-form" action="/admin/report-breach" method="post">
+  <label>Breach discovery date
+    <input id="breach-discovery_date" name="discovery_date" required placeholder="2026-05-05T14:32:00Z" value="{{ form_values.discovery_date | default('') }}" {% if field_errors.discovery_date %}aria-invalid="true" aria-describedby="breach-discovery_date-error"{% endif %}>
+    {% if field_errors.discovery_date %}<span id="breach-discovery_date-error" class="form-field-error">{{ field_errors.discovery_date }}</span>{% endif %}
+  </label>
+  <label>Data categories affected
+    <textarea id="breach-data_categories" name="data_categories" required rows="3" {% if field_errors.data_categories %}aria-invalid="true" aria-describedby="breach-data_categories-error"{% endif %}>{{ form_values.data_categories | default('') }}</textarea>
+    {% if field_errors.data_categories %}<span id="breach-data_categories-error" class="form-field-error">{{ field_errors.data_categories }}</span>{% endif %}
+  </label>
+  <label>Estimated users affected
+    <input id="breach-users_affected" name="users_affected" required value="{{ form_values.users_affected | default('') }}" {% if field_errors.users_affected %}aria-invalid="true" aria-describedby="breach-users_affected-error"{% endif %}>
+    {% if field_errors.users_affected %}<span id="breach-users_affected-error" class="form-field-error">{{ field_errors.users_affected }}</span>{% endif %}
+  </label>
+  <label>Likely consequences
+    <textarea id="breach-likely_consequences" name="likely_consequences" required rows="4" {% if field_errors.likely_consequences %}aria-invalid="true" aria-describedby="breach-likely_consequences-error"{% endif %}>{{ form_values.likely_consequences | default('') }}</textarea>
+    {% if field_errors.likely_consequences %}<span id="breach-likely_consequences-error" class="form-field-error">{{ field_errors.likely_consequences }}</span>{% endif %}
+  </label>
+  <label>Measures taken
+    <textarea id="breach-measures_taken" name="measures_taken" required rows="4" {% if field_errors.measures_taken %}aria-invalid="true" aria-describedby="breach-measures_taken-error"{% endif %}>{{ form_values.measures_taken | default('') }}</textarea>
+    {% if field_errors.measures_taken %}<span id="breach-measures_taken-error" class="form-field-error">{{ field_errors.measures_taken }}</span>{% endif %}
+  </label>
+  <button class="primary-button" type="submit">Generate breach template</button>
+</form>

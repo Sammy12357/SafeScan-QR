@@ -58,9 +58,24 @@ from .request_helpers import request_ip
 # ERRORS, AUDIT LOGGING & METADATA HELPERS
 # =============================================================================
 class SafeScanError(Exception):
-    def __init__(self, message, status_code=400):
+    def __init__(self, message=None, status_code=None, *, code=None, hint=None, field=None):
+        if message is None and code:
+            # Import lazily so low-level validation modules can raise a
+            # catalogue error without creating an import cycle at startup.
+            from .errors import ERRORS
+            entry = ERRORS[code]
+            message = entry.message
+            if status_code is None:
+                status_code = entry.status_code
+            if hint is None:
+                hint = entry.hint
+        if message is None:
+            raise ValueError("SafeScanError needs a message or catalogue code")
         super().__init__(message)
-        self.status_code = status_code
+        self.status_code = 400 if status_code is None else status_code
+        self.code = code
+        self.hint = hint
+        self.field = field
 
 def now_iso():
     return datetime.utcnow().isoformat() + "Z"
