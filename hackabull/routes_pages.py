@@ -17,6 +17,7 @@ import time
 import csv
 from decimal import Decimal, InvalidOperation
 from html import escape as escape_html
+import logging
 from urllib.parse import quote, urlencode, urljoin, urlparse, parse_qsl
 from datetime import datetime, timedelta, timezone
 from xml.etree import ElementTree
@@ -71,6 +72,8 @@ from .config import LEGAL_LAST_UPDATED
 from .config import LEGAL_VERSION
 from .config import MOCK_MODE
 from .config import templates
+from .errors import ERRORS
+from .errors import request_id_for
 from .email_util import email_sending_configured
 from .email_util import send_email
 from .history import index_user_context
@@ -173,7 +176,7 @@ async def api_go_ghost_removal(request: Request, broker: str, payload: dict = Bo
 
     broker_config = supported_broker(normalized_broker)
     if broker_config is None:
-        raise SafeScanError("Backend automation is not available for this broker yet.", 400)
+        raise SafeScanError(code="broker_unsupported")
     validate_strict_payload(payload, {"name", "address", "cityState", "phone", "email"})
 
     profile_payload = {
@@ -184,9 +187,9 @@ async def api_go_ghost_removal(request: Request, broker: str, payload: dict = Bo
         "email": str(payload.get("email") or "").strip()[:180],
     }
     if not profile_payload["name"]:
-        raise SafeScanError("Add a full name before running automation.", 400)
+        raise SafeScanError(code="profile_name_required", field="name")
     if not profile_payload["email"]:
-        raise SafeScanError("Add an email before running automation.", 400)
+        raise SafeScanError(code="profile_email_required", field="email")
 
     job_id = make_id("ghostjob")
     account_email = (user.get("email") or "").strip().lower()
@@ -249,9 +252,35 @@ async def api_go_ghost_removal(request: Request, broker: str, payload: dict = Bo
 async def privacy_policy(request: Request):
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Privacy Policy", PRIVACY_POLICY_HTML))
 
+def _waitlist_page(request: Request, *, email: str = "", error: str = "", joined: bool = False, status_code: int = 200):
+    if joined:
+        body = "<h2>You're on the list</h2><p>Thanks for joining the SafeScan QR waitlist. We'll send only major product updates.</p><p><a href='/'>Return to SafeScan QR</a></p>"
+    else:
+        value = escape_html(email, quote=True)
+        error_markup = f"<p class='form-field-error' id='waitlist-email-error' role='alert'>{escape_html(error)}</p>" if error else ""
+        invalid = " aria-invalid='true' aria-describedby='waitlist-email-error'" if error else ""
+        body = (
+            "<h2>Join the waitlist</h2><p>Get an email when SafeScan ships major updates.</p>"
+            "<form class='legal-form' action='/waitlist' method='post'>"
+            "<label for='waitlist-email'>Email address</label>"
+            f"<input id='waitlist-email' name='email' type='email' required value='{value}'{invalid}>"
+            f"{error_markup}<button class='primary-button' type='submit'>Join waitlist</button></form>"
+        )
+    context = legal_context(request, "Waitlist", body)
+    context["eyebrow"] = "SafeScan QR updates"
+    return templates.TemplateResponse("legal_page.html", context, status_code=status_code, headers={"Cache-Control": "no-store"})
+
+
+@qr_app.get("/waitlist", response_class=HTMLResponse)
+async def waitlist_page(request: Request, joined: bool = Query(False)):
+    return _waitlist_page(request, joined=joined)
+
+
 @qr_app.post("/waitlist", response_class=HTMLResponse)
-async def waitlist_signup(request: Request, email: str = Form(...)):
+async def waitlist_signup(request: Request, email: str = Form("")):
     normalized_email = email.strip().lower()
+    if len(normalized_email) > 254 or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", normalized_email):
+        return _waitlist_page(request, email=normalized_email, error=ERRORS["email_invalid"].message, status_code=400)
     with get_conn() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO waitlist_signups VALUES (?, ?, ?)",
@@ -268,8 +297,7 @@ async def waitlist_signup(request: Request, email: str = Form(...)):
             f"<p><a href='{APP_URL}'>Open SafeScan QR</a></p>"
             f"<p style='color:#888;font-size:12px'>Didn't sign up? Ignore this email or reply to unsubscribe.</p>",
         )
-    body = "<h2>You're on the list</h2><p>Thanks for joining the SafeScan QR waitlist. We'll send only major product updates.</p><p><a href='/'>Return to SafeScan QR</a></p>"
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Waitlist", body))
+    return RedirectResponse("/waitlist?joined=1", status_code=303)
 
 @qr_app.get("/legal/terms-of-use", response_class=HTMLResponse)
 async def terms_of_use(request: Request):
@@ -463,7 +491,7 @@ async def alpha_payment_page(request: Request):
     stripe_button = (
         f"<a class='primary-button payment-button stripe-payment-button' style='color:#000 !important;-webkit-text-fill-color:#000;text-shadow:none;' href='{stripe_url}' target='_blank' rel='noopener noreferrer'>Pay by card with Stripe</a>"
         if stripe_url else
-        "<span class='secondary-button payment-button payment-disabled'>Stripe checkout not configured</span>"
+        "<span class='secondary-button payment-button payment-disabled'>Card checkout is unavailable right now</span>"
     )
     solana_url = alpha_solana_pay_url(request)
     solana_quote = alpha_solana_quote_for_user(user) if user and solana_url else None
@@ -477,7 +505,7 @@ async def alpha_payment_page(request: Request):
     solana_button = (
         f"<a class='secondary-button payment-button' href='{solana_url}'>Pay with Solana</a>"
         if solana_url else
-        "<span class='secondary-button payment-button payment-disabled'>Solana Pay not configured</span>"
+        "<span class='secondary-button payment-button payment-disabled'>Solana checkout is unavailable right now</span>"
     )
     solana_note = (
         (
@@ -489,7 +517,7 @@ async def alpha_payment_page(request: Request):
         if solana_quote else
         f"<p class='payment-note'>Solana payment recipient: <code>{ALPHA_SOLANA_RECIPIENT}</code></p>"
         if ALPHA_SOLANA_RECIPIENT else
-        "<p class='payment-note'>Add ALPHA_SOLANA_RECIPIENT in Render to enable wallet checkout.</p>"
+        "<p class='payment-note'>Solana checkout is unavailable right now. Use card checkout or return later.</p>"
     )
     body = f"""
     <h2>Alpha Premium</h2>
@@ -528,7 +556,20 @@ async def alpha_solana_payment_verify(request: Request):
             return templates.TemplateResponse("legal_page.html", legal_context(request, "Solana Payment Pending", body), status_code=202)
         record = record_alpha_solana_subscription(user, reference, signature)
     except SafeScanError as exc:
-        body = f"<h2>Solana verification unavailable</h2><p>{escape_html(exc.args[0])}</p><p><a class='primary-button payment-button' href='/pay/alpha'>Back to Alpha payment</a></p>"
+        if exc.status_code >= 500:
+            logging.getLogger("safescan.errors").error(json.dumps({
+                "event": "solana_verification_failed",
+                "request_id": request_id_for(request),
+                "method": request.method,
+                "route": "/pay/alpha/solana/verify",
+                "exception_type": type(exc).__name__,
+                "status_code": exc.status_code,
+                "code": exc.code,
+            }))
+        entry = ERRORS.get(exc.code or "") if exc.status_code < 500 else ERRORS.get(exc.code or "", ERRORS["payment_unavailable"])
+        public_message = entry.message if entry else str(exc)
+        public_hint = entry.hint if entry else "Open the payment page and try again."
+        body = f"<h2>Solana verification unavailable</h2><p role='alert'>{escape_html(public_message)} {escape_html(public_hint)}</p><p><a class='primary-button payment-button' href='/pay/alpha'>Back to Alpha payment</a></p>"
         return templates.TemplateResponse("legal_page.html", legal_context(request, "Solana Payment Error", body), status_code=exc.status_code)
 
     body = f"""
@@ -708,17 +749,41 @@ async def do_not_sell(request: Request):
 async def data_request_page(request: Request, email: str = Query("")):
     return templates.TemplateResponse("data_request.html", {
         "request": request, "email": email, "message": "", "export_data": "",
+        "region": "", "request_type": "access", "details": "", "field_errors": {},
         "version": LEGAL_VERSION, "last_updated": LEGAL_LAST_UPDATED
-    })
+    }, headers={"Cache-Control": "no-store"})
 
 @qr_app.post("/legal/data-request", response_class=HTMLResponse)
 async def submit_data_request(
     request: Request,
-    email: str = Form(...),
+    email: str = Form(""),
     region: str = Form(""),
-    request_type: str = Form(...),
+    request_type: str = Form(""),
     details: str = Form("")
 ):
+    email = email.strip().lower()
+    region = region.strip()
+    details = details.strip()
+    allowed_types = {
+        "access", "erasure", "rectification", "restriction", "portability",
+        "object", "do_not_sell", "limit_sensitive", "revoke_consent",
+    }
+    field_errors = {}
+    if len(email) > 254 or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        field_errors["email"] = "Enter a valid email address."
+    if len(region) > 100:
+        field_errors["region"] = "Use 100 characters or fewer for the region."
+    if request_type not in allowed_types:
+        field_errors["request_type"] = "Choose the type of request."
+    if len(details) > 5000:
+        field_errors["details"] = "Use 5,000 characters or fewer for the details."
+    if field_errors:
+        return templates.TemplateResponse("data_request.html", {
+            "request": request, "email": email, "region": region,
+            "request_type": request_type, "details": details,
+            "message": "", "export_data": "", "field_errors": field_errors,
+            "version": LEGAL_VERSION, "last_updated": LEGAL_LAST_UPDATED,
+        }, status_code=400, headers={"Cache-Control": "no-store"})
     request_id = make_id("dsr")
     now = datetime.utcnow().isoformat() + "Z"
     export_data = ""
@@ -749,13 +814,15 @@ async def submit_data_request(
             (request_id, email, region, request_type, details, status, now, now if status == "completed" else None)
         )
 
-    message = f"Request {request_id} recorded. Confirmation email hooks are documented; connect an email provider before production."
+    message = f"Request {request_id} recorded. Keep this reference for your records."
     if verified_self_request and request_type in ("access", "portability", "erasure") and status == "submitted":
         message = f"Request {request_id} recorded. Account ownership needs review before this request can be completed."
     return templates.TemplateResponse("data_request.html", {
-        "request": request, "email": email, "message": message, "export_data": export_data,
+        "request": request, "email": email, "region": region,
+        "request_type": request_type, "details": details, "field_errors": {},
+        "message": message, "export_data": export_data,
         "version": LEGAL_VERSION, "last_updated": LEGAL_LAST_UPDATED
-    })
+    }, headers={"Cache-Control": "no-store"})
 
 @qr_app.post("/api/consent")
 async def log_consent(request: Request, payload: dict = Body(...)):
@@ -812,28 +879,47 @@ async def data_processing_log(request: Request, secret: str = Query("")):
 @qr_app.get("/admin/report-breach", response_class=HTMLResponse)
 async def report_breach_form(request: Request, secret: str = Query("")):
     require_role_user(request, "admin")
-    body = """
-    <form class="legal-form" action="/admin/report-breach" method="post">
-      <label>Breach discovery date <input name="discovery_date" required placeholder="2026-05-05T14:32:00Z"></label>
-      <label>Data categories affected <textarea name="data_categories" required rows="3"></textarea></label>
-      <label>Estimated users affected <input name="users_affected" required></label>
-      <label>Likely consequences <textarea name="likely_consequences" required rows="4"></textarea></label>
-      <label>Measures taken <textarea name="measures_taken" required rows="4"></textarea></label>
-      <button class="primary-button" type="submit">Generate breach template</button>
-    </form>
-    """
-    return templates.TemplateResponse("admin_table.html", {"request": request, "title": "Report Breach", "body_html": body, "message": ""})
+    return templates.TemplateResponse("admin_table.html", {
+        "request": request, "title": "Report Breach", "breach_form": True,
+        "form_values": {}, "field_errors": {}, "message": "",
+    })
 
 @qr_app.post("/admin/report-breach", response_class=HTMLResponse)
 async def report_breach(
     request: Request,
-    discovery_date: str = Form(...),
-    data_categories: str = Form(...),
-    users_affected: str = Form(...),
-    likely_consequences: str = Form(...),
-    measures_taken: str = Form(...)
+    discovery_date: str = Form(""),
+    data_categories: str = Form(""),
+    users_affected: str = Form(""),
+    likely_consequences: str = Form(""),
+    measures_taken: str = Form("")
 ):
     admin_user = require_role_user(request, "admin")
+    values = {
+        "discovery_date": discovery_date.strip(),
+        "data_categories": data_categories.strip(),
+        "users_affected": users_affected.strip(),
+        "likely_consequences": likely_consequences.strip(),
+        "measures_taken": measures_taken.strip(),
+    }
+    errors = {}
+    try:
+        datetime.fromisoformat(values["discovery_date"].replace("Z", "+00:00"))
+    except ValueError:
+        errors["discovery_date"] = "Enter the discovery date as an ISO date or timestamp."
+    if not values["data_categories"] or len(values["data_categories"]) > 2000:
+        errors["data_categories"] = "Describe the affected data in 2,000 characters or fewer."
+    if not values["users_affected"] or len(values["users_affected"]) > 80:
+        errors["users_affected"] = "Enter an estimate or say unknown, in 80 characters or fewer."
+    if not values["likely_consequences"] or len(values["likely_consequences"]) > 4000:
+        errors["likely_consequences"] = "Describe likely consequences in 4,000 characters or fewer."
+    if not values["measures_taken"] or len(values["measures_taken"]) > 4000:
+        errors["measures_taken"] = "Describe measures taken in 4,000 characters or fewer."
+    if errors:
+        return templates.TemplateResponse("admin_table.html", {
+            "request": request, "title": "Report Breach", "breach_form": True,
+            "form_values": values, "field_errors": errors, "message": "",
+        }, status_code=400, headers={"Cache-Control": "no-store"})
+    discovery_date, data_categories, users_affected, likely_consequences, measures_taken = values.values()
     template = f"""GDPR Article 33/34 Breach Notification Draft\nDiscovery date: {discovery_date}\nData categories affected: {data_categories}\nEstimated users affected: {users_affected}\nLikely consequences: {likely_consequences}\nMeasures taken: {measures_taken}\nAdmin contact: {ADMIN_EMAIL}\nReview whether supervisory authority notice is required within 72 hours and whether user notice is required for high-risk impact."""
     report_id = make_id("breach")
     now = datetime.utcnow().isoformat() + "Z"
@@ -841,7 +927,7 @@ async def report_breach(
         conn.execute("INSERT INTO breach_reports VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (report_id, discovery_date, data_categories, users_affected, likely_consequences, measures_taken, now, template))
     audit_log("admin.breach_report_created", request=request, actor_user_id=admin_user.get("google_id"), target_type="breach_report", target_id=report_id)
     body = f"<h2>Breach Report {escape_html(report_id)}</h2><pre class='legal-json'>{escape_html(template)}</pre>"
-    return templates.TemplateResponse("admin_table.html", {"request": request, "title": "Breach Template", "body_html": body, "message": "Report logged. Connect email provider for live admin notifications."})
+    return templates.TemplateResponse("admin_table.html", {"request": request, "title": "Breach Template", "body_html": body, "message": "Report logged. Keep this record for incident review."}, headers={"Cache-Control": "no-store"})
 
 @qr_app.get("/api/health")
 async def api_health():

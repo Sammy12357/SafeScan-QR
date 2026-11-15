@@ -202,11 +202,59 @@ def test_mobile_scan_fallback_keeps_html_success_and_json_failure(error_app, mon
 def test_validation_and_direct_origin_failures_use_error_system(error_app):
     _, client = error_app
     validation = client.post("/legal/data-request", headers={"Accept": "text/html"})
-    assert validation.status_code == 422
+    assert validation.status_code == 400
     assert validation.headers["content-type"].startswith("text/html")
-    assert validation.headers["X-Request-ID"] in validation.text
+    assert 'id="request-email"' in validation.text
+    assert 'aria-invalid="true"' in validation.text
+    assert "Enter a valid email address" in validation.text
 
     origin = client.post("/waitlist", data={"email": "a@example.com"}, headers={"Accept": "text/html", "Origin": "https://untrusted.example"})
     assert origin.status_code == 403
     assert origin.headers["content-type"].startswith("text/html")
     assert origin.headers["X-Request-ID"] in origin.text
+
+
+def test_data_request_keeps_values_and_does_not_record_invalid_type(error_app):
+    app, client = error_app
+    response = client.post("/legal/data-request", data={
+        "email": "person@example.com", "region": "Ontario",
+        "request_type": "unexpected", "details": "Please review this request.",
+    })
+    assert response.status_code == 400
+    assert 'value="person@example.com"' in response.text
+    assert 'value="Ontario"' in response.text
+    assert "Please review this request." in response.text
+    assert "Choose the type of request" in response.text
+    with app.get_conn() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM data_requests").fetchone()[0] == 0
+
+
+def test_waitlist_error_keeps_email_and_success_uses_redirect(error_app):
+    app, client = error_app
+    invalid = client.post("/waitlist", data={"email": "not-an-email"})
+    assert invalid.status_code == 400
+    assert "Join the waitlist" in invalid.text
+    assert "not-an-email" in invalid.text
+    assert "Enter a valid email address" in invalid.text
+    assert invalid.headers["Cache-Control"] == "no-store"
+    with app.get_conn() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM waitlist_signups").fetchone()[0] == 0
+
+    success = client.post("/waitlist", data={"email": "person@example.com"}, follow_redirects=False)
+    assert success.status_code == 303
+    assert success.headers["location"] == "/waitlist?joined=1"
+    joined = client.get(success.headers["location"])
+    assert "You're on the list" in joined.text
+    assert joined.headers["Cache-Control"] == "no-store"
+
+
+def test_unexpected_json_fields_do_not_echo_names(error_app):
+    _, client = error_app
+    response = client.post("/api/analyze", json={
+        "url": "https://example.com", "private_token_value": "do-not-show",
+    })
+    assert response.status_code == 400
+    body = response.json()
+    assert body["code"] == "invalid_request"
+    assert "private_token_value" not in response.text
+    assert "do-not-show" not in response.text

@@ -138,7 +138,7 @@ def check_url_reputation(target_url):
                 "provider": "Google Web Risk",
                 "status": "ERROR",
                 "matches": [],
-                "detail": f"Reputation lookup failed: {type(exc).__name__}",
+                "detail": "The reputation check could not finish. Try again later.",
             }
         matches = (result.get("threat") or {}).get("threatTypes") or []
         return {
@@ -152,7 +152,7 @@ def check_url_reputation(target_url):
             "provider": "Google Web Risk",
             "status": "UNCONFIGURED",
             "matches": [],
-            "detail": "Set GOOGLE_WEB_RISK_API_KEY for commercial URL reputation checks. Legacy Safe Browsing requires explicit noncommercial opt-in."
+            "detail": "The reputation check is unavailable right now. This link has not been verified."
         }
 
     payload = {
