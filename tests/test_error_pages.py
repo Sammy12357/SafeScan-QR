@@ -37,8 +37,15 @@ def test_browser_404_has_navigation_no_path_echo_and_request_id(error_app):
     assert "private-secret" not in response.text
     assert '<meta name="robots" content="noindex">' in response.text
     assert response.headers["Cache-Control"] == "no-store"
-    assert re.fullmatch(r"[A-Z2-7]{6}-[A-Z2-7]{7}", response.headers["X-Request-ID"])
+    assert re.fullmatch(r"[A-Z2-7]{4}-[A-Z2-7]{4}", response.headers["X-Request-ID"])
     assert response.headers["X-Request-ID"] in response.text
+
+
+def test_request_reference_has_eight_base32_characters(error_app):
+    errors = importlib.import_module("hackabull.errors")
+    references = {errors.new_request_id() for _ in range(32)}
+    assert len(references) == 32
+    assert all(re.fullmatch(r"[A-Z2-7]{4}-[A-Z2-7]{4}", reference) for reference in references)
 
 
 def test_api_and_explicit_json_errors_keep_string_error(error_app):
@@ -117,7 +124,7 @@ def test_rate_limit_keeps_retry_header_and_browser_countdown(error_app):
     assert direct.headers["X-Request-ID"] in direct.text
 
 
-def test_safe_scan_error_metadata_and_server_detail_redaction(error_app):
+def test_safe_scan_error_metadata_and_server_detail_redaction(error_app, caplog):
     app, client = error_app
     from hackabull.audit import SafeScanError
 
@@ -136,10 +143,16 @@ def test_safe_scan_error_metadata_and_server_detail_redaction(error_app):
     async def server_error_probe():
         raise SafeScanError("ALPHA_SOLANA_RECIPIENT contained a private value", 503)
 
-    server_error = client.get("/api/__server_error_probe")
+    with caplog.at_level("ERROR", logger="safescan.errors"):
+        server_error = client.get("/api/__server_error_probe")
     assert server_error.status_code == 503
     assert "ALPHA_SOLANA" not in server_error.text
     assert isinstance(server_error.json()["error"], str)
+    assert "ALPHA_SOLANA" not in caplog.text
+    record = next(json.loads(item.getMessage()) for item in caplog.records if item.name == "safescan.errors")
+    assert record["request_id"] == server_error.headers["X-Request-ID"]
+    assert record["exception_type"] == "SafeScanError"
+    assert "detail" not in record
 
 
 def test_error_pages_work_when_session_lookup_fails(error_app, monkeypatch):

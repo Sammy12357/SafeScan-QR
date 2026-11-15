@@ -68,8 +68,8 @@ _STATUS_CODES = {
 
 def new_request_id() -> str:
     """An unguessable, log-friendly ID; never accept a caller-supplied value."""
-    value = base64.b32encode(secrets.token_bytes(8)).decode("ascii").rstrip("=")
-    return f"{value[:6]}-{value[6:]}"
+    value = base64.b32encode(secrets.token_bytes(5)).decode("ascii")
+    return f"{value[:4]}-{value[4:]}"
 
 
 def request_id_for(request: Request) -> str:

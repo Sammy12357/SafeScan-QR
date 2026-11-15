@@ -420,7 +420,9 @@ def _log_known_server_error(request: Request, exc: Exception):
     error_logger.error(json.dumps({
         "event": "handled_server_error", "request_id": request_id_for(request),
         "method": request.method, "route": _error_route_pattern(request),
-        "exception_type": type(exc).__name__, "detail": str(exc)[:500],
+        "exception_type": type(exc).__name__,
+        "status_code": getattr(exc, "status_code", 500),
+        "code": getattr(exc, "code", None),
     }))
 
 
