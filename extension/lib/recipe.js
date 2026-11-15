@@ -109,7 +109,7 @@ const GoGhostRecipe = (() => {
     return recipe;
   }
 
-  return {RecipeError, PROFILE_FIELDS, CHECK_MEANINGS, checkedUrl, validateRecipe};
+  return {RecipeError, checkedUrl, validateRecipe};
 })();
 
 if (typeof module !== "undefined" && module.exports) module.exports = GoGhostRecipe;
