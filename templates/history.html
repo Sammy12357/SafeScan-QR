@@ -1,4 +1,5 @@
-{# Scan history page: lists the signed-in user's past scans rendered by the server. #}
+{# Scan history page: server-renders the signed-in user's saved scans. #}
+{% from "_states.html" import empty_state %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,7 +8,7 @@
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <script src="/static/ui-states.js?v=ui-loading-v1"></script>
   <title>Scan History | SafeScan QR</title>
-  <link rel="stylesheet" href="/static/styles.css?v=ui-loading-v2">
+  <link rel="stylesheet" href="/static/styles.css?v=ui-phase7-v1">
   <link rel="stylesheet" href="/static/styles-history.css?v=ui-spacing-v2">
 </head>
 <body>
@@ -18,9 +19,9 @@
     <p class="history-sub">{{ email if email else "Sign in to view saved scans" }}</p>
 
     {% if not email %}
-      <p class="history-empty">Please <a href="/login">sign in</a> to view your scan history.</p>
+      {{ empty_state(icon='lock', title='Sign in to see your scans', body='Your saved scan history is linked to your account.', action_label='Sign in', action_href='/login') }}
     {% elif not scans %}
-      <p class="history-empty">No scans yet. Scan a QR code to see history here.</p>
+      {{ empty_state(icon='scan', title='No saved scans yet', body='Scan a QR code to start your history.', action_label='Scan a QR code', action_href='/#scanner') }}
     {% else %}
       <div class="history-groups">
         {% for group in scan_groups %}

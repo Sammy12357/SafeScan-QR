@@ -243,6 +243,9 @@ function renderGoGhostAutomationScope() {
     if (!groups.has(broker.group)) groups.set(broker.group, []);
     groups.get(broker.group).push(broker);
   }
+  const noBrokerState = document.getElementById("goGhostNoBrokerState");
+  if (goGhostAutomationRows.parentElement) goGhostAutomationRows.parentElement.hidden = groups.size === 0;
+  if (noBrokerState) noBrokerState.hidden = groups.size !== 0;
   goGhostAutomationRows.innerHTML = [...groups.values()].map((group) => {
     const broker = group[0];
     const lane = ghostEffortLane(broker);
@@ -481,7 +484,10 @@ function ghostSimpleAccountName(value) {
 
 function ghostRefreshReviewNotice() {
   if (!ghostProfileReviewNotice) return;
-  ghostProfileReviewNotice.textContent = ghostProfileIsReviewed()
+  const reviewed = ghostProfileIsReviewed();
+  const firstUseState = document.getElementById("ghostFirstUseState");
+  if (firstUseState) firstUseState.hidden = reviewed;
+  ghostProfileReviewNotice.textContent = reviewed
     ? "Details reviewed. You can open broker links for this person."
     : "Enter the required details, review them, then save before opening broker links.";
 }

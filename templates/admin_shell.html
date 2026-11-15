@@ -1,6 +1,7 @@
 {# Admin console base layout: sidebar nav, top bar, and the main content area
    that every staff-only admin page (dashboard, users, scans, reports, etc.)
    renders into. #}
+{% from "_states.html" import empty_state %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -9,7 +10,7 @@
   <title>{{ title }} | SafeScan Admin</title>
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <script src="/static/ui-states.js?v=ui-loading-v1"></script>
-  <link rel="stylesheet" href="/static/admin.css?v=ui-loading-v2">
+  <link rel="stylesheet" href="/static/admin.css?v=ui-phase7-v1">
 </head>
 <body class="admin-body">
   {% set owner_pages = ['/admin/api-keys', '/admin/settings'] %}
@@ -79,26 +80,26 @@
         {% endfor %}
       </div>
       <div class="two-grid">
-        <section class="admin-card"><h2>Scans Over Time</h2><div class="line-chart">
+        <section class="admin-card"><h2>Scans Over Time</h2>{% if data.chart_rows %}<div class="line-chart">
           {% for row in data.chart_rows %}
           <div title="{{ row.day }}: {{ row.total }}"><span style="height: {{ [8, row.total * 8]|max }}px"></span><b style="height: {{ [4, row.flagged * 10]|max }}px"></b></div>
           {% endfor %}
-        </div></section>
-        <section class="admin-card"><h2>Risk Verdict Breakdown</h2><div class="donut-list">
+        </div>{% else %}{{ empty_state(icon='scan', title='No scan activity yet', body='Scans will appear here as people use SafeScan.', action_label='Open scans', action_href='/admin/scans', compact=true, heading_level=3) }}{% endif %}</section>
+        <section class="admin-card"><h2>Risk Verdict Breakdown</h2>{% if data.verdict_rows %}<div class="donut-list">
           {% for row in data.verdict_rows %}<p><span class="dot {{ row.verdict|lower }}"></span>{{ row.verdict }} <b>{{ row.count }}</b></p>{% endfor %}
-        </div></section>
+        </div>{% else %}{{ empty_state(icon='info', title='No verdicts yet', body='Risk verdicts appear after scans are saved.', action_label='Open scans', action_href='/admin/scans', compact=true, heading_level=3) }}{% endif %}</section>
       </div>
       <div class="two-grid">
-        <section class="admin-card"><h2>Recent Signups</h2><table><tbody>
+        <section class="admin-card"><h2>Recent Signups</h2>{% if data.recent_users %}<table><tbody>
           {% for user in data.recent_users %}<tr><td><div class="mini-avatar">{{ user.email[:1]|upper }}</div></td><td>{{ user.email }}</td><td>{{ ((user.created_at or user.last_login) | time_only) }}</td><td>{{ 'yes' if user.wallet_address else 'no' }}</td><td><a href="/admin/users?search={{ user.email }}">View</a></td></tr>{% endfor %}
-        </tbody></table></section>
-        <section class="admin-card"><h2>Recent Reports</h2><table><tbody>
+        </tbody></table>{% else %}{{ empty_state(icon='info', title='No signups yet', body='New accounts will appear here.', action_label='Open users', action_href='/admin/users', compact=true, heading_level=3) }}{% endif %}</section>
+        <section class="admin-card"><h2>Recent Reports</h2>{% if data.recent_reports %}<table><tbody>
           {% for report in data.recent_reports %}<tr><td class="truncate">{{ report.url }}</td><td>{{ report.reporter_email }}</td><td>{{ report.risk_score }}</td><td><a href="/admin/reports">Review</a></td></tr>{% endfor %}
-        </tbody></table></section>
+        </tbody></table>{% else %}{{ empty_state(icon='check', title='No reports to review', body='Reported URLs will appear here.', action_label='Open reports', action_href='/admin/reports', compact=true, heading_level=3) }}{% endif %}</section>
       </div>
-      <section class="admin-card"><h2>Live Activity Feed</h2><div class="activity-feed">
+      <section class="admin-card"><h2>Live Activity Feed</h2>{% if data.activity %}<div class="activity-feed">
         {% for log in data.activity %}<p class="activity {{ log.action }}"><b>{{ log.actor_email or log.actor_user_id or 'system' }}</b> {{ log.action.replace('.', ' ') }} <span>{{ log.created_at | time_only }}</span></p>{% endfor %}
-      </div></section>
+      </div>{% else %}{{ empty_state(icon='info', title='No recent activity', body='Account and admin events will appear here.', action_label='Open audit logs', action_href='/admin/logs', compact=true, heading_level=3) }}{% endif %}</section>
 
       {% elif page == 'users' %}
       <form class="filters" method="get">
@@ -108,7 +109,7 @@
         <select name="tier"><option value="">All Tiers</option>{% for value in ['Registered','Scanner','Referrer','Guardian'] %}<option value="{{ value }}" {% if data.filters.tier == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select>
         <button>Filter</button>{% if is_owner %}<a class="button-link" href="/admin/export/users">Export</a>{% endif %}
       </form>
-      <section class="admin-card"><table class="admin-table">
+      <section class="admin-card">{% if data.rows %}<table class="admin-table">
         <thead><tr><th></th><th>Email</th><th>Display Name</th><th>Role</th><th>Status</th><th>Tier</th><th>Scans</th><th>Referrals</th><th>Wallet</th><th>Joined</th><th>Last Active</th><th>Actions</th></tr></thead>
         <tbody>{% for user in data.rows %}<tr>
           <td><input type="checkbox"></td><td>{{ user.email }}</td><td>{{ user.display_name or 'Safe Scanner' }}</td><td><span class="badge role">{{ user.role }}</span></td><td><span class="badge {{ user.status }}">{{ user.status }}</span></td><td>{{ user.tier }}</td><td>{{ user.scan_count }}</td><td>{{ user.referral_count }}</td><td class="truncate">{{ user.wallet_address or 'None' }}</td><td>{{ user.created_at | time_only }}</td><td>{{ ((user.last_login_at or user.last_login) | time_only) }}</td>
@@ -121,28 +122,38 @@
             {% if form_error and form_error.target == user.email %}<span class="admin-inline-error" id="admin-inline-{{ form_error.field }}">{{ form_error.message }}</span>{% endif %}
           </td>
         </tr>{% endfor %}</tbody>
-      </table><p>Page {{ data.page }} of {{ data.pages }} · {{ data.total }} users</p></section>
+      </table>{% else %}
+      {% if data.filters.search or data.filters.status or data.filters.role or data.filters.tier or data.filters.flag %}
+      {{ empty_state(icon='search', title='No users match these filters', body='Try another search or clear the filters.', action_label='Clear filters', action_href='/admin/users', compact=true) }}
+      {% else %}
+      {{ empty_state(icon='info', title='No users yet', body='New accounts will appear here.', action_label='Open dashboard', action_href='/admin', compact=true) }}
+      {% endif %}{% endif %}{% if data.rows %}<p>Page {{ data.page }} of {{ data.pages }} · {{ data.total }} users</p>{% endif %}</section>
 
       {% elif page == 'scans' %}
       <div class="stat-grid small"><article>Total Scans <b>{{ data.stats.total }}</b></article><article>Flagged Today <b>{{ data.stats.flagged_today }}</b></article><article>Avg Risk 7d <b>{{ data.stats.avg_risk }}</b></article><article>Common TLD <b>{{ data.stats.common_tld }}</b></article></div>
       <form class="filters" method="get"><input name="search" placeholder="URL keyword"><input name="user" placeholder="User email"><select name="verdict"><option value="">All verdicts</option><option>SAFE</option><option>CAUTION</option><option>MALICIOUS</option></select><button>Filter</button></form>
-      <section class="admin-card"><table class="admin-table"><thead><tr><th>Scan ID</th><th>User</th><th>URL</th><th>Risk</th><th>Verdict</th><th>Signals</th><th>Date</th><th>Actions</th></tr></thead><tbody>
+      <section class="admin-card">{% if data.rows %}<table class="admin-table"><thead><tr><th>Scan ID</th><th>User</th><th>URL</th><th>Risk</th><th>Verdict</th><th>Signals</th><th>Date</th><th>Actions</th></tr></thead><tbody>
         {% for scan in data.rows %}<tr><td>{{ scan.id[:12] }}</td><td>{{ scan.email }}</td><td class="truncate" title="{{ scan.url }}">{{ scan.url }}</td><td class="risk">{{ scan.risk_score }}</td><td><span class="badge {{ scan.verdict|lower }}">{{ scan.verdict }}</span></td><td>{{ (scan.signals or '[]')|length }}</td><td>{{ scan.created_at | time_only }}</td><td><details><summary>View Details</summary><pre>{{ scan.signals }}</pre></details><form action="/admin/scans/{{ scan.id }}/flag" method="post"><button>Flag URL</button></form><a href="/admin/users?search={{ scan.email }}">View User</a>{% if form_error and form_error.target == scan.id %}<span class="admin-inline-error">{{ form_error.message }}</span>{% endif %}</td></tr>{% endfor %}
-      </tbody></table></section>
+      </tbody></table>{% elif request.query_params.get('search') or request.query_params.get('user') or request.query_params.get('verdict') %}
+      {{ empty_state(icon='search', title='No scans match these filters', body='Try another search or clear the filters.', action_label='Clear filters', action_href='/admin/scans', compact=true) }}
+      {% elif request.url.path == '/admin/risk-logs' %}{{ empty_state(icon='check', title='No malicious scans logged', body='Scans with malicious verdicts will appear here.', action_label='Open all scans', action_href='/admin/scans', compact=true) }}
+      {% else %}{{ empty_state(icon='scan', title='No scans yet', body='Saved scans will appear here.', action_label='Open scanner', action_href='/#scanner', compact=true) }}{% endif %}</section>
 
       {% elif page == 'waitlist' %}
       <div class="stat-grid small"><article>Total Signups <b>{{ data.total }}</b></article><article>Showing <b>{{ data.rows|length }}</b></article></div>
       <form class="filters" method="get"><input name="search" value="{{ data.filters.search }}" placeholder="Search email"><button>Filter</button>{% if is_owner %}<a class="button-link" href="/admin/export/waitlist">Export CSV</a>{% endif %}</form>
-      <section class="admin-card"><table class="admin-table"><thead><tr><th>Email</th><th>Source</th><th>Joined</th></tr></thead><tbody>
+      <section class="admin-card">{% if data.rows %}<table class="admin-table"><thead><tr><th>Email</th><th>Source</th><th>Joined</th></tr></thead><tbody>
         {% for signup in data.rows %}<tr><td>{{ signup.email }}</td><td>{{ signup.source or 'footer' }}</td><td>{{ signup.created_at | time_only }}</td></tr>{% endfor %}
-      </tbody></table>{% if not data.rows %}<p>No waitlist signups found.</p>{% endif %}</section>
+      </tbody></table>{% elif data.filters.search %}
+      {{ empty_state(icon='search', title='No signups match this search', body='Try another email or clear the search.', action_label='Clear search', action_href='/admin/waitlist', compact=true) }}
+      {% else %}{{ empty_state(icon='info', title='No waitlist signups yet', body='New signups will appear here.', action_label='Open dashboard', action_href='/admin', compact=true) }}{% endif %}</section>
 
       {% elif page == 'reports' %}
       <div class="tabs"><a href="/admin/reports">Reports</a><a href="/admin/reports?tab=blocklist">Blocklist</a></div>
       {% if data.tab == 'blocklist' %}
-      <section class="admin-card"><table class="admin-table"><thead><tr><th>URL</th><th>Reason</th><th>Added By</th><th>Date</th><th></th></tr></thead><tbody>{% for item in data.blocklist %}<tr><td class="truncate">{{ item.url }}</td><td>{{ item.reason }}</td><td>{{ item.added_by }}</td><td>{{ item.created_at | time_only }}</td><td><form action="/admin/blocklist/{{ item.id }}/remove" method="post"><button>Remove</button></form></td></tr>{% endfor %}</tbody></table></section>
+      <section class="admin-card">{% if data.blocklist %}<table class="admin-table"><thead><tr><th>URL</th><th>Reason</th><th>Added By</th><th>Date</th><th></th></tr></thead><tbody>{% for item in data.blocklist %}<tr><td class="truncate">{{ item.url }}</td><td>{{ item.reason }}</td><td>{{ item.added_by }}</td><td>{{ item.created_at | time_only }}</td><td><form action="/admin/blocklist/{{ item.id }}/remove" method="post"><button>Remove</button></form></td></tr>{% endfor %}</tbody></table>{% else %}{{ empty_state(icon='check', title='Blocklist is empty', body='Confirmed malicious URLs will appear here after review.', action_label='Review reports', action_href='/admin/reports', compact=true) }}{% endif %}</section>
       {% else %}
-      <section class="admin-card"><table class="admin-table"><thead><tr><th>URL</th><th>Reporter</th><th>Reason</th><th>Risk</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead><tbody>{% for report in data.reports %}<tr><td class="truncate">{{ report.url }}</td><td>{{ report.reporter_email }}</td><td>{{ report.reason }}</td><td>{{ report.risk_score }}</td><td><span class="badge">{{ report.status }}</span></td><td>{{ report.created_at | time_only }}</td><td><form action="/admin/reports/{{ report.id }}/action" method="post"><button name="action" value="confirm">Confirm Malicious</button><button name="action" value="dismiss">Dismiss</button><button name="action" value="reanalyze">Re-analyze</button></form>{% if form_error and form_error.target == report.id %}<span class="admin-inline-error">{{ form_error.message }}</span>{% endif %}</td></tr>{% endfor %}</tbody></table></section>
+      <section class="admin-card">{% if data.reports %}<table class="admin-table"><thead><tr><th>URL</th><th>Reporter</th><th>Reason</th><th>Risk</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead><tbody>{% for report in data.reports %}<tr><td class="truncate">{{ report.url }}</td><td>{{ report.reporter_email }}</td><td>{{ report.reason }}</td><td>{{ report.risk_score }}</td><td><span class="badge">{{ report.status }}</span></td><td>{{ report.created_at | time_only }}</td><td><form action="/admin/reports/{{ report.id }}/action" method="post"><button name="action" value="confirm">Confirm Malicious</button><button name="action" value="dismiss">Dismiss</button><button name="action" value="reanalyze">Re-analyze</button></form>{% if form_error and form_error.target == report.id %}<span class="admin-inline-error">{{ form_error.message }}</span>{% endif %}</td></tr>{% endfor %}</tbody></table>{% else %}{{ empty_state(icon='check', title='No reports to review', body='Reported URLs will appear here.', action_label='Open scans', action_href='/admin/scans', compact=true) }}{% endif %}</section>
       {% endif %}
 
       {% elif page == 'airdrop' %}
@@ -166,29 +177,29 @@
         <form action="/admin/airdrop/distribute" method="post">
           <button class="danger-button" type="submit" data-confirm="Distribute {{ data.estimated_total }} SQR to {{ data.qualified|length }} qualified member(s) now?" {% if not data.qualified %}disabled{% endif %}>Distribute {{ data.estimated_total }} SQR to {{ data.qualified|length }} Qualified Members</button>
         </form>
-        <table class="admin-table">
+        {% if data.wallet_users %}<table class="admin-table">
           <thead><tr><th>Email</th><th>Wallet</th><th>Tier</th><th>Scans</th><th>Referrals</th><th>SQR Allocation</th><th>Status</th><th>Fraud</th><th>Actions</th></tr></thead>
           <tbody>{% for user in data.wallet_users %}<tr><td>{{ user.email }}</td><td class="truncate"><a href="https://solscan.io/account/{{ user.wallet_address }}" target="_blank" rel="noopener noreferrer">{{ user.wallet_address }}</a></td><td>{{ user.tier }}</td><td>{{ user.scan_count }}</td><td>{{ user.referral_count }}</td><td>{{ user.estimated_sqr }}</td><td>{{ user.distribution_status }}</td><td>{{ 'yes' if user.fraud_flags else 'no' }}</td><td><form action="/admin/airdrop/{{ user.email }}/status" method="post"><input name="reason" aria-label="Reason for {{ user.email }}" placeholder="Reason" value="{{ form_error.submitted.reason if form_error and form_error.target == user.email else '' }}"><button name="status" value="disqualified">Disqualify</button><button name="status" value="cleared">Verify Manually</button></form>{% if form_error and form_error.target == user.email %}<span class="admin-inline-error">{{ form_error.message }}</span>{% endif %}</td></tr>{% endfor %}</tbody>
-        </table>
+        </table>{% else %}{{ empty_state(icon='info', title='No wallets connected yet', body='Connected wallets will appear in this queue.', action_label='Open users', action_href='/admin/users', compact=true, heading_level=3) }}{% endif %}
       </section>
 
       {% elif page == 'fraud' %}
-      <section class="admin-card"><table class="admin-table"><thead><tr><th>Email</th><th>Fraud Score</th><th>Signals</th><th>Highest</th><th>Wallet</th><th>Status</th><th>Flag Date</th><th>Review</th></tr></thead><tbody>{% for row in data.rows %}<tr><td>{{ row.email }}</td><td class="fraud-score">{{ row.fraud_score }}</td><td>{{ row.signal_count }}</td><td>{{ row.highest_severity }}</td><td class="truncate">{{ row.wallet_address }}</td><td>{{ row.airdrop_status }}</td><td>{{ row.flag_date | time_only }}</td><td><details {% if form_error and form_error.target == row.email %}open{% endif %}><summary>Review</summary><p>Referral tree placeholder: node graph data appears after referral backend records exist.</p><form action="/admin/fraud/{{ row.email }}/review" method="post"><input name="reason" aria-label="Review reason for {{ row.email }}" placeholder="Review reason" value="{{ form_error.submitted.reason if form_error and form_error.target == row.email else '' }}"><button name="outcome" value="cleared">Clear</button><button name="outcome" value="disqualified">Disqualify</button><button name="outcome" value="escalated">Escalate to Owner</button></form>{% if form_error and form_error.target == row.email %}<span class="admin-inline-error">{{ form_error.message }}</span>{% endif %}</details></td></tr>{% endfor %}</tbody></table></section>
+      <section class="admin-card">{% if data.rows %}<table class="admin-table"><thead><tr><th>Email</th><th>Fraud Score</th><th>Signals</th><th>Highest</th><th>Wallet</th><th>Status</th><th>Flag Date</th><th>Review</th></tr></thead><tbody>{% for row in data.rows %}<tr><td>{{ row.email }}</td><td class="fraud-score">{{ row.fraud_score }}</td><td>{{ row.signal_count }}</td><td>{{ row.highest_severity }}</td><td class="truncate">{{ row.wallet_address }}</td><td>{{ row.airdrop_status }}</td><td>{{ row.flag_date | time_only }}</td><td><details {% if form_error and form_error.target == row.email %}open{% endif %}><summary>Review</summary><p>Referral tree placeholder: node graph data appears after referral backend records exist.</p><form action="/admin/fraud/{{ row.email }}/review" method="post"><input name="reason" aria-label="Review reason for {{ row.email }}" placeholder="Review reason" value="{{ form_error.submitted.reason if form_error and form_error.target == row.email else '' }}"><button name="outcome" value="cleared">Clear</button><button name="outcome" value="disqualified">Disqualify</button><button name="outcome" value="escalated">Escalate to Owner</button></form>{% if form_error and form_error.target == row.email %}<span class="admin-inline-error">{{ form_error.message }}</span>{% endif %}</details></td></tr>{% endfor %}</tbody></table>{% else %}{{ empty_state(icon='check', title='No fraud flags to review', body='Flagged accounts will appear here.', action_label='Open airdrop overview', action_href='/admin/airdrop', compact=true) }}{% endif %}</section>
 
       {% elif page == 'logs' %}
       <form class="filters" method="get"><input name="search" placeholder="Actor"><select name="action"><option value="">All Actions</option>{% for action in data.actions %}<option>{{ action }}</option>{% endfor %}</select><input name="target_type" placeholder="Target type"><button>Filter</button>{% if is_owner %}<a class="button-link" href="/admin/logs?export=csv">Export Logs</a>{% endif %}</form>
-      <section class="admin-card"><table class="admin-table"><thead><tr><th>Timestamp</th><th>Actor</th><th>Action</th><th>Target</th><th>IP</th><th>User Agent</th><th>Details</th></tr></thead><tbody>{% for log in data.rows %}<tr><td>{{ log.created_at | time_only }}</td><td>{{ log.actor_email or log.actor_user_id or 'system' }}</td><td><span class="badge">{{ log.action }}</span></td><td>{{ log.target_type }} {{ log.target_id }}</td><td>{{ log.ip_address }}</td><td class="truncate">{{ log.user_agent }}</td><td><details><summary>Details</summary><pre>{{ log.metadata }}</pre></details></td></tr>{% endfor %}</tbody></table></section>
+      <section class="admin-card">{% if data.rows %}<table class="admin-table"><thead><tr><th>Timestamp</th><th>Actor</th><th>Action</th><th>Target</th><th>IP</th><th>User Agent</th><th>Details</th></tr></thead><tbody>{% for log in data.rows %}<tr><td>{{ log.created_at | time_only }}</td><td>{{ log.actor_email or log.actor_user_id or 'system' }}</td><td><span class="badge">{{ log.action }}</span></td><td>{{ log.target_type }} {{ log.target_id }}</td><td>{{ log.ip_address }}</td><td class="truncate">{{ log.user_agent }}</td><td><details><summary>Details</summary><pre>{{ log.metadata }}</pre></details></td></tr>{% endfor %}</tbody></table>{% elif request.query_params.get('search') or request.query_params.get('action') or request.query_params.get('target_type') %}{{ empty_state(icon='search', title='No logs match these filters', body='Try another search or clear the filters.', action_label='Clear filters', action_href='/admin/logs', compact=true) }}{% else %}{{ empty_state(icon='info', title='No audit logs yet', body='Account and admin events will appear here.', action_label='Open dashboard', action_href='/admin', compact=true) }}{% endif %}</section>
 
       {% elif page == 'api_keys' %}
       <section class="admin-card"><h2>Generate New Key</h2>
-        <form class="filters" action="/admin/api-keys" method="post">
+        <form id="createApiKeyForm" class="filters" action="/admin/api-keys" method="post">
           <div class="admin-form-field"><label for="api-key-name">Key name</label><input id="api-key-name" name="name" placeholder="Key name" required value="{{ form_error.submitted.name if form_error else '' }}" {% if form_error and form_error.field == 'name' %}aria-invalid="true" aria-describedby="admin-api-key-name-error"{% endif %}>{% if form_error and form_error.field == 'name' %}<span id="admin-api-key-name-error" class="admin-inline-error">{{ form_error.message }}</span>{% endif %}</div>
           <div class="admin-form-field"><span>Scopes</span><label><input type="checkbox" name="scopes" value="risk:analyze" {% if form_error and 'risk:analyze' in form_error.submitted.scopes %}checked{% endif %}> risk:analyze</label><label><input type="checkbox" name="scopes" value="admin:export" {% if form_error and 'admin:export' in form_error.submitted.scopes %}checked{% endif %}> admin:export</label><label><input type="checkbox" name="scopes" value="admin:api_keys" {% if form_error and 'admin:api_keys' in form_error.submitted.scopes %}checked{% endif %}> admin:api_keys</label>{% if form_error and form_error.field == 'scopes' %}<span class="admin-inline-error">{{ form_error.message }}</span>{% endif %}</div>
           <div class="admin-form-field"><label for="api-key-expiry">Expiry date</label><input id="api-key-expiry" name="expires_at" placeholder="Expiry ISO date optional" value="{{ form_error.submitted.expires_at if form_error else '' }}" {% if form_error and form_error.field == 'expires_at' %}aria-invalid="true" aria-describedby="admin-api-key-expiry-error"{% endif %}>{% if form_error and form_error.field == 'expires_at' %}<span id="admin-api-key-expiry-error" class="admin-inline-error">{{ form_error.message }}</span>{% endif %}</div>
           <button>Generate New Key</button>
         </form>
       </section>
-      <section class="admin-card"><table class="admin-table"><thead><tr><th>Name</th><th>Hint</th><th>Created By</th><th>Created</th><th>Last Used</th><th>Scopes</th><th>Status</th><th></th></tr></thead><tbody>{% for key in data['keys'] %}<tr><td>{{ key.name }}</td><td>{{ key.key_hint }}</td><td>{{ key.created_by }}</td><td>{{ key.created_at | time_only }}</td><td>{{ key.last_used_at | time_only }}</td><td>{{ key.scopes }}</td><td>{{ key.status }}</td><td><form action="/admin/api-keys/{{ key.id }}/revoke" method="post"><button>Revoke</button></form></td></tr>{% endfor %}</tbody></table></section>
+      <section class="admin-card">{% if data['keys'] %}<table class="admin-table"><thead><tr><th>Name</th><th>Hint</th><th>Created By</th><th>Created</th><th>Last Used</th><th>Scopes</th><th>Status</th><th></th></tr></thead><tbody>{% for key in data['keys'] %}<tr><td>{{ key.name }}</td><td>{{ key.key_hint }}</td><td>{{ key.created_by }}</td><td>{{ key.created_at | time_only }}</td><td>{{ key.last_used_at | time_only }}</td><td>{{ key.scopes }}</td><td>{{ key.status }}</td><td><form action="/admin/api-keys/{{ key.id }}/revoke" method="post"><button>Revoke</button></form></td></tr>{% endfor %}</tbody></table>{% else %}{{ empty_state(icon='lock', title='No API keys yet', body='Create a key when an approved integration needs API access.', action_label='Create a key', action_href='#createApiKeyForm', compact=true) }}{% endif %}</section>
 
       {% elif page == 'api_key_created' %}
       <section class="admin-card key-reveal"><h2>New API Key</h2><p>This key will not be shown again.</p><code>{{ data.raw_key }}</code><a class="button-link" href="/admin/api-keys">Back to API keys</a></section>

@@ -1,5 +1,6 @@
 {# Home page and primary scan landing: the hero, the scan form (paste a URL or
    upload/scan a QR), and the result modal. The main entry point of the site. #}
+{% from "_states.html" import empty_state %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -9,7 +10,7 @@
   <script src="/static/ui-states.js?v=ui-loading-v1"></script>
   <title>SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg?v=rose-theme-v1" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=ui-loading-v2">
+  <link rel="stylesheet" href="/static/styles.css?v=ui-phase7-v1">
 </head>
 <body class="{{ 'test-site-page' if test_site else '' }}">
   {% if not logged_in and google_client_id and not local_auth_enabled %}
@@ -225,9 +226,11 @@
             {% endif %}
 
             <div class="reason-accordion">
+              {% set visible_reasons = namespace(count=0) %}
               {% for reason in risk_reasons %}
               {% if reason.check not in ('ML Risk Model', 'VirusTotal Reputation') %}
-              <details class="reason-row" {% if loop.first %}open{% endif %}>
+              {% set visible_reasons.count = visible_reasons.count + 1 %}
+              <details class="reason-row" {% if visible_reasons.count == 1 %}open{% endif %}>
                 <summary>
                   <span><strong>{{ reason.label }}</strong>{% if reason.result %} <em>{{ reason.result }}</em>{% endif %}</span>
                   <span class="severity-badge severity-{{ reason.severity }}">{{ reason.severity }}</span>
@@ -236,6 +239,9 @@
               </details>
               {% endif %}
               {% endfor %}
+              {% if visible_reasons.count == 0 %}
+              {{ empty_state(icon='info', title='No additional risk details', body='Review the decoded QR content and confirm its source before taking action.', action_label='Scan another QR', action_href='/#scanner', compact=true, heading_level=3) }}
+              {% endif %}
             </div>
           </div>
 

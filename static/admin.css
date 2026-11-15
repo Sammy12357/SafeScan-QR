@@ -94,6 +94,8 @@ button[value="disqualified"], button[value="suspended"], button[value="deleted"]
 .admin-form-field input[type="checkbox"] { width: auto; min-height: 0; margin-right: var(--space-3); }
 .admin-content [aria-invalid="true"] { border-color: var(--admin-red); }
 .admin-content a:not(.button-link) { color: var(--admin-accent); }
+.admin-content .state-actions a.primary-button { border: 1px solid var(--admin-accent); border-radius: 8px; background: var(--admin-accent); color: var(--admin-bg); font-weight: 800; text-decoration: none; }
+.admin-content .state-actions a.primary-button:hover { filter: brightness(1.08); }
 .stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-5); }
 .stat-grid.small article, .admin-card { border: 1px solid var(--admin-line); border-radius: 8px; background: var(--admin-surface); box-shadow: var(--admin-shadow); }
 .stat-card, .stat-grid.small article { padding: var(--space-6); }
