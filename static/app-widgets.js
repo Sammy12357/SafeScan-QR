@@ -208,26 +208,54 @@ function showConsentBannerIfNeeded() {
   }
 }
 
+let consentSaving = false;
 cookieConsentBanner?.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-consent-choice]");
-  if (!button) return;
+  if (!button || button.disabled || consentSaving) return;
+  consentSaving = true;
+  const otherButtons = Array.from(cookieConsentBanner.querySelectorAll("[data-consent-choice]"))
+    .filter((choice) => choice !== button).map((choice) => [choice, choice.disabled]);
+  otherButtons.forEach(([choice]) => { choice.disabled = true; });
   const consentType = button.dataset.consentChoice;
   const bannerVersion = cookieConsentBanner.dataset.version || "consent-v1";
   const record = { consentType, bannerVersion, timestamp: new Date().toISOString() };
-  window.localStorage.setItem("safeScanConsent", JSON.stringify(record));
-  cookieConsentBanner.classList.add("hidden");
-
-  try {
-    const response = await fetch("/api/consent", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ consentType, bannerVersion })
-    });
-    const body = await response.json();
-    if (body.id) window.localStorage.setItem("safeScanConsentId", body.id);
-  } catch {
-    cookieConsentBanner.classList.remove("hidden");
-  }
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 15000);
+  UIStates.busy(button, async () => {
+    try {
+      const response = await fetch("/api/consent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ consentType, bannerVersion }),
+        signal: controller.signal
+      });
+      if (!response.ok) throw new Error("Consent save failed");
+      const body = await response.json();
+      window.localStorage.setItem("safeScanConsent", JSON.stringify(record));
+      if (body.id) window.localStorage.setItem("safeScanConsentId", body.id);
+      document.getElementById("consentSaveFeedback")?.remove();
+      cookieConsentBanner.classList.add("hidden");
+    } catch {
+      let feedback = document.getElementById("consentSaveFeedback");
+      if (!feedback) {
+        feedback = document.createElement("div");
+        feedback.id = "consentSaveFeedback";
+        cookieConsentBanner.firstElementChild?.appendChild(feedback);
+      }
+      UIStates.notice(feedback, {
+        type: "danger",
+        message: controller.signal.aborted
+          ? "Saving your privacy choice took too long. Check your connection and try again."
+          : navigator.onLine === false
+            ? "You're offline. Reconnect and save your privacy choice again."
+            : "We couldn't save your privacy choice. Try again."
+      });
+    } finally {
+      window.clearTimeout(timeout);
+      otherButtons.forEach(([choice, wasDisabled]) => { choice.disabled = wasDisabled; });
+      consentSaving = false;
+    }
+  }, { label: "Saving…" });
 });
 
 showConsentBannerIfNeeded();
