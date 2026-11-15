@@ -70,6 +70,13 @@ button[value="disqualified"], button[value="suspended"], button[value="deleted"]
 .global-search input::placeholder, .filters input::placeholder, .row-actions input::placeholder { color: var(--admin-muted); opacity: 1; }
 .bell { color: var(--admin-accent); }
 .admin-content { padding: 32px; display: grid; gap: 18px; }
+.admin-form-error { padding: 14px 16px; border: 1px solid var(--admin-red); border-radius: 8px; background: rgba(239, 68, 68, .12); color: var(--admin-text); line-height: 1.5; }
+.admin-form-error strong { color: var(--admin-red); }
+.admin-inline-error { display: block; color: var(--admin-red); font-size: 13px; font-weight: 700; line-height: 1.4; }
+.admin-form-field { display: grid; align-content: start; gap: 6px; }
+.admin-form-field label { color: var(--admin-text); font-size: 13px; }
+.admin-form-field input[type="checkbox"] { width: auto; min-height: 0; margin-right: 6px; }
+.admin-content [aria-invalid="true"] { border-color: var(--admin-red); }
 .admin-content a:not(.button-link) { color: var(--admin-accent); }
 .stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
 .stat-grid.small article, .admin-card { border: 1px solid var(--admin-line); border-radius: 8px; background: var(--admin-surface); box-shadow: var(--admin-shadow); }

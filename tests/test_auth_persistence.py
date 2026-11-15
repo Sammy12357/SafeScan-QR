@@ -524,6 +524,19 @@ def test_username_form_keeps_invalid_entry_and_discord_context(auth_app):
     assert "Use 3 to 24 letters" in response.text
 
 
+def test_profile_redirect_notice_uses_allowlisted_copy(auth_app, monkeypatch):
+    _, client, _ = auth_app
+    register(client, "notice@example.com")
+    routes = importlib.import_module("hackabull.routes_scan_auth")
+    monkeypatch.setattr(routes, "discord_linking_configured", lambda: True)
+    response = client.get("/profile?discord_error=discord_expired")
+    assert response.status_code == 200
+    assert "Discord linking expired" in response.text
+    assert 'class="profile-notice" role="alert"' in response.text
+    forged = client.get("/profile?discord_error=forged-secret-message")
+    assert "forged-secret-message" not in forged.text
+
+
 def test_solana_verification_hides_provider_detail(auth_app, monkeypatch, caplog):
     module, client, _ = auth_app
     register(client, "payment-error@example.com")

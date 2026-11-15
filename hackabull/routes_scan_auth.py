@@ -121,6 +121,15 @@ from .wallet import get_verified_wallet
 # =============================================================================
 # ROUTES — QR SCANNING & AUTHENTICATION (sign-in, logout, profile, scanning)
 # =============================================================================
+PROFILE_NOTICES = {
+    "discord_cancelled": "Discord linking was cancelled. Start again if you still want to link it.",
+    "discord_expired": "Discord linking expired. Start again from your profile.",
+    "discord_rejected": "Discord did not accept the link request. Try linking again.",
+    "discord_no_id": "We couldn't confirm the Discord account. Try linking again.",
+    "discord_duplicate": "That Discord account is already linked to another SafeScan account.",
+}
+
+
 @qr_app.post("/search_qr_api", response_class=HTMLResponse)
 async def scan_qr(
     request: Request,
@@ -429,20 +438,20 @@ async def auth_discord_callback(request: Request, code: str = Query(""), state: 
     """Complete the OAuth flow: store the link, then best-effort join + role."""
     user = require_user(request)
     if error or not code:
-        return RedirectResponse("/profile?discord_error=" + quote("Discord linking was cancelled."), status_code=303)
+        return RedirectResponse("/profile?discord_error=discord_cancelled", status_code=303)
     state_user = verify_discord_state(state)
     if not state_user or str(state_user) != str(user.get("google_id")):
         audit_log("discord.link_state_mismatch", request=request, actor_user_id=user.get("google_id"))
-        return RedirectResponse("/profile?discord_error=" + quote("Discord linking expired or did not match this session. Try again."), status_code=303)
+        return RedirectResponse("/profile?discord_error=discord_expired", status_code=303)
     try:
         token_payload = await asyncio.to_thread(discord_exchange_code, code)
         identity = await asyncio.to_thread(discord_fetch_identity, token_payload.get("access_token", ""))
     except Exception:
-        return RedirectResponse("/profile?discord_error=" + quote("Discord did not accept the link request. Try again."), status_code=303)
+        return RedirectResponse("/profile?discord_error=discord_rejected", status_code=303)
     discord_id = str(identity.get("id") or "")
     discord_username = str(identity.get("username") or "")[:80]
     if not discord_id:
-        return RedirectResponse("/profile?discord_error=" + quote("Discord returned no account id."), status_code=303)
+        return RedirectResponse("/profile?discord_error=discord_no_id", status_code=303)
 
     joined = await asyncio.to_thread(discord_join_guild, discord_id, token_payload.get("access_token", ""))
     role_granted = await asyncio.to_thread(discord_grant_verified_role, discord_id)
@@ -464,7 +473,7 @@ async def auth_discord_callback(request: Request, code: str = Query(""), state: 
         # discord_id UNIQUE tripped: that Discord account is already linked to
         # a different SafeScan account (anti-abuse for airdrop perks).
         audit_log("discord.link_duplicate", request=request, actor_user_id=user.get("google_id"), metadata={"discordId": discord_id})
-        return RedirectResponse("/profile?discord_error=" + quote("That Discord account is already linked to another SafeScan account."), status_code=303)
+        return RedirectResponse("/profile?discord_error=discord_duplicate", status_code=303)
 
     audit_log("discord.linked", request=request, actor_user_id=user.get("google_id"),
               metadata={"discordId": discord_id, "guildMember": joined, "roleGranted": role_granted})
@@ -593,7 +602,7 @@ async def auth_dev_google(request: Request, remember_me: str = Form("1"), next_u
 
 @qr_app.get("/onboarding/username", response_class=HTMLResponse)
 async def username_onboarding_page(request: Request, error: str = Query("")):
-    return RedirectResponse(f"/profile?error={quote(error)}" if error else "/profile", status_code=303)
+    return RedirectResponse(f"/profile?error={quote(error)}" if error in ERRORS else "/profile", status_code=303)
 
 @qr_app.post("/onboarding/username", response_class=HTMLResponse)
 async def username_onboarding_submit(request: Request, username: str = Form(...)):
@@ -611,10 +620,10 @@ async def profile_page(request: Request, error: str = Query(""), discord_error: 
         "username": username,
         "scan_count": get_scan_count(email),
         "leaderboard_status": "Live" if username else "Hidden",
-        "error": error,
+        "error": f"{ERRORS[error].message} {ERRORS[error].hint}" if error in ERRORS else "",
         "discord_enabled": discord_linking_configured(),
         "discord_link": get_discord_link(user["google_id"]),
-        "discord_error": discord_error,
+        "discord_error": PROFILE_NOTICES.get(discord_error, ""),
         "discord_invite": DISCORD_INVITE_URL,
     })
 

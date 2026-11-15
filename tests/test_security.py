@@ -192,6 +192,108 @@ def test_admin_can_view_waitlist_signups(security_app):
     assert "Waitlist" in response.text
 
 
+def test_admin_user_actions_keep_invalid_input_without_mutation(security_app):
+    _, client, db_path = security_app
+    register(client, "owner@example.com")
+
+    role = client.post("/admin/users/owner@example.com/role", data={"role": "root"})
+    assert role.status_code == 400
+    assert "All Users" in role.text
+    assert "Choose an available action" in role.text
+    assert 'aria-invalid="true"' in role.text
+
+    confirmation = client.post("/admin/users/owner@example.com/delete", data={"confirm": "NO"})
+    assert confirmation.status_code == 400
+    assert 'value="NO"' in confirmation.text
+    assert "Type DELETE to confirm" in confirmation.text
+
+    suspend = client.post("/admin/users/owner@example.com/suspend", data={"action": "unexpected"})
+    assert suspend.status_code == 400
+    assert "All Users" in suspend.text
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT role, status FROM users WHERE email = ?", ("owner@example.com",)).fetchone() == ("owner", "active")
+
+
+def test_admin_api_key_form_validates_before_creating_secret(security_app):
+    _, client, db_path = security_app
+    register(client, "owner@example.com")
+
+    missing = client.post("/admin/api-keys", data={"name": "", "expires_at": ""})
+    assert missing.status_code == 400
+    assert "Enter a name for the API key" in missing.text
+    assert 'id="api-key-name"' in missing.text
+
+    expiry = client.post("/admin/api-keys", data={"name": "Reports", "expires_at": "yesterday"})
+    assert expiry.status_code == 400
+    assert 'value="Reports"' in expiry.text
+    assert 'value="yesterday"' in expiry.text
+    assert "Enter a valid expiry date" in expiry.text
+
+    scopes = client.post("/admin/api-keys", data={"name": "Reports", "scopes": "owner:everything"})
+    assert scopes.status_code == 400
+    assert "Choose an available API key scope" in scopes.text
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM api_keys").fetchone()[0] == 0
+
+    valid = client.post("/admin/api-keys", data={"name": "Reports", "scopes": "risk:analyze", "expires_at": "2027-12-01"})
+    assert valid.status_code == 200
+    assert "This key will not be shown again" in valid.text
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM api_keys").fetchone()[0] == 1
+
+
+def test_admin_action_failures_return_their_own_page(security_app):
+    _, client, db_path = security_app
+    register(client, "owner@example.com")
+    add_scan(db_path, "owner@example.com", "WIFI:T:WPA;S:Guest;P:secret;;")
+
+    scan = client.post("/admin/scans/scan_owner/flag")
+    assert scan.status_code == 400
+    assert "All Scans" in scan.text
+    assert "Only scans of web links" in scan.text
+
+    report = client.post("/admin/reports/unknown/action", data={"action": "wrong"})
+    assert report.status_code == 400
+    assert "Reported URLs" in report.text
+    assert "Choose an available action" in report.text
+
+    airdrop = client.post("/admin/airdrop/owner@example.com/status", data={"status": "wrong", "reason": "Review pending"})
+    assert airdrop.status_code == 400
+    assert "Tier Overview" in airdrop.text
+
+    fraud = client.post("/admin/fraud/owner@example.com/review", data={"outcome": "wrong", "reason": "Review pending"})
+    assert fraud.status_code == 400
+    assert "Fraud Flags" in fraud.text
+
+
+def test_breach_form_keeps_input_and_escapes_saved_report(security_app):
+    _, client, db_path = security_app
+    register(client, "owner@example.com")
+    invalid = client.post("/admin/report-breach", data={
+        "discovery_date": "bad date", "data_categories": "Account data",
+        "users_affected": "unknown", "likely_consequences": "Possible spam",
+        "measures_taken": "Investigating",
+    })
+    assert invalid.status_code == 400
+    assert 'value="bad date"' in invalid.text
+    assert "Enter the discovery date" in invalid.text
+    assert "Account data" in invalid.text
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM breach_reports").fetchone()[0] == 0
+
+    report = client.post("/admin/report-breach", data={
+        "discovery_date": "2026-11-15T10:00:00Z",
+        "data_categories": "<script>alert(1)</script>",
+        "users_affected": "unknown", "likely_consequences": "Possible spam",
+        "measures_taken": "Investigating",
+    })
+    assert report.status_code == 200
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in report.text
+    assert "<script>alert(1)</script>" not in report.text
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM breach_reports").fetchone()[0] == 1
+
+
 def test_go_ghost_page_prompts_before_workflow(security_app):
     _, client, _ = security_app
 

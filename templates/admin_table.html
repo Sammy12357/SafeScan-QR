@@ -14,8 +14,12 @@
     <section class="legal-document">
       <p class="eyebrow">Internal admin</p>
       <h1>{{ title }}</h1>
-      {% if message %}<div class="request-message">{{ message }}</div>{% endif %}
-      {{ body_html | safe }}
+      {% if message %}<div class="request-message" role="status">{{ message }}</div>{% endif %}
+      {% if breach_form %}
+        {% include "partials/breach_form.html" %}
+      {% else %}
+        {{ body_html | safe }}
+      {% endif %}
     </section>
   </div>
 </body>

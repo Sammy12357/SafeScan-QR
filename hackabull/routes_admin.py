@@ -69,6 +69,7 @@ from .config import APP_URL
 from .config import OWNER_EMAILS
 from .config import VALID_ROLES
 from .config import templates
+from .errors import ERRORS
 from .history import admin_avatar
 from .pipeline import analyze_full_pipeline
 from .request_helpers import make_id
@@ -76,6 +77,21 @@ from .request_helpers import make_id
 # =============================================================================
 # ROUTES — ADMIN CONSOLE (/admin/*)  [staff only]
 # =============================================================================
+def _admin_form_error(request, title, page, data, code, *, target="", field="", values=None, owner_only=False):
+    entry = ERRORS[code]
+    data = dict(data)
+    if page == "users":
+        data.setdefault("filters", {"search": target, "status": "", "role": "", "tier": "", "flag": ""})
+    data["form_error"] = {
+        "message": entry.message,
+        "hint": entry.hint,
+        "target": target,
+        "field": field,
+        "submitted": values or {},
+    }
+    return admin_context(request, title, page, data, owner_only=owner_only, status_code=entry.status_code)
+
+
 @qr_app.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(request: Request):
     return admin_context(request, "Dashboard", "dashboard", dashboard_data())
@@ -103,6 +119,8 @@ async def admin_user_drawer(request: Request, email: str):
 @qr_app.post("/admin/users/{email}/suspend")
 async def admin_suspend_user(request: Request, email: str, action: str = Form("suspend")):
     admin_user = require_role_user(request, "admin")
+    if action not in ("suspend", "unsuspend"):
+        return _admin_form_error(request, "All Users", "users", fetch_admin_users(search=email), "admin_action_invalid", target=email, field="action")
     new_status = "active" if action == "unsuspend" else "suspended"
     with get_conn() as conn:
         conn.execute("UPDATE users SET status = ? WHERE email = ?", (new_status, email))
@@ -110,10 +128,10 @@ async def admin_suspend_user(request: Request, email: str, action: str = Form("s
     return RedirectResponse("/admin/users", status_code=303)
 
 @qr_app.post("/admin/users/{email}/role")
-async def admin_change_role(request: Request, email: str, role: str = Form(...)):
+async def admin_change_role(request: Request, email: str, role: str = Form("")):
     admin_user = require_role_user(request, "owner")
     if role not in VALID_ROLES:
-        raise HTTPException(status_code=400, detail="Invalid request.")
+        return _admin_form_error(request, "All Users", "users", fetch_admin_users(search=email), "admin_action_invalid", target=email, field="role", values={"role": role})
     with get_conn() as conn:
         conn.execute("UPDATE users SET role = ? WHERE email = ?", (role, email))
     audit_log("admin.role_changed", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=email, metadata={"role": role})
@@ -123,7 +141,7 @@ async def admin_change_role(request: Request, email: str, role: str = Form(...))
 async def admin_delete_user(request: Request, email: str, confirm: str = Form("")):
     admin_user = require_role_user(request, "owner")
     if confirm != "DELETE":
-        raise HTTPException(status_code=400, detail="Invalid request.")
+        return _admin_form_error(request, "All Users", "users", fetch_admin_users(search=email), "admin_delete_confirmation", target=email, field="confirm", values={"confirm": confirm})
     with get_conn() as conn:
         conn.execute("UPDATE users SET status = 'deleted', deleted_at = ?, airdrop_status = 'disqualified' WHERE email = ?", (now_iso(), email))
     audit_log("admin.user_deleted", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=email)
@@ -171,7 +189,7 @@ async def admin_flag_scan(request: Request, scan_id: str):
         if not scan:
             raise HTTPException(status_code=404, detail="Not found.")
         if not str(scan["url"] or "").lower().startswith(("https://", "http://")):
-            raise HTTPException(status_code=400, detail="Only web URL scans can be added to the URL blocklist.")
+            return _admin_form_error(request, "All Scans", "scans", fetch_scans(), "admin_non_url_scan", target=scan_id)
         conn.execute("UPDATE scan_history SET verdict = 'MALICIOUS', risk_score = 100 WHERE id = ?", (scan_id,))
         conn.execute("INSERT OR IGNORE INTO url_blocklist VALUES (?, ?, ?, ?, ?, NULL)", (make_id("block"), scan["url"], "Admin confirmed malicious scan", admin_user.get("email"), now_iso()))
     audit_log("admin.url_flagged", request=request, actor_user_id=admin_user.get("google_id"), target_type="scan", target_id=scan_id)
@@ -182,8 +200,10 @@ async def admin_reports(request: Request, tab: str = Query("reports")):
     return admin_context(request, "Reported URLs", "reports", fetch_reports(tab=tab))
 
 @qr_app.post("/admin/reports/{report_id}/action")
-async def admin_report_action(request: Request, report_id: str, action: str = Form(...)):
+async def admin_report_action(request: Request, report_id: str, action: str = Form("")):
     admin_user = require_role_user(request, "admin")
+    if action not in ("confirm", "dismiss", "reanalyze"):
+        return _admin_form_error(request, "Reported URLs", "reports", fetch_reports(), "admin_action_invalid", target=report_id, field="action")
     with get_conn() as conn:
         conn.row_factory = sqlite3.Row
         assert_owns_row(conn, "url_reports", report_id)
@@ -198,8 +218,6 @@ async def admin_report_action(request: Request, report_id: str, action: str = Fo
         elif action == "reanalyze":
             analysis = await analyze_full_pipeline(report["url"])
             conn.execute("UPDATE url_reports SET risk_score = ?, status = 'pending' WHERE id = ?", (int(analysis.get("confidenceScore") or 0), report_id))
-        else:
-            raise HTTPException(status_code=400, detail="Invalid request.")
     audit_log("admin.report_reviewed", request=request, actor_user_id=admin_user.get("google_id"), target_type="url_report", target_id=report_id, metadata={"action": action})
     return RedirectResponse("/admin/reports", status_code=303)
 
@@ -256,20 +274,20 @@ async def admin_airdrop_wallets(request: Request):
     return admin_context(request, "Wallet Registry", "airdrop", fetch_airdrop_data())
 
 @qr_app.post("/admin/airdrop/{email}/status")
-async def admin_airdrop_status(request: Request, email: str, status: str = Form(...), reason: str = Form("")):
+async def admin_airdrop_status(request: Request, email: str, status: str = Form(""), reason: str = Form("")):
     admin_user = require_role_user(request, "admin")
     if status not in ("eligible", "flagged", "disqualified", "cleared"):
-        raise HTTPException(status_code=400, detail="Invalid request.")
+        return _admin_form_error(request, "Tier Overview", "airdrop", fetch_airdrop_data(), "admin_action_invalid", target=email, field="status", values={"reason": reason})
     with get_conn() as conn:
         conn.execute("UPDATE users SET airdrop_status = ? WHERE email = ?", (status, email))
     audit_log("admin.airdrop_status_changed", request=request, actor_user_id=admin_user.get("google_id"), target_type="user", target_id=email, metadata={"status": status, "reason": reason})
     return RedirectResponse("/admin/airdrop", status_code=303)
 
 @qr_app.post("/admin/fraud/{email}/review")
-async def admin_fraud_review(request: Request, email: str, outcome: str = Form(...), reason: str = Form("")):
+async def admin_fraud_review(request: Request, email: str, outcome: str = Form(""), reason: str = Form("")):
     admin_user = require_role_user(request, "admin")
     if outcome not in ("cleared", "disqualified", "escalated"):
-        raise HTTPException(status_code=400, detail="Invalid request.")
+        return _admin_form_error(request, "Fraud Flags", "fraud", fetch_fraud_data(), "admin_action_invalid", target=email, field="outcome", values={"reason": reason})
     status = "cleared" if outcome == "cleared" else ("disqualified" if outcome == "disqualified" else "flagged")
     with get_conn() as conn:
         conn.execute("UPDATE fraud_flags SET reviewed = 1, reviewed_by = ?, reviewed_at = ?, review_outcome = ? WHERE user_id = ? AND reviewed = 0", (admin_user.get("email"), now_iso(), outcome, email))
@@ -294,14 +312,29 @@ async def admin_logs(request: Request, search: str = Query(""), action: str = Qu
 
 @qr_app.get("/admin/api-keys", response_class=HTMLResponse)
 async def admin_api_keys(request: Request):
+    return admin_context(request, "API Keys", "api_keys", {"keys": _admin_api_key_rows()}, owner_only=True)
+
+
+def _admin_api_key_rows():
     with get_conn() as conn:
         conn.row_factory = sqlite3.Row
-        keys = [dict(row) for row in conn.execute("SELECT * FROM api_keys ORDER BY created_at DESC")]
-    return admin_context(request, "API Keys", "api_keys", {"keys": keys}, owner_only=True)
+        return [dict(row) for row in conn.execute("SELECT * FROM api_keys ORDER BY created_at DESC")]
 
 @qr_app.post("/admin/api-keys")
-async def admin_create_api_key(request: Request, name: str = Form(...), scopes: list[str] = Form([]), expires_at: str = Form("")):
+async def admin_create_api_key(request: Request, name: str = Form(""), scopes: list[str] = Form([]), expires_at: str = Form("")):
     owner = require_role_user(request, "owner")
+    name = name.strip()
+    expires_at = expires_at.strip()
+    values = {"name": name, "scopes": scopes, "expires_at": expires_at}
+    if not name or len(name) > 80:
+        return _admin_form_error(request, "API Keys", "api_keys", {"keys": _admin_api_key_rows()}, "api_key_name_required", field="name", values=values, owner_only=True)
+    if set(scopes) - {"risk:analyze", "admin:export", "admin:api_keys"}:
+        return _admin_form_error(request, "API Keys", "api_keys", {"keys": _admin_api_key_rows()}, "api_key_scope_invalid", field="scopes", values=values, owner_only=True)
+    if expires_at:
+        try:
+            datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        except ValueError:
+            return _admin_form_error(request, "API Keys", "api_keys", {"keys": _admin_api_key_rows()}, "api_key_expiry_invalid", field="expires_at", values=values, owner_only=True)
     raw_key = "sk_live_" + secrets.token_urlsafe(32)
     hint = raw_key[:14] + "..."
     with get_conn() as conn:
