@@ -21,16 +21,33 @@ function renderRuntime(seconds) {
   });
 }
 
+function renderRuntimeUnavailable() {
+  runtimeNodes.forEach((node) => {
+    node.textContent = "Runtime unavailable";
+  });
+}
+
 async function startRuntimeTimer() {
   if (!runtimeNodes.length) return;
+  const controller = new AbortController();
+  let timeout = 0;
+  const deadline = new Promise((_, reject) => {
+    timeout = window.setTimeout(() => {
+      controller.abort();
+      reject(new Error("Runtime request timed out"));
+    }, 8000);
+  });
   try {
-    const response = await fetch("/api/app-runtime", { credentials: "same-origin" });
+    const response = await Promise.race([
+      fetch("/api/app-runtime", { credentials: "same-origin", signal: controller.signal }), deadline
+    ]);
     if (!response.ok) throw new Error("Runtime unavailable");
-    const data = await response.json();
+    const data = await Promise.race([response.json(), deadline]);
     const startedAt = new Date(data.startedAt).getTime();
     const serverNow = new Date(data.serverNow).getTime();
     const skew = Number.isFinite(serverNow) ? serverNow - Date.now() : 0;
-    const fallback = Number(data.uptimeSeconds || 0);
+    const fallback = Number(data.uptimeSeconds);
+    if (!Number.isFinite(startedAt) && !Number.isFinite(fallback)) throw new Error("Runtime unavailable");
     const tick = () => {
       const runtime = Number.isFinite(startedAt)
         ? Math.floor((Date.now() + skew - startedAt) / 1000)
@@ -40,7 +57,9 @@ async function startRuntimeTimer() {
     tick();
     window.setInterval(tick, 1000);
   } catch {
-    renderRuntime(0);
+    renderRuntimeUnavailable();
+  } finally {
+    window.clearTimeout(timeout);
   }
 }
 

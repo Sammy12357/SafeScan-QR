@@ -55,6 +55,8 @@ const analysisLoadingState = document.getElementById("analysisLoadingState");
 const cookieConsentBanner = document.getElementById("cookieConsentBanner");
 let scanSubmitting = false;
 let scanProgressTimer = 0;
+let scanDeadlineTimer = 0;
+let scanPaintTimer = 0;
 let scanSubmitter = null;
 let scanSubmitterNodes = null;
 let copyToastTimer = 0;
@@ -123,7 +125,7 @@ let deviceFingerprint = "";
 getDeviceFingerprint().then((hash) => {
   deviceFingerprint = hash;
   if (dom.deviceFingerprintInput) dom.deviceFingerprintInput.value = hash;
-}).catch(() => {});
+}).catch(() => { deviceFingerprint = ""; });
 
 const nativeFetch = window.fetch.bind(window);
 window.fetch = (input, init = {}) => {
@@ -321,7 +323,7 @@ function walletProviderName(provider, fallbackName) {
 }
 
 function walletDisconnectButtonHtml(wallet, index) {
-  const profile = getCurrentProfile();
+  const profile = getAuthoritativeWalletProfile();
   if (typeof wallet?.provider?.disconnect !== "function" && !profile?.walletVerified) return "";
   return `<button class="secondary-button wallet-disconnect-button" data-wallet-disconnect-index="${index}" type="button">Disconnect wallet</button>`;
 }
@@ -352,40 +354,180 @@ async function waitForSolanaWallets(timeoutMs = 900) {
   return wallets;
 }
 
+const WALLET_API_TIMEOUT_MS = 12000;
+const WALLET_PROVIDER_TIMEOUT_MS = 30000;
+let activeWalletOperation = null;
+let walletReturnFocus = null;
+let walletMutationVersion = 0;
+let confirmedWalletProfile = null;
+let walletBusyButtons = [];
+
+function getAuthoritativeWalletProfile() {
+  const account = getCurrentProfile();
+  if (!account) return null;
+  if (confirmedWalletProfile?.email?.toLowerCase() === account.email.toLowerCase()) {
+    return { ...confirmedWalletProfile };
+  }
+  return { email: account.email };
+}
+
+function walletFriendlyError(error, action) {
+  if (navigator.onLine === false) return "You're offline. Reconnect and try again.";
+  if (error?.status === 401) return "Your sign-in expired. Sign in again, then try the wallet action.";
+  if (error?.code === 4001 || error?.code === "4001") return "The wallet request was not approved. Try again when you're ready.";
+  if (error?.name === "AbortError" || /timed out/i.test(error?.message || "")) {
+    return `The wallet ${action} took too long. Check your connection and try again.`;
+  }
+  return `The wallet ${action} could not finish. Check your wallet and try again.`;
+}
+
+function walletCancelledError() {
+  const error = new Error("Wallet action cancelled.");
+  error.code = "wallet_cancelled";
+  return error;
+}
+
+function boundedWalletStep(task, timeoutMs, signal, timeoutMessage) {
+  return new Promise((resolve, reject) => {
+    const controller = new AbortController();
+    let settled = false;
+    let timer = 0;
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      signal?.removeEventListener("abort", onCancel);
+      if (error) reject(error);
+      else resolve(value);
+    };
+    const onCancel = () => {
+      controller.abort();
+      finish(walletCancelledError());
+    };
+    if (signal?.aborted) {
+      onCancel();
+      return;
+    }
+    signal?.addEventListener("abort", onCancel, { once: true });
+    timer = window.setTimeout(() => {
+      controller.abort();
+      finish(new Error(timeoutMessage));
+    }, timeoutMs);
+    Promise.resolve().then(() => {
+      if (!settled) return task(controller.signal);
+      return undefined;
+    }).then((value) => finish(null, value), (error) => finish(error));
+  });
+}
+
+function walletJsonRequest(url, options = {}, operation = null, allowedStatuses = []) {
+  return boundedWalletStep(async (signal) => {
+    const response = await fetch(url, { ...options, signal, credentials: "same-origin" });
+    let body = {};
+    try { body = await response.json(); } catch (_) { /* The HTTP status still determines failure. */ }
+    if (!response.ok && !allowedStatuses.includes(response.status)) {
+      const error = new Error(typeof body.error === "string" ? body.error : "Wallet request failed. Try again.");
+      error.status = response.status;
+      throw error;
+    }
+    return body;
+  }, WALLET_API_TIMEOUT_MS, operation?.controller.signal, "Wallet request timed out. Check your connection and try again.");
+}
+
+function startWalletOperation() {
+  if (activeWalletOperation) activeWalletOperation.controller.abort();
+  walletMutationVersion += 1;
+  const operation = { controller: new AbortController() };
+  activeWalletOperation = operation;
+  const focused = document.activeElement;
+  if (focused && focused !== document.body) walletReturnFocus = focused;
+  return operation;
+}
+
+function currentWalletOperation(operation) {
+  return activeWalletOperation === operation && !operation.controller.signal.aborted;
+}
+
+function finishWalletOperation(operation) {
+  if (!currentWalletOperation(operation)) return;
+  activeWalletOperation = null;
+  clearWalletBusy();
+}
+
 function removeWalletModal() {
+  if (activeWalletOperation) {
+    activeWalletOperation.controller.abort();
+    activeWalletOperation = null;
+    walletMutationVersion += 1;
+    clearWalletBusy();
+  }
   document.querySelector(".wallet-modal")?.remove();
+  const target = walletReturnFocus?.isConnected && !walletReturnFocus.disabled
+    ? walletReturnFocus
+    : dom.disconnectWalletButton?.isConnected && !dom.disconnectWalletButton.classList.contains("hidden") && !dom.disconnectWalletButton.disabled
+      ? dom.disconnectWalletButton
+      : dom.walletStatus?.isConnected ? dom.walletStatus : document.querySelector("main h1, main h2");
+  if (target) {
+    if (target === dom.walletStatus || target.matches?.("main h1, main h2")) target.tabIndex = -1;
+    try { target.focus({ preventScroll: true }); } catch (_) { target.focus(); }
+  }
+  walletReturnFocus = null;
 }
 
 function showWalletModal(content) {
-  removeWalletModal();
+  document.querySelector(".wallet-modal")?.remove();
   const modal = document.createElement("div");
   modal.className = "wallet-modal";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
   modal.innerHTML = `<div class="wallet-modal-card"><button class="wallet-modal-close" type="button" aria-label="Close wallet dialog" style="position:absolute;top:12px;right:12px;display:grid;place-items:center;width:34px;height:34px;border:1px solid rgba(255,110,127,0.72);border-radius:8px;background:rgba(255,110,127,0.16);color:#ff6e7f;font-family:inherit;font-size:1rem;font-weight:900;line-height:1;cursor:pointer;z-index:3;">X</button>${content}</div>`;
+  const heading = modal.querySelector("h3");
+  if (heading) {
+    heading.id = "walletModalTitle";
+    modal.setAttribute("aria-labelledby", heading.id);
+  }
   modal.addEventListener("click", (event) => {
     if (event.target === modal) removeWalletModal();
   });
   modal.querySelector(".wallet-modal-close")?.addEventListener("click", removeWalletModal);
   document.body.appendChild(modal);
+  const close = modal.querySelector(".wallet-modal-close");
+  try { close?.focus({ preventScroll: true }); } catch (_) { close?.focus(); }
   return modal;
 }
 
 function showSignInWalletModal(message = "Sign in first to connect and verify a wallet.") {
+  if (document.activeElement && document.activeElement !== document.body) walletReturnFocus = document.activeElement;
   const next = encodeURIComponent(`${window.location.pathname}${window.location.search}${window.location.hash}`);
   showWalletModal(`<h3>Sign in required</h3><p>${escapeHtml(message)}</p><div class="wallet-modal-actions"><a class="primary-button" href="/login?next=${next}">Sign in / Sign up</a></div>`);
 }
 
 function setWalletBusy(message) {
   if (dom.walletStatus) dom.walletStatus.textContent = message;
-  if (dom.connectWalletButton) dom.connectWalletButton.disabled = true;
-  if (dom.topConnectWalletButton) dom.topConnectWalletButton.disabled = true;
+  const disconnecting = message.startsWith("Disconnecting");
+  [dom.connectWalletButton, dom.topConnectWalletButton, dom.disconnectWalletButton].forEach((button) => {
+    if (!button) return;
+    if (!walletBusyButtons.some((entry) => entry.button === button)) {
+      walletBusyButtons.push({ button, label: button.textContent, busy: button.getAttribute("aria-busy") });
+    }
+    button.textContent = disconnecting && button === dom.disconnectWalletButton ? "Disconnecting…" : "Connecting…";
+    button.setAttribute("aria-busy", "true");
+    button.disabled = true;
+  });
 }
 
 function clearWalletBusy() {
-  if (dom.connectWalletButton) dom.connectWalletButton.disabled = false;
-  if (dom.topConnectWalletButton) dom.topConnectWalletButton.disabled = false;
+  walletBusyButtons.forEach(({ button, label, busy }) => {
+    button.textContent = label;
+    if (busy === null) button.removeAttribute("aria-busy");
+    else button.setAttribute("aria-busy", busy);
+  });
+  walletBusyButtons = [];
+  renderWalletState(getAuthoritativeWalletProfile());
+  if (dom.disconnectWalletButton) dom.disconnectWalletButton.disabled = false;
 }
 
-function renderWalletState(profile = getCurrentProfile()) {
+function renderWalletState(profile = getAuthoritativeWalletProfile()) {
   const walletAddr = profile?.walletAddress || "";
   const verified = Boolean(profile?.walletVerified);
 
@@ -394,6 +536,7 @@ function renderWalletState(profile = getCurrentProfile()) {
   if (!profile) {
     if (dom.walletStatus) dom.walletStatus.textContent = "Sign in to unlock wallet connection.";
     dom.connectWalletButton?.classList.remove("hidden");
+    if (dom.connectWalletButton) dom.connectWalletButton.disabled = false;
     dom.topConnectWalletButton?.classList.remove("hidden");
     dom.disconnectWalletButton?.classList.add("hidden");
     if (dom.topConnectWalletButton) {
@@ -406,6 +549,7 @@ function renderWalletState(profile = getCurrentProfile()) {
   if (!walletAddr || !verified) {
     if (dom.walletStatus) dom.walletStatus.textContent = "Connect and sign a wallet message to verify ownership.";
     dom.connectWalletButton?.classList.remove("hidden");
+    if (dom.connectWalletButton) dom.connectWalletButton.disabled = false;
     dom.topConnectWalletButton?.classList.remove("hidden");
     dom.disconnectWalletButton?.classList.add("hidden");
     if (dom.topConnectWalletButton) {
@@ -419,6 +563,7 @@ function renderWalletState(profile = getCurrentProfile()) {
     dom.walletStatus.innerHTML = `Connected: <a href="https://solscan.io/account/${walletAddr}" target="_blank" rel="noopener">${truncateAddress(walletAddr)}</a>`;
   }
   dom.connectWalletButton?.classList.add("hidden");
+  if (dom.connectWalletButton) dom.connectWalletButton.disabled = true;
   dom.disconnectWalletButton?.classList.remove("hidden");
 
   if (dom.topConnectWalletButton) {
@@ -427,7 +572,6 @@ function renderWalletState(profile = getCurrentProfile()) {
   }
 }
 
-let walletMutationVersion = 0;
 async function syncWalletFromServer() {
   const profile = getCurrentProfile();
   if (!profile) {
@@ -436,10 +580,9 @@ async function syncWalletFromServer() {
   }
   const startedAtVersion = walletMutationVersion;
   try {
-    const response = await fetch("/api/wallet");
-    if (!response.ok) throw new Error("wallet status unavailable");
-    const body = await response.json();
+    const body = await walletJsonRequest("/api/wallet");
     if (startedAtVersion !== walletMutationVersion) return;
+    if (typeof body.connected !== "boolean") throw new Error("Wallet status response was incomplete.");
     const updatedProfile = { ...profile };
     if (body.connected && body.walletAddress) {
       updatedProfile.walletAddress = body.walletAddress;
@@ -449,17 +592,21 @@ async function syncWalletFromServer() {
       delete updatedProfile.walletVerified;
     }
     setStoredAirdropProfile(updatedProfile);
+    confirmedWalletProfile = updatedProfile;
     renderWalletState(updatedProfile);
+    document.getElementById("walletFeedback")?.remove();
   } catch {
     if (startedAtVersion !== walletMutationVersion) return;
     const unverifiedProfile = { email: profile.email };
     setStoredAirdropProfile(unverifiedProfile);
+    confirmedWalletProfile = unverifiedProfile;
     renderWalletState(unverifiedProfile);
-    showWalletFeedback("warning", "Wallet status couldn't be checked. Check your connection and refresh before using wallet features.");
+    showWalletFeedback("error", "Wallet status couldn't be checked. Check your connection and try again.", syncWalletFromServer, "Wallet status unavailable");
   }
 }
 
-async function verifySelectedWallet(wallet) {
+async function verifySelectedWallet(wallet, operation) {
+  if (!currentWalletOperation(operation)) return;
   const profile = getCurrentProfile();
   if (!profile) {
     showSignInWalletModal("Sign in in this browser first, then connect your wallet for airdrop verification.");
@@ -468,18 +615,20 @@ async function verifySelectedWallet(wallet) {
   try {
     setWalletBusy("Requesting verification challenge...");
     showWalletModal("<h3>Connecting wallet</h3><p>Requesting verification challenge...</p><div class='wallet-spinner'></div>");
-    const connectResponse = await wallet.provider.connect();
+    const connectResponse = await boundedWalletStep(
+      () => wallet.provider.connect(), WALLET_PROVIDER_TIMEOUT_MS, operation.controller.signal,
+      "The wallet did not respond to the connection request. Try again."
+    );
     const publicKey = connectResponse?.publicKey || wallet.provider.publicKey;
     const walletAddress = publicKey?.toString();
     if (!walletAddress) throw new Error("Wallet did not return a public key.");
 
-    const nonceResponse = await fetch("/api/wallet/nonce", {
+    const nonceBody = await walletJsonRequest("/api/wallet/nonce", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ walletAddress })
-    });
-    const nonceBody = await nonceResponse.json();
-    if (!nonceResponse.ok) throw new Error(nonceBody.error || "Could not create wallet challenge.");
+    }, operation);
+    if (!nonceBody.message) throw new Error("The wallet challenge was incomplete. Try again.");
 
     setWalletBusy("Check your wallet and approve the signature request.");
     showWalletModal("<h3>Approve signature</h3><p>Check your wallet. This is free and does not send a transaction.</p><div class='wallet-spinner'></div>");
@@ -487,32 +636,41 @@ async function verifySelectedWallet(wallet) {
       throw new Error("This wallet does not support message signing.");
     }
     const messageBytes = new TextEncoder().encode(nonceBody.message);
-    const signed = await wallet.provider.signMessage(messageBytes, "utf8");
+    const signed = await boundedWalletStep(
+      () => wallet.provider.signMessage(messageBytes, "utf8"), WALLET_PROVIDER_TIMEOUT_MS,
+      operation.controller.signal, "The wallet signature request timed out. Try again."
+    );
     const signatureBytes = signed?.signature || signed;
     const signature = normalizeSignature(signatureBytes);
 
     setWalletBusy("Verifying signature...");
     showWalletModal("<h3>Verifying wallet</h3><p>SafeScan is checking the signature server-side...</p><div class='wallet-spinner'></div>");
-    const verifyResponse = await fetch("/api/wallet/verify", {
+    const verifyBody = await walletJsonRequest("/api/wallet/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ walletAddress, signature })
-    });
-    const verifyBody = await verifyResponse.json();
-    if (!verifyResponse.ok) throw new Error(verifyBody.error || "Wallet connection failed.");
+    }, operation);
+    if (!verifyBody.walletAddress) throw new Error("Wallet verification was incomplete. Check the connection and try again.");
 
     walletMutationVersion += 1;
     const updatedProfile = { ...profile, walletAddress: verifyBody.walletAddress, walletVerified: true };
     setStoredAirdropProfile(updatedProfile);
+    confirmedWalletProfile = updatedProfile;
     renderWalletState(updatedProfile);
+    document.getElementById("walletFeedback")?.remove();
     showWalletModal(`<h3>Wallet connected</h3><div class="wallet-success-spacer" aria-hidden="true"></div><button class="primary-button wallet-close-button" type="button">Done</button>`);
     document.querySelector(".wallet-close-button")?.addEventListener("click", removeWalletModal);
+    document.querySelector(".wallet-close-button")?.focus({ preventScroll: true });
   } catch (error) {
-    renderWalletState(getCurrentProfile());
-    showWalletModal(`<h3>Wallet connection failed</h3><p class="wallet-error">${escapeHtml(error.message || "Signature rejected. Try again.")}</p><button class="primary-button wallet-retry-button" type="button">Try Again</button>`);
+    if (!currentWalletOperation(operation)) return;
+    renderWalletState(getAuthoritativeWalletProfile());
+    const message = walletFriendlyError(error, "connection");
+    showWalletFeedback("error", message, connectWallet, "Wallet connection failed");
+    showWalletModal(`<h3>Wallet connection failed</h3><p class="wallet-error">${escapeHtml(message)}</p><button class="primary-button wallet-retry-button" type="button">Try again</button>`);
     document.querySelector(".wallet-retry-button")?.addEventListener("click", connectWallet);
+    document.querySelector(".wallet-retry-button")?.focus({ preventScroll: true });
   } finally {
-    clearWalletBusy();
+    finishWalletOperation(operation);
   }
 }
 
@@ -522,19 +680,39 @@ async function connectWallet() {
     showSignInWalletModal("Sign in first. If you opened from iPhone Safari, open this page in Phantom and sign in there before connecting.");
     return;
   }
+  const operation = startWalletOperation();
+  setWalletBusy("Looking for a Solana wallet...");
   showWalletModal("<h3>Looking for wallet</h3><p>Checking for a Solana wallet provider...</p><div class='wallet-spinner'></div>");
-  const wallets = await waitForSolanaWallets();
+  let wallets;
+  try {
+    wallets = await boundedWalletStep(
+      () => waitForSolanaWallets(), 2500, operation.controller.signal,
+      "Wallet detection timed out. Try again."
+    );
+  } catch (error) {
+    if (!currentWalletOperation(operation)) return;
+    const message = walletFriendlyError(error, "connection");
+    showWalletFeedback("error", message, connectWallet, "Wallet unavailable");
+    showWalletModal(`<h3>Wallet unavailable</h3><p class="wallet-error">${escapeHtml(message)}</p><button class="primary-button wallet-retry-button" type="button">Try again</button>`);
+    document.querySelector(".wallet-retry-button")?.addEventListener("click", connectWallet);
+    document.querySelector(".wallet-retry-button")?.focus({ preventScroll: true });
+    finishWalletOperation(operation);
+    return;
+  }
+  if (!currentWalletOperation(operation)) return;
   if (!wallets.length) {
     const mobileCopy = isMobileDevice()
       ? `<p>${mobileWalletHelpText()}</p>${!window.isSecureContext ? "<p class='wallet-hint'>Wallet browsers only inject providers on HTTPS, localhost, or 127.0.0.1.</p>" : ""}`
       : "<p>Install a Solana wallet extension, then refresh this page and connect again.</p>";
     showWalletModal(`<h3>No Solana wallet detected</h3>${mobileCopy}${walletInstallLinksHtml(isMobileDevice())}<button class="secondary-button wallet-retry-button" type="button">Check again</button>`);
     document.querySelector(".wallet-retry-button")?.addEventListener("click", connectWallet);
+    document.querySelector(".wallet-retry-button")?.focus({ preventScroll: true });
+    finishWalletOperation(operation);
     return;
   }
   const modal = showWalletModal(`<h3>Select wallet</h3><div class="wallet-choice-list">${wallets.map((wallet, index) => `<div class="wallet-choice-row"><button class="secondary-button wallet-choice-button" data-wallet-index="${index}" type="button">${escapeHtml(wallet.name)}</button>${walletDisconnectButtonHtml(wallet, index)}</div>`).join("")}</div>`);
   modal.querySelectorAll("[data-wallet-index]").forEach((button) => {
-    button.addEventListener("click", () => verifySelectedWallet(wallets[Number(button.dataset.walletIndex)]));
+    button.addEventListener("click", () => verifySelectedWallet(wallets[Number(button.dataset.walletIndex)], operation));
   });
   modal.querySelectorAll("[data-wallet-disconnect-index]").forEach((button) => {
     button.addEventListener("click", () => disconnectWalletConnection(wallets[Number(button.dataset.walletDisconnectIndex)], { closeModal: true }));
@@ -544,26 +722,22 @@ async function connectWallet() {
 dom.connectWalletButton?.addEventListener("click", connectWallet);
 dom.topConnectWalletButton?.addEventListener("click", connectWallet);
 
-function showWalletFeedback(type, message, retry) {
-  const modalCard = document.querySelector(".wallet-modal-card");
-  const anchor = modalCard || document.querySelector(".wallet-panel") || dom.connectWalletButton || dom.disconnectWalletButton;
+function showWalletFeedback(type, message, retry, title = "Wallet action failed") {
+  const anchor = document.querySelector(".wallet-panel") || dom.connectWalletButton || dom.disconnectWalletButton || dom.topConnectWalletButton;
   if (!anchor || !window.UIStates) return;
   let host = document.getElementById("walletFeedback");
   if (!host) {
     host = document.createElement("div");
     host.id = "walletFeedback";
-    if (modalCard) modalCard.appendChild(host);
-    else anchor.insertAdjacentElement("afterend", host);
-  } else if (modalCard && !modalCard.contains(host)) {
-    modalCard.appendChild(host);
+    anchor.insertAdjacentElement("afterend", host);
   }
   if (type === "error") {
     UIStates.error(host, {
-      title: "Wallet didn't disconnect",
+      title,
       body: message,
       retry,
       compact: true,
-      focus: true
+      focus: !document.querySelector(".wallet-modal")
     });
   } else {
     UIStates.notice(host, { type, message });
@@ -585,32 +759,41 @@ function showActionFeedback(anchor, id, message) {
 
 async function disconnectWalletConnection(wallet = null, options = {}) {
   const { closeModal = false, notify = true } = options;
-  const profile = getCurrentProfile();
+  const profile = getAuthoritativeWalletProfile();
+  const operation = startWalletOperation();
+  setWalletBusy("Disconnecting wallet...");
+  if (closeModal) showWalletModal("<h3>Disconnecting wallet</h3><p>Checking the wallet and SafeScan connection...</p><div class='wallet-spinner'></div>");
   try {
     if (typeof wallet?.provider?.disconnect === "function") {
-      await wallet.provider.disconnect();
+      await boundedWalletStep(
+        () => wallet.provider.disconnect(), WALLET_PROVIDER_TIMEOUT_MS, operation.controller.signal,
+        "The wallet did not respond to the disconnect request. Try again."
+      );
     }
     if (profile?.walletAddress || profile?.walletVerified) {
-      const response = await fetch("/api/wallet", { method: "DELETE" });
-      let body = {};
-      try {
-        body = await response.json();
-      } catch (_) {
-        body = {};
-      }
-      if (!response.ok && response.status !== 404) throw new Error(body.error || "Wallet disconnect failed.");
+      await walletJsonRequest("/api/wallet", { method: "DELETE" }, operation, [404]);
       walletMutationVersion += 1;
       const updatedProfile = { ...profile };
       delete updatedProfile.walletAddress;
       delete updatedProfile.walletVerified;
       setStoredAirdropProfile(updatedProfile);
+      confirmedWalletProfile = updatedProfile;
       renderWalletState(updatedProfile);
     }
+    finishWalletOperation(operation);
     if (closeModal) removeWalletModal();
     if (notify) showWalletFeedback("success", "Wallet disconnected.");
   } catch (error) {
-    console.error("Wallet disconnect failed", error);
-    showWalletFeedback("error", "Check your connection and try again.", () => disconnectWalletConnection(wallet, options));
+    if (!currentWalletOperation(operation)) return;
+    const message = walletFriendlyError(error, "disconnect");
+    showWalletFeedback("error", message, () => disconnectWalletConnection(wallet, options), "Wallet disconnect failed");
+    if (closeModal) {
+      showWalletModal(`<h3>Wallet disconnect failed</h3><p class="wallet-error">${escapeHtml(message)}</p><button class="primary-button wallet-retry-button" type="button">Try again</button>`);
+      document.querySelector(".wallet-retry-button")?.addEventListener("click", () => disconnectWalletConnection(wallet, options));
+      document.querySelector(".wallet-retry-button")?.focus({ preventScroll: true });
+    }
+  } finally {
+    finishWalletOperation(operation);
   }
 }
 
@@ -734,6 +917,41 @@ function showCameraError(message) {
   });
 }
 
+function resetScanSubmission() {
+  window.clearTimeout(scanProgressTimer);
+  window.clearTimeout(scanDeadlineTimer);
+  window.clearTimeout(scanPaintTimer);
+  scanSubmitting = false;
+  if (scanCameraButton) scanCameraButton.disabled = false;
+  if (scanSubmitter && scanSubmitterNodes) {
+    scanSubmitter.replaceChildren(...scanSubmitterNodes);
+    scanSubmitter.disabled = false;
+    scanSubmitter.removeAttribute("aria-busy");
+  }
+  scanSubmitter = null;
+  scanSubmitterNodes = null;
+}
+
+function showScanTimeout(form) {
+  if (!scanSubmitting || !form.isConnected) return;
+  window.stop();
+  resetScanSubmission();
+  if (!analysisLoadingState) return;
+  analysisLoadingState.removeAttribute("role");
+  analysisLoadingState.classList.remove("scan-status", "hidden");
+  analysisLoadingState.classList.add("scan-progress-host");
+  if (window.UIStates) {
+    UIStates.error(analysisLoadingState, {
+      title: "Scan response took too long",
+      body: "Check your connection and try again. Your QR input is still here.",
+      retry: () => { if (form.isConnected) form.requestSubmit(); },
+      focus: true
+    });
+  } else {
+    analysisLoadingState.textContent = "Scan response took too long. Check your connection and try again.";
+  }
+}
+
 function startScanSubmission(event, label) {
   if (scanSubmitting) {
     event.preventDefault();
@@ -756,25 +974,22 @@ function startScanSubmission(event, label) {
     scanSubmitter.disabled = true;
     scanSubmitter.setAttribute("aria-busy", "true");
   }
-  window.setTimeout(() => {
+  scanDeadlineTimer = window.setTimeout(() => showScanTimeout(form), 15000);
+  scanPaintTimer = window.setTimeout(() => {
     if (form.isConnected) HTMLFormElement.prototype.submit.call(form);
   }, 120);
 }
 
 dom.qrForm?.addEventListener("submit", (event) => startScanSubmission(event, "Checking this QR image"));
 document.getElementById("urlForm")?.addEventListener("submit", (event) => startScanSubmission(event, "Checking this QR payload"));
-window.addEventListener("pagehide", () => window.clearTimeout(scanProgressTimer));
+window.addEventListener("pagehide", () => {
+  window.clearTimeout(scanProgressTimer);
+  window.clearTimeout(scanDeadlineTimer);
+  window.clearTimeout(scanPaintTimer);
+});
 window.addEventListener("pageshow", (event) => {
   if (!event.persisted) return;
-  scanSubmitting = false;
-  if (scanCameraButton) scanCameraButton.disabled = false;
-  if (scanSubmitter && scanSubmitterNodes) {
-    scanSubmitter.replaceChildren(...scanSubmitterNodes);
-    scanSubmitter.disabled = false;
-    scanSubmitter.removeAttribute("aria-busy");
-  }
-  scanSubmitter = null;
-  scanSubmitterNodes = null;
+  resetScanSubmission();
   analysisLoadingState?.classList.add("hidden");
 });
 
