@@ -8,11 +8,11 @@
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <script src="/static/ui-states.js?v=ui-loading-v1"></script>
   <title>SQR Token &amp; Airdrop | SafeScan QR</title>
-  <meta name="description" content="The SafeScan (SQR) token and community airdrop — connect your wallet, track tier progress, and unlock rewards by scanning QR codes.">
+  <meta name="description" content="SafeScan token features and current activity information, available only when enabled.">
   <link rel="icon" href="/static/safescan-logo.svg?v=rose-theme-v1" type="image/svg+xml">
   <link rel="stylesheet" href="/static/styles.css?v=legal-font-v1">
 </head>
-<body class="test-site-page">
+<body class="test-site-page" data-token-features-enabled="true">
   <div class="page-shell">
     {% include "_topnav.html" %}
     <main>
@@ -21,6 +21,7 @@
           <div><p class="eyebrow">Solana &middot; Community airdrop</p><h2>SQR Token &amp; Airdrop</h2></div>
           <div id="airdropStatus" class="airdrop-status">Registered</div>
         </div>
+        <p>Activity levels do not establish token eligibility or a right to receive a distribution.</p>
 
         <div class="token-strip">
           <div><p class="token-label">Token name</p><div class="token-pill">SafeScan</div></div>
@@ -38,7 +39,7 @@
           <div>
             <p class="token-label">Current tier</p>
             <h3 id="currentTierName">{{ "Tier 1: Scanner" if (scan_count | default(0)) >= 5 else "Registered" }}</h3>
-            <p id="currentTierSummary" class="airdrop-copy">{{ "Base allocation unlocked after account creation and 5 QR scans." if (scan_count | default(0)) >= 5 else "Scan 5 QR codes to unlock Tier 1." }}</p>
+            <p id="currentTierSummary" class="airdrop-copy">{{ "Five scans recorded. Any token eligibility remains subject to separate review." if (scan_count | default(0)) >= 5 else "Your scan count is shown for activity tracking. No token eligibility is promised." }}</p>
           </div>
           <div class="progress-stats">
             <div><span id="scanProgressValue" data-backend-count="{{ scan_count | default(0) }}">{{ scan_count | default(0) }} / 5</span><p>QR scans</p></div>
@@ -60,21 +61,21 @@
             <div class="tier-rank">Tier 1</div>
             <h3>Scanner</h3>
             <p>Create an account and scan 5 QR codes.</p>
-            <div class="tier-reward">Base allocation</div>
+            <div class="tier-reward">Activity level only</div>
           </article>
 
           <article id="tierTwoCard" class="airdrop-card tier-card">
             <div class="tier-rank">Tier 2</div>
             <h3>Referrer</h3>
             <p>Invite 1 person with your referral link.</p>
-            <div class="tier-reward">2x allocation</div>
+            <div class="tier-reward">Activity level only</div>
           </article>
 
           <article id="tierThreeCard" class="airdrop-card tier-card">
             <div class="tier-rank">Tier 3</div>
             <h3>Guardian</h3>
             <p>Invite multiple people and scan 50 QR codes.</p>
-            <div class="tier-reward">5x allocation</div>
+            <div class="tier-reward">Activity level only</div>
           </article>
         </div>
       </section>
@@ -82,7 +83,7 @@
     {% include "footer.html" %}
   </div>
   <script src="/static/app-core.js?v=ui-loading-v2"></script>
-  <script src="/static/app-widgets.js?v=consent-cache-v1"></script>
+  <script src="/static/app-widgets.js?v=legal-token-v1"></script>
   <script src="/static/app-go-ghost.js?v=ghost-inline-errors-v1"></script>
   <script src="/static/app-go-ghost-ui.js?v=ghost-account-check-v1"></script>
   <script src="/static/app-generate-qr.js?v=ui-loading-v1"></script>

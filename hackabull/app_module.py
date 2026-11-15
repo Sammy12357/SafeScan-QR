@@ -74,6 +74,7 @@ from .config import REQUEST_COUNT
 from .config import REQUEST_LATENCY
 from .config import SESSION_COOKIE_NAME
 from .config import generate_latest
+from .token_flags import token_features_enabled
 from .provider_policy import reputation_configuration
 from .phish_feed import refresh_feed_loop
 from .security import enforce_rate_limit
@@ -306,6 +307,11 @@ def _requires_adult_attestation(path):
     # management. Return pages and verified payment events are also not new
     # purchases; the checkout entry point below remains gated.
     if path in ("/pay/alpha/manage", "/pay/alpha/success"):
+        return False
+    if not token_features_enabled() and (
+        path in ("/token", "/tokenomics", "/api/referral", "/api/airdrop/status", "/api/wallet")
+        or path.startswith("/api/wallet/")
+    ):
         return False
     return (
         path in ("/token", "/tokenomics", "/go-ghost", "/api/referral", "/api/airdrop/status")

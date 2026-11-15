@@ -77,6 +77,7 @@ from .config import LEGAL_LAST_UPDATED
 from .config import LEGAL_VERSION
 from .config import MOCK_MODE
 from .config import templates
+from .token_flags import token_features_enabled
 from .errors import ERRORS
 from .errors import request_id_for
 from .waitlist_email import confirmation_available
@@ -464,7 +465,7 @@ async def product_install(request: Request):
 
 @qr_app.get("/product/getting-started", response_class=HTMLResponse)
 async def product_getting_started(request: Request):
-    body = "<h2>Getting Started</h2><p>Sign in, connect a wallet for airdrop tracking, then scan or paste a QR payload to see the SafeScan risk verdict and signal breakdown.</p>"
+    body = "<h2>Getting Started</h2><p>Scan or paste a QR payload to see SafeScan's risk explanation. Sign in to review scan history.</p>"
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Getting Started", body))
 
 @qr_app.get("/risk-engine", response_class=HTMLResponse)
@@ -757,6 +758,9 @@ async def resources_roadmap(request: Request):
 
 @qr_app.get("/tokenomics", response_class=HTMLResponse)
 async def tokenomics_page(request: Request):
+    if not token_features_enabled():
+        body = "<h2>Token features are not available</h2><p>SafeScan's QR scanner and risk explanations remain available.</p><p><a href='/#scanner'>Scan a QR code</a></p>"
+        return templates.TemplateResponse("legal_page.html", legal_context(request, "Token features unavailable", body))
     body = """
     <h2>$SQR SafeScan Token Whitepaper</h2>
     <p>$SQR is the proposed utility token for the SafeScan QR ecosystem. It is designed to support QR threat intelligence, wallet safety workflows, merchant integrations, community reporting, and access to advanced security features. This page is informational and does not offer financial, investment, tax, or legal advice.</p>

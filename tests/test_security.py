@@ -15,6 +15,7 @@ def security_app(tmp_path, monkeypatch):
     monkeypatch.setenv("ADMIN_EMAILS", "admin@example.com")
     monkeypatch.setenv("OWNER_EMAILS", "owner@example.com")
     monkeypatch.setenv("GOOGLE_CLIENT_ID", "test-client")
+    monkeypatch.setenv("TOKEN_FEATURES_ENABLED", "true")
 
     [sys.modules.pop(_m, None) for _m in list(sys.modules) if _m == "hackabull" or _m.startswith("hackabull.")]
     sys.modules.pop("db", None)

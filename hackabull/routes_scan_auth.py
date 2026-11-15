@@ -124,6 +124,7 @@ from .sessions import revoke_all_remember_me
 from .sessions import set_session_cookie
 from .sessions import wants_remember_me
 from .wallet import get_verified_wallet
+from .token_flags import token_features_enabled
 
 # =============================================================================
 # ROUTES — QR SCANNING & AUTHENTICATION (sign-in, logout, profile, scanning)
@@ -158,7 +159,7 @@ async def scan_qr(
     user_email = user["email"] if user else ""
     test_site = template_variant in ("main_site", "test_site")
     test_site_path = template_variant == "test_site"
-    verified_wallet = get_verified_wallet(user_email) if user_email else None
+    verified_wallet = get_verified_wallet(user_email) if user_email and token_features_enabled() else None
     wallet_address = verified_wallet["address"] if verified_wallet else ""
     url_qr = None
     qr_image_for_ml = None

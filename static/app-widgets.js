@@ -18,7 +18,7 @@ if (initialAirdropProfile && dom.walletStatus) dom.walletStatus.textContent = "C
 syncWalletFromServer();
 hydrateSplineShowcase();
 
-if (new URLSearchParams(window.location.search).get("walletConnect") === "phantom") {
+if (document.body.dataset.tokenFeaturesEnabled === "true" && new URLSearchParams(window.location.search).get("walletConnect") === "phantom") {
   window.setTimeout(() => {
     const currentUrl = new URL(window.location.href);
     currentUrl.searchParams.delete("walletConnect");

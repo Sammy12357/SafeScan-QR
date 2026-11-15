@@ -72,6 +72,8 @@ AIRDROP_TOKEN_ALLOCATIONS = {
 }
 RPC_URL = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
 AIRDROP_ENABLED = os.getenv("AIRDROP_ENABLED", "false").lower() in ("1", "true", "yes", "on")
+TOKEN_FEATURES_ENABLED = os.getenv("TOKEN_FEATURES_ENABLED", "false").lower() in ("1", "true", "yes", "on")
+TOKEN_DISTRIBUTION_ENABLED = os.getenv("TOKEN_DISTRIBUTION_ENABLED", "false").lower() in ("1", "true", "yes", "on")
 SOLANA_MAINNET_ENABLED = os.getenv("SOLANA_MAINNET_ENABLED", "false").lower() in ("1", "true", "yes", "on")
 AIRDROP_DRY_RUN = os.getenv("AIRDROP_DRY_RUN", "true").lower() in ("1", "true", "yes", "on")
 AIRDROP_MAX_RECIPIENTS_PER_RUN = int(os.getenv("AIRDROP_MAX_RECIPIENTS_PER_RUN", "25"))
@@ -93,14 +95,14 @@ def is_mainnet_rpc(rpc_url=RPC_URL):
     return "mainnet" in (rpc_url or "").lower()
 
 
-def validate_airdrop_runtime():
+def validate_airdrop_runtime(*, owner_authorized=False):
     """Refuse to run unless every safety precondition is met.
 
     Checks the master switch, the separate mainnet opt-in, a strong admin
     secret, and that the per-run caps are sane. Raises RuntimeError otherwise.
     """
-    if not AIRDROP_ENABLED:
-        raise RuntimeError("Airdrop sweep is disabled. Set AIRDROP_ENABLED=true to run it.")
+    if not TOKEN_FEATURES_ENABLED or not TOKEN_DISTRIBUTION_ENABLED or not AIRDROP_ENABLED:
+        raise RuntimeError("Airdrop sweep is disabled by a token or distribution switch.")
     if is_mainnet_rpc() and not SOLANA_MAINNET_ENABLED:
         raise RuntimeError("Mainnet airdrop is disabled. Set SOLANA_MAINNET_ENABLED=true to allow mainnet transfers.")
     if not AIRDROP_ADMIN_SECRET or len(AIRDROP_ADMIN_SECRET) < 16:
@@ -109,6 +111,8 @@ def validate_airdrop_runtime():
         raise RuntimeError("AIRDROP_MAX_RECIPIENTS_PER_RUN must be at least 1.")
     if AIRDROP_MAX_TOKENS_PER_RUN < 1:
         raise RuntimeError("AIRDROP_MAX_TOKENS_PER_RUN must be at least 1.")
+    if not owner_authorized:
+        raise RuntimeError("A verified owner session is required for token distribution.")
 
 
 def require_solana_runtime():
@@ -299,7 +303,7 @@ def ensure_distribution_columns(cursor):
     if "airdrop_sent_at" not in columns:
         cursor.execute("ALTER TABLE scans ADD COLUMN airdrop_sent_at TEXT")
 
-async def airdrop_sweep():
+async def airdrop_sweep(*, owner_authorized=False):
     """Run one full airdrop pass and return a JSON-serialisable summary.
 
     Steps: validate runtime + dependencies, load the server wallet and mint
@@ -310,7 +314,7 @@ async def airdrop_sweep():
     status becomes ok / partial / failed accordingly.
     """
     print("\n--- SafeScan Airdrop Sweep ---")
-    validate_airdrop_runtime()
+    validate_airdrop_runtime(owner_authorized=owner_authorized)
     require_solana_runtime()
     client = AsyncClient(RPC_URL)
     conn = None

@@ -75,6 +75,7 @@ from .errors import ERRORS
 from .history import admin_avatar
 from .pipeline import analyze_full_pipeline
 from .request_helpers import make_id
+from .token_flags import token_distribution_enabled, token_features_enabled
 
 # =============================================================================
 # ROUTES — ADMIN CONSOLE (/admin/*)  [staff only]
@@ -294,14 +295,18 @@ async def admin_risk_logs(request: Request):
 
 @qr_app.get("/admin/airdrop", response_class=HTMLResponse)
 async def admin_airdrop(request: Request):
+    if not token_features_enabled():
+        return admin_context(request, "Token features unavailable", "airdrop_unavailable", {})
     return admin_context(request, "Tier Overview", "airdrop", fetch_airdrop_data())
 
 @qr_app.post("/admin/airdrop/distribute", response_class=HTMLResponse)
 async def admin_airdrop_distribute(request: Request):
-    admin_user = require_role_user(request, "admin")
+    admin_user = require_role_user(request, "owner")
+    if not token_distribution_enabled():
+        raise HTTPException(status_code=503, detail="Token distribution is unavailable.")
     try:
         from distribute import airdrop_sweep
-        result = await airdrop_sweep()
+        result = await airdrop_sweep(owner_authorized=True)
         audit_log(
             "airdrop.sweep_executed",
             request=request,
@@ -329,11 +334,15 @@ async def admin_airdrop_fraud(request: Request):
 
 @qr_app.get("/admin/airdrop/wallets", response_class=HTMLResponse)
 async def admin_airdrop_wallets(request: Request):
+    if not token_features_enabled():
+        return admin_context(request, "Token features unavailable", "airdrop_unavailable", {})
     return admin_context(request, "Wallet Registry", "airdrop", fetch_airdrop_data())
 
 @qr_app.post("/admin/airdrop/{email}/status")
 async def admin_airdrop_status(request: Request, email: str, status: str = Form(""), reason: str = Form("")):
     admin_user = require_role_user(request, "admin")
+    if not token_features_enabled():
+        raise HTTPException(status_code=503, detail="Token features are unavailable.")
     if status not in ("eligible", "flagged", "disqualified", "cleared"):
         return _admin_form_error(request, "Tier Overview", "airdrop", fetch_airdrop_data(), "admin_action_invalid", target=email, field="status", values={"reason": reason})
     try:
