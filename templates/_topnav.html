@@ -13,7 +13,7 @@
     <img class="top-brand-mark" src="/static/safescan-logo.svg?v=rose-theme-v1" alt="">
     <span class="top-brand-name"><strong>SafeScan</strong> QR</span>
   </a>
-  <div class="top-nav-actions" aria-label="Account and appearance">
+  <div class="top-nav-actions">
     {% if logged_in %}
     <a class="top-profile-avatar" href="/profile" aria-label="Open profile">
       {% if profile_picture %}
@@ -31,7 +31,7 @@
 
 <div class="sidenav-backdrop" data-sidenav-close></div>
 
-<aside id="sideNav" class="sidenav" aria-label="Site navigation" aria-hidden="true">
+<aside id="sideNav" class="sidenav" role="dialog" aria-modal="true" aria-label="Site navigation" aria-hidden="true" inert>
   <div class="sidenav-brand-row">
     <a class="top-brand" href="/" aria-label="SafeScan QR home">
       <img class="top-brand-mark" src="/static/safescan-logo.svg?v=rose-theme-v1" alt="">
@@ -60,7 +60,7 @@
   {# In-drawer theme switch — the only dark/light control on the site.
      sidenav.js binds every [data-theme-toggle] and keeps them in sync. #}
   <div class="sidenav-theme">
-    <button class="theme-toggle" type="button" aria-label="Switch to light mode" aria-pressed="false" data-theme-toggle>
+    <button class="theme-toggle" type="button" data-theme-toggle>
       <span class="sidenav-theme-label">Appearance</span>
       <span class="theme-toggle-track" aria-hidden="true">
         <span class="theme-toggle-thumb"></span>
@@ -98,4 +98,4 @@
     {% endif %}
   </div>
 </aside>
-<script src="/static/sidenav.js?v=sidenav-v3" defer></script>
+<script src="/static/sidenav.js?v=ui-a11y-v1" defer></script>

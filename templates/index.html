@@ -10,7 +10,7 @@
   <script src="/static/ui-states.js?v=ui-loading-v1"></script>
   <title>SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg?v=rose-theme-v1" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=ui-phase7-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=ui-a11y-v1">
 </head>
 <body class="{{ 'test-site-page' if test_site else '' }}">
   {% if not logged_in and google_client_id and not local_auth_enabled %}
@@ -290,8 +290,8 @@
     {% include "footer.html" %}
   </div>
   <script type="module" src="/static/safescan-3d.js?v=rose-theme-v1"></script>
-  {% if scanner_v3 %}<script src="/static/qr-camera.js?v=scanner-v3-simplified-controls" defer></script>
-  {% else %}<script src="/static/qr-camera-phase3.js?v=scanner-phase-3-simplified-controls" defer></script>{% endif %}
+  {% if scanner_v3 %}<script src="/static/qr-camera.js?v=ui-a11y-v1" defer></script>
+  {% else %}<script src="/static/qr-camera-phase3.js?v=ui-a11y-v1" defer></script>{% endif %}
   <script src="/static/app-core.js?v=ui-loading-v2"></script>
   <script src="/static/app-widgets.js?v=consent-cache-v1"></script>
   <script src="/static/app-go-ghost.js?v=ghost-inline-errors-v1"></script>

@@ -8,8 +8,9 @@ if (themeToggle) {
   const setTheme = (theme) => {
     const isLight = theme === "light";
     document.documentElement.setAttribute("data-theme", isLight ? "light" : "dark");
-    themeToggle.setAttribute("aria-pressed", String(isLight));
-    themeToggle.setAttribute("aria-label", isLight ? "Switch to dark mode" : "Switch to light mode");
+    themeToggle.setAttribute("aria-label", isLight
+      ? "Theme: Light. Switch to dark mode"
+      : "Theme: Dark. Switch to light mode");
     if (themeText) themeText.textContent = isLight ? "Light" : "Dark";
     try { window.localStorage.setItem("safescan_theme", isLight ? "light" : "dark"); } catch { /* Storage can be disabled. */ }
   };
