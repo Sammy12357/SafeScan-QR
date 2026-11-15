@@ -16,6 +16,7 @@ RAW_FETCH_COUNTS = {
     "app-go-ghost-ui.js": 2,
     "app-widgets.js": 2,
     "global_timer.js": 1,
+    "token-unavailable.js": 2,
 }
 FETCH_ERROR_GUARDS = {
     "admin.js": ("showActorLookupWarning()",),
@@ -24,6 +25,7 @@ FETCH_ERROR_GUARDS = {
     "app-go-ghost-ui.js": ("ghostShowIssue(", "lockGhostWorkspace()"),
     "app-widgets.js": ("reportStatus.setAttribute(\"role\", \"alert\")", "UIStates.notice(feedback",),
     "global_timer.js": ("renderRuntimeUnavailable()", "controller.abort()"),
+    "token-unavailable.js": ("Wallet status could not be checked", "Wallet disconnect did not complete"),
 }
 
 

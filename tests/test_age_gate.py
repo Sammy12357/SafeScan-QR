@@ -20,6 +20,7 @@ def age_app(tmp_path, monkeypatch):
     monkeypatch.setenv("MOCK_MODE", "true")
     monkeypatch.setenv("RENDER", "true")
     monkeypatch.setenv("SAFESCAN_ML_ENABLED", "false")
+    monkeypatch.setenv("TOKEN_FEATURES_ENABLED", "true")
     for name in list(sys.modules):
         if name == "hackabull" or name.startswith("hackabull.") or name in {"db", "storage"}:
             sys.modules.pop(name, None)

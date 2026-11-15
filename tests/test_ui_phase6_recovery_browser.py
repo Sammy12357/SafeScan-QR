@@ -69,6 +69,7 @@ def test_go_ghost_network_failure_hides_details_and_offers_retry(browser_site):
         page.unroute("**/api/me")
         with page.expect_navigation():
             page.locator("#goGhostSessionRetryButton").click()
+        page.locator("#goGhostWorkspace").wait_for(state="visible")
         assert page.locator("#goGhostWorkspace").is_visible()
     finally:
         context.close()

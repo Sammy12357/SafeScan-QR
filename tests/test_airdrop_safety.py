@@ -8,6 +8,8 @@ import pytest
 def load_distribute(monkeypatch, **env):
     for key in (
         "AIRDROP_ENABLED",
+        "TOKEN_FEATURES_ENABLED",
+        "TOKEN_DISTRIBUTION_ENABLED",
         "SOLANA_MAINNET_ENABLED",
         "AIRDROP_DRY_RUN",
         "AIRDROP_ADMIN_SECRET",
@@ -33,6 +35,8 @@ def test_mainnet_requires_explicit_opt_in(monkeypatch):
     distribute = load_distribute(
         monkeypatch,
         AIRDROP_ENABLED="true",
+        TOKEN_FEATURES_ENABLED="true",
+        TOKEN_DISTRIBUTION_ENABLED="true",
         AIRDROP_ADMIN_SECRET="x" * 32,
         SOLANA_RPC_URL="https://api.mainnet-beta.solana.com",
     )
@@ -45,6 +49,8 @@ def test_airdrop_requires_strong_admin_secret(monkeypatch):
     distribute = load_distribute(
         monkeypatch,
         AIRDROP_ENABLED="true",
+        TOKEN_FEATURES_ENABLED="true",
+        TOKEN_DISTRIBUTION_ENABLED="true",
         SOLANA_MAINNET_ENABLED="true",
         AIRDROP_ADMIN_SECRET="short",
     )
@@ -57,10 +63,12 @@ def test_airdrop_runtime_allows_safe_explicit_configuration(monkeypatch):
     distribute = load_distribute(
         monkeypatch,
         AIRDROP_ENABLED="true",
+        TOKEN_FEATURES_ENABLED="true",
+        TOKEN_DISTRIBUTION_ENABLED="true",
         SOLANA_MAINNET_ENABLED="true",
         AIRDROP_ADMIN_SECRET="x" * 32,
         AIRDROP_MAX_RECIPIENTS_PER_RUN="5",
         AIRDROP_MAX_TOKENS_PER_RUN="500",
     )
 
-    distribute.validate_airdrop_runtime()
+    distribute.validate_airdrop_runtime(owner_authorized=True)

@@ -29,7 +29,7 @@
         <div class="hero-metrics" aria-label="SafeScan QR demo capabilities">
           <div><span>ML</span><p>Risk verdicts</p></div>
           <div><span>ZBar</span><p>QR decoding</p></div>
-          <div><span>SQR</span><p>Reward tiers</p></div>
+          <div><span>QR</span><p>Payload review</p></div>
         </div>
       </div>
       <div class="hero-card spline-showcase" data-spline-src="">
@@ -70,7 +70,7 @@
               <p class="scanner-subcard-eyebrow">Upload or scan</p>
               <input type="hidden" name="template_variant" value="{{ 'test_site' if test_site_path else ('main_site' if test_site else '') }}">
               <input type="hidden" name="user_email" value="{{ email }}">
-              <input type="hidden" id="hiddenWalletInput" name="wallet_address">
+              {% if (token_features_enabled is defined and token_features_enabled()) %}<input type="hidden" id="hiddenWalletInput" name="wallet_address">{% endif %}
               <input type="hidden" id="deviceFingerprintInput" name="device_fingerprint">
               <input type="hidden" id="cameraCaptureSource" name="capture_source" value="">
               <label class="upload-chip" for="qrImageInput">Upload QR file/photo</label>
@@ -275,8 +275,8 @@ ASCII (punycode): {{ host_forms.ascii }}</pre>
         </div>
         <div class="test-faq-list">
           <details><summary>Does the homepage use the real scanner?</summary><p>Yes. It posts to the same SafeScan analysis route and shows the same verdict modal.</p></details>
-          <details><summary>Does it keep wallet and airdrop features?</summary><p>Yes. Signed-in users keep the same wallet connection, scan count, tier progress, profile, history, and leaderboard links.</p></details>
-          <details><summary>Is the airdrop still included?</summary><p>Yes. The community airdrop, tier cards, wallet connection, and QR scanner remain in the main homepage flow, with the airdrop deployed during the beta.</p></details>
+          <details><summary>Can I review previous scans?</summary><p>Signed-in users can review their scan history and account profile.</p></details>
+          <details><summary>Are token features available?</summary><p>{{ 'Token features are available to eligible adults when enabled.' if (token_features_enabled is defined and token_features_enabled()) else 'No. Token and airdrop features are currently unavailable.' }}</p></details>
         </div>
       </section>
       {% endif %}
@@ -287,7 +287,7 @@ ASCII (punycode): {{ host_forms.ascii }}</pre>
   {% if scanner_v3 %}<script src="/static/qr-camera.js?v=ui-a11y-v1" defer></script>
   {% else %}<script src="/static/qr-camera-phase3.js?v=ui-a11y-v1" defer></script>{% endif %}
   <script src="/static/app-core.js?v=ui-loading-v2"></script>
-  <script src="/static/app-widgets.js?v=consent-cache-v1"></script>
+  <script src="/static/app-widgets.js?v=legal-token-v1"></script>
   <script src="/static/app-go-ghost.js?v=ghost-inline-errors-v1"></script>
   <script src="/static/app-go-ghost-ui.js?v=ghost-account-check-v1"></script>
   <script src="/static/app-generate-qr.js?v=ui-loading-v1"></script>

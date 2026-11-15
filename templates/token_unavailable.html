@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="/static/theme-init.js?v=rose-theme-v1"></script>
+  <title>Token features unavailable | SafeScan QR</title>
+  <meta name="description" content="SafeScan token features are not available.">
+  <link rel="icon" href="/static/safescan-logo.svg?v=rose-theme-v1" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css?v=legal-font-v1">
+</head>
+<body class="test-site-page">
+  <div class="page-shell">
+    {% include "_topnav.html" %}
+    <main>
+      <section class="airdrop-panel">
+        <p class="eyebrow">SafeScan QR</p>
+        <h1>Token features are not available</h1>
+        <p>SafeScan's QR scanner and risk explanations remain available.</p>
+        <a class="primary-button" href="/#scanner">Scan a QR code</a>
+        {% if logged_in %}
+        <div class="wallet-panel">
+          <div><h2>Previously connected wallet</h2><p id="walletDisconnectStatus" role="status">Checking for an existing connection…</p></div>
+          <button id="disconnectExistingWallet" class="secondary-button hidden" type="button">Disconnect existing wallet</button>
+        </div>
+        {% endif %}
+      </section>
+    </main>
+    {% include "footer.html" %}
+  </div>
+  {% if logged_in %}<script src="/static/token-unavailable.js?v=legal-token-v1" defer></script>{% endif %}
+</body>
+</html>

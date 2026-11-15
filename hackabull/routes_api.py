@@ -102,6 +102,12 @@ from .wallet import is_valid_solana_address
 from .wallet import verify_solana_signature
 from .wallet import verify_wallet_on_chain
 from .wallet import wallet_verification_message
+from .token_flags import token_features_enabled
+
+
+def _require_token_features():
+    if not token_features_enabled():
+        raise HTTPException(status_code=503, detail="Token features are unavailable.")
 
 # =============================================================================
 # ROUTES — PUBLIC JSON API (/api/*)
@@ -281,7 +287,7 @@ async def analyze_and_record_scan(request, user, raw_payload, device_fingerprint
         raise SafeScanError(code="qr_payload_too_large", field="payload")
 
     email = user["email"]
-    verified_wallet = get_verified_wallet(email)
+    verified_wallet = get_verified_wallet(email) if token_features_enabled() else None
     wallet_address = verified_wallet["address"] if verified_wallet else ""
     payload_type, _, normalized_payload = detect_payload(raw_payload)
 
@@ -416,7 +422,8 @@ async def api_user_profile(request: Request):
             conn.execute("SELECT COUNT(*) FROM referrals WHERE referrer_email = ? AND counted = 1", (email,)).fetchone()[0]
             if unique_email_owner(conn, email, user["google_id"]) else 0
         )
-    wallet = get_verified_wallet(email)
+    token_enabled = token_features_enabled()
+    wallet = get_verified_wallet(email) if token_enabled else None
     return {
         "id": user.get("google_id"),
         "name": "Safe Scanner",
@@ -424,8 +431,9 @@ async def api_user_profile(request: Request):
         "role": user.get("role", "user"),
         "scanCount": scan_count,
         "referrals": referral_count,
-        "tier": airdrop_tier(scan_count, referral_count),
+        "tier": airdrop_tier(scan_count, referral_count) if token_enabled else None,
         "walletConnected": bool(wallet),
+        "tokenFeaturesEnabled": token_enabled,
     }
 
 @qr_app.get("/api/me")
@@ -461,6 +469,7 @@ async def api_scans(request: Request):
 
 @qr_app.get("/api/referral")
 async def api_referral_status(request: Request):
+    _require_token_features()
     user = require_user(request)
     _require_unique_email_account(user)
     email = user["email"]
@@ -475,6 +484,7 @@ async def api_referral_status(request: Request):
 
 @qr_app.get("/api/airdrop/status")
 async def api_airdrop_status(request: Request):
+    _require_token_features()
     user = require_user(request)
     _require_unique_email_account(user)
     email = user["email"]
@@ -527,6 +537,7 @@ async def api_wallet_status(request: Request):
 
 @qr_app.post("/api/wallet/nonce")
 async def api_wallet_nonce(request: Request, payload: dict = Body(...)):
+    _require_token_features()
     user = require_user(request)
     _require_unique_email_account(user)
     cleanup_wallet_nonces()
@@ -589,6 +600,7 @@ async def api_wallet_nonce(request: Request, payload: dict = Body(...)):
 
 @qr_app.post("/api/wallet/verify")
 async def api_wallet_verify(request: Request, payload: dict = Body(...)):
+    _require_token_features()
     user = require_user(request)
     _require_unique_email_account(user)
     cleanup_wallet_nonces()

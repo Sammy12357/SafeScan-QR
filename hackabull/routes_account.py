@@ -73,7 +73,6 @@ from .audit import now_iso
 from .auth import get_session_user
 from .auth import require_role_user
 from .auth import require_user
-from .config import AIRDROP_ADMIN_SECRET
 from .config import APP_STARTED_AT
 from .config import CLIENT_ID
 from .config import LEGAL_VERSION
@@ -92,6 +91,7 @@ from .routes_scan_auth import mobile_sign_in_body
 from .sessions import issue_remember_me_cookie
 from .sessions import set_session_cookie
 from .security import enforce_rate_limit
+from .token_flags import token_features_enabled
 
 @qr_app.get("/history", response_class=HTMLResponse)
 async def history_page(request: Request):
@@ -251,6 +251,16 @@ async def token_page(request: Request):
     """Standalone SQR token & airdrop tab."""
     user = get_session_user(request)
     email = user["email"] if user else ""
+    if not token_features_enabled():
+        response = templates.TemplateResponse("token_unavailable.html", {
+            "request": request,
+            "logged_in": bool(user),
+            "email": email,
+            "active_nav": "token",
+            **index_user_context(user),
+        })
+        response.headers["Cache-Control"] = "no-store"
+        return response
     return templates.TemplateResponse("token.html", {
         "request": request,
         "logged_in": bool(user),
@@ -430,46 +440,8 @@ async def account_settings(request: Request, email: str = Query("")):
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Account Settings", body))
 
 @qr_app.get("/trigger-airdrop-secret")
-async def trigger_airdrop(
-    request: Request,
-    secret: str = Query(None),
-    x_airdrop_secret: str = Header(None)
-):
-    admin_user = get_session_user(request)
-    provided_secret = x_airdrop_secret or secret
-    if admin_user:
-        require_role_user(request, "admin")
-    elif not (AIRDROP_ADMIN_SECRET and provided_secret == AIRDROP_ADMIN_SECRET):
-        audit_log("auth.permission_denied", request=request, target_type="airdrop")
-        raise HTTPException(status_code=403, detail="You do not have permission to do this.")
-
-    try:
-        from distribute import airdrop_sweep
-        result = await airdrop_sweep()
-        audit_log(
-            "airdrop.sweep_executed",
-            request=request,
-            actor_user_id=admin_user.get("google_id") if admin_user else None,
-            target_type="airdrop",
-            metadata={
-                "qualified": result.get("eligible", 0),
-                "sent": len(result.get("sent", [])),
-                "totalTokens": result.get("total_tokens_sent", 0),
-                "status": result.get("status")
-            }
-        )
-        return {
-            "status": result.get("status", "ok"),
-            "message": "Airdrop sweep executed.",
-            "result": result
-        }
-    except Exception as e:
-        audit_log("airdrop.sweep_failed", request=request, actor_user_id=admin_user.get("google_id") if admin_user else None, target_type="airdrop", metadata={"error": type(e).__name__})
-        return {
-            "status": "Failed",
-            "error": "Airdrop sweep failed.",
-            "error_type": type(e).__name__
-        }
+async def retired_airdrop_trigger():
+    raise HTTPException(status_code=410, detail="This distribution route has been retired.")
 
 
 

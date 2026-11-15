@@ -44,7 +44,7 @@
     <a href="/" class="sidenav-link {{ 'is-active' if active_nav == 'home' else '' }}">Home</a>
     <a href="/#scanner" class="sidenav-link {{ 'is-active' if active_nav == 'scanner' else '' }}">Scanner</a>
     <a href="/go-ghost" class="sidenav-link {{ 'is-active' if active_nav == 'ghost' else '' }}">Go Ghost</a>
-    <a href="/token" class="sidenav-link {{ 'is-active' if active_nav == 'token' else '' }}">Airdrop</a>
+    {% if (token_features_enabled is defined and token_features_enabled()) %}<a href="/token" class="sidenav-link {{ 'is-active' if active_nav == 'token' else '' }}">Airdrop</a>{% endif %}
     <a href="/plans" class="sidenav-link {{ 'is-active' if active_nav == 'plans' else '' }}">Plans</a>
     <a href="/learn" class="sidenav-link {{ 'is-active' if active_nav == 'learn' else '' }}">Learn</a>
     {% if logged_in %}

@@ -75,6 +75,9 @@ from .errors import ERRORS
 from .history import admin_avatar
 from .pipeline import analyze_full_pipeline
 from .request_helpers import make_id
+from .token_flags import token_distribution_enabled, token_features_enabled
+from .payments_stripe import consume_payment_form_token, issue_payment_form_token
+from .age_gate import account_is_adult
 
 # =============================================================================
 # ROUTES — ADMIN CONSOLE (/admin/*)  [staff only]
@@ -294,14 +297,25 @@ async def admin_risk_logs(request: Request):
 
 @qr_app.get("/admin/airdrop", response_class=HTMLResponse)
 async def admin_airdrop(request: Request):
-    return admin_context(request, "Tier Overview", "airdrop", fetch_airdrop_data())
+    if not token_features_enabled():
+        return admin_context(request, "Token features unavailable", "airdrop_unavailable", {})
+    data = fetch_airdrop_data()
+    user = require_role_user(request, "admin")
+    if token_distribution_enabled() and has_role(user, "owner") and account_is_adult(user["google_id"]):
+        data["distribution_form_token"] = issue_payment_form_token(user, "airdrop_distribute")
+    return admin_context(request, "Tier Overview", "airdrop", data)
 
 @qr_app.post("/admin/airdrop/distribute", response_class=HTMLResponse)
-async def admin_airdrop_distribute(request: Request):
-    admin_user = require_role_user(request, "admin")
+async def admin_airdrop_distribute(request: Request, distribution_token: str = Form("")):
+    admin_user = require_role_user(request, "owner")
+    if not token_distribution_enabled():
+        raise HTTPException(status_code=503, detail="Token distribution is unavailable.")
+    if not account_is_adult(admin_user["google_id"]):
+        raise HTTPException(status_code=403, detail="Adult confirmation is required for token distribution.")
+    consume_payment_form_token(admin_user, "airdrop_distribute", distribution_token)
     try:
         from distribute import airdrop_sweep
-        result = await airdrop_sweep()
+        result = await airdrop_sweep(owner_authorized=True)
         audit_log(
             "airdrop.sweep_executed",
             request=request,
@@ -329,11 +343,19 @@ async def admin_airdrop_fraud(request: Request):
 
 @qr_app.get("/admin/airdrop/wallets", response_class=HTMLResponse)
 async def admin_airdrop_wallets(request: Request):
-    return admin_context(request, "Wallet Registry", "airdrop", fetch_airdrop_data())
+    if not token_features_enabled():
+        return admin_context(request, "Token features unavailable", "airdrop_unavailable", {})
+    data = fetch_airdrop_data()
+    user = require_role_user(request, "admin")
+    if token_distribution_enabled() and has_role(user, "owner") and account_is_adult(user["google_id"]):
+        data["distribution_form_token"] = issue_payment_form_token(user, "airdrop_distribute")
+    return admin_context(request, "Wallet Registry", "airdrop", data)
 
 @qr_app.post("/admin/airdrop/{email}/status")
 async def admin_airdrop_status(request: Request, email: str, status: str = Form(""), reason: str = Form("")):
     admin_user = require_role_user(request, "admin")
+    if not token_features_enabled():
+        raise HTTPException(status_code=503, detail="Token features are unavailable.")
     if status not in ("eligible", "flagged", "disqualified", "cleared"):
         return _admin_form_error(request, "Tier Overview", "airdrop", fetch_airdrop_data(), "admin_action_invalid", target=email, field="status", values={"reason": reason})
     try:

@@ -33,10 +33,12 @@
       <a href="/admin/scans">All Scans</a>
       <a href="/admin/reports">Reported URLs</a>
       <a href="/admin/risk-logs">Risk Engine Logs</a>
+      {% if (token_features_enabled is defined and token_features_enabled()) %}
       <p>Airdrop</p>
       <a href="/admin/airdrop">Tier Overview</a>
       <a href="/admin/airdrop/fraud">Fraud Flags</a>
       <a href="/admin/airdrop/wallets">Wallet Registry</a>
+      {% else %}<p>Safety</p><a href="/admin/airdrop/fraud">Fraud Flags</a>{% endif %}
       <p>System</p>
       <a href="/admin/logs">Audit Logs</a>
       {% if is_owner %}
@@ -200,6 +202,9 @@
       <section class="admin-card">{% if data.reports %}<table class="admin-table"><thead><tr><th>URL</th><th>Reporter</th><th>Reason</th><th>Risk</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead><tbody>{% for report in data.reports %}<tr><td class="truncate">{{ report.url }}</td><td>{{ report.reporter_email }}</td><td>{{ report.reason }}</td><td>{{ report.risk_score }}</td><td><span class="badge">{{ report.status }}</span></td><td>{{ report.created_at | time_only }}</td><td><form action="/admin/reports/{{ report.id }}/action" method="post"><button name="action" value="confirm">Confirm Malicious</button><button name="action" value="dismiss">Dismiss</button><button name="action" value="reanalyze">Re-analyze</button></form>{% if form_error and form_error.target == report.id %}<span class="admin-inline-error">{{ form_error.message }}</span>{% endif %}</td></tr>{% endfor %}</tbody></table>{% else %}{{ empty_state(icon='check', title='No reports to review', body='Reported URLs will appear here.', action_label='Open scans', action_href='/admin/scans', compact=true) }}{% endif %}</section>
       {% endif %}
 
+      {% elif page == 'airdrop_unavailable' %}
+      <section class="admin-card"><h2>Token features are not available</h2><p>Eligibility and distribution displays are disabled.</p></section>
+
       {% elif page == 'airdrop' %}
       <div class="stat-grid small">
         <article>Registered Wallets <b>{{ data.wallet_users|length }}</b></article>
@@ -218,9 +223,12 @@
           {% if data.distribution_result.error %}{{ data.distribution_result.error }}{% endif %}
         </div>
         {% endif %}
+        {% if is_owner and (token_distribution_enabled is defined and token_distribution_enabled()) and data.distribution_form_token %}
         <form action="/admin/airdrop/distribute" method="post">
+          <input type="hidden" name="distribution_token" value="{{ data.distribution_form_token }}">
           <button class="danger-button" type="submit" data-confirm="Distribute {{ data.estimated_total }} SQR to {{ data.qualified|length }} qualified member(s) now?" {% if not data.qualified %}disabled{% endif %}>Distribute {{ data.estimated_total }} SQR to {{ data.qualified|length }} Qualified Members</button>
         </form>
+        {% else %}<p>Token distribution is unavailable.</p>{% endif %}
         {% if data.wallet_users %}<table class="admin-table">
           <thead><tr><th>Email</th><th>Wallet</th><th>Tier</th><th>Scans</th><th>Referrals</th><th>SQR Allocation</th><th>Status</th><th>Fraud</th><th>Actions</th></tr></thead>
           <tbody>{% for user in data.wallet_users %}<tr><td>{{ user.email }}</td><td class="truncate"><a href="https://solscan.io/account/{{ user.wallet_address }}" target="_blank" rel="noopener noreferrer">{{ user.wallet_address }}</a></td><td>{{ user.tier }}</td><td>{% if user.ambiguous_email %}<span title="Pending account ownership review">Withheld</span>{% else %}{{ user.scan_count }}{% endif %}</td><td>{% if user.ambiguous_email %}<span title="Pending account ownership review">Withheld</span>{% else %}{{ user.referral_count }}{% endif %}</td><td>{{ user.estimated_sqr }}</td><td>{{ user.distribution_status }}</td><td>{{ 'yes' if user.fraud_flags else 'no' }}</td><td>{% if user.ambiguous_email %}<span class="admin-inline-error">Account ownership needs review; action unavailable.</span>{% else %}<form action="/admin/airdrop/{{ user.email }}/status" method="post"><input name="reason" aria-label="Reason for {{ user.email }}" placeholder="Reason" value="{{ form_error.submitted.reason if form_error and form_error.target == user.email else '' }}"><button name="status" value="disqualified">Disqualify</button><button name="status" value="cleared">Verify Manually</button></form>{% if form_error and form_error.target == user.email %}<span class="admin-inline-error">{{ form_error.message }}</span>{% endif %}{% endif %}</td></tr>{% endfor %}</tbody>
