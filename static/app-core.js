@@ -420,17 +420,18 @@ function boundedWalletStep(task, timeoutMs, signal, timeoutMessage) {
   });
 }
 
-function walletJsonRequest(url, options = {}, operation = null, allowedStatuses = []) {
+function walletJsonRequest(url, options = {}, operation = null, allowedStatuses = [], includeStatus = false) {
   return boundedWalletStep(async (signal) => {
     const response = await fetch(url, { ...options, signal, credentials: "same-origin" });
     let body = {};
     try { body = await response.json(); } catch (_) { /* The HTTP status still determines failure. */ }
+    if (!body || typeof body !== "object") body = {};
     if (!response.ok && !allowedStatuses.includes(response.status)) {
       const error = new Error(typeof body.error === "string" ? body.error : "Wallet request failed. Try again.");
       error.status = response.status;
       throw error;
     }
-    return body;
+    return includeStatus ? { body, status: response.status } : body;
   }, WALLET_API_TIMEOUT_MS, operation?.controller.signal, "Wallet request timed out. Check your connection and try again.");
 }
 
@@ -760,31 +761,58 @@ function showActionFeedback(anchor, id, message) {
 async function disconnectWalletConnection(wallet = null, options = {}) {
   const { closeModal = false, notify = true } = options;
   const profile = getAuthoritativeWalletProfile();
+  if (!profile) {
+    showSignInWalletModal("Sign in again before disconnecting a wallet from SafeScan.");
+    return;
+  }
   const operation = startWalletOperation();
   setWalletBusy("Disconnecting wallet...");
-  if (closeModal) showWalletModal("<h3>Disconnecting wallet</h3><p>Checking the wallet and SafeScan connection...</p><div class='wallet-spinner'></div>");
+  if (closeModal) showWalletModal("<h3>Disconnecting wallet</h3><p>Removing the SafeScan link...</p><div class='wallet-spinner'></div>");
   try {
+    // Browser cache and wallet-provider state do not prove whether this account
+    // is linked on the server. Always ask SafeScan to remove its link first.
+    const deletion = await walletJsonRequest("/api/wallet", { method: "DELETE" }, operation, [404], true);
+    if (!currentWalletOperation(operation)) return;
+    if (deletion.status !== 404 && deletion.body.success !== true) {
+      throw new Error("Wallet unlink was not confirmed.");
+    }
+    walletMutationVersion += 1;
+    const updatedProfile = { email: profile.email };
+    setStoredAirdropProfile(updatedProfile);
+    confirmedWalletProfile = updatedProfile;
+
+    let providerFailed = false;
     if (typeof wallet?.provider?.disconnect === "function") {
-      await boundedWalletStep(
-        () => wallet.provider.disconnect(), WALLET_PROVIDER_TIMEOUT_MS, operation.controller.signal,
-        "The wallet did not respond to the disconnect request. Try again."
-      );
+      if (closeModal) showWalletModal("<h3>SafeScan link removed</h3><p>Disconnecting this site in your wallet app...</p><div class='wallet-spinner'></div>");
+      try {
+        await boundedWalletStep(
+          () => wallet.provider.disconnect(), WALLET_PROVIDER_TIMEOUT_MS, operation.controller.signal,
+          "The wallet did not respond to the disconnect request."
+        );
+      } catch {
+        providerFailed = true;
+      }
     }
-    if (profile?.walletAddress || profile?.walletVerified) {
-      await walletJsonRequest("/api/wallet", { method: "DELETE" }, operation, [404]);
-      walletMutationVersion += 1;
-      const updatedProfile = { ...profile };
-      delete updatedProfile.walletAddress;
-      delete updatedProfile.walletVerified;
-      setStoredAirdropProfile(updatedProfile);
-      confirmedWalletProfile = updatedProfile;
-      renderWalletState(updatedProfile);
-    }
+    if (!currentWalletOperation(operation)) return;
     finishWalletOperation(operation);
-    if (closeModal) removeWalletModal();
-    if (notify) showWalletFeedback("success", "Wallet disconnected.");
+    if (providerFailed) {
+      const warning = "The SafeScan wallet link was removed, but your wallet app may still list this site as connected. Disconnect it in the wallet app if needed.";
+      if (closeModal) {
+        showWalletModal(`<h3>SafeScan link removed</h3><p class="wallet-error">${escapeHtml(warning)}</p><button class="primary-button wallet-close-button" type="button">Done</button>`);
+        document.querySelector(".wallet-close-button")?.addEventListener("click", removeWalletModal);
+      }
+      showWalletFeedback("warning", warning);
+    } else {
+      if (closeModal) removeWalletModal();
+      if (notify) showWalletFeedback("success", "Wallet disconnected from SafeScan.");
+    }
   } catch (error) {
     if (!currentWalletOperation(operation)) return;
+    if (error?.status === 401) {
+      const unverifiedProfile = { email: profile.email };
+      setStoredAirdropProfile(unverifiedProfile);
+      confirmedWalletProfile = unverifiedProfile;
+    }
     const message = walletFriendlyError(error, "disconnect");
     showWalletFeedback("error", message, () => disconnectWalletConnection(wallet, options), "Wallet disconnect failed");
     if (closeModal) {
