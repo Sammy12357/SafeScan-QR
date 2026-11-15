@@ -1,3 +1,8 @@
+# -- License notices: also built alone in CI to verify the Docker context --
+FROM scratch AS license-notices
+COPY THIRD_PARTY_NOTICES.md /THIRD_PARTY_NOTICES.md
+COPY third_party_licenses/ /third_party_licenses/
+
 # -- Stage 1: builder ------------------------------------------------
 FROM python:3.11-slim AS builder
 
@@ -28,6 +33,11 @@ WORKDIR /app
 
 # Copy installed packages from builder
 COPY --from=builder /install /usr/local
+
+# Keep the reviewed notice bundle in the deployed artifact. The same stage is
+# exported and compared against source in CI, including nested Markdown files.
+COPY --from=license-notices /THIRD_PARTY_NOTICES.md ./THIRD_PARTY_NOTICES.md
+COPY --from=license-notices /third_party_licenses/ ./third_party_licenses/
 
 # Copy only application code
 COPY distribute.py scrop.py db.py storage.py ml_model_final.py \
