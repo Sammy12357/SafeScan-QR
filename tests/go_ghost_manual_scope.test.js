@@ -71,7 +71,7 @@ const window = {
   confirm: () => true,
   matchMedia: () => ({matches: false}),
   addEventListener() {},
-  open: url => { opened.push(url); return {opener: null}; }
+  open: () => ({opener: window, location: {replace(url) { opened.push(url); }}})
 };
 const document = {
   getElementById: id => elements[id] || null,

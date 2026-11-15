@@ -5,11 +5,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <script src="/static/ui-states.js?v=ui-loading-v1"></script>
   <title>Go Ghost | SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg?v=rose-theme-v1" type="image/svg+xml">
   <link rel="stylesheet" href="/static/styles.css?v=ui-loading-v1">
+  <link rel="stylesheet" href="/static/styles-go-ghost.css?v=ghost-inline-errors-v1">
 </head>
 <body>
   <div class="page-shell go-ghost-shell">
@@ -74,11 +76,13 @@
           <button id="addGhostFamilyButton" class="secondary-button" type="button">Add family member</button>
           <button id="removeGhostSubjectButton" class="secondary-button" type="button">Remove this person</button>
         </div>
+        <div id="goGhostActionError" class="ghost-inline-issue" hidden></div>
         <p class="go-ghost-copy">This directory covers mainly U.S. people-search records. Outside the U.S., Search opens the broker's manual instructions without adding your name or location to a link.</p>
         <p class="go-ghost-copy">Signed-in profiles stay on this browser. Guest details are kept in this tab's session. Each person has separate progress.</p>
 
         <form id="goGhostProfileForm" class="go-ghost-form go-ghost-keyword-form">
           <p id="ghostProfileReviewNotice" class="go-ghost-copy" role="status">Enter the required details, review them, then save before opening broker links.</p>
+          <div id="ghostProfileError" class="ghost-inline-issue" hidden></div>
           <p id="ghostSavedProfileHint" class="go-ghost-copy" hidden></p>
           <p id="ghostAccountNameHint" class="go-ghost-copy" hidden></p>
           <label>First name
@@ -180,6 +184,7 @@
         <span>Never provide SSN</span>
         <span>Track each confirmation</span>
       </div>
+      <div id="goGhostConsentError" class="ghost-inline-issue" hidden></div>
       <div class="go-ghost-actions">
         <button id="startGoGhostButton" class="primary-button" type="button">Yes, start Go Ghost</button>
         <a class="secondary-button" href="/">Not now</a>
@@ -193,6 +198,7 @@
       <p id="goGhostScopePriority" class="eyebrow"></p>
       <h2 id="goGhostScopeTitle"></h2>
       <p id="goGhostScopeDescription" class="go-ghost-copy"></p>
+      <div id="goGhostScopeError" class="ghost-inline-issue" hidden></div>
       <label id="goGhostScopeBrandPicker" class="ghost-brand-picker" hidden>Track each site separately
         <select id="goGhostScopeBrandSelect" aria-label="PeopleConnect site"></select>
       </label>
@@ -224,8 +230,8 @@
   <script src="/static/app-core.js?v=ui-loading-v1"></script>
   <script src="/static/app-widgets.js?v=ui-loading-v1"></script>
   <script src="/static/go-ghost-state.js?v=ghost-state-ui-v3"></script>
-  <script src="/static/app-go-ghost.js?v=ghost-state-ui-v3"></script>
-  <script src="/static/app-go-ghost-ui.js?v=ghost-drop-card-v1"></script>
+  <script src="/static/app-go-ghost.js?v=ghost-inline-errors-v1"></script>
+  <script src="/static/app-go-ghost-ui.js?v=ghost-inline-errors-v1"></script>
   <script src="/static/app-generate-qr.js?v=ui-loading-v1"></script>
 </body>
 </html>

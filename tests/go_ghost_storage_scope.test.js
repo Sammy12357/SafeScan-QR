@@ -22,7 +22,7 @@ function element() {
   };
 }
 
-function storage(map, blockedDeletes = new Set()) {
+function storage(map, blockedDeletes = new Set(), writesAllowed = () => true) {
   return {
     get length() { return map.size; },
     key: index => [...map.keys()][index] ?? null,
@@ -32,7 +32,10 @@ function storage(map, blockedDeletes = new Set()) {
       }
       return map.get(key) ?? null;
     },
-    setItem: (key, value) => map.set(key, value),
+    setItem: (key, value) => {
+      if (!writesAllowed()) throw new Error('Browser storage write failed');
+      map.set(key, value);
+    },
     removeItem: key => {
       if (blockedDeletes.has(key)) throw new Error('Browser storage removal failed');
       map.delete(key);
@@ -57,7 +60,8 @@ function page(accountId, local, session, {
     'ghostProgressCount', 'ghostProgressBreakdown', 'ghostFirstNameInput', 'ghostMiddleNameInput', 'ghostLastNameInput',
     'ghostCityInput', 'ghostStateInput', 'ghostBirthYearInput', 'ghostAddressInput',
     'ghostPhoneInput', 'ghostEmailInput', 'ghostPreviousCitiesInput', 'ghostOtherNamesInput',
-    'ghostProfileReviewNotice', 'ghostSavedProfileHint', 'ghostAccountNameHint',
+    'ghostProfileReviewNotice', 'ghostProfileError', 'goGhostActionError',
+    'goGhostConsentError', 'goGhostScopeError', 'ghostSavedProfileHint', 'ghostAccountNameHint',
     'goGhostDeviceNotice', 'ghostSubjectSelect',
     'addGhostFamilyButton', 'removeGhostSubjectButton', 'ghostFamilyAttestationLabel',
     'ghostFamilyAttestationInput'
@@ -80,13 +84,24 @@ function page(accountId, local, session, {
   let confirmResult = true;
   let signedInAs = accountId;
   const blockedDeletes = new Set(legacyEraseBlocked ? ['safeScanGoGhostProfile'] : []);
+  const controls = {popupAllowed: true, clipboardAllowed: true, writesAllowed: true};
   const window = {
-    localStorage: storage(local, blockedDeletes), sessionStorage: storage(session),
+    localStorage: storage(local, blockedDeletes, () => controls.writesAllowed),
+    sessionStorage: storage(session, new Set(), () => controls.writesAllowed),
+    UIStates: {notice(host, options) { host.textContent = options.message; host.noticeType = options.type; }},
     crypto: {randomUUID: () => `00000000-0000-4000-8000-${String(uuid++).padStart(12, '0')}`},
     matchMedia: () => ({matches: false}),
     confirm: question => { confirmQuestions.push(question); return confirmResult; },
     addEventListener(name, callback) { windowEvents[name] = callback; },
-    open(url) { opened.push(url); return {opener: null}; }
+    open(url) {
+      assert.equal(url, 'about:blank', 'the broker tab starts on a blank same-origin document');
+      if (!controls.popupAllowed) return null;
+      const popup = {opener: window, location: {replace(target) {
+        assert.equal(popup.opener, null, 'the opener is severed before broker navigation');
+        opened.push(target);
+      }}};
+      return popup;
+    }
   };
   const document = {
     getElementById: id => elements[id] || null,
@@ -107,7 +122,7 @@ function page(accountId, local, session, {
     },
     isMobileDevice: () => false,
     showCopyToast: message => messages.push(message),
-    copyTextToClipboard: async value => { copied.push(value); return true; },
+    copyTextToClipboard: async value => { copied.push(value); return controls.clipboardAllowed; },
     escapeHtml: value => String(value ?? '').replace(/[&<>"]/g, char => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'
     })[char])
@@ -117,7 +132,7 @@ function page(accountId, local, session, {
   vm.runInContext(uiSource, context);
   return {elements, windowEvents, opened, copied, messages, removalRequests, confirmQuestions, context,
     setSession: id => { signedInAs = id; }, setConfirmResult: result => { confirmResult = result; },
-    allowLegacyErase: () => blockedDeletes.clear()};
+    allowLegacyErase: () => blockedDeletes.clear(), controls};
 }
 
 function enterProfile(page, firstName, lastName, save = true) {
@@ -195,8 +210,12 @@ async function main() {
   vm.runInContext("openGoGhostScopeModal('fastpeoplesearch')", family.context);
   await family.elements.goGhostScopeSearchButton.events.click();
   assert.equal(family.opened.length, 0, 'family search requires attestation');
+  assert.match(family.elements.goGhostActionError.textContent, /Confirm your authority/);
+  assert.equal(family.elements.goGhostScopeModal.classList.contains('hidden'), true,
+    'the blocked modal closes so the family attestation can receive focus');
   family.elements.ghostFamilyAttestationInput.checked = true;
   family.elements.ghostFamilyAttestationInput.events.change();
+  vm.runInContext("openGoGhostScopeModal('fastpeoplesearch')", family.context);
   await family.elements.goGhostScopeSearchButton.events.click();
   assert.equal(family.opened.length, 1);
   family.elements.ghostFirstNameInput.value = 'Different';
@@ -210,7 +229,7 @@ async function main() {
   vm.runInContext("openGoGhostScopeModal('intelius')", family.context);
   await family.elements.goGhostScopeOptOutButton.events.click();
   assert.equal(family.opened.length, 1, 'self-only broker must not open for family request');
-  assert.match(family.messages.at(-1), /requires the person/);
+  assert.match(family.elements.goGhostScopeError.textContent, /requires the person/);
   await family.elements.goGhostScopeSubmittedButton.events.click();
   assert.equal(vm.runInContext("getGhostProgress().intelius", family.context), undefined,
     'family cannot claim completion of PeopleConnect self-use workflow');
@@ -322,6 +341,7 @@ async function main() {
   older.elements.goGhostProfileForm.events.submit({preventDefault() {}});
   assert.equal(vm.runInContext('ghostProfileIsReviewed()', older.context), true);
   assert.equal(JSON.parse(local.get(oldKey)).subjects[oldId].profile.name, 'Mary Ann Doe');
+  vm.runInContext("openGoGhostScopeModal('fastpeoplesearch')", older.context);
   await older.elements.goGhostScopeSearchButton.events.click();
   assert.equal(older.opened.length, 1);
   assert.equal(older.opened[0], 'https://www.fastpeoplesearch.com/');
@@ -340,9 +360,92 @@ async function main() {
   older.elements.ghostCityInput.value = 'Toronto';
   older.elements.ghostCityInput.events.input();
   older.elements.goGhostProfileForm.events.submit({preventDefault() {}});
+  vm.runInContext("openGoGhostScopeModal('fastpeoplesearch')", older.context);
   await older.elements.goGhostScopeSearchButton.events.click();
   assert.equal(older.opened.at(-1), 'https://www.fastpeoplesearch.com/optout',
     'outside U.S. search opens static broker instructions');
+
+  const feedback = page('account-feedback', local, new Map());
+  const feedbackKey = 'safeScanGoGhostV2:account:account-feedback';
+  feedback.controls.writesAllowed = false;
+  feedback.elements.startGoGhostButton.events.click();
+  assert.equal(feedback.elements.goGhostWorkspace.hidden, true, 'failed consent save must keep the consent gate');
+  assert.match(feedback.elements.goGhostConsentError.textContent, /could not be saved/);
+  assert.equal(feedback.elements.goGhostConsentError.noticeType, 'danger');
+  assert.equal(local.has(feedbackKey), false);
+  feedback.controls.writesAllowed = true;
+  feedback.elements.startGoGhostButton.events.click();
+  assert.equal(feedback.elements.goGhostConsentError.hidden, true, 'successful retry clears consent error');
+  enterProfile(feedback, 'Able', 'Person');
+  const savedProfile = JSON.parse(local.get(feedbackKey));
+  feedback.controls.writesAllowed = false;
+  feedback.elements.ghostFirstNameInput.value = 'Changed';
+  feedback.elements.ghostFirstNameInput.events.input();
+  assert.match(feedback.elements.ghostProfileError.textContent, /could not be saved/);
+  assert.equal(feedback.elements.ghostProfileError.noticeType, 'danger');
+  assert.equal(JSON.parse(local.get(feedbackKey)).activeSubjectId, savedProfile.activeSubjectId);
+  assert.equal(vm.runInContext('ghostCurrentSubject().profile.firstName', feedback.context), 'Able',
+    'failed profile save rolls back memory as well as disk');
+  feedback.controls.writesAllowed = true;
+  feedback.elements.ghostFirstNameInput.events.input();
+  feedback.elements.goGhostProfileForm.events.submit({preventDefault() {}});
+  assert.equal(feedback.elements.ghostProfileError.hidden, true);
+
+  feedback.elements.ghostFirstNameInput.value = '123';
+  feedback.elements.ghostFirstNameInput.events.input();
+  feedback.elements.goGhostProfileForm.events.submit({preventDefault() {}});
+  assert.match(feedback.elements.ghostProfileError.textContent, /Enter a valid first name/);
+  assert.equal(feedback.elements.ghostProfileError.noticeType, 'danger');
+  feedback.elements.ghostFirstNameInput.value = 'Able';
+  feedback.elements.ghostFirstNameInput.events.input();
+  feedback.elements.goGhostProfileForm.events.submit({preventDefault() {}});
+  assert.equal(feedback.elements.ghostProfileError.hidden, true);
+
+  vm.runInContext("openGoGhostScopeModal('whitepages')", feedback.context);
+  feedback.controls.popupAllowed = false;
+  await feedback.elements.goGhostScopeSearchButton.events.click();
+  assert.match(feedback.elements.goGhostScopeError.textContent, /blocked the broker page/);
+  assert.equal(feedback.elements.goGhostScopeError.noticeType, 'danger');
+  assert.equal(feedback.opened.length, 0);
+  feedback.controls.popupAllowed = true;
+  await feedback.elements.goGhostScopeSearchButton.events.click();
+  assert.equal(feedback.elements.goGhostScopeError.hidden, true, 'successful retry clears modal error');
+  feedback.controls.clipboardAllowed = false;
+  await feedback.elements.goGhostScopeCopyButton.events.click();
+  assert.match(feedback.elements.goGhostScopeError.textContent, /could not be copied/);
+  await feedback.elements.goGhostScopeOptOutButton.events.click();
+  assert.match(feedback.elements.goGhostScopeError.textContent, /broker page opened, but the details could not be copied/i);
+  feedback.controls.clipboardAllowed = true;
+  await feedback.elements.goGhostScopeCopyButton.events.click();
+  assert.equal(feedback.elements.goGhostScopeError.hidden, true);
+
+  await feedback.elements.goGhostScopeSubmittedButton.events.click();
+  await feedback.elements.goGhostScopeRemovedButton.events.click();
+  feedback.controls.popupAllowed = false;
+  await feedback.elements.goGhostScopeRecheckButton.events.click();
+  assert.match(feedback.elements.goGhostScopeError.textContent, /before recording a recheck/);
+  assert.equal(vm.runInContext("getGhostProgress().whitepages.state", feedback.context), 'user_reported_removed');
+  feedback.controls.popupAllowed = true;
+  vm.runInContext("openGoGhostScopeModal('spokeo')", feedback.context);
+  feedback.controls.writesAllowed = false;
+  await feedback.elements.goGhostScopeSubmittedButton.events.click();
+  assert.match(feedback.elements.goGhostScopeError.textContent, /could not be saved/);
+  assert.equal(vm.runInContext("getGhostProgress().spokeo", feedback.context), undefined,
+    'failed status save cannot claim submission');
+  feedback.controls.writesAllowed = true;
+  await feedback.elements.goGhostScopeSubmittedButton.events.click();
+  assert.equal(vm.runInContext("getGhostProgress().spokeo.state", feedback.context), 'submitted');
+
+  const limit = page('account-limit', local, new Map());
+  limit.elements.startGoGhostButton.events.click();
+  for (let index = 0; index < 19; index += 1) {
+    limit.elements.addGhostFamilyButton.events.click();
+    limit.elements.startGoGhostButton.events.click();
+  }
+  limit.elements.addGhostFamilyButton.events.click();
+  assert.equal(vm.runInContext('Object.keys(ghostCurrentState().subjects).length', limit.context), 20);
+  assert.match(limit.elements.goGhostActionError.textContent, /up to 20 people/);
+  assert.equal(limit.elements.goGhostActionError.noticeType, 'danger');
 
   const automation = page('account-E', local, new Map(), {automation: true});
   automation.elements.startGoGhostButton.events.click();
@@ -352,7 +455,7 @@ async function main() {
   automation.elements.ghostFamilyAttestationInput.events.change();
   await vm.runInContext('startGhostAssistedQueue()', automation.context);
   assert.equal(automation.removalRequests.length, 0, 'family queue must not send profile to server');
-  assert.match(automation.messages.at(-1), /unavailable for family/);
+  assert.match(automation.elements.goGhostActionError.textContent, /unavailable for family/);
   const stopped = vm.runInContext(`(() => {
     const controller = new AbortController();
     goGhostAutomationControllers.set('fastpeoplesearch', controller);

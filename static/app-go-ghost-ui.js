@@ -3,6 +3,8 @@
 // load in this order: app-core.js -> app-widgets.js -> app-go-ghost.js -> app-go-ghost-ui.js -> app-generate-qr.js.
 const ghostCaliforniaDropCard = document.getElementById("ghostCaliforniaDropCard");
 const ghostDropFamilyNote = document.getElementById("ghostDropFamilyNote");
+const GHOST_PROFILE_VALIDATION_MESSAGE =
+  "Enter a valid first name, last name, city, region, email, and optional birth year.";
 
 function renderGhostCaliforniaDropCard() {
   if (!ghostCaliforniaDropCard) return;
@@ -23,23 +25,29 @@ function ghostCanAct(broker = null) {
   if (goGhostStoreLocked) return false;
   const subject = ghostCurrentSubject();
   if (!subject.consentAcceptedAt) {
-    showCopyToast("Confirm this person's Go Ghost setup first");
+    ghostShowIssue("Confirm this person's Go Ghost setup first.", ghostVisibleIssueHost());
     return false;
   }
   if (subject.kind === "family" && !goGhostFamilyAttestedThisVisit.has(subject.id)) {
-    showCopyToast("Confirm your authority to help this family member first");
-    ghostFamilyAttestationInput?.focus();
+    if (goGhostScopeModal && !goGhostScopeModal.classList.contains("hidden")) closeGoGhostScopeModal();
+    ghostFamilyAttestationInput?.setAttribute?.("aria-invalid", "true");
+    ghostFamilyAttestationInput?.setAttribute?.("aria-describedby", "goGhostActionError");
+    ghostShowIssue("Confirm your authority to help this family member before opening broker links.",
+      goGhostActionError, ghostFamilyAttestationInput);
     return false;
   }
   if (subject.kind === "family" && ghostRequiresSubjectOwnAction(broker)) {
-    showCopyToast("This broker requires the person to use its suppression tool themselves");
+    ghostShowIssue("This broker requires the person to use its suppression tool themselves.", ghostVisibleIssueHost());
     return false;
   }
   if (!ghostProfileIsReviewed()) {
+    if (goGhostScopeModal && !goGhostScopeModal.classList.contains("hidden")) closeGoGhostScopeModal();
     scrollToGhostProfile();
-    showCopyToast("Complete and save the reviewed name, city, region, and email first");
+    ghostShowIssue("Complete and save the reviewed name, city, region, and email before opening broker links.",
+      ghostProfileError, ghostFirstNameInput);
     return false;
   }
+  ghostClearIssue(goGhostActionError);
   return true;
 }
 
@@ -48,7 +56,7 @@ async function openNextGhostBroker() {
   const profile = getGhostProfile();
   if (!hasGhostSearchProfile(profile)) {
     scrollToGhostProfile();
-    showCopyToast("Add a name first");
+    ghostShowIssue("Add and save a name before opening a broker search.", ghostProfileError, ghostFirstNameInput);
     return;
   }
   const family = ghostCurrentSubject().kind === "family";
@@ -58,10 +66,23 @@ async function openNextGhostBroker() {
     return;
   }
   const searchUrl = goGhostBrokerSearchUrl(broker, profile);
-  openGhostUrl(searchUrl);
-  scrollToGhostBroker(broker);
+  const opened = openGhostUrl(searchUrl);
   const copied = await copyTextToClipboard(goGhostCopyPacket(broker, profile, searchUrl)).catch(() => false);
-  showCopyToast(copied ? `${broker.name} packet copied` : `Opened ${broker.name}`);
+  if (!opened) {
+    ghostShowIssue(copied
+      ? "Your browser blocked the broker page. The details were copied; open the broker row and try Search again."
+      : "Your browser blocked the broker page and the details could not be copied. Allow pop-ups and clipboard access, then try again.",
+    goGhostActionError);
+    return;
+  }
+  scrollToGhostBroker(broker);
+  if (!copied) {
+    ghostShowIssue("The broker page opened, but the details could not be copied. Try Copy details from the broker row.",
+      goGhostActionError);
+    return;
+  }
+  ghostClearIssue(goGhostActionError);
+  showCopyToast(`${broker.name} packet copied`);
 }
 
 async function finishGhostBrokerAndOpenNext(broker) {
@@ -75,7 +96,8 @@ async function finishGhostBrokerAndOpenNext(broker) {
 async function runGhostBrokerAutomation(broker, triggerButton) {
   if (!GO_GHOST_BROWSER_AUTOMATION_AVAILABLE) return null;
   if (ghostCurrentSubject().kind === "family") {
-    showCopyToast("Assisted submissions are unavailable for family requests");
+    ghostShowIssue("Assisted submissions are unavailable for family requests. Use the broker's opt-out page directly.",
+      ghostVisibleIssueHost());
     return null;
   }
   if (!ghostCanAct(broker)) return null;
@@ -89,13 +111,12 @@ async function runGhostBrokerAutomation(broker, triggerButton) {
   const profile = getGhostProfile();
   if (!profile.name?.trim()) {
     scrollToGhostProfile();
-    showCopyToast("Add a name first");
+    ghostShowIssue("Add and save a name before running broker automation.", ghostProfileError, ghostFirstNameInput);
     return null;
   }
   if (!profile.email?.trim()) {
     scrollToGhostProfile();
-    ghostEmailInput?.focus({ preventScroll: true });
-    showCopyToast("Add an email first");
+    ghostShowIssue("Add and save an email before running broker automation.", ghostProfileError, ghostEmailInput);
     return null;
   }
 
@@ -146,7 +167,12 @@ async function runGhostBrokerAutomation(broker, triggerButton) {
     if (automation.status === "submitted" || automation.status === "email_required") {
       ghostApplyManualEvent(broker.id, "mark_submitted");
     }
-    showCopyToast(automation.detail || formatGhostAutomationStatus(automation.status));
+    if (automation.status === "failed" || automation.status === "unavailable") {
+      ghostShowIssue("The broker automation could not finish. Open the broker's opt-out page to continue manually.",
+        ghostVisibleIssueHost());
+    } else {
+      showCopyToast(automation.detail || formatGhostAutomationStatus(automation.status));
+    }
     return automation;
   } catch (error) {
     if (goGhostStoreLocked) return null;
@@ -167,7 +193,8 @@ async function runGhostBrokerAutomation(broker, triggerButton) {
       updatedAt: new Date().toISOString()
     };
     updateGhostAutomationState(broker.id, failed);
-    showCopyToast(error.message || "Automation failed");
+    ghostShowIssue("The broker automation could not finish. Open the broker's opt-out page to continue manually.",
+      ghostVisibleIssueHost());
     return failed;
   } finally {
     if (goGhostAutomationControllers.get(broker.id) === controller) {
@@ -241,6 +268,7 @@ function renderGoGhostAutomationScope() {
 function closeGoGhostScopeModal() {
   activeGhostScopeBrokerId = "";
   goGhostScopeModal?.classList.add("hidden");
+  ghostClearIssue(goGhostScopeError);
 }
 
 function renderGhostScopeKeywords(profile) {
@@ -267,6 +295,7 @@ function openGoGhostScopeModal(siteId, focusClose = true) {
   const automation = GO_GHOST_BROWSER_AUTOMATION_AVAILABLE ? getGhostProgress()[broker.id]?.automation : null;
   const subjectOnly = ghostCurrentSubject().kind === "family" && ghostRequiresSubjectOwnAction(broker);
   activeGhostScopeBrokerId = broker.id;
+  ghostClearIssue(goGhostScopeError);
   if (goGhostScopeTitle) goGhostScopeTitle.textContent = group.length > 1 ? "PeopleConnect" : broker.name;
   if (goGhostScopePriority) goGhostScopePriority.textContent = broker.priority;
   if (goGhostScopeBrandPicker) goGhostScopeBrandPicker.hidden = group.length === 1;
@@ -352,23 +381,42 @@ async function runGhostScopeAction(action) {
   const searchUrl = goGhostBrokerSearchUrl(broker, profile);
 
   if (action === "search") {
-    openGhostUrl(searchUrl);
+    if (!openGhostUrl(searchUrl)) {
+      ghostShowIssue("Your browser blocked the broker page. Allow pop-ups for SafeScan, then try Search again.",
+        goGhostScopeError);
+      return;
+    }
+    ghostClearIssue(goGhostScopeError);
     showCopyToast(`Opened ${broker.name} search`);
     return;
   }
-  if (action === "optout") {
-    showCopyToast(await openGhostOptOutWithPacket(broker, profile, searchUrl));
-    return;
-  }
-  if (action === "finish") {
+  if (action === "optout" || action === "finish") {
     // One-click handoff after a CAPTCHA/listing checkpoint: open the opt-out
     // page and copy the details packet without putting them in the URL.
-    showCopyToast(await openGhostOptOutWithPacket(broker, profile, searchUrl));
+    const result = await openGhostOptOutWithPacket(broker, profile, searchUrl);
+    if (!result.opened) {
+      ghostShowIssue(result.copied
+        ? "Your browser blocked the broker page. Details were copied; allow pop-ups and try again."
+        : "Your browser blocked the broker page and the details could not be copied. Allow pop-ups and clipboard access, then try again.",
+      goGhostScopeError);
+    } else if (!result.copied) {
+      ghostShowIssue("The broker page opened, but the details could not be copied. Try Copy details again or enter them yourself.",
+        goGhostScopeError);
+    } else {
+      ghostClearIssue(goGhostScopeError);
+      showCopyToast(`${broker.name}: opened and details copied`);
+    }
     return;
   }
   if (action === "copy") {
     const copied = await copyTextToClipboard(goGhostCopyPacket(broker, profile, searchUrl)).catch(() => false);
-    showCopyToast(copied ? `${broker.name} details copied` : "Copy failed");
+    if (!copied) {
+      ghostShowIssue("The details could not be copied. Check clipboard permission, then try Copy details again.",
+        goGhostScopeError);
+      return;
+    }
+    ghostClearIssue(goGhostScopeError);
+    showCopyToast(`${broker.name} details copied`);
     return;
   }
   if (action === "submitted" || action === "removed" || action === "reset") {
@@ -384,9 +432,11 @@ async function runGhostScopeAction(action) {
   }
   if (action === "recheck") {
     if (!openGhostUrl(searchUrl)) {
-      showCopyToast("Open the broker search in a new tab before recording a recheck");
+      ghostShowIssue("Open the broker search in a new tab before recording a recheck. Allow pop-ups, then try again.",
+        goGhostScopeError);
       return;
     }
+    ghostClearIssue(goGhostScopeError);
     if (!ghostApplyManualEvent(broker.id, "begin_recheck")) return;
     openGoGhostScopeModal(broker.id, false);
     showCopyToast(`Check ${broker.name}'s listing, then record whether it is absent or still listed`);
@@ -478,7 +528,10 @@ function saveGhostFormProfile(review = false) {
   if (review && !ghostValidProfileFields(next)) {
     goGhostProfileForm?.reportValidity?.();
     scrollToGhostProfile();
-    showCopyToast("Enter a valid first name, last name, city, region, email, and optional birth year");
+    const invalid = goGhostProfileForm?.querySelector?.(":invalid") || ghostFirstNameInput;
+    invalid?.setAttribute?.("aria-invalid", "true");
+    invalid?.setAttribute?.("aria-describedby", "ghostProfileError");
+    ghostShowIssue(GHOST_PROFILE_VALIDATION_MESSAGE, ghostProfileError, invalid);
     return false;
   }
   const changed = GHOST_PROFILE_FORM_FIELDS.some((field) => next[field] !== (subject.profile[field] || ""));
@@ -494,7 +547,7 @@ function saveGhostFormProfile(review = false) {
   } else if (changed) {
     next.reviewedAt = "";
   }
-  ghostSaveProfile(next);
+  if (!ghostSaveProfile(next)) return false;
   renderGhostSubjects();
   ghostRefreshReviewNotice();
   renderGhostCaliforniaDropCard();
@@ -503,6 +556,7 @@ function saveGhostFormProfile(review = false) {
 }
 
 function showGoGhostWorkspace() {
+  ghostClearIssue(goGhostConsentError);
   goGhostConsentModal?.classList.add("hidden");
   if (goGhostWorkspace) goGhostWorkspace.hidden = false;
   hydrateGoGhostProfile();
@@ -512,16 +566,28 @@ function showGoGhostWorkspace() {
 
 function startGoGhost() {
   if (goGhostStoreLocked) return;
-  ghostCurrentSubject().consentAcceptedAt = new Date().toISOString();
-  ghostSaveState();
+  const subject = ghostCurrentSubject();
+  const previous = subject.consentAcceptedAt;
+  subject.consentAcceptedAt = new Date().toISOString();
+  if (!ghostSaveState(goGhostConsentError)) {
+    subject.consentAcceptedAt = previous;
+    return;
+  }
   showGoGhostWorkspace();
 }
 
-function selectGhostSubject(id) {
+function selectGhostSubject(id, save = true) {
   const state = ghostCurrentState();
   if (!Object.hasOwn(state.subjects, id) || goGhostStoreLocked) return;
+  const previous = state.activeSubjectId;
   state.activeSubjectId = id;
-  ghostSaveState();
+  if (save && !ghostSaveState(goGhostActionError)) {
+    state.activeSubjectId = previous;
+    if (ghostSubjectSelect) ghostSubjectSelect.value = previous;
+    return;
+  }
+  ghostClearIssue(goGhostActionError);
+  ghostClearIssue(ghostProfileError);
   hydrateGoGhostProfile();
   renderGoGhostAutomationScope();
   renderGoGhostProgress();
@@ -537,16 +603,25 @@ function addGhostFamilySubject() {
   if (goGhostStoreLocked) return;
   const state = ghostCurrentState();
   if (Object.keys(state.subjects).length >= 20) {
-    showCopyToast("Go Ghost supports up to 20 people on this device");
+    ghostShowIssue("Go Ghost supports up to 20 people on this device. Remove a family member before adding another.",
+      goGhostActionError);
     return;
   }
   let subject;
   try { subject = ghostNewSubject("family"); }
-  catch { showCopyToast("A secure browser is required to add a family member"); return; }
+  catch {
+    ghostShowIssue("A secure browser is required to add a family member. Try an updated browser.", goGhostActionError);
+    return;
+  }
+  const previous = state.activeSubjectId;
   state.subjects[subject.id] = subject;
   state.activeSubjectId = subject.id;
-  ghostSaveState();
-  selectGhostSubject(subject.id);
+  if (!ghostSaveState(goGhostActionError)) {
+    delete state.subjects[subject.id];
+    state.activeSubjectId = previous;
+    return;
+  }
+  selectGhostSubject(subject.id, false);
   startGoGhostButton?.focus();
 }
 
@@ -554,11 +629,19 @@ function removeGhostSubject() {
   const state = ghostCurrentState();
   if (goGhostStoreLocked || ghostCurrentSubject().kind !== "family") return;
   if (!window.confirm("Remove this person's Go Ghost details and progress from this browser?")) return;
-  goGhostFamilyAttestedThisVisit.delete(state.activeSubjectId);
-  delete state.subjects[state.activeSubjectId];
+  const removedId = state.activeSubjectId;
+  const removed = state.subjects[removedId];
+  const hadAttestation = goGhostFamilyAttestedThisVisit.has(removedId);
+  goGhostFamilyAttestedThisVisit.delete(removedId);
+  delete state.subjects[removedId];
   state.activeSubjectId = Object.keys(state.subjects)[0];
-  ghostSaveState();
-  selectGhostSubject(state.activeSubjectId);
+  if (!ghostSaveState(goGhostActionError)) {
+    state.subjects[removedId] = removed;
+    state.activeSubjectId = removedId;
+    if (hadAttestation) goGhostFamilyAttestedThisVisit.add(removedId);
+    return;
+  }
+  selectGhostSubject(state.activeSubjectId, false);
 }
 
 function lockGhostWorkspace() {
@@ -627,7 +710,13 @@ if (goGhostWorkspace) {
     try { window.sessionStorage.removeItem("safeScanGoGhostV2:guest"); } catch { /* Storage unavailable. */ }
   }
 
-  const hasConsent = Boolean(ghostCurrentSubject().consentAcceptedAt);
+  let hasConsent = false;
+  try {
+    hasConsent = Boolean(ghostCurrentSubject().consentAcceptedAt);
+  } catch {
+    if (startGoGhostButton) startGoGhostButton.disabled = true;
+    ghostShowIssue("A secure browser is required to use Go Ghost. Try an updated browser.", goGhostConsentError);
+  }
   if (hasConsent) showGoGhostWorkspace();
   else goGhostConsentModal?.classList.remove("hidden");
 
@@ -636,8 +725,12 @@ if (goGhostWorkspace) {
   addGhostFamilyButton?.addEventListener("click", addGhostFamilySubject);
   removeGhostSubjectButton?.addEventListener("click", removeGhostSubject);
   ghostFamilyAttestationInput?.addEventListener("change", () => {
+    ghostFamilyAttestationInput.removeAttribute?.("aria-invalid");
+    ghostFamilyAttestationInput.removeAttribute?.("aria-describedby");
     const subject = ghostCurrentSubject();
     if (subject.kind !== "family") return;
+    const previous = subject.familyAttestedAt;
+    const hadAttestation = goGhostFamilyAttestedThisVisit.has(subject.id);
     if (ghostFamilyAttestationInput.checked) {
       goGhostFamilyAttestedThisVisit.add(subject.id);
       subject.familyAttestedAt = new Date().toISOString();
@@ -645,7 +738,14 @@ if (goGhostWorkspace) {
       goGhostFamilyAttestedThisVisit.delete(subject.id);
       subject.familyAttestedAt = "";
     }
-    ghostSaveState();
+    if (!ghostSaveState(goGhostActionError)) {
+      subject.familyAttestedAt = previous;
+      if (hadAttestation) goGhostFamilyAttestedThisVisit.add(subject.id);
+      else goGhostFamilyAttestedThisVisit.delete(subject.id);
+      ghostFamilyAttestationInput.checked = hadAttestation;
+      return;
+    }
+    ghostClearIssue(goGhostActionError);
   });
   startGhostQueueButton?.addEventListener("click", startGhostAssistedQueue);
   openNextGhostBrokerButton?.addEventListener("click", openNextGhostBroker);
@@ -658,10 +758,18 @@ if (goGhostWorkspace) {
     showCopyToast("Reviewed details saved");
   });
 
+  goGhostProfileForm?.addEventListener("invalid", (event) => {
+    event.target?.setAttribute?.("aria-invalid", "true");
+    event.target?.setAttribute?.("aria-describedby", "ghostProfileError");
+    ghostShowIssue(GHOST_PROFILE_VALIDATION_MESSAGE, ghostProfileError);
+  }, true);
+
   [ghostFirstNameInput, ghostMiddleNameInput, ghostLastNameInput, ghostCityInput, ghostStateInput,
     ghostBirthYearInput, ghostAddressInput, ghostPhoneInput, ghostEmailInput,
     ghostPreviousCitiesInput, ghostOtherNamesInput].forEach((input) => {
     const changed = () => {
+      input?.removeAttribute?.("aria-invalid");
+      input?.removeAttribute?.("aria-describedby");
       saveGhostFormProfile();
       renderGoGhostAutomationScope();
       renderGoGhostProgress();
@@ -673,7 +781,14 @@ if (goGhostWorkspace) {
     if (goGhostStoreLocked) return;
     const scope = goGhostAccountId ? "this account" : "this guest tab";
     if (!window.confirm(`Clear Go Ghost details and progress for all people in ${scope} from this browser? This cannot be undone.`)) return;
-    try { goGhostStorageArea.removeItem(GO_GHOST_STORE_KEY); } catch { /* Storage unavailable. */ }
+    try {
+      if (!goGhostStorageArea) throw new Error("Storage unavailable");
+      goGhostStorageArea.removeItem(GO_GHOST_STORE_KEY);
+    } catch {
+      ghostShowIssue("Go Ghost details could not be cleared from this browser. Check storage settings and try again.",
+        goGhostActionError);
+      return;
+    }
     goGhostState = null;
     goGhostFamilyAttestedThisVisit.clear();
     hydrateGoGhostProfile();
@@ -688,7 +803,7 @@ if (goGhostWorkspace) {
 
   eraseGhostLegacyButton?.addEventListener("click", () => {
     const erased = ghostEraseLegacyData();
-    showCopyToast(erased ? "Older browser details erased" : "Could not erase older browser details");
+    if (erased) showCopyToast("Older browser details erased");
   });
 
   window.addEventListener("focus", checkGhostAccount);

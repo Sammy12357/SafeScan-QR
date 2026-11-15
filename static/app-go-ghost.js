@@ -12,6 +12,7 @@ const goGhostScopeModal = document.getElementById("goGhostScopeModal");
 const goGhostScopeTitle = document.getElementById("goGhostScopeTitle");
 const goGhostScopePriority = document.getElementById("goGhostScopePriority");
 const goGhostScopeDescription = document.getElementById("goGhostScopeDescription");
+const goGhostScopeError = document.getElementById("goGhostScopeError");
 const goGhostScopeKeywords = document.getElementById("goGhostScopeKeywords");
 const goGhostScopeDetails = document.getElementById("goGhostScopeDetails");
 const goGhostScopeSearchButton = document.getElementById("goGhostScopeSearchButton");
@@ -44,9 +45,12 @@ const ghostEmailInput = document.getElementById("ghostEmailInput");
 const ghostPreviousCitiesInput = document.getElementById("ghostPreviousCitiesInput");
 const ghostOtherNamesInput = document.getElementById("ghostOtherNamesInput");
 const ghostProfileReviewNotice = document.getElementById("ghostProfileReviewNotice");
+const ghostProfileError = document.getElementById("ghostProfileError");
 const ghostSavedProfileHint = document.getElementById("ghostSavedProfileHint");
 const ghostAccountNameHint = document.getElementById("ghostAccountNameHint");
 const goGhostDeviceNotice = document.getElementById("goGhostDeviceNotice");
+const goGhostActionError = document.getElementById("goGhostActionError");
+const goGhostConsentError = document.getElementById("goGhostConsentError");
 const goGhostSessionNotice = document.getElementById("goGhostSessionNotice");
 const goGhostLegacyNotice = document.getElementById("goGhostLegacyNotice");
 const goGhostLegacyActions = document.getElementById("goGhostLegacyActions");
@@ -78,6 +82,40 @@ let goGhostStoreLocked = false;
 let goGhostState = null;
 let activeGhostScopeBrokerId = "";
 const goGhostAutomationControllers = new Map();
+
+function ghostClearIssue(host) {
+  if (!host) return;
+  host.textContent = "";
+  host.hidden = true;
+  if (host.dataset) delete host.dataset.ghostIssue;
+}
+
+function ghostShowIssue(message, host = goGhostActionError, focusTarget = null) {
+  if (!host) return;
+  if (host.hidden || host.dataset?.ghostIssue !== message) {
+    host.hidden = false;
+    if (window.UIStates?.notice) window.UIStates.notice(host, { type: "danger", message });
+    else {
+      host.textContent = message;
+      host.setAttribute?.("role", "alert");
+    }
+    if (host.dataset) host.dataset.ghostIssue = message;
+  }
+  if (focusTarget) {
+    if (focusTarget === host) host.tabIndex = -1;
+    focusTarget.focus?.({ preventScroll: true });
+  }
+}
+
+function ghostVisibleIssueHost() {
+  if (goGhostScopeModal && !goGhostScopeModal.classList.contains("hidden")) return goGhostScopeError;
+  if (goGhostConsentModal && !goGhostConsentModal.classList.contains("hidden")) return goGhostConsentError;
+  return goGhostActionError;
+}
+
+function ghostStorageIssue(host = ghostVisibleIssueHost()) {
+  ghostShowIssue("Your Go Ghost changes could not be saved in this browser. Check your storage settings or try another browser.", host);
+}
 
 function ghostSearchFromRegistry(broker) {
   // These are fixed broker pages. A name or location must never be placed in
@@ -197,23 +235,34 @@ function ghostCurrentSubject() {
   return state.subjects[state.activeSubjectId];
 }
 
-function ghostSaveState() {
-  if (goGhostStoreLocked || !goGhostStorageArea) return false;
+function ghostSaveState(errorHost = ghostVisibleIssueHost()) {
+  if (goGhostStoreLocked) return false;
+  if (!goGhostStorageArea) {
+    ghostStorageIssue(errorHost);
+    return false;
+  }
   try {
     writeJsonStorage(GO_GHOST_STORE_KEY, ghostCurrentState(), goGhostStorageArea);
     return true;
   } catch {
-    if (goGhostDeviceNotice) goGhostDeviceNotice.textContent = "Browser storage is unavailable. Details will be lost when this page closes.";
+    ghostStorageIssue(errorHost);
     return false;
   }
 }
 
 function ghostSaveProfile(profile) {
-  if (goGhostStoreLocked) return;
+  if (goGhostStoreLocked) return false;
   const next = ghostEmptyProfile();
   for (const field of Object.keys(next)) next[field] = cleanGhostText(profile[field]).slice(0, 220);
-  ghostCurrentSubject().profile = next;
-  ghostSaveState();
+  const subject = ghostCurrentSubject();
+  const previous = subject.profile;
+  subject.profile = next;
+  if (!ghostSaveState(ghostProfileError)) {
+    subject.profile = previous;
+    return false;
+  }
+  ghostClearIssue(ghostProfileError);
+  return true;
 }
 
 const GHOST_PROFILE_FORM_FIELDS = [
@@ -274,9 +323,15 @@ function ghostActionProfile() {
 }
 
 function ghostSaveProgress(progress) {
-  if (goGhostStoreLocked) return;
-  ghostCurrentSubject().progress = ghostNormalizeProgress(progress);
-  ghostSaveState();
+  if (goGhostStoreLocked) return false;
+  const subject = ghostCurrentSubject();
+  const previous = subject.progress;
+  subject.progress = ghostNormalizeProgress(progress);
+  if (!ghostSaveState()) {
+    subject.progress = previous;
+    return false;
+  }
+  return true;
 }
 
 function ghostEraseLegacyData() {
@@ -324,12 +379,12 @@ function ghostApplyManualEvent(siteId, type, extra = {}) {
   try {
     const next = GoGhostState.applyBrokerEvent(getGhostProgress(), siteId,
       { type, source: "manual", at: new Date().toISOString(), ...extra }, goGhostBrokerIds);
-    ghostSaveProgress(next);
+    if (!ghostSaveProgress(next)) return false;
     renderGoGhostAutomationScope();
     renderGoGhostProgress();
     return true;
   } catch {
-    showCopyToast("This status change is unavailable. Reset the site status to start over.");
+    ghostShowIssue("This status change is unavailable. Reset the site status to start over.", ghostVisibleIssueHost());
     return false;
   }
 }
@@ -461,19 +516,27 @@ function goGhostBrokerSearchUrl(broker, profile) {
 }
 
 function openGhostUrl(url) {
-  const opened = window.open(url, "_blank", "noopener,noreferrer");
-  if (opened) opened.opener = null;
-  return Boolean(opened);
+  let opened = null;
+  try {
+    // `noopener` makes window.open return null even when a tab opens, so it
+    // cannot be used to detect a blocked popup. Start with about:blank, sever
+    // the opener before navigating, then use the page's no-referrer policy.
+    opened = window.open("about:blank", "_blank");
+    if (!opened) return false;
+    opened.opener = null;
+    opened.location.replace(url);
+    return true;
+  } catch {
+    try { opened?.close(); } catch { /* The browser may already have closed it. */ }
+    return false;
+  }
 }
 
 async function openGhostOptOutWithPacket(broker, profile, searchUrl) {
   const copiedPromise = copyTextToClipboard(goGhostCopyPacket(broker, profile, searchUrl)).catch(() => false);
   const opened = openGhostUrl(goGhostBrokerOptOutUrl(broker));
   const copied = await copiedPromise;
-  if (opened && copied) return `${broker.name}: opened + details copied`;
-  if (opened) return `Opened ${broker.name}; copy details if the form is blank`;
-  if (copied) return `${broker.name} details copied`;
-  return `Open ${broker.name} manually and use Copy details`;
+  return { opened, copied };
 }
 
 function hasGhostSearchProfile(profile) {
@@ -535,20 +598,20 @@ const GHOST_MANUAL_STATUSES = ["captcha_required", "email_required", "needs_prof
 async function startGhostAssistedQueue() {
   if (!GO_GHOST_BROWSER_AUTOMATION_AVAILABLE) return;
   if (ghostCurrentSubject().kind === "family") {
-    showCopyToast("Assisted submissions are unavailable for family requests");
+    ghostShowIssue("Assisted submissions are unavailable for family requests. Use each broker's opt-out page directly.",
+      goGhostActionError);
     return;
   }
   if (!ghostCanAct()) return;
   const profile = getGhostProfile();
   if (!hasGhostSearchProfile(profile)) {
     scrollToGhostProfile();
-    showCopyToast("Add a name first");
+    ghostShowIssue("Add and save a name before starting the assisted queue.", ghostProfileError, ghostFirstNameInput);
     return;
   }
   if (!profile.email?.trim()) {
     scrollToGhostProfile();
-    ghostEmailInput?.focus({ preventScroll: true });
-    showCopyToast("Add an email first");
+    ghostShowIssue("Add and save an email before starting the assisted queue.", ghostProfileError, ghostEmailInput);
     return;
   }
   if (ghostQueueRunning) {
