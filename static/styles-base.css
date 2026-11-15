@@ -3,7 +3,7 @@
 
 :root {
   /* Shared spacing scale. Use tokens for layout spacing throughout the site. */
-  --space-0: 0;
+  --space-0: 0px;
   --space-1: 2px;
   --space-2: 4px;
   --space-3: 8px;
