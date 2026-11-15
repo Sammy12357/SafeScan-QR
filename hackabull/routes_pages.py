@@ -72,6 +72,7 @@ from .config import BILLING_POSTAL_ADDRESS
 from .config import BILLING_REFUND_POLICY_TEXT
 from .config import BILLING_SUPPORT_EMAIL
 from .config import CLIENT_ID
+from .config import CONSENT_BANNER_VERSION
 from .config import GO_GHOST_BROWSER_AUTOMATION_AVAILABLE
 from .config import LEGAL_LAST_UPDATED
 from .config import LEGAL_VERSION
@@ -987,8 +988,11 @@ async def log_consent(request: Request, payload: dict = Body(...)):
     consent_type = payload.get("consentType", "essential_only")
     if not isinstance(consent_type, str) or consent_type not in {"all", "custom", "essential_only"}:
         raise HTTPException(status_code=400, detail="Invalid consent choice.")
+    if payload.get("bannerVersion") != CONSENT_BANNER_VERSION:
+        raise HTTPException(status_code=409, detail="Refresh the page before saving your privacy choice.")
     if request.headers.get("sec-gpc", "").strip() == "1":
         consent_type = "essential_only"
+    session_user = get_session_user(request)
     consent_given = consent_type != "essential_only"
     now = datetime.utcnow()
     consent_id = make_id("consent")
@@ -997,11 +1001,11 @@ async def log_consent(request: Request, payload: dict = Body(...)):
             "INSERT INTO consent_logs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 consent_id,
-                payload.get("userId"),
+                session_user["google_id"] if session_user else None,
                 hash_ip(request_ip(request)),
                 int(consent_given),
                 consent_type,
-                payload.get("bannerVersion", "consent-v1"),
+                CONSENT_BANNER_VERSION,
                 now.isoformat() + "Z",
                 request.headers.get("user-agent", ""),
                 locale_from_request(request),
