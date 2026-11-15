@@ -57,6 +57,7 @@
     statTotal.textContent = (stats.totalDomains || 0).toLocaleString();
     statReports.textContent = (stats.totalReports || 0).toLocaleString();
     statUpdated.textContent = stats.lastUpdated ? formatLocal(stats.lastUpdated) : "—";
+    statsEl.classList.remove("mq-initially-hidden");
     statsEl.style.display = "";
   }
   function render(data) {
