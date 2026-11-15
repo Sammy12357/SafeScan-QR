@@ -1,6 +1,7 @@
 import importlib
 import hashlib
 import hmac
+from html import unescape
 import io
 import json
 import re
@@ -308,9 +309,22 @@ def test_invalid_credentials_do_not_create_session(auth_app):
 
     response = login(TestClient(sys.modules["hackabull"].qr_app, base_url="https://testserver"), password="wrong-password")
 
-    assert response.status_code == 200
-    assert "Invalid email or password." in response.text
+    assert response.status_code == 401
+    assert "Email or password is incorrect." in response.text
     assert session_count(db_path) == before
+
+
+def test_local_auth_form_keeps_email_and_return_path_but_not_password(auth_app):
+    _, client, _ = auth_app
+    response = client.post("/auth/register", data={
+        "email": "person@example.com", "password": "secret", "next": "/profile",
+    })
+    assert response.status_code == 400
+    assert 'value="person@example.com"' in response.text
+    assert 'name="next" value="/profile"' in response.text
+    assert "Use a longer password" in response.text
+    assert 'aria-describedby="reg-password-error"' in response.text
+    assert 'value="secret"' not in response.text
 
 
 def test_google_login_persists_provider_user_and_session(auth_app, monkeypatch):
@@ -498,6 +512,49 @@ def test_username_onboarding_saves_unique_username(auth_app):
     assert response.headers["location"] == "/"
     users = db_rows(db_path, "SELECT username FROM users WHERE email = ?", ("named@example.com",))
     assert users[0]["username"] == "SafeScanner_1"
+
+
+def test_username_form_keeps_invalid_entry_and_discord_context(auth_app):
+    _, client, _ = auth_app
+    register(client, "username-error@example.com")
+    response = client.post("/profile/username", data={"username": "bad name"})
+    assert response.status_code == 400
+    assert 'value="bad name"' in response.text
+    assert 'aria-invalid="true"' in response.text
+    assert "Use 3 to 24 letters" in response.text
+
+
+def test_solana_verification_hides_provider_detail(auth_app, monkeypatch, caplog):
+    module, client, _ = auth_app
+    register(client, "payment-error@example.com")
+    from hackabull.audit import SafeScanError
+    routes = importlib.import_module("hackabull.routes_pages")
+    monkeypatch.setattr(routes, "get_or_create_alpha_solana_reference", lambda _user: {"reference": "test-reference"})
+
+    def failed_verification(_reference):
+        raise SafeScanError("Solana RPC error: private upstream token", 502, code="payment_network_unavailable")
+
+    monkeypatch.setattr(routes, "verify_alpha_solana_payment", failed_verification)
+    with caplog.at_level("ERROR", logger="safescan.errors"):
+        response = client.post("/pay/alpha/solana/verify")
+    assert response.status_code == 502
+    assert "We couldn't reach the Solana network" in unescape(response.text)
+    assert "private upstream token" not in response.text
+    assert response.headers["X-Request-ID"] in caplog.text
+
+
+def test_solana_network_failure_uses_public_error_code(auth_app, monkeypatch):
+    payments = importlib.import_module("hackabull.payments_solana")
+    from hackabull.audit import SafeScanError
+
+    def unavailable(*_args, **_kwargs):
+        raise payments.requests.ConnectionError("private upstream host")
+
+    monkeypatch.setattr(payments.requests, "post", unavailable)
+    with pytest.raises(SafeScanError) as caught:
+        payments.solana_rpc("getSignaturesForAddress", [])
+    assert caught.value.status_code == 502
+    assert caught.value.code == "payment_network_unavailable"
 
 
 def test_global_leaderboard_groups_by_username_and_scan_count(auth_app):

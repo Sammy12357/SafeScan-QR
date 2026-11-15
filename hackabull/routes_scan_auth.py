@@ -50,7 +50,6 @@ from storage import upload_bytes as storage_upload_bytes
 
 from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party
 import safescan_model_calibration as sm_calibration
-from .accounts import duplicate_account_response
 from .accounts import email_account_exists
 from .accounts import hash_password
 from .accounts import response_after_login
@@ -77,6 +76,7 @@ from .config import LEGAL_VERSION
 from .config import LOCAL_AUTH_ENABLED
 from .config import MAX_QR_UPLOAD_BYTES
 from .config import templates
+from .errors import ERRORS
 from .discord_link import DISCORD_BOT_TOKEN
 from .discord_link import DISCORD_CLIENT_ID
 from .discord_link import DISCORD_GUILD_ID
@@ -133,11 +133,11 @@ async def scan_qr(
     capture_source: str = Form("")
 ):
     if capture_source not in ("", "camera_frame"):
-        raise SafeScanError("Invalid scan source.", 400)
+        raise SafeScanError(code="invalid_request")
     if capture_source == "camera_frame" and (not file or not file.filename or manual_url):
-        raise SafeScanError("A camera frame must be sent as an image file.", 400)
+        raise SafeScanError(code="invalid_request")
     if manual_url is not None and len(manual_url) > 4096:
-        raise SafeScanError("QR payload is too large.", 400)
+        raise SafeScanError(code="qr_payload_too_large", field="manual_url")
     user = get_session_user(request)
     user_email = user["email"] if user else ""
     test_site = template_variant in ("main_site", "test_site")
@@ -407,7 +407,7 @@ async def auth_discord_start(request: Request):
     """Kick off the Discord OAuth flow for the signed-in user."""
     user = require_user(request)
     if not discord_linking_configured():
-        raise SafeScanError("Discord linking is not configured on this deployment.", 503)
+        raise SafeScanError(code="discord_unavailable")
     rate_limit = enforce_rate_limit(request, "discord_link", 10, 60 * 60, user_key=user.get("google_id"))
     if rate_limit:
         return rate_limit
@@ -485,8 +485,30 @@ async def login_page(request: Request, error: str = Query(""), tab: str = Query(
     return_to = safe_next_url(request, next_url)
     if user:
         return RedirectResponse(return_to, status_code=303)
-    auth_google_url = f"{APP_URL}/auth/google"
-    return templates.TemplateResponse("login.html", {"request": request, "error": error, "tab": tab, "next_url": return_to, "local_auth_enabled": LOCAL_AUTH_ENABLED, "google_client_id": CLIENT_ID or "", "auth_google_url": auth_google_url})
+    return templates.TemplateResponse("login.html", _auth_form_context(request, error=error, tab=tab, next_url=return_to))
+
+
+def _auth_form_context(request, *, error="", error_field="", tab="login", next_url="/", email=""):
+    return {
+        "request": request,
+        "error": error,
+        "error_field": error_field,
+        "tab": tab,
+        "next_url": safe_next_url(request, next_url),
+        "form_email": email,
+        "local_auth_enabled": LOCAL_AUTH_ENABLED,
+        "google_client_id": CLIENT_ID or "",
+        "auth_google_url": f"{APP_URL}/auth/google",
+    }
+
+
+def _auth_form_error(request, code, *, tab, next_url, email="", status_code=None, error_field=""):
+    entry = ERRORS[code]
+    context = _auth_form_context(
+        request, error=f"{entry.message} {entry.hint}", error_field=error_field,
+        tab=tab, next_url=next_url, email=email,
+    )
+    return templates.TemplateResponse("login.html", context, status_code=status_code or entry.status_code)
 
 def require_local_auth_enabled():
     if not LOCAL_AUTH_ENABLED:
@@ -499,14 +521,14 @@ async def auth_register(request: Request, email: str = Form(...), password: str 
     if rate_limited:
         return rate_limited
     if get_session_user(request):
-        return duplicate_account_response(request, "You are already signed in. Sign out before creating a new account.")
+        return _auth_form_error(request, "already_signed_in", tab="register", next_url=next_url)
     email = email.strip().lower()
     if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
-        return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid email address.", "tab": "register"})
+        return _auth_form_error(request, "email_invalid", tab="register", next_url=next_url, email=email, error_field="email")
     if len(password) < 8:
-        return templates.TemplateResponse("login.html", {"request": request, "error": "Password must be at least 8 characters.", "tab": "register"})
+        return _auth_form_error(request, "password_too_short", tab="register", next_url=next_url, email=email, error_field="password")
     if email_account_exists(email):
-        return duplicate_account_response(request)
+        return _auth_form_error(request, "account_exists", tab="register", next_url=next_url, email=email, error_field="email")
     lid = save_local_user(email, request)
     try:
         with get_conn() as conn:
@@ -515,7 +537,7 @@ async def auth_register(request: Request, email: str = Form(...), password: str 
                 (email, hash_password(password), now_iso(), lid)
             )
     except sqlite3.IntegrityError:
-        return duplicate_account_response(request)
+        return _auth_form_error(request, "account_exists", tab="register", next_url=next_url, email=email, error_field="email")
     run_fraud_checks("signup", email, request, {})
     session_id = create_session(lid, request)
     audit_log("user.register", request=request, actor_user_id=lid)
@@ -535,7 +557,7 @@ async def auth_login_local(request: Request, email: str = Form(...), password: s
         row = conn.execute("SELECT password_hash, user_id FROM local_credentials WHERE email = ?", (email,)).fetchone()
     if not row or not verify_password(password, row[0]):
         audit_log("auth.failed", request=request, metadata={"provider": "local"})
-        return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid email or password.", "tab": "login"})
+        return _auth_form_error(request, "credentials_invalid", tab="login", next_url=next_url, email=email)
     lid = save_local_user(email, request)
     with get_conn() as conn:
         conn.execute("UPDATE local_credentials SET user_id = ? WHERE email = ?", (lid, email))
@@ -607,9 +629,14 @@ async def profile_username_submit(request: Request, username: str = Form(...)):
             **index_user_context(user),
             "email": user.get("email"),
             "username": (user.get("username") or "").strip(),
+            "entered_username": username,
             "scan_count": get_scan_count(user.get("email")),
             "leaderboard_status": "Live" if (user.get("username") or "").strip() else "Hidden",
-            "error": str(exc),
+            "error": f"{str(exc)} {exc.hint or ''}".strip(),
+            "discord_enabled": discord_linking_configured(),
+            "discord_link": get_discord_link(user["google_id"]),
+            "discord_error": "",
+            "discord_invite": DISCORD_INVITE_URL,
         }, status_code=400)
     audit_log("user.username_set", request=request, actor_user_id=user["google_id"])
     destination = "/" if request.url.path == "/onboarding/username" else "/profile"

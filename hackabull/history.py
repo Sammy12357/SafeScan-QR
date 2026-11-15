@@ -224,7 +224,7 @@ def save_user_scan(user_id, url, analysis, email=None, reported=False):
             row = conn.execute("SELECT email FROM users WHERE google_id = ?", (user_id,)).fetchone()
             resolved_email = (row["email"] if row else "").strip().lower()
     if not resolved_email:
-        raise SafeScanError("A user email is required to save scan history.", 400)
+        raise SafeScanError("No account email was available for scan history.", 500, code="internal_error")
     risk_score = int(analysis.get("score") or analysis.get("confidenceScore") or 0)
     verdict = analysis.get("status") or status_from_risk(analysis.get("overallRisk"))
     classification = scan_classification_from_analysis(analysis)

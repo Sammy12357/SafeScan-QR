@@ -115,7 +115,7 @@ def username_required(user):
 def sanitize_username(username):
     cleaned = (username or "").strip()
     if not re.fullmatch(r"[A-Za-z0-9_]{3,24}", cleaned):
-        raise SafeScanError("Username must be 3-24 characters and can only use letters, numbers, and underscores.", 400)
+        raise SafeScanError(code="username_invalid", field="username")
     return cleaned
 
 def set_user_username(user_id, username):
@@ -123,13 +123,13 @@ def set_user_username(user_id, username):
     with get_conn() as conn:
         current = conn.execute("SELECT username FROM users WHERE google_id = ?", (user_id,)).fetchone()
         if current and (current[0] or "").strip():
-            raise SafeScanError("Username is already set for this account.", 400)
+            raise SafeScanError(code="username_already_set", field="username")
         existing = conn.execute(
             "SELECT google_id FROM users WHERE lower(username) = lower(?) AND google_id != ?",
             (cleaned, user_id)
         ).fetchone()
         if existing:
-            raise SafeScanError("That username is already taken.", 400)
+            raise SafeScanError(code="username_taken", field="username")
         conn.execute("UPDATE users SET username = ? WHERE google_id = ?", (cleaned, user_id))
     return cleaned
 

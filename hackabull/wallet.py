@@ -66,7 +66,7 @@ def validate_wallet_address(address):
     if not clean:
         return "", None
     if not is_valid_solana_address(clean):
-        raise SafeScanError("Invalid Solana wallet address.", 400)
+        raise SafeScanError(code="wallet_address_invalid", field="walletAddress")
     with get_conn() as conn:
         row = conn.execute(
             """

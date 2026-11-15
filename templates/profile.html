@@ -19,6 +19,7 @@
         <p class="eyebrow">SafeScan QR</p>
         <h1>Your Profile</h1>
         <p class="profile-muted">{{ email }}</p>
+        {% if error and username %}<p class="error-text" role="alert">{{ error }}</p>{% endif %}
 
         {% if username %}
           <p class="success-text">Username set: {{ username }}</p>
@@ -26,11 +27,12 @@
         {% else %}
           <h2>Choose a username</h2>
           <p class="profile-muted">Set this once so the leaderboard can show a public name without exposing your email.</p>
-          {% if error %}<p class="error-text">{{ error }}</p>{% endif %}
+          {% if error %}<p class="error-text" role="alert">{{ error }}</p>{% endif %}
           <form action="/profile/username" method="post" class="profile-form">
             <label>
               Username
-              <input name="username" autocomplete="username" minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" placeholder="safescanner" required>
+              <input name="username" autocomplete="username" minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" placeholder="safescanner" required value="{{ entered_username | default('') }}" {% if error %}aria-invalid="true" aria-describedby="username-error"{% endif %}>
+              {% if error %}<span id="username-error" class="form-field-error">{{ error }}</span>{% endif %}
             </label>
             <button class="primary-button" type="submit">Save username</button>
           </form>
