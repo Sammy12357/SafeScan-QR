@@ -23,7 +23,14 @@ function element() {
 
 function storage(map) {
   return {
-    getItem: key => map.get(key) ?? null,
+    get length() { return map.size; },
+    key: index => [...map.keys()][index] ?? null,
+    getItem: key => {
+      if (['safeScanGoGhostProfile', 'safeScanGoGhostProgress', 'safeScanGoGhostConsent'].includes(key)) {
+        throw new Error('Legacy values must never be read');
+      }
+      return map.get(key) ?? null;
+    },
     setItem: (key, value) => map.set(key, value),
     removeItem: key => map.delete(key)
   };

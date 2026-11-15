@@ -51,6 +51,8 @@ const opened = [];
 const copied = [];
 let nextUuid = 1;
 const storage = map => ({
+  get length() { return map.size; },
+  key: index => [...map.keys()][index] ?? null,
   getItem: key => map.get(key) ?? null,
   setItem: (key, value) => map.set(key, value),
   removeItem: key => map.delete(key)

@@ -202,15 +202,24 @@ function ghostSaveProgress(progress) {
 function ghostApplyLegacyPolicy(policy = GO_GHOST_LEGACY_POLICY) {
   let found = false;
   let eraseFailed = false;
-  for (const key of GO_GHOST_LEGACY_KEYS) {
-    try {
-      if (window.localStorage.getItem(key) === null) continue;
-      found = true;
-      if (policy === "erase") {
-        window.localStorage.removeItem(key);
-        if (window.localStorage.getItem(key) !== null) eraseFailed = true;
+  try {
+    const area = window.localStorage;
+    const presentKeys = () => {
+      const names = new Set();
+      for (let index = 0; index < area.length; index += 1) {
+        const name = area.key(index);
+        if (GO_GHOST_LEGACY_KEYS.includes(name)) names.add(name);
       }
-    } catch { if (policy === "erase") eraseFailed = true; }
+      return names;
+    };
+    const present = presentKeys();
+    found = present.size > 0;
+    if (policy === "erase") {
+      for (const key of present) area.removeItem(key);
+      eraseFailed = presentKeys().size > 0;
+    }
+  } catch {
+    if (policy === "erase") eraseFailed = true;
   }
   const showNotice = policy === "erase" ? eraseFailed : found;
   if (goGhostLegacyNotice) goGhostLegacyNotice.hidden = !showNotice;
