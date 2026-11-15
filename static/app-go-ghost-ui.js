@@ -3,6 +3,20 @@
 // load in this order: app-core.js -> app-widgets.js -> app-go-ghost.js -> app-go-ghost-ui.js -> app-generate-qr.js.
 const ghostCaliforniaDropCard = document.getElementById("ghostCaliforniaDropCard");
 const ghostDropFamilyNote = document.getElementById("ghostDropFamilyNote");
+let goGhostScopeFocusCleanup = null;
+let goGhostScopeReturnFocus = null;
+let goGhostConsentFocusCleanup = null;
+
+function syncGoGhostConsentFocus() {
+  if (!goGhostConsentModal) return;
+  if (goGhostConsentModal.classList.contains("hidden")) {
+    goGhostConsentFocusCleanup?.();
+    goGhostConsentFocusCleanup = null;
+  } else if (!goGhostConsentFocusCleanup) {
+    goGhostConsentFocusCleanup = trapModalFocus(goGhostConsentModal, () => window.location.assign("/"));
+    startGoGhostButton?.focus({ preventScroll: true });
+  }
+}
 const goGhostAccountCheckStatus = document.getElementById("goGhostAccountCheckStatus");
 const goGhostSessionActions = document.getElementById("goGhostSessionActions");
 const goGhostSessionRetryButton = document.getElementById("goGhostSessionRetryButton");
@@ -271,10 +285,14 @@ function renderGoGhostAutomationScope() {
   }).join("");
 }
 
-function closeGoGhostScopeModal() {
+function closeGoGhostScopeModal(restoreFocus = true) {
   activeGhostScopeBrokerId = "";
+  goGhostScopeFocusCleanup?.();
+  goGhostScopeFocusCleanup = null;
   goGhostScopeModal?.classList.add("hidden");
   ghostClearIssue(goGhostScopeError);
+  if (restoreFocus && goGhostScopeReturnFocus?.isConnected) goGhostScopeReturnFocus.focus({ preventScroll: true });
+  goGhostScopeReturnFocus = null;
 }
 
 function renderGhostScopeKeywords(profile) {
@@ -375,7 +393,12 @@ function openGoGhostScopeModal(siteId, focusClose = true) {
     goGhostScopePresentButton.hidden = !can("recheck_present");
     goGhostScopePresentButton.disabled = subjectOnly;
   }
+  const wasHidden = goGhostScopeModal.classList.contains("hidden");
+  if (wasHidden) goGhostScopeReturnFocus = document.activeElement;
   goGhostScopeModal.classList.remove("hidden");
+  if (wasHidden && typeof trapModalFocus === "function") {
+    goGhostScopeFocusCleanup = trapModalFocus(goGhostScopeModal, closeGoGhostScopeModal);
+  }
   if (focusClose) goGhostScopeModal.querySelector(".ghost-scope-close")?.focus();
 }
 
@@ -600,7 +623,7 @@ function selectGhostSubject(id, save = true) {
   hydrateGoGhostProfile();
   renderGoGhostAutomationScope();
   renderGoGhostProgress();
-  goGhostScopeModal?.classList.add("hidden");
+  closeGoGhostScopeModal(false);
   if (ghostCurrentSubject().consentAcceptedAt) showGoGhostWorkspace();
   else {
     if (goGhostWorkspace) goGhostWorkspace.hidden = true;
@@ -678,7 +701,7 @@ function lockGhostWorkspace() {
   if (ghostProgressCount) ghostProgressCount.textContent = "—";
   if (ghostProgressBreakdown) ghostProgressBreakdown.textContent = "";
   if (goGhostWorkspace) goGhostWorkspace.hidden = true;
-  goGhostScopeModal?.classList.add("hidden");
+  closeGoGhostScopeModal(false);
   goGhostConsentModal?.classList.add("hidden");
   if (goGhostSessionNotice) goGhostSessionNotice.hidden = false;
   if (goGhostSessionActions) goGhostSessionActions.hidden = true;
@@ -711,7 +734,7 @@ async function checkGhostAccount() {
   // Hide personal details before waiting for the server to confirm this tab's owner.
   if (goGhostWorkspace && !goGhostWorkspace.hidden) goGhostVisibleBeforeCheck = true;
   if (goGhostWorkspace) goGhostWorkspace.hidden = true;
-  goGhostScopeModal?.classList.add("hidden");
+  closeGoGhostScopeModal(false);
   try {
     const response = await fetch("/api/me", {
       credentials: "same-origin", cache: "no-store", signal: controller.signal
@@ -834,7 +857,7 @@ if (goGhostWorkspace) {
     renderGoGhostAutomationScope();
     renderGoGhostProgress();
     if (goGhostWorkspace) goGhostWorkspace.hidden = true;
-    goGhostScopeModal?.classList.add("hidden");
+    closeGoGhostScopeModal(false);
     goGhostConsentModal?.classList.remove("hidden");
     startGoGhostButton?.focus();
     showCopyToast("Go Ghost data cleared");
@@ -884,9 +907,10 @@ if (goGhostWorkspace) {
   goGhostScopeBrandSelect?.addEventListener("change", () =>
     openGoGhostScopeModal(goGhostScopeBrandSelect.value, false));
 
-  document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !goGhostScopeModal?.classList.contains("hidden")) closeGoGhostScopeModal();
-  });
+  if (goGhostConsentModal && typeof MutationObserver === "function" && typeof trapModalFocus === "function") {
+    new MutationObserver(syncGoGhostConsentFocus).observe(goGhostConsentModal, { attributes: true, attributeFilter: ["class"] });
+    syncGoGhostConsentFocus();
+  }
 }
 
 

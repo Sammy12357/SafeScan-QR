@@ -4,6 +4,10 @@
 
 **ATTORNEY REVIEW NEEDED.** Token and airdrop features now default to unavailable. Existing wallet holders retain a disconnect path. Distribution needs a separate explicit production flag and an owner session, while the old GET trigger is retired. The controls do not establish that a token or airdrop may lawfully launch. Review the mint and treasury ownership, jurisdictions, sanctions, tax treatment, product claims, and any required disclosures before either switch is enabled. See `docs/legal/token-release.md`.
 
+## Phase 7 accessibility statement — November 15, 2026
+
+**ATTORNEY REVIEW NEEDED.** The proposed `/accessibility` page states a WCAG 2.2 AA target, identifies the remaining heading/landmark issues plus unverified screen reader, hardware, third-party handoff, and mobile-app coverage, and gives a contact path for barriers. It does not claim full conformance. Counsel and the business owner should review this statement and how feedback is handled before treating it as an approved legal disclosure.
+
 **ATTORNEY REVIEW NEEDED.** Internal briefing, not legal advice or approved public policy. Prepared 2026-11-15 from code baseline `a2ce01b` and the supplied `SAFESCAN_LEGAL_RISK_PLAN.md`. It records questions and evidence for qualified counsel and the business owner. No legal text was published or approved by creating this packet.
 
 ## Public documents and review queue

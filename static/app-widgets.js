@@ -17,6 +17,7 @@ renderAirdropProfile(initialAirdropProfile ? { email: initialAirdropProfile.emai
 if (initialAirdropProfile && dom.walletStatus) dom.walletStatus.textContent = "Checking wallet status…";
 syncWalletFromServer();
 hydrateSplineShowcase();
+let riskModalFocusCleanup = null;
 
 if (document.body.dataset.tokenFeaturesEnabled === "true" && new URLSearchParams(window.location.search).get("walletConnect") === "phantom") {
   window.setTimeout(() => {
@@ -32,6 +33,7 @@ if (document.body.dataset.tokenFeaturesEnabled === "true" && new URLSearchParams
 }
 
 if (riskModal) {
+  riskModalFocusCleanup = trapModalFocus(riskModal, closeRiskModal);
   const scoreGauge = riskModal.querySelector(".score-gauge");
   const finalScore = Number(scoreGauge?.dataset.score || 0);
   if (scoreGauge) {
@@ -47,13 +49,6 @@ if (riskModal) {
 
   riskModal.addEventListener("click", (event) => {
     if (event.target === riskModal) {
-      event.preventDefault();
-      closeRiskModal();
-    }
-  });
-
-  riskModal.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
       event.preventDefault();
       closeRiskModal();
     }
@@ -105,10 +100,14 @@ if (riskModal) {
 
 function closeRiskModal() {
   if (riskModalScrollGuard) window.clearInterval(riskModalScrollGuard);
+  riskModalFocusCleanup?.();
+  riskModalFocusCleanup = null;
   riskModal?.classList.add("hidden");
   riskModal?.setAttribute("aria-hidden", "true");
   riskModal?.remove();
   document.getElementById("scanner")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const scannerHeading = document.getElementById("scannerTitle");
+  if (scannerHeading) scannerHeading.focus({ preventScroll: true });
 }
 
 blockReportButton?.addEventListener("click", () => {

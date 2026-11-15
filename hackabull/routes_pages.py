@@ -423,6 +423,30 @@ async def security_page(request: Request):
     """
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Security", body))
 
+
+@qr_app.get("/accessibility", response_class=HTMLResponse)
+async def accessibility_page(request: Request):
+    """State the accessibility target and current verification limits."""
+    contact = escape_html(ADMIN_EMAIL, quote=True)
+    body = f"""
+    <h2>Our target</h2>
+    <p>SafeScan is working toward <a href="https://www.w3.org/TR/WCAG22/" target="_blank" rel="noopener noreferrer">WCAG 2.2 Level AA</a> for the website. This is a target, not a claim that every page and feature conforms.</p>
+    <h2>What we check</h2>
+    <p>Automated checks cover public pages in dark and light mode. We also review keyboard access, focus movement, text alternatives, and scanner controls. Automated checks cannot find every accessibility problem.</p>
+    <h2>Known issues and verification gaps</h2>
+    <ul>
+      <li>Some pages still need clearer main landmarks and a more consistent heading order for assistive navigation.</li>
+      <li>Screen reader behavior across all device and browser combinations has not had a complete independent audit.</li>
+      <li>Camera hardware, third-party sign-in and payment handoffs, and the separate mobile app need continued manual testing.</li>
+      <li>New content and integrations may introduce issues before they are found and corrected.</li>
+    </ul>
+    <h2>Report a barrier</h2>
+    <p>If you cannot use part of SafeScan, email <a href="mailto:{contact}">{contact}</a> or use our <a href="/contact">contact page</a>. Tell us the page, what you were trying to do, and your device or assistive technology if you are comfortable sharing it. We will review the report and work with you on another way to get the information or complete the task.</p>
+    """
+    context = legal_context(request, "Accessibility", body)
+    context.update({"eyebrow": "Accessibility", "version": "1.0", "last_updated": "November 15, 2026"})
+    return templates.TemplateResponse("legal_page.html", context)
+
 @qr_app.get("/contact", response_class=HTMLResponse)
 async def contact_page(request: Request):
     body = f"""
