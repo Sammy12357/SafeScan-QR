@@ -180,8 +180,18 @@ function escapeHtml(value) {
 async function copyTextToClipboard(value) {
   if (!value) return false;
   if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(value);
-    return true;
+    let timeout = 0;
+    try {
+      await Promise.race([
+        navigator.clipboard.writeText(value),
+        new Promise((_, reject) => {
+          timeout = window.setTimeout(() => reject(new Error("Clipboard copy timed out")), 15000);
+        })
+      ]);
+      return true;
+    } finally {
+      window.clearTimeout(timeout);
+    }
   }
 
   const textarea = document.createElement("textarea");
@@ -593,12 +603,17 @@ dom.demoWalletButton?.addEventListener("click", () => {
 });
 
 dom.copyTokenAddressButton?.addEventListener("click", async () => {
+  if (dom.copyTokenAddressButton.disabled) return;
   const tokenAddress = dom.tokenAddress?.textContent?.trim() || "";
   window.clearTimeout(dom.copyTokenAddressButton.dataset.resetTimer);
   if (!tokenAddress) {
     showActionFeedback(dom.copyTokenAddressButton, "tokenCopyFeedback", "No token address is available to copy.");
     return;
   }
+  const hadFocus = document.activeElement === dom.copyTokenAddressButton;
+  dom.copyTokenAddressButton.disabled = true;
+  dom.copyTokenAddressButton.setAttribute("aria-busy", "true");
+  dom.copyTokenAddressButton.textContent = "Copying…";
   try {
     const copied = await copyTextToClipboard(tokenAddress);
     if (!copied) throw new Error("Clipboard did not confirm the copy");
@@ -613,6 +628,10 @@ dom.copyTokenAddressButton?.addEventListener("click", async () => {
   } catch {
     dom.copyTokenAddressButton.textContent = "Copy";
     showActionFeedback(dom.copyTokenAddressButton, "tokenCopyFeedback", "We couldn't copy the address. Check your browser's clipboard permission and try again.");
+  } finally {
+    dom.copyTokenAddressButton.disabled = false;
+    dom.copyTokenAddressButton.removeAttribute("aria-busy");
+    if (hadFocus && document.activeElement === document.body) dom.copyTokenAddressButton.focus();
   }
 });
 
