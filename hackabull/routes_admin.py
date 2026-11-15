@@ -77,6 +77,7 @@ from .pipeline import analyze_full_pipeline
 from .request_helpers import make_id
 from .token_flags import token_distribution_enabled, token_features_enabled
 from .payments_stripe import consume_payment_form_token, issue_payment_form_token
+from .age_gate import account_is_adult
 
 # =============================================================================
 # ROUTES — ADMIN CONSOLE (/admin/*)  [staff only]
@@ -300,7 +301,7 @@ async def admin_airdrop(request: Request):
         return admin_context(request, "Token features unavailable", "airdrop_unavailable", {})
     data = fetch_airdrop_data()
     user = require_role_user(request, "admin")
-    if token_distribution_enabled() and has_role(user, "owner"):
+    if token_distribution_enabled() and has_role(user, "owner") and account_is_adult(user["google_id"]):
         data["distribution_form_token"] = issue_payment_form_token(user, "airdrop_distribute")
     return admin_context(request, "Tier Overview", "airdrop", data)
 
@@ -309,6 +310,8 @@ async def admin_airdrop_distribute(request: Request, distribution_token: str = F
     admin_user = require_role_user(request, "owner")
     if not token_distribution_enabled():
         raise HTTPException(status_code=503, detail="Token distribution is unavailable.")
+    if not account_is_adult(admin_user["google_id"]):
+        raise HTTPException(status_code=403, detail="Adult confirmation is required for token distribution.")
     consume_payment_form_token(admin_user, "airdrop_distribute", distribution_token)
     try:
         from distribute import airdrop_sweep
@@ -344,7 +347,7 @@ async def admin_airdrop_wallets(request: Request):
         return admin_context(request, "Token features unavailable", "airdrop_unavailable", {})
     data = fetch_airdrop_data()
     user = require_role_user(request, "admin")
-    if token_distribution_enabled() and has_role(user, "owner"):
+    if token_distribution_enabled() and has_role(user, "owner") and account_is_adult(user["google_id"]):
         data["distribution_form_token"] = issue_payment_form_token(user, "airdrop_distribute")
     return admin_context(request, "Wallet Registry", "airdrop", data)
 

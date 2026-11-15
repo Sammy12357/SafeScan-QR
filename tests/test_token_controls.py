@@ -68,13 +68,18 @@ def test_token_off_hides_prompts_and_eligibility_but_allows_wallet_disconnect(to
 
 
 def test_distribution_requires_owner_and_both_flags(token_app, monkeypatch):
-    app, _ = token_app
+    app, database = token_app
     owner = _registered(app, "owner@example.com")
     admin = _registered(app, "admin@example.com")
     assert owner.post("/admin/airdrop/distribute").status_code == 503
     monkeypatch.setenv("TOKEN_FEATURES_ENABLED", "true")
     monkeypatch.setenv("TOKEN_DISTRIBUTION_ENABLED", "true")
     assert admin.post("/admin/airdrop/distribute").status_code == 403
+    assert owner.post("/admin/airdrop/distribute").status_code == 403
+    with sqlite3.connect(database) as conn:
+        owner_id = conn.execute("SELECT google_id FROM users WHERE email = 'owner@example.com'").fetchone()[0]
+        conn.execute("UPDATE age_eligibility SET minimum_age = 18, adult_attested_at = ? WHERE user_id = ?",
+                     ("2026-11-15T00:00:00Z", owner_id))
 
     distribute = importlib.import_module("distribute")
     calls = []
