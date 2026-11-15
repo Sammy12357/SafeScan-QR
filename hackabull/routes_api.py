@@ -144,7 +144,7 @@ async def api_scan_file(request: Request, response: Response, file: UploadFile =
     if len(contents) > MAX_QR_UPLOAD_BYTES:
         raise SafeScanError(
             f"That image is too large. Choose one under {MAX_QR_UPLOAD_BYTES // (1024 * 1024)} MB.",
-            400, code="upload_too_large", field="file",
+            413, code="upload_too_large", field="file",
         )
 
     response.headers["Cache-Control"] = "no-store"

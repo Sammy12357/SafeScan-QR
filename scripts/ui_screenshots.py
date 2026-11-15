@@ -6,13 +6,14 @@ Requires the development dependency ``playwright`` and an installed Chromium:
     python -m pip install -r requirements-dev.txt
     python -m playwright install chromium
     python scripts/ui_screenshots.py
-    python scripts/ui_screenshots.py --app-root ../safescan-qr-ui-phase-3 --views none --extra-view states=/__states
+    python scripts/ui_screenshots.py --views states_empty,states_loading,states_error,states_notice,states_content
 
 The script uses a throwaway SQLite database, synthetic local-only accounts,
 and a child process without inherited credentials or .env loading. It never
 targets the production SafeScan service, changes app behavior, or injects UI
 states. Existing external font requests in the templates may still load.
-Future mock-only state fixtures can be added after their views exist.
+The mock-only gallery fixture views include empty, loading, error, notice,
+and content examples. Query values come from an allowlist in the server route.
 """
 
 from __future__ import annotations
@@ -99,6 +100,12 @@ VIEWS = (
     View("consent_log", "/legal/consent-log", "owner"),
     View("data_processing_log", "/admin/data-processing-log", "owner"),
     View("breach_report", "/admin/report-breach", "owner"),
+    View("states_all", "/__states"),
+    View("states_empty", "/__states?__state=empty"),
+    View("states_loading", "/__states?__state=loading"),
+    View("states_error", "/__states?__state=error"),
+    View("states_notice", "/__states?__state=notice"),
+    View("states_content", "/__states?__state=content"),
 )
 
 

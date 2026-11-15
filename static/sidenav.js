@@ -5,11 +5,22 @@
   var toggle = document.querySelector(".sidenav-toggle");
   var nav = document.getElementById("sideNav");
   if (!toggle || !nav) return;
+  var closeButton = nav.querySelector(".sidenav-close");
 
-  function setOpen(open) {
+  function focusableInDrawer() {
+    return Array.from(nav.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+      .filter(function (element) { return !element.hidden && element.getClientRects().length > 0; });
+  }
+
+  function setOpen(open, restoreFocus = true) {
+    var wasOpen = document.body.classList.contains("sidenav-open");
+    if (!open && wasOpen && restoreFocus) toggle.focus({ preventScroll: true });
+    nav.inert = !open;
     document.body.classList.toggle("sidenav-open", open);
     toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    toggle.setAttribute("aria-label", open ? "Close menu" : "Open menu");
     nav.setAttribute("aria-hidden", open ? "false" : "true");
+    if (open && !wasOpen) closeButton?.focus({ preventScroll: true });
     try { sessionStorage.setItem("safescan_sidenav_open", open ? "1" : "0"); } catch (e) {}
   }
 
@@ -25,14 +36,48 @@
 
   // Close on Escape.
   document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape" && document.body.classList.contains("sidenav-open")) setOpen(false);
+    if (!document.body.classList.contains("sidenav-open")) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setOpen(false);
+    } else if (e.key === "Tab") {
+      var focusable = focusableInDrawer();
+      if (!focusable.length) { e.preventDefault(); return; }
+      var first = focusable[0];
+      var last = focusable[focusable.length - 1];
+      if (e.shiftKey && (document.activeElement === first || !nav.contains(document.activeElement))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (document.activeElement === last || !nav.contains(document.activeElement))) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
   });
 
   // Close after following a link inside the drawer (so navigation feels clean).
   var links = nav.querySelectorAll(".sidenav-link[href]");
   for (var j = 0; j < links.length; j++) {
-    links[j].addEventListener("click", function () { setOpen(false); });
+    links[j].addEventListener("click", function () { setOpen(false, false); });
   }
+
+  // A fragment scroll alone does not reliably move VoiceOver's cursor on
+  // iPhone. Put focus on the scanner heading after the in-page navigation.
+  function focusScannerHeading() {
+    var heading = document.getElementById("scannerTitle");
+    if (heading) window.requestAnimationFrame(function () { heading.focus(); });
+  }
+  var scannerLinks = document.querySelectorAll('a[href="#scanner"], a[href="/#scanner"]');
+  for (var s = 0; s < scannerLinks.length; s++) {
+    scannerLinks[s].addEventListener("click", function (event) {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      var destination = new URL(this.href, window.location.href);
+      if (destination.origin === window.location.origin && destination.pathname === window.location.pathname && destination.hash === "#scanner") {
+        focusScannerHeading();
+      }
+    });
+  }
+  if (window.location.hash === "#scanner") focusScannerHeading();
 
   // Restore the previous state on load (defaults to closed).
   var saved = null;
@@ -58,8 +103,9 @@
     var isLight = nextTheme === "light";
     document.documentElement.setAttribute("data-theme", nextTheme);
     for (var t = 0; t < themeToggles.length; t++) {
-      themeToggles[t].setAttribute("aria-pressed", isLight ? "true" : "false");
-      themeToggles[t].setAttribute("aria-label", isLight ? "Switch to dark mode" : "Switch to light mode");
+      themeToggles[t].setAttribute("aria-label", isLight
+        ? "Appearance: Light. Switch to dark mode"
+        : "Appearance: Dark. Switch to light mode");
     }
     for (var x = 0; x < themeToggleTexts.length; x++) {
       themeToggleTexts[x].textContent = isLight ? "Light" : "Dark";

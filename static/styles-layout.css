@@ -115,7 +115,6 @@ input[type="text"] { width: 100%; padding: var(--pad-control-y) var(--pad-contro
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: 0.001ms !important; }
-  .scan-line { animation-duration: 2.6s !important; animation-iteration-count: infinite !important; }
 }
 
 .verdict-badge { padding: var(--pad-control-y) var(--pad-control-x); border-radius: 999px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }

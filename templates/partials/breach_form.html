@@ -1,5 +1,5 @@
 {% if field_errors %}
-<div class="request-message" role="alert"><strong>Check these fields:</strong>
+<div class="request-message" role="alert" data-server-error-focus><strong>Check these fields:</strong>
   <ul>{% for field, error in field_errors.items() %}<li><a href="#breach-{{ field }}">{{ error }}</a></li>{% endfor %}</ul>
 </div>
 {% endif %}

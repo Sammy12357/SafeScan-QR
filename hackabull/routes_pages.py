@@ -105,7 +105,17 @@ async def states_gallery(request: Request):
     """Visual QA gallery, inaccessible unless the app runs in mock mode."""
     if not MOCK_MODE:
         raise HTTPException(status_code=404)
-    return templates.TemplateResponse("states_gallery.html", {"request": request, "logged_in": False})
+    state_fixture = request.query_params.get("__state", "all")
+    allowed_fixtures = {
+        "all", "empty", "first-use", "no-results", "no-access",
+        "loading", "loading-compact", "error", "offline",
+        "notice", "info", "success", "warning", "danger", "content",
+    }
+    if state_fixture not in allowed_fixtures:
+        raise HTTPException(status_code=404)
+    return templates.TemplateResponse("states_gallery.html", {
+        "request": request, "logged_in": False, "state_fixture": state_fixture,
+    })
 
 
 @qr_app.get("/", response_class=HTMLResponse)
@@ -257,7 +267,7 @@ def _waitlist_page(request: Request, *, email: str = "", error: str = "", joined
         body = "<h2>You're on the list</h2><p>Thanks for joining the SafeScan QR waitlist. We'll send only major product updates.</p><p><a href='/'>Return to SafeScan QR</a></p>"
     else:
         value = escape_html(email, quote=True)
-        error_markup = f"<p class='form-field-error' id='waitlist-email-error' role='alert'>{escape_html(error)}</p>" if error else ""
+        error_markup = f"<p class='form-field-error' id='waitlist-email-error' role='alert' data-server-error-focus>{escape_html(error)}</p>" if error else ""
         invalid = " aria-invalid='true' aria-describedby='waitlist-email-error'" if error else ""
         body = (
             "<h2>Join the waitlist</h2><p>Get an email when SafeScan ships major updates.</p>"

@@ -333,6 +333,9 @@ def test_admin_api_key_form_validates_before_creating_secret(security_app):
     assert missing.status_code == 400
     assert "Enter a name for the API key" in missing.text
     assert 'id="api-key-name"' in missing.text
+    assert 'data-server-error-focus' in missing.text
+    assert 'aria-invalid="true"' in missing.text
+    assert '/static/server-error-focus.js?v=form-error-focus-v1' in missing.text
 
     expiry = client.post("/admin/api-keys", data={"name": "Reports", "expires_at": "yesterday"})
     assert expiry.status_code == 400
@@ -389,6 +392,9 @@ def test_breach_form_keeps_input_and_escapes_saved_report(security_app):
     assert 'value="bad date"' in invalid.text
     assert "Enter the discovery date" in invalid.text
     assert "Account data" in invalid.text
+    assert 'data-server-error-focus' in invalid.text
+    assert 'aria-invalid="true"' in invalid.text
+    assert '/static/server-error-focus.js?v=form-error-focus-v1' in invalid.text
     with sqlite3.connect(db_path) as conn:
         assert conn.execute("SELECT COUNT(*) FROM breach_reports").fetchone()[0] == 0
 

@@ -225,6 +225,9 @@ def test_data_request_keeps_values_and_does_not_record_invalid_type(error_app):
     assert 'value="Ontario"' in response.text
     assert "Please review this request." in response.text
     assert "Choose the type of request" in response.text
+    assert 'data-server-error-focus' in response.text
+    assert 'aria-invalid="true"' in response.text
+    assert '/static/server-error-focus.js?v=form-error-focus-v1' in response.text
     with app.get_conn() as conn:
         assert conn.execute("SELECT COUNT(*) FROM data_requests").fetchone()[0] == 0
 
@@ -236,6 +239,9 @@ def test_waitlist_error_keeps_email_and_success_uses_redirect(error_app):
     assert "Join the waitlist" in invalid.text
     assert "not-an-email" in invalid.text
     assert "Enter a valid email address" in invalid.text
+    assert 'data-server-error-focus' in invalid.text
+    assert "aria-invalid='true'" in invalid.text
+    assert '/static/server-error-focus.js?v=form-error-focus-v1' in invalid.text
     assert invalid.headers["Cache-Control"] == "no-store"
     with app.get_conn() as conn:
         assert conn.execute("SELECT COUNT(*) FROM waitlist_signups").fetchone()[0] == 0

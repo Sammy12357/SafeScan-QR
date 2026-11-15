@@ -311,6 +311,8 @@ def test_invalid_credentials_do_not_create_session(auth_app):
 
     assert response.status_code == 401
     assert "Email or password is incorrect." in response.text
+    assert 'data-server-error-focus' in response.text
+    assert '/static/server-error-focus.js?v=form-error-focus-v1' in response.text
     assert session_count(db_path) == before
 
 
@@ -521,6 +523,8 @@ def test_username_form_keeps_invalid_entry_and_discord_context(auth_app):
     assert response.status_code == 400
     assert 'value="bad name"' in response.text
     assert 'aria-invalid="true"' in response.text
+    assert 'data-server-error-focus' in response.text
+    assert '/static/server-error-focus.js?v=form-error-focus-v1' in response.text
     assert "Use 3 to 24 letters" in response.text
 
 

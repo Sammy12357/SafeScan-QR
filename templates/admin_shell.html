@@ -10,9 +10,11 @@
   <title>{{ title }} | SafeScan Admin</title>
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <script src="/static/ui-states.js?v=ui-loading-v1"></script>
-  <link rel="stylesheet" href="/static/admin.css?v=ui-phase7-fraud-focus-v2-8c23bb2">
+  <script src="/static/server-error-focus.js?v=form-error-focus-v1" defer></script>
+  <link rel="stylesheet" href="/static/admin.css?v=ui-a11y-v2">
 </head>
 <body class="admin-body">
+  <a class="admin-skip-link" href="#admin-main">Skip to main content</a>
   {% set owner_pages = ['/admin/api-keys', '/admin/settings'] %}
   <aside class="admin-sidebar">
     <a class="admin-brand" href="/" aria-label="Back to SafeScan QR home"><span>SafeScan QR</span><b>ADMIN</b></a>
@@ -49,14 +51,14 @@
     </div>
   </aside>
 
-  <main class="admin-main">
+  <main class="admin-main" id="admin-main" tabindex="-1">
     <header class="admin-topbar">
       <h1>{% if title in ['API Keys', 'Settings'] %}<span class="crown">♛</span>{% endif %}{{ title }}</h1>
       <form class="global-search" action="/admin/users" method="get">
-        <input name="search" placeholder="Search users by email or ID">
+        <input name="search" aria-label="Search users by email or ID" placeholder="Search users by email or ID">
       </form>
       <div class="admin-topbar-actions">
-        <button class="admin-theme-toggle" type="button" aria-label="Switch to light mode" aria-pressed="false" data-theme-toggle>Theme: <span data-theme-toggle-text>Dark</span></button>
+        <button class="admin-theme-toggle" type="button" aria-label="Theme: Dark. Switch to light mode" data-theme-toggle>Theme: <span data-theme-toggle-text>Dark</span></button>
         <div class="bell">● <span>{{ data.get('stats', [])|length if page == 'dashboard' else 0 }}</span></div>
       </div>
     </header>
@@ -64,7 +66,7 @@
     <section class="admin-content">
       {% set form_error = data.get('form_error') %}
       {% if form_error %}
-      <div class="admin-form-error" role="alert" tabindex="-1">
+      <div class="admin-form-error" role="alert" tabindex="-1" data-server-error-focus>
         <strong>{{ form_error.message }}</strong> {{ form_error.hint }}
       </div>
       {% endif %}
@@ -103,16 +105,16 @@
 
       {% elif page == 'users' %}
       <form class="filters" method="get">
-        <input name="search" value="{{ data.filters.search }}" placeholder="Search email, name, or ID">
-        <select name="status"><option value="">All Statuses</option>{% for value in ['active','suspended','deleted'] %}<option value="{{ value }}" {% if data.filters.status == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select>
-        <select name="role"><option value="">All Roles</option>{% for value in ['user','admin','owner'] %}<option value="{{ value }}" {% if data.filters.role == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select>
-        <select name="tier"><option value="">All Tiers</option>{% for value in ['Registered','Scanner','Referrer','Guardian'] %}<option value="{{ value }}" {% if data.filters.tier == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select>
+        <input name="search" value="{{ data.filters.search }}" aria-label="Search users by email, name, or ID" placeholder="Search email, name, or ID">
+        <select name="status" aria-label="Filter users by status"><option value="">All Statuses</option>{% for value in ['active','suspended','deleted'] %}<option value="{{ value }}" {% if data.filters.status == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select>
+        <select name="role" aria-label="Filter users by role"><option value="">All Roles</option>{% for value in ['user','admin','owner'] %}<option value="{{ value }}" {% if data.filters.role == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select>
+        <select name="tier" aria-label="Filter users by tier"><option value="">All Tiers</option>{% for value in ['Registered','Scanner','Referrer','Guardian'] %}<option value="{{ value }}" {% if data.filters.tier == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select>
         <button>Filter</button>{% if is_owner %}<a class="button-link" href="/admin/export/users">Export</a>{% endif %}
       </form>
       <section class="admin-card">{% if data.rows %}<table class="admin-table">
         <thead><tr><th></th><th>Email</th><th>Display Name</th><th>Role</th><th>Status</th><th>Tier</th><th>Scans</th><th>Referrals</th><th>Wallet</th><th>Joined</th><th>Last Active</th><th>Actions</th></tr></thead>
         <tbody>{% for user in data.rows %}<tr>
-          <td><input type="checkbox"></td><td>{{ user.email }}</td><td>{{ user.display_name or 'Safe Scanner' }}</td><td><span class="badge role">{{ user.role }}</span></td><td><span class="badge {{ user.status }}">{{ user.status }}</span></td><td>{{ user.tier }}</td><td>{% if user.ambiguous_email %}<span title="Pending account ownership review">Withheld</span>{% else %}{{ user.scan_count }}{% endif %}</td><td>{% if user.ambiguous_email %}<span title="Pending account ownership review">Withheld</span>{% else %}{{ user.referral_count }}{% endif %}</td><td class="truncate">{{ user.wallet_address or 'None' }}</td><td>{{ user.created_at | time_only }}</td><td>{{ ((user.last_login_at or user.last_login) | time_only) }}</td>
+          <td><input type="checkbox" aria-label="Select {{ user.email }}"></td><td>{{ user.email }}</td><td>{{ user.display_name or 'Safe Scanner' }}</td><td><span class="badge role">{{ user.role }}</span></td><td><span class="badge {{ user.status }}">{{ user.status }}</span></td><td>{{ user.tier }}</td><td>{% if user.ambiguous_email %}<span title="Pending account ownership review">Withheld</span>{% else %}{{ user.scan_count }}{% endif %}</td><td>{% if user.ambiguous_email %}<span title="Pending account ownership review">Withheld</span>{% else %}{{ user.referral_count }}{% endif %}</td><td class="truncate">{{ user.wallet_address or 'None' }}</td><td>{{ user.created_at | time_only }}</td><td>{{ ((user.last_login_at or user.last_login) | time_only) }}</td>
           <td class="row-actions"><a href="/admin/users/detail?{{ {'account_id': user.google_id}|urlencode }}">View</a>
             {% if user.ambiguous_email %}<span class="admin-inline-error">Account ownership needs review; action unavailable.</span>
             {% else %}
@@ -170,7 +172,7 @@
 
       {% elif page == 'scans' %}
       <div class="stat-grid small"><article>Total Scans <b>{{ data.stats.total }}</b></article><article>Flagged Today <b>{{ data.stats.flagged_today }}</b></article><article>Avg Risk 7d <b>{{ data.stats.avg_risk }}</b></article><article>Common TLD <b>{{ data.stats.common_tld }}</b></article></div>
-      <form class="filters" method="get"><input name="search" placeholder="URL keyword"><input name="user" placeholder="User email"><select name="verdict"><option value="">All verdicts</option><option>SAFE</option><option>CAUTION</option><option>MALICIOUS</option></select><button>Filter</button></form>
+      <form class="filters" method="get"><input name="search" aria-label="Filter scans by URL keyword" placeholder="URL keyword"><input name="user" aria-label="Filter scans by user email" placeholder="User email"><select name="verdict" aria-label="Filter scans by verdict"><option value="">All verdicts</option><option>SAFE</option><option>CAUTION</option><option>MALICIOUS</option></select><button>Filter</button></form>
       <section class="admin-card">{% if data.rows %}<table class="admin-table"><thead><tr><th>Scan ID</th><th>User</th><th>URL</th><th>Risk</th><th>Verdict</th><th>Signals</th><th>Date</th><th>Actions</th></tr></thead><tbody>
         {% for scan in data.rows %}<tr><td>{{ scan.id[:12] }}</td><td>{{ scan.email }}</td><td class="truncate" title="{{ scan.url }}">{{ scan.url }}</td><td class="risk">{{ scan.risk_score }}</td><td><span class="badge {{ scan.verdict|lower }}">{{ scan.verdict }}</span></td><td>{{ (scan.signals or '[]')|length }}</td><td>{{ scan.created_at | time_only }}</td><td><details><summary>View Details</summary><pre>{{ scan.signals }}</pre></details><form action="/admin/scans/{{ scan.id }}/flag" method="post"><button>Flag URL</button></form><a href="/admin/users?search={{ scan.email }}">View User</a>{% if form_error and form_error.target == scan.id %}<span class="admin-inline-error">{{ form_error.message }}</span>{% endif %}</td></tr>{% endfor %}
       </tbody></table>{% elif request.query_params.get('search') or request.query_params.get('user') or request.query_params.get('verdict') %}
@@ -180,7 +182,7 @@
 
       {% elif page == 'waitlist' %}
       <div class="stat-grid small"><article>Total Signups <b>{{ data.total }}</b></article><article>Showing <b>{{ data.rows|length }}</b></article></div>
-      <form class="filters" method="get"><input name="search" value="{{ data.filters.search }}" placeholder="Search email"><button>Filter</button>{% if is_owner %}<a class="button-link" href="/admin/export/waitlist">Export CSV</a>{% endif %}</form>
+      <form class="filters" method="get"><input name="search" value="{{ data.filters.search }}" aria-label="Search waitlist email" placeholder="Search email"><button>Filter</button>{% if is_owner %}<a class="button-link" href="/admin/export/waitlist">Export CSV</a>{% endif %}</form>
       <section class="admin-card">{% if data.rows %}<table class="admin-table"><thead><tr><th>Email</th><th>Source</th><th>Joined</th></tr></thead><tbody>
         {% for signup in data.rows %}<tr><td>{{ signup.email }}</td><td>{{ signup.source or 'footer' }}</td><td>{{ signup.created_at | time_only }}</td></tr>{% endfor %}
       </tbody></table>{% elif data.filters.search %}
@@ -226,7 +228,7 @@
       <section class="admin-card" tabindex="0" aria-label="Fraud review results">{% if data.rows %}<table class="admin-table"><thead><tr><th>Email</th><th>Fraud Score</th><th>Signals</th><th>Highest</th><th>Wallet</th><th>Status</th><th>Flag Date</th><th>Review</th></tr></thead><tbody>{% for row in data.rows %}<tr><td>{{ row.email }}</td><td class="fraud-score">{{ row.fraud_score }}</td><td>{{ row.signal_count }}</td><td>{{ row.highest_severity }}</td><td class="truncate">{{ row.wallet_address }}</td><td>{{ row.airdrop_status }}</td><td>{{ row.flag_date | time_only }}</td><td>{% if row.ambiguous_email %}<span class="admin-inline-error">Account ownership needs review; action unavailable.</span>{% else %}<details {% if form_error and form_error.target == row.email %}open{% endif %}><summary>Review</summary><p>Referral tree placeholder: node graph data appears after referral backend records exist.</p><form action="/admin/fraud/{{ row.email }}/review" method="post"><input name="reason" aria-label="Review reason for {{ row.email }}" placeholder="Review reason" value="{{ form_error.submitted.reason if form_error and form_error.target == row.email else '' }}"><button name="outcome" value="cleared">Clear</button><button name="outcome" value="disqualified">Disqualify</button><button name="outcome" value="escalated">Escalate to Owner</button></form>{% if form_error and form_error.target == row.email %}<span class="admin-inline-error">{{ form_error.message }}</span>{% endif %}</details>{% endif %}</td></tr>{% endfor %}</tbody></table>{% else %}{{ empty_state(icon='check', title='No fraud flags to review', body='Flagged accounts will appear here.', action_label='Open airdrop overview', action_href='/admin/airdrop', compact=true) }}{% endif %}</section>
 
       {% elif page == 'logs' %}
-      <form class="filters" method="get"><input name="search" placeholder="Actor"><select name="action"><option value="">All Actions</option>{% for action in data.actions %}<option>{{ action }}</option>{% endfor %}</select><input name="target_type" placeholder="Target type"><button>Filter</button>{% if is_owner %}<a class="button-link" href="/admin/logs?export=csv">Export Logs</a>{% endif %}</form>
+      <form class="filters" method="get"><input name="search" aria-label="Filter audit log by actor" placeholder="Actor"><select name="action" aria-label="Filter audit log by action"><option value="">All Actions</option>{% for action in data.actions %}<option>{{ action }}</option>{% endfor %}</select><input name="target_type" aria-label="Filter audit log by target type" placeholder="Target type"><button>Filter</button>{% if is_owner %}<a class="button-link" href="/admin/logs?export=csv">Export Logs</a>{% endif %}</form>
       <section class="admin-card">{% if data.rows %}<table class="admin-table"><thead><tr><th>Timestamp</th><th>Actor</th><th>Action</th><th>Target</th><th>IP</th><th>User Agent</th><th>Details</th></tr></thead><tbody>{% for log in data.rows %}<tr><td>{{ log.created_at | time_only }}</td><td>{{ log.actor_email or log.actor_user_id or 'system' }}</td><td><span class="badge">{{ log.action }}</span></td><td>{{ log.target_type }} {{ log.target_id }}</td><td>{{ log.ip_address }}</td><td class="truncate">{{ log.user_agent }}</td><td><details><summary>Details</summary><pre>{{ log.metadata }}</pre></details></td></tr>{% endfor %}</tbody></table>{% elif request.query_params.get('search') or request.query_params.get('action') or request.query_params.get('target_type') %}{{ empty_state(icon='search', title='No logs match these filters', body='Try another search or clear the filters.', action_label='Clear filters', action_href='/admin/logs', compact=true) }}{% else %}{{ empty_state(icon='info', title='No audit logs yet', body='Account and admin events will appear here.', action_label='Open dashboard', action_href='/admin', compact=true) }}{% endif %}</section>
 
       {% elif page == 'api_keys' %}
@@ -248,6 +250,6 @@
       {% endif %}
     </section>
   </main>
-  <script src="/static/admin.js?v=ui-loading-v1"></script>
+  <script src="/static/admin.js?v=ui-a11y-v1"></script>
 </body>
 </html>

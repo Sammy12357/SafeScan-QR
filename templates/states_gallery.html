@@ -9,7 +9,7 @@
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <script src="/static/ui-states.js?v=ui-loading-v1"></script>
   <title>State gallery | SafeScan QR</title>
-  <link rel="stylesheet" href="/static/styles.css?v=ui-phase7-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=ui-a11y-v2">
 </head>
 <body>
   <div class="page-shell">
@@ -19,33 +19,75 @@
       <h1>UI state gallery</h1>
       <p>Review the shared components in both themes and at mobile, tablet, and desktop widths.</p>
 
+      {% if state_fixture in ('all', 'empty', 'first-use', 'no-results', 'no-access') %}
       <h2>Empty states</h2>
       <div class="states-gallery-grid">
+        {% if state_fixture in ('all', 'empty', 'first-use') %}
         {{ empty_state('scan', 'No scans yet', 'Scan a QR code and it will appear here with its verdict.', 'Scan a QR code', '/#scanner') }}
+        {% endif %}
+        {% if state_fixture in ('all', 'empty', 'no-results') %}
         {{ empty_state('search', 'No results for “sample”', 'Try another search or clear the filters.', 'Clear filters', '/__states', none, true) }}
+        {% endif %}
+        {% if state_fixture in ('all', 'empty', 'no-access') %}
         {{ empty_state('lock', 'Sign in to see your history', 'Your saved scans are available after sign-in.', 'Sign in', '/login') }}
+        {% endif %}
       </div>
+      {% endif %}
 
+      {% if state_fixture in ('all', 'loading', 'loading-compact') %}
       <h2>Loading states</h2>
       <div class="states-gallery-grid">
+        {% if state_fixture in ('all', 'loading') %}
         {{ loading_state('Loading scan history', 3) }}
+        {% endif %}
+        {% if state_fixture in ('all', 'loading-compact') %}
         {{ loading_state('Checking the QR code', 0, true) }}
+        {% endif %}
       </div>
+      {% endif %}
 
+      {% if state_fixture in ('all', 'error', 'offline') %}
       <h2>Errors</h2>
       <div class="states-gallery-grid">
+        {% if state_fixture in ('all', 'error') %}
         {{ error_state('Scan history didn\'t load', 'Check your connection and try again.', '/__states', '7F3K-21QX') }}
+        {% endif %}
+        {% if state_fixture in ('all', 'offline') %}
         {{ error_state('You\'re offline', 'Reconnect and try again.', '/__states', '', true) }}
+        {% endif %}
       </div>
+      {% endif %}
 
+      {% if state_fixture in ('all', 'notice', 'info', 'success', 'warning', 'danger') %}
       <h2>Notices</h2>
       <div class="states-gallery-notices">
+        {% if state_fixture in ('all', 'notice', 'info') %}
         {{ notice('info', 'Your scan is ready to review.') }}
+        {% endif %}
+        {% if state_fixture in ('all', 'notice', 'success') %}
         {{ notice('success', 'Your preference was saved.') }}
+        {% endif %}
+        {% if state_fixture in ('all', 'notice', 'warning') %}
         {{ notice('warning', 'We could not verify this destination.') }}
+        {% endif %}
+        {% if state_fixture in ('all', 'notice', 'danger') %}
         {{ notice('danger', 'We could not complete that request.') }}
+        {% endif %}
       </div>
+      {% endif %}
 
+      {% if state_fixture == 'content' %}
+      <h2>Content</h2>
+      <div class="states-gallery-grid">
+        <section class="state">
+          <h3 class="state-title">Example content loaded</h3>
+          <p class="state-body">This mock card shows the content position after loading. It contains no scan result or private data.</p>
+          <div class="state-actions"><a class="primary-button" href="/#scanner">Open the scanner</a></div>
+        </section>
+      </div>
+      {% endif %}
+
+      {% if state_fixture == 'all' %}
       <h2>JavaScript states</h2>
       <div class="states-gallery-controls">
         <button type="button" data-demo="empty">Empty</button>
@@ -54,9 +96,10 @@
         <button type="button" data-demo="busy">Busy button</button>
       </div>
       <div id="statesDemo" aria-live="polite"></div>
+      {% endif %}
     </main>
     {% include "footer.html" %}
   </div>
-  <script src="/static/state-gallery.js?v=ui-states-v1"></script>
+  {% if state_fixture == 'all' %}<script src="/static/state-gallery.js?v=ui-states-v1"></script>{% endif %}
 </body>
 </html>

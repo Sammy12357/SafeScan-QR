@@ -322,11 +322,11 @@
     modal.className = "qr-camera-modal";
     modal.setAttribute("role", "dialog");
     modal.setAttribute("aria-modal", "true");
-    modal.setAttribute("aria-label", "Live QR scanner");
+    modal.setAttribute("aria-labelledby", "qrCameraTitle");
     modal.innerHTML =
       '<div class="qr-camera-card">' +
         '<div class="qr-camera-header">' +
-          '<h3>Scan a QR code</h3>' +
+          '<h3 id="qrCameraTitle">Scan a QR code</h3>' +
           '<button class="qr-camera-close" type="button" aria-label="Back to scanner">Back</button>' +
         '</div>' +
         '<div class="qr-camera-stage">' +
@@ -354,8 +354,13 @@
   function openScanner(options) {
     const opts = options || {};
     if (document.querySelector(".qr-camera-modal")) return;
+    const returnFocus = document.activeElement;
     const modal = buildModal();
     document.body.appendChild(modal);
+    const background = Array.from(document.body.children)
+      .filter((element) => element !== modal)
+      .map((element) => ({ element, inert: element.inert }));
+    background.forEach(({ element }) => { element.inert = true; });
     document.body.classList.add("qr-camera-open");
 
     const video = modal.querySelector("video");
@@ -368,6 +373,12 @@
     const retryBtn = modal.querySelector(".qr-camera-retry");
     const serverOffer = modal.querySelector(".qr-camera-server-offer");
     const serverSendBtn = modal.querySelector(".qr-camera-server-send");
+    closeBtn.focus({ preventScroll: true });
+
+    function focusableInModal() {
+      return Array.from(modal.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+        .filter((element) => !element.hidden && element.getClientRects().length > 0);
+    }
     const overlay = modal.querySelector(".qr-camera-overlay");
     const overlayContext = overlay.getContext("2d");
     const canvas = document.createElement("canvas");
@@ -765,13 +776,30 @@
       window.removeEventListener("orientationchange", refreshFrameSize);
       video.removeEventListener("loadedmetadata", refreshFrameSize);
       navigator.mediaDevices?.removeEventListener?.("devicechange", onDeviceChange);
+      background.forEach(({ element, inert }) => { if (element.isConnected) element.inert = inert; });
       document.body.classList.remove("qr-camera-open");
       modal.remove();
+      if (returnFocus?.isConnected && typeof returnFocus.focus === "function") returnFocus.focus({ preventScroll: true });
       if (typeof opts.onClose === "function") opts.onClose();
     }
 
     function escapeHandler(event) {
-      if (event.key === "Escape") cleanup();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cleanup();
+      } else if (event.key === "Tab") {
+        const focusable = focusableInModal();
+        if (!focusable.length) { event.preventDefault(); return; }
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && (document.activeElement === first || !modal.contains(document.activeElement))) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && (document.activeElement === last || !modal.contains(document.activeElement))) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
     }
 
     function onVisibilityChange() {
