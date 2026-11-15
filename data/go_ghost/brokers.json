@@ -1,0 +1,359 @@
+[
+  {
+    "id": "fastpeoplesearch",
+    "name": "FastPeopleSearch",
+    "priority": "High traffic",
+    "priorityDescription": "One of the most visible people-search sites, so it is a good place to remove first.",
+    "removalUrl": "https://www.fastpeoplesearch.com/optout",
+    "requiredInfo": [
+      "Full name",
+      "Street address",
+      "City/state",
+      "Email confirmation"
+    ],
+    "group": "fastpeoplesearch",
+    "lastVerified": null,
+    "search": {
+      "kind": "path",
+      "baseUrl": "https://www.fastpeoplesearch.com/name/",
+      "locationSeparator": "_"
+    }
+  },
+  {
+    "id": "whitepages",
+    "name": "Whitepages",
+    "priority": "High traffic",
+    "priorityDescription": "One of the most visible people-search sites, so it is a good place to remove first.",
+    "removalUrl": "https://www.whitepages.com/suppression-requests",
+    "requiredInfo": [
+      "Full name",
+      "City/state",
+      "Matching profile",
+      "Email confirmation"
+    ],
+    "group": "whitepages",
+    "lastVerified": null,
+    "search": {
+      "kind": "path",
+      "baseUrl": "https://www.whitepages.com/name/",
+      "locationSeparator": "/"
+    }
+  },
+  {
+    "id": "spokeo",
+    "name": "Spokeo",
+    "priority": "High traffic",
+    "priorityDescription": "One of the most visible people-search sites, so it is a good place to remove first.",
+    "removalUrl": "https://www.spokeo.com/optout",
+    "requiredInfo": [
+      "Profile URL",
+      "Email confirmation"
+    ],
+    "group": "spokeo",
+    "lastVerified": null,
+    "search": {
+      "kind": "path",
+      "baseUrl": "https://www.spokeo.com/",
+      "locationSeparator": "/"
+    }
+  },
+  {
+    "id": "beenverified",
+    "name": "BeenVerified",
+    "priority": "High traffic",
+    "priorityDescription": "One of the most visible people-search sites, so it is a good place to remove first.",
+    "removalUrl": "https://www.beenverified.com/svc/optout/search/optouts",
+    "requiredInfo": [
+      "Full name",
+      "State/city",
+      "Matching record",
+      "Email confirmation"
+    ],
+    "group": "beenverified",
+    "operator": "LTVCo",
+    "lastVerified": null,
+    "verificationSource": "https://www.beenverified.com/faq/privacy/",
+    "search": {
+      "kind": "static",
+      "url": "https://www.beenverified.com/svc/optout/search/optouts"
+    },
+    "sourceCheckedAt": "2026-11-14"
+  },
+  {
+    "id": "truepeoplesearch",
+    "name": "TruePeopleSearch",
+    "priority": "High traffic",
+    "priorityDescription": "One of the most visible people-search sites, so it is a good place to remove first.",
+    "removalUrl": "https://www.truepeoplesearch.com/removal",
+    "requiredInfo": [
+      "Full name",
+      "City/state",
+      "Matching profile",
+      "Email confirmation"
+    ],
+    "group": "truepeoplesearch",
+    "lastVerified": null,
+    "search": {
+      "kind": "query",
+      "baseUrl": "https://www.truepeoplesearch.com/results",
+      "nameParam": "name",
+      "locationParam": "citystatezip"
+    }
+  },
+  {
+    "id": "thatsthem",
+    "name": "Thatsthem",
+    "priority": "Address match",
+    "priorityDescription": "This site often finds records through address or phone details.",
+    "removalUrl": "https://thatsthem.com/optout",
+    "requiredInfo": [
+      "Full name",
+      "Street address or phone",
+      "Email confirmation"
+    ],
+    "group": "thatsthem",
+    "lastVerified": null,
+    "search": {
+      "kind": "path",
+      "baseUrl": "https://thatsthem.com/name/",
+      "locationSeparator": "/"
+    }
+  },
+  {
+    "id": "nuwber",
+    "name": "Nuwber",
+    "priority": "Profile link",
+    "priorityDescription": "This opt-out usually needs the exact profile URL before removal can be submitted.",
+    "removalUrl": "https://nuwber.com/removal/link",
+    "requiredInfo": [
+      "Profile URL",
+      "Email confirmation"
+    ],
+    "group": "nuwber",
+    "lastVerified": null,
+    "search": {
+      "kind": "query",
+      "baseUrl": "https://nuwber.com/search",
+      "nameParam": "name",
+      "locationParam": "location"
+    }
+  },
+  {
+    "id": "radaris",
+    "name": "Radaris",
+    "priority": "Duplicate check",
+    "priorityDescription": "This site can show multiple records for one person, so check for duplicates before marking it removed.",
+    "removalUrl": "https://radaris.com/control/privacy",
+    "requiredInfo": [
+      "Profile URL",
+      "Matching record",
+      "Email confirmation"
+    ],
+    "group": "radaris",
+    "lastVerified": null,
+    "search": {
+      "kind": "google",
+      "domain": "radaris.com"
+    }
+  },
+  {
+    "id": "peoplefinders",
+    "name": "PeopleFinders",
+    "priority": "Second wave",
+    "priorityDescription": "A high-volume data broker that often needs name plus location to find matching records.",
+    "removalUrl": "https://www.peoplefinders.com/opt-out",
+    "requiredInfo": [
+      "Full name",
+      "City/state",
+      "Email confirmation"
+    ],
+    "group": "peoplefinders",
+    "lastVerified": null,
+    "search": {
+      "kind": "google",
+      "domain": "peoplefinders.com"
+    }
+  },
+  {
+    "id": "intelius",
+    "name": "Intelius",
+    "priority": "Second wave",
+    "priorityDescription": "A people-search broker that can require enough detail to distinguish similar names.",
+    "removalUrl": "https://suppression.peopleconnect.us/",
+    "requiredInfo": [
+      "Full name",
+      "City/state",
+      "Email confirmation"
+    ],
+    "group": "peopleconnect",
+    "operator": "PeopleConnect",
+    "lastVerified": null,
+    "verificationSource": "https://peopleconnect.us/terms-of-use/",
+    "search": {
+      "kind": "static",
+      "url": "https://suppression.peopleconnect.us/"
+    },
+    "sourceCheckedAt": "2026-11-14"
+  },
+  {
+    "id": "ussearch",
+    "name": "US Search",
+    "priority": "Second wave",
+    "priorityDescription": "A people-search broker that often needs name plus location to narrow matches.",
+    "removalUrl": "https://suppression.peopleconnect.us/",
+    "requiredInfo": [
+      "Full name",
+      "City/state",
+      "Email confirmation"
+    ],
+    "group": "peopleconnect",
+    "operator": "PeopleConnect",
+    "lastVerified": null,
+    "verificationSource": "https://peopleconnect.us/terms-of-use/",
+    "search": {
+      "kind": "static",
+      "url": "https://suppression.peopleconnect.us/"
+    },
+    "sourceCheckedAt": "2026-11-14"
+  },
+  {
+    "id": "instantcheckmate",
+    "name": "Instant Checkmate",
+    "priority": "Second wave",
+    "priorityDescription": "A background-check broker whose removal flow can use identity-matching details.",
+    "removalUrl": "https://suppression.peopleconnect.us/",
+    "requiredInfo": [
+      "Full name",
+      "City/state",
+      "Email confirmation"
+    ],
+    "group": "peopleconnect",
+    "operator": "PeopleConnect",
+    "lastVerified": null,
+    "verificationSource": "https://peopleconnect.us/terms-of-use/",
+    "search": {
+      "kind": "static",
+      "url": "https://suppression.peopleconnect.us/"
+    },
+    "sourceCheckedAt": "2026-11-14"
+  },
+  {
+    "id": "truthfinder",
+    "name": "TruthFinder",
+    "priority": "Second wave",
+    "priorityDescription": "A background-check broker where similar names may require careful record matching.",
+    "removalUrl": "https://suppression.peopleconnect.us/",
+    "requiredInfo": [
+      "Full name",
+      "City/state",
+      "Email confirmation"
+    ],
+    "group": "peopleconnect",
+    "operator": "PeopleConnect",
+    "lastVerified": null,
+    "verificationSource": "https://peopleconnect.us/terms-of-use/",
+    "search": {
+      "kind": "static",
+      "url": "https://suppression.peopleconnect.us/"
+    },
+    "sourceCheckedAt": "2026-11-14"
+  },
+  {
+    "id": "peoplelooker",
+    "name": "PeopleLooker",
+    "priority": "Second wave",
+    "priorityDescription": "A people-search broker with an opt-out submission flow similar to related sites.",
+    "removalUrl": "https://www.peoplelooker.com/svc/optout/search/optouts",
+    "requiredInfo": [
+      "Full name",
+      "City/state",
+      "Email confirmation"
+    ],
+    "group": "peoplelooker",
+    "operator": "LTVCo",
+    "lastVerified": null,
+    "verificationSource": "https://www.peoplelooker.com/privacy-policy/",
+    "search": {
+      "kind": "static",
+      "url": "https://www.peoplelooker.com/svc/optout/search/optouts"
+    },
+    "sourceCheckedAt": "2026-11-14"
+  },
+  {
+    "id": "neighborwho",
+    "name": "NeighborWho",
+    "priority": "Second wave",
+    "priorityDescription": "An address-heavy broker where street address and city/state help identify the right record.",
+    "removalUrl": "https://www.neighborwho.com/svc/optout/search/optouts",
+    "requiredInfo": [
+      "Full name",
+      "Street address",
+      "City/state",
+      "Email confirmation"
+    ],
+    "group": "neighborwho",
+    "operator": "LTVCo",
+    "lastVerified": null,
+    "verificationSource": "https://www.neighborwho.com/faq/privacy/",
+    "search": {
+      "kind": "static",
+      "url": "https://www.neighborwho.com/svc/optout/search/optouts"
+    },
+    "sourceCheckedAt": "2026-11-14"
+  },
+  {
+    "id": "clustrmaps",
+    "name": "ClustrMaps",
+    "priority": "Second wave",
+    "priorityDescription": "An address and profile broker where multiple entries can exist for one person.",
+    "removalUrl": "https://clustrmaps.com/bl/opt-out",
+    "requiredInfo": [
+      "Full name",
+      "Street address",
+      "Email confirmation"
+    ],
+    "group": "clustrmaps",
+    "lastVerified": null,
+    "search": {
+      "kind": "google",
+      "domain": "clustrmaps.com"
+    }
+  },
+  {
+    "id": "familytreenow",
+    "name": "FamilyTreeNow",
+    "priority": "Second wave",
+    "priorityDescription": "A genealogy-style people-search site that commonly starts removal from a record search.",
+    "removalUrl": "https://www.familytreenow.com/optout",
+    "requiredInfo": [
+      "Full name",
+      "City/state",
+      "Matching profile"
+    ],
+    "group": "familytreenow",
+    "lastVerified": null,
+    "search": {
+      "kind": "google",
+      "domain": "familytreenow.com"
+    }
+  },
+  {
+    "id": "cyberbackgroundchecks",
+    "name": "CyberBackgroundChecks",
+    "priority": "Second wave",
+    "priorityDescription": "A profile-specific background-check site where exact record matching matters.",
+    "removalUrl": "https://www.cyberbackgroundchecks.com/removal",
+    "requiredInfo": [
+      "Full name",
+      "Street address",
+      "Matching profile",
+      "Email confirmation"
+    ],
+    "group": "cyberbackgroundchecks",
+    "lastVerified": null,
+    "search": {
+      "kind": "google",
+      "domain": "cyberbackgroundchecks.com"
+    }
+  }
+]

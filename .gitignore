@@ -14,3 +14,7 @@ data/*
 # Tranco allowlists ship with the code so the short-circuit is hermetic.
 !data/tranco_top_10k.csv
 !data/tranco_top_1m.csv
+# Reviewed manual broker metadata ships with the app; user profiles never do.
+!data/go_ghost/
+data/go_ghost/*
+!data/go_ghost/brokers.json
