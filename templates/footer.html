@@ -3,12 +3,14 @@
 <footer class="site-footer">
   <section class="footer-newsletter" aria-labelledby="footerNewsletterTitle">
     <h2 id="footerNewsletterTitle">Stay in the loop</h2>
-    <p>One tight email when SafeScan ships mobile beta, Solana dApp Store updates, and new risk-engine releases. No sales spam.</p>
+    <p>Request email updates about major SafeScan QR releases.</p>
     <form class="footer-newsletter-form" action="/waitlist" method="post">
       <input type="email" name="email" placeholder="you@example.com" aria-label="Email address" required>
-      <button type="submit">Notify me</button>
+      <input type="hidden" name="source" value="footer">
+      <label class="waitlist-consent"><input type="checkbox" name="consent" value="yes" required> <span>Send me product updates. I will confirm by email and can unsubscribe from any update.</span></label>
+      <button type="submit">Request updates</button>
     </form>
-    <p class="footer-newsletter-note">One email per major release; privacy &middot; terms &middot; unsubscribe in one click any time.</p>
+    <p class="footer-newsletter-note">Your address joins the list only after you confirm it. <a href="/legal/privacy-policy">Privacy Policy</a>.</p>
   </section>
 
   <hr class="footer-divider footer-divider-wide">
@@ -72,7 +74,7 @@
 <div id="cookieConsentBanner" class="consent-banner hidden" data-version="consent-v1">
   <div>
     <p class="consent-title">Privacy preferences</p>
-    <p class="consent-copy">SafeScan uses essential storage for auth and consent, plus optional analytics to improve QR safety. You can reject non-essential tracking.</p>
+    <p class="consent-copy">SafeScan uses essential storage for sign-in and preferences. With your consent, it sends first-party scanner performance counts to improve QR scanning. You can decline those counts.</p>
   </div>
   <div class="consent-actions">
     <button class="secondary-button" type="button" data-consent-choice="essential_only">Reject Non-Essential</button>

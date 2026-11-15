@@ -54,6 +54,7 @@ from .audit import now_iso
 from .config import SESSION_COOKIE_NAME
 from .config import SESSION_IDLE_SECONDS
 from .config import SESSION_TTL_SECONDS
+from .age_gate import ACCOUNT_MIN_AGE
 from .request_helpers import hash_ip
 from .request_helpers import request_ip
 from .sessions import validate_and_rotate_remember_me
@@ -118,9 +119,10 @@ def get_session_user(request):
                    u.role, u.status, u.last_login_at, u.login_ip
             FROM sessions s
             JOIN users u ON u.google_id = s.google_id
+            JOIN age_eligibility a ON a.user_id = u.google_id AND a.minimum_age >= ?
             WHERE s.id = ?
             """,
-            (session_id,)
+            (ACCOUNT_MIN_AGE, session_id)
         ).fetchone()
         if not row:
             return cache_session_user(None)

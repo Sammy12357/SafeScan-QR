@@ -29,6 +29,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.routing import Match
 from starlette.formparsers import MultiPartParser
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from cryptography.exceptions import InvalidSignature
@@ -58,6 +59,11 @@ from .audit import SafeScanError
 from .errors import error_response, request_id_for
 from .auth import create_session
 from .auth import get_session_user
+from .age_gate import GUEST_ADULT_COOKIE
+from .age_gate import PENDING_SECONDS
+from .age_gate import account_is_adult
+from .age_gate import create_adult_challenge
+from .age_gate import guest_is_adult
 from .config import ACTIVE_SCANS
 from .config import ALLOWED_ORIGINS
 from .config import CONTENT_TYPE_LATEST
@@ -183,7 +189,10 @@ async def enforce_origin(request: Request, call_next):
     origin = request.headers.get("origin")
     if request.method in ("POST", "PUT", "PATCH", "DELETE") and origin:
         google_sign_in_callback = request.url.path == "/auth/google"
-        if origin not in ALLOWED_ORIGINS and not google_sign_in_callback:
+        # Email clients may send the RFC 8058 one-click POST from their own
+        # origin. This route is authorized by its signed, one-use bearer token.
+        email_unsubscribe = request.url.path == "/waitlist/unsubscribe"
+        if origin not in ALLOWED_ORIGINS and not google_sign_in_callback and not email_unsubscribe:
             return error_response(request, 403, code="origin_not_allowed", message="Origin not allowed.")
     return await call_next(request)
 
@@ -238,8 +247,8 @@ async def remember_me_middleware(request: Request, call_next):
 CSP_POLICY = "; ".join([
     "default-src 'self'",
     "script-src 'self' 'wasm-unsafe-eval' https://accounts.google.com https://apis.google.com",
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self'",
     "img-src 'self' data: blob: https://lh3.googleusercontent.com https://ssl.gstatic.com https://www.gstatic.com",
     # URL reputation providers, Solana RPC, and the AI verdict
     # providers (Anthropic/OpenAI) are all called server-side via `requests`
@@ -267,7 +276,7 @@ def apply_security_headers(request: Request, response):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
     response.headers["Content-Security-Policy"] = CSP_POLICY
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers["Permissions-Policy"] = PERMISSIONS_POLICY
     if "Server" in response.headers:
         del response.headers["Server"]
@@ -286,6 +295,42 @@ def apply_security_headers(request: Request, response):
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
     return apply_security_headers(request, response)
+
+
+def _requires_adult_attestation(path):
+    # Reserved status-sync routes are permanently unavailable. Preserve their
+    # explicit 503 response rather than turning them into an age prompt.
+    if path == "/api/go-ghost/status" or path.startswith("/api/go-ghost/status/") or path.startswith("/api/go-ghost/subjects"):
+        return False
+    # Existing subscribers must retain access to cancellation and billing
+    # management. Return pages and verified payment events are also not new
+    # purchases; the checkout entry point below remains gated.
+    if path in ("/pay/alpha/manage", "/pay/alpha/success"):
+        return False
+    return (
+        path in ("/token", "/tokenomics", "/go-ghost", "/api/referral", "/api/airdrop/status")
+        or path == "/pay/alpha" or path.startswith("/pay/alpha/")
+        or path == "/api/wallet" or path.startswith("/api/wallet/")
+        or path.startswith("/api/go-ghost/")
+    )
+
+
+@qr_app.middleware("http")
+async def adult_feature_gate(request: Request, call_next):
+    path = request.url.path
+    if not _requires_adult_attestation(path):
+        return await call_next(request)
+    user = get_session_user(request)
+    allowed = account_is_adult(user["google_id"]) if user else guest_is_adult(request.cookies.get(GUEST_ADULT_COOKIE, ""))
+    if allowed:
+        return await call_next(request)
+    if path.startswith("/api/") or request.method != "GET":
+        ticket = create_adult_challenge(user["google_id"] if user else None, path)
+        return JSONResponse({"ageConfirmationRequired": True, "ageTicket": ticket,
+                             "minimumAge": 18, "expiresInSeconds": PENDING_SECONDS},
+                            status_code=403, headers={"Cache-Control": "no-store"})
+    return RedirectResponse(f"/auth/confirm-adult?next={quote(str(request.url.path) + ('?' + request.url.query if request.url.query else ''), safe='')}",
+                            status_code=303, headers={"Cache-Control": "no-store"})
 
 async def wallet_nonce_cleanup_loop():
     while True:
@@ -387,7 +432,17 @@ def _metric_route_label(request: Request) -> str:
     # values and let arbitrary 404s create an unlimited number of series.
     route = request.scope.get("route")
     path = getattr(route, "path", None)
-    return path if isinstance(path, str) and path else "unmatched"
+    if isinstance(path, str) and path:
+        return path
+    # A guard can reject a request before Starlette attaches the matched
+    # route. Resolve only against declared route patterns, never the raw URL.
+    for candidate in qr_app.routes:
+        match, _ = candidate.matches(request.scope)
+        if match == Match.FULL:
+            declared = getattr(candidate, "path", None)
+            if isinstance(declared, str) and declared:
+                return declared
+    return "unmatched"
 
 
 @qr_app.middleware("http")

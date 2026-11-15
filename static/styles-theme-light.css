@@ -131,7 +131,7 @@
   color: var(--accent);
 }
 
-:root[data-theme="light"] .footer-newsletter-form input,
+:root[data-theme="light"] .footer-newsletter-form input[type="email"],
 :root[data-theme="light"] input[type="text"],
 :root[data-theme="light"] .legal-form input,
 :root[data-theme="light"] .legal-form select,

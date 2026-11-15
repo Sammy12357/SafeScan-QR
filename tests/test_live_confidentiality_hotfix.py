@@ -42,6 +42,15 @@ def _register(app, database, email):
     response = client.post("/auth/register", data={"email": email, "password": "password123"})
     assert response.status_code == 200
     user_id = _rows(database, "SELECT google_id FROM users WHERE email = ?", (email,))[0]["google_id"]
+    # These tests exercise ownership isolation after adult-only feature access.
+    # Local test registration bypasses the OAuth age flow, so confirm age here.
+    assert client.get("/auth/confirm-adult").status_code == 200
+    from datetime import datetime, timezone
+    adult = client.post("/auth/confirm-adult", data={
+        "birth_year": str(datetime.now(timezone.utc).year - 25),
+        "birthday_this_year": "yes", "adult_attestation": "yes",
+    }, follow_redirects=False)
+    assert adult.status_code == 303
     return client, user_id
 
 

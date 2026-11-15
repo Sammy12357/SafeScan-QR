@@ -161,8 +161,19 @@ LEGAL_LAST_UPDATED = "May 2026"
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SOLANA_RPC_URL = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
-ALPHA_STRIPE_PAYMENT_LINK = os.getenv("ALPHA_STRIPE_PAYMENT_LINK", "https://buy.stripe.com/00w3cxfdAb7OcKB4sC87K01").strip()
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "").strip()
+STRIPE_ALPHA_PRICE_ID = os.getenv("STRIPE_ALPHA_PRICE_ID", "").strip()
+STRIPE_ALPHA_PRODUCT_ID = os.getenv("STRIPE_ALPHA_PRODUCT_ID", "").strip()
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()
+STRIPE_BILLING_SETTINGS_CONFIRMED = os.getenv("STRIPE_BILLING_SETTINGS_CONFIRMED", "").strip().lower() in ("1", "true", "yes")
+BILLING_LEGAL_ENTITY_NAME = os.getenv("BILLING_LEGAL_ENTITY_NAME", "").strip()
+BILLING_POSTAL_ADDRESS = os.getenv("BILLING_POSTAL_ADDRESS", "").strip()
+BILLING_SUPPORT_EMAIL = os.getenv("BILLING_SUPPORT_EMAIL", "").strip()
+BILLING_REFUND_POLICY_TEXT = os.getenv(
+    "BILLING_REFUND_POLICY_TEXT",
+    "Payments are not refunded after a billing period starts, except where required by law.",
+).strip()
+BILLING_TERMS_VERSION = os.getenv("BILLING_TERMS_VERSION", "2026-11-alpha-v1").strip()
 ALPHA_SOLANA_RECIPIENT = os.getenv("ALPHA_SOLANA_RECIPIENT", "").strip()
 ALPHA_SOLANA_AMOUNT_SOL = os.getenv("ALPHA_SOLANA_AMOUNT_SOL", "").strip()
 ALPHA_SOLANA_PRICE_USD = Decimal(os.getenv("ALPHA_SOLANA_PRICE_USD", "1.00"))

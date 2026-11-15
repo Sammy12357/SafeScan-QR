@@ -1,12 +1,12 @@
 {
   "_format": "JSON-compatible YAML 1.2; parsed with the Python standard json module",
   "_status": "Phase 0 engineering inventory, not an approved privacy-policy statement",
-  "_source": "Isolated SQLite schema generated from hackabull/schema.py at current main; no production records read",
+  "_source": "Isolated SQLite schema generated from hackabull/schema.py at Phase 1 age-gate branch; no production records read",
   "_known_gaps": [
     "Retention periods have not been tied to deletion jobs.",
     "URL query strings can be stored or sent to reputation providers.",
     "Audit logs and user records store raw IP addresses.",
-    "Data-request export and deletion do not yet cover every table.",
+    "Data-request export and deletion do not yet cover every table, including new payment consent records.",
     "Go Ghost status tables exist in code but are disabled and are not created at startup."
   ],
   "tables": {
@@ -25,6 +25,20 @@
       "retention": "Not verified against an automated deletion job",
       "status": "active schema"
     },
+    "adult_age_challenges": {
+      "fields": [
+        "ticket_hash",
+        "user_id",
+        "return_to",
+        "expires_at"
+      ],
+      "source": "adult feature entry page",
+      "purpose": "bind an 18+ attestation to one browser or account",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "10-minute expiry; expired rows removed lazily; backup retention unverified",
+      "status": "active schema"
+    },
     "age_confirmations": {
       "fields": [
         "email",
@@ -32,11 +46,37 @@
         "locale",
         "confirmed_at"
       ],
-      "source": "age form",
-      "purpose": "record claimed age threshold outcome; current flow is not an enforced sign-in gate",
+      "source": "legacy email-keyed age form (route removed)",
+      "purpose": "historical self-report only; does not grant account access",
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
+      "status": "legacy table retained for existing records"
+    },
+    "age_denials": {
+      "fields": [
+        "identity_hash",
+        "expires_at"
+      ],
+      "source": "HMAC of verified provider identity after an underage answer",
+      "purpose": "prevent immediate repeat of a denied account sign-in",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "24-hour expiry; expired rows removed lazily; backup retention unverified",
+      "status": "active schema"
+    },
+    "age_eligibility": {
+      "fields": [
+        "user_id",
+        "minimum_age",
+        "confirmed_at",
+        "adult_attested_at"
+      ],
+      "source": "server-checked age form and adult attestation",
+      "purpose": "permit age-eligible account access and 18+ features; no birth year or birthday answer retained",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "until account deletion; automated retention job not yet verified",
       "status": "active schema"
     },
     "alpha_solana_payment_references": {
@@ -85,13 +125,45 @@
         "current_period_end",
         "cancel_at_period_end",
         "canceled_at",
-        "expires_at"
+        "expires_at",
+        "stripe_verified_at"
       ],
-      "source": "Stripe webhook, Solana payment, or success-page flow",
-      "purpose": "track paid access; success-page activation is an unresolved security defect",
+      "source": "verified Stripe webhook or verified Solana payment; legacy rows may remain unverified",
+      "purpose": "track paid access and verified Stripe lineage",
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "stripe_checkout_intents": {
+      "fields": [
+        "session_id", "user_id", "email", "price_id", "product_id",
+        "amount_cents", "currency", "consent_version", "consent_text",
+        "refund_text", "accepted_at", "created_at", "status", "receipt_sent_at"
+      ],
+      "source": "authenticated card checkout consent and Stripe Session creation",
+      "purpose": "bind a paid session to one account and retain the exact recurring billing consent",
+      "storage": "SQLite persistent disk",
+      "recipients": "Stripe receives account reference and email; internal storage retains consent",
+      "retention": "Counsel review required; not yet covered by account deletion or export",
+      "status": "active schema"
+    },
+    "stripe_webhook_events": {
+      "fields": ["event_id", "event_type", "processed_at"],
+      "source": "verified Stripe webhook",
+      "purpose": "reject duplicate payment events",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "payment_form_tokens": {
+      "fields": ["token_hash", "user_id", "session_id", "purpose", "expires_at"],
+      "source": "authenticated payment page",
+      "purpose": "one-use CSRF protection for payment POST requests",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage",
+      "retention": "Expired tokens are removed when another payment form is issued",
       "status": "active schema"
     },
     "api_keys": {
@@ -281,6 +353,18 @@
       "retention": "Not verified against an automated deletion job",
       "status": "legacy/inactive"
     },
+    "guest_adult_tickets": {
+      "fields": [
+        "ticket_hash",
+        "expires_at"
+      ],
+      "source": "guest adult attestation",
+      "purpose": "allow age-attested guest access to Go Ghost and payment pages",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "24-hour expiry; expired rows removed lazily; backup retention unverified",
+      "status": "active schema"
+    },
     "ip_registry": {
       "fields": [
         "id",
@@ -309,6 +393,26 @@
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
       "status": "legacy/inactive"
+    },
+    "pending_age_signins": {
+      "fields": [
+        "ticket_hash",
+        "provider",
+        "subject",
+        "email",
+        "display_name",
+        "picture",
+        "client_kind",
+        "return_to",
+        "remember_me",
+        "expires_at"
+      ],
+      "source": "verified Google or Auth0 ID token claims",
+      "purpose": "hold a verified sign-in for a one-time age decision before account creation",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "10-minute expiry; expired rows removed lazily; backup retention unverified",
+      "status": "active schema"
     },
     "persistent_sessions": {
       "fields": [
@@ -546,10 +650,43 @@
       "fields": [
         "email",
         "source",
-        "created_at"
+        "created_at",
+        "consent_at",
+        "consent_version",
+        "confirmed_at",
+        "last_confirmation_requested_at"
       ],
       "source": "waitlist form",
-      "purpose": "store update-email signups; confirmation and suppression are not yet implemented",
+      "purpose": "record requested product-update consent and completed email confirmation; legacy rows remain unconfirmed",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "waitlist_email_tokens": {
+      "fields": [
+        "token_hash",
+        "email",
+        "purpose",
+        "created_at",
+        "expires_at",
+        "used_at"
+      ],
+      "source": "waitlist confirmation and product-update unsubscribe links",
+      "purpose": "verify an expiring, one-use confirmation or unsubscribe token without storing its bearer value",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Expired and used token cleanup is not yet scheduled",
+      "status": "active schema"
+    },
+    "email_suppressions": {
+      "fields": [
+        "email",
+        "suppressed_at",
+        "reason"
+      ],
+      "source": "unsubscribe links",
+      "purpose": "block future product-update emails until a fresh, explicit opt-in is confirmed",
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",

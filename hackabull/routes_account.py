@@ -50,6 +50,24 @@ from storage import upload_bytes as storage_upload_bytes
 from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party
 import safescan_model_calibration as sm_calibration
 from .app_module import qr_app
+from .age_gate import ACCOUNT_MIN_AGE
+from .age_gate import ADULT_MIN_AGE
+from .age_gate import ADULT_CHALLENGE_COOKIE
+from .age_gate import GUEST_ADULT_COOKIE
+from .age_gate import GUEST_ADULT_SECONDS
+from .age_gate import PENDING_COOKIE
+from .age_gate import PENDING_SECONDS
+from .age_gate import account_is_adult
+from .age_gate import age_from_year
+from .age_gate import consume_adult_challenge
+from .age_gate import consume_sign_in
+from .age_gate import create_adult_challenge
+from .age_gate import create_guest_adult_ticket
+from .age_gate import guest_is_adult
+from .age_gate import pending_sign_in
+from .age_gate import record_adult_attestation
+from .accounts import response_after_login
+from .accounts import safe_next_url
 from .audit import audit_log
 from .audit import now_iso
 from .auth import get_session_user
@@ -69,7 +87,10 @@ from .leaderboard import get_global_leaderboard
 from .legal import legal_context
 from .malicious_db import get_malicious_qr_codes
 from .referrals import get_scan_count
-from .request_helpers import is_eu_locale
+from .routes_scan_auth import finish_verified_sign_in
+from .routes_scan_auth import mobile_sign_in_body
+from .sessions import issue_remember_me_cookie
+from .sessions import set_session_cookie
 from .security import enforce_rate_limit
 
 @qr_app.get("/history", response_class=HTMLResponse)
@@ -242,38 +263,154 @@ async def token_page(request: Request):
     })
 
 @qr_app.get("/auth/confirm-age", response_class=HTMLResponse)
-async def confirm_age_page(request: Request, email: str = Query(...), locale: str = Query("en-US"), threshold: int = Query(13)):
-    threshold = 16 if is_eu_locale(locale) else threshold
-    return templates.TemplateResponse("confirm_age.html", {
-        "request": request, "email": email, "locale": locale, "threshold": threshold, "blocked": False
+async def confirm_age_page(request: Request):
+    ticket = request.cookies.get(PENDING_COOKIE, "")
+    if not pending_sign_in(ticket, "web"):
+        return templates.TemplateResponse("confirm_age.html", {
+            "request": request, "threshold": ACCOUNT_MIN_AGE, "mode": "account",
+            "expired": True, "blocked": False, "error": ""
+        }, status_code=410)
+    response = templates.TemplateResponse("confirm_age.html", {
+        "request": request, "threshold": ACCOUNT_MIN_AGE, "mode": "account",
+        "expired": False, "blocked": False, "error": ""
     })
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 @qr_app.post("/auth/confirm-age", response_class=HTMLResponse)
 async def confirm_age_submit(
     request: Request,
-    email: str = Form(...),
-    locale: str = Form("en-US"),
-    threshold: int = Form(13),
-    confirmed: str = Form("no")
+    birth_year: str = Form(""),
+    birthday_this_year: str = Form(""),
 ):
-    threshold = 16 if is_eu_locale(locale) else threshold
-    if confirmed != "yes":
+    ticket = request.cookies.get(PENDING_COOKIE, "")
+    if not pending_sign_in(ticket, "web"):
+        raise HTTPException(status_code=410, detail="Age confirmation expired. Sign in again.")
+    try:
+        age = age_from_year(birth_year, birthday_this_year)
+    except ValueError as exc:
         return templates.TemplateResponse("confirm_age.html", {
-            "request": request, "email": email, "locale": locale, "threshold": threshold, "blocked": True
-        })
-    with get_conn() as conn:
-        conn.execute(
-            "INSERT OR REPLACE INTO age_confirmations VALUES (?, ?, ?, ?)",
-            (email, threshold, locale, datetime.utcnow().isoformat() + "Z")
-        )
-    return templates.TemplateResponse("index.html", {
-        "request": request, "logged_in": True, "results_visible": False,
-        "email": email, "score": "0", "threat_class": "N/A",
-        "scan_count": get_scan_count(email), "google_client_id": CLIENT_ID,
-        "test_site": True, "test_site_path": False,
-        "version": LEGAL_VERSION,
-        **index_user_context(get_session_user(request))
+            "request": request, "threshold": ACCOUNT_MIN_AGE, "mode": "account",
+            "expired": False, "blocked": False, "error": str(exc)
+        }, status_code=400)
+    pending = consume_sign_in(ticket, "web", age)
+    if not pending:
+        raise HTTPException(status_code=410, detail="Age confirmation expired. Sign in again.")
+    if age < ACCOUNT_MIN_AGE:
+        response = templates.TemplateResponse("confirm_age.html", {
+            "request": request, "threshold": ACCOUNT_MIN_AGE, "mode": "account",
+            "expired": False, "blocked": True, "error": ""
+        }, status_code=403)
+        response.delete_cookie(PENDING_COOKIE, path="/", secure=True, httponly=True, samesite="lax")
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    user_id, _, session_id = finish_verified_sign_in(pending, request, client_kind="web")
+    response = response_after_login(user_id, request, pending["return_to"])
+    set_session_cookie(response, session_id)
+    if pending["remember_me"]:
+        issue_remember_me_cookie(response, user_id, request)
+    response.delete_cookie(PENDING_COOKIE, path="/", secure=True, httponly=True, samesite="lax")
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@qr_app.post("/auth/confirm-age/mobile")
+async def confirm_age_mobile(request: Request, payload: dict = Body(...)):
+    # This is a one-time continuation, not a second identity-verification path.
+    if not isinstance(payload, dict) or set(payload) != {"ageTicket", "birthYear", "birthdayThisYear"}:
+        raise HTTPException(status_code=400, detail="Invalid age confirmation request.")
+    ticket = payload.get("ageTicket")
+    if not isinstance(ticket, str) or not pending_sign_in(ticket, "mobile"):
+        raise HTTPException(status_code=410, detail="Age confirmation expired. Sign in again.")
+    try:
+        age = age_from_year(payload.get("birthYear"), payload.get("birthdayThisYear"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    pending = consume_sign_in(ticket, "mobile", age)
+    if not pending:
+        raise HTTPException(status_code=410, detail="Age confirmation expired. Sign in again.")
+    if age < ACCOUNT_MIN_AGE:
+        raise HTTPException(status_code=403, detail="SafeScan accounts are unavailable below the minimum age.")
+    user_id, user, session_id = finish_verified_sign_in(pending, request, client_kind="mobile")
+    return mobile_sign_in_body(user_id, user, session_id)
+
+
+@qr_app.get("/auth/confirm-adult", response_class=HTMLResponse)
+async def confirm_adult_page(request: Request, next_url: str = Query("/", alias="next")):
+    destination = safe_next_url(request, next_url)
+    user = get_session_user(request)
+    if (user and account_is_adult(user["google_id"])) or (not user and guest_is_adult(request.cookies.get(GUEST_ADULT_COOKIE, ""))):
+        return RedirectResponse(destination, status_code=303)
+    ticket = create_adult_challenge(user["google_id"] if user else None, destination)
+    response = templates.TemplateResponse("confirm_age.html", {
+        "request": request, "threshold": ADULT_MIN_AGE, "mode": "adult",
+        "expired": False, "blocked": False, "error": ""
     })
+    response.set_cookie(ADULT_CHALLENGE_COOKIE, ticket, max_age=PENDING_SECONDS,
+                        httponly=True, secure=True, samesite="lax", path="/")
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@qr_app.post("/auth/confirm-adult", response_class=HTMLResponse)
+async def confirm_adult_submit(request: Request, birth_year: str = Form(""),
+                               birthday_this_year: str = Form(""), adult_attestation: str = Form("")):
+    user = get_session_user(request)
+    user_id = user["google_id"] if user else None
+    ticket = request.cookies.get(ADULT_CHALLENGE_COOKIE, "")
+    try:
+        age = age_from_year(birth_year, birthday_this_year)
+    except ValueError as exc:
+        return templates.TemplateResponse("confirm_age.html", {
+            "request": request, "threshold": ADULT_MIN_AGE, "mode": "adult",
+            "expired": False, "blocked": False, "error": str(exc)
+        }, status_code=400)
+    destination = consume_adult_challenge(ticket, user_id)
+    if destination is None:
+        raise HTTPException(status_code=410, detail="Age confirmation expired. Try again.")
+    if age < ADULT_MIN_AGE or adult_attestation != "yes":
+        response = templates.TemplateResponse("confirm_age.html", {
+            "request": request, "threshold": ADULT_MIN_AGE, "mode": "adult",
+            "expired": False, "blocked": True, "error": ""
+        }, status_code=403)
+    else:
+        response = RedirectResponse(destination, status_code=303)
+        if user:
+            record_adult_attestation(user_id)
+        else:
+            response.set_cookie(GUEST_ADULT_COOKIE, create_guest_adult_ticket(),
+                                max_age=GUEST_ADULT_SECONDS, httponly=True, secure=True,
+                                samesite="lax", path="/")
+    response.delete_cookie(ADULT_CHALLENGE_COOKIE, path="/", secure=True, httponly=True, samesite="lax")
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@qr_app.post("/auth/confirm-adult/mobile")
+async def confirm_adult_mobile(request: Request, payload: dict = Body(...)):
+    if not isinstance(payload, dict) or set(payload) != {"ageTicket", "birthYear", "birthdayThisYear", "adultAttestation"}:
+        raise HTTPException(status_code=400, detail="Invalid adult confirmation request.")
+    ticket = payload.get("ageTicket")
+    if not isinstance(ticket, str):
+        raise HTTPException(status_code=410, detail="Age confirmation expired. Try again.")
+    user = get_session_user(request)
+    user_id = user["google_id"] if user else None
+    try:
+        age = age_from_year(payload.get("birthYear"), payload.get("birthdayThisYear"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if consume_adult_challenge(ticket, user_id) is None:
+        raise HTTPException(status_code=410, detail="Age confirmation expired. Try again.")
+    if age < ADULT_MIN_AGE or payload.get("adultAttestation") is not True:
+        raise HTTPException(status_code=403, detail="This feature requires an adult age confirmation.")
+    if user:
+        record_adult_attestation(user_id)
+        return {"adultConfirmed": True}
+    response = JSONResponse({"adultConfirmed": True}, headers={"Cache-Control": "no-store"})
+    response.set_cookie(GUEST_ADULT_COOKIE, create_guest_adult_ticket(),
+                        max_age=GUEST_ADULT_SECONDS, httponly=True, secure=True,
+                        samesite="lax", path="/")
+    return response
 
 @qr_app.get("/account/settings", response_class=HTMLResponse)
 async def account_settings(request: Request, email: str = Query("")):

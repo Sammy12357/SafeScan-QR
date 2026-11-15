@@ -65,7 +65,12 @@ from .auth import require_user
 from .config import ADMIN_EMAIL
 from .config import ADMIN_EMAIL_GMAIL_COMPOSE_URL
 from .config import ALPHA_SOLANA_RECIPIENT
+from .config import ALPHA_SOLANA_ACCESS_DAYS
 from .config import APP_URL
+from .config import BILLING_LEGAL_ENTITY_NAME
+from .config import BILLING_POSTAL_ADDRESS
+from .config import BILLING_REFUND_POLICY_TEXT
+from .config import BILLING_SUPPORT_EMAIL
 from .config import CLIENT_ID
 from .config import GO_GHOST_BROWSER_AUTOMATION_AVAILABLE
 from .config import LEGAL_LAST_UPDATED
@@ -74,8 +79,13 @@ from .config import MOCK_MODE
 from .config import templates
 from .errors import ERRORS
 from .errors import request_id_for
-from .email_util import email_sending_configured
-from .email_util import send_email
+from .waitlist_email import confirmation_available
+from .waitlist_email import confirmation_send_failed
+from .waitlist_email import confirmation_token_valid
+from .waitlist_email import confirm_subscription
+from .waitlist_email import request_confirmation
+from .waitlist_email import send_confirmation
+from .waitlist_email import unsubscribe
 from .history import index_user_context
 from .legal import delete_user_data
 from .legal import get_user_export
@@ -85,15 +95,23 @@ from .payments_solana import alpha_solana_quote_for_user
 from .payments_solana import get_or_create_alpha_solana_reference
 from .payments_solana import record_alpha_solana_subscription
 from .payments_solana import verify_alpha_solana_payment
-from .payments_stripe import alpha_stripe_checkout_url
+from .payments_stripe import billing_identity_ready
+from .payments_stripe import billing_terms_text
+from .payments_stripe import consume_payment_form_token
+from .payments_stripe import create_stripe_checkout
+from .payments_stripe import create_stripe_portal
+from .payments_stripe import issue_payment_form_token
 from .payments_stripe import process_stripe_webhook_event
-from .payments_stripe import record_alpha_subscription_purchase
+from .payments_stripe import require_payment_user
+from .payments_stripe import send_confirmation_if_pending
+from .payments_stripe import stripe_checkout_configured
 from .payments_stripe import verify_stripe_webhook_signature
 from .referrals import get_scan_count
 from .request_helpers import hash_ip
 from .request_helpers import locale_from_request
 from .request_helpers import make_id
 from .request_helpers import request_ip
+from .security import enforce_rate_limit
 from .security import validate_strict_payload
 from .wallet import expire_alpha_subscriptions
 
@@ -262,19 +280,23 @@ async def api_go_ghost_removal(request: Request, broker: str, payload: dict = Bo
 async def privacy_policy(request: Request):
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Privacy Policy", PRIVACY_POLICY_HTML))
 
-def _waitlist_page(request: Request, *, email: str = "", error: str = "", joined: bool = False, status_code: int = 200):
+def _waitlist_page(request: Request, *, email: str = "", error: str = "", error_field: str = "email", joined: bool = False, status_code: int = 200):
     if joined:
-        body = "<h2>You're on the list</h2><p>Thanks for joining the SafeScan QR waitlist. We'll send only major product updates.</p><p><a href='/'>Return to SafeScan QR</a></p>"
+        body = "<h2>Check your email</h2><p>If this address needs confirmation, we sent a link. Product updates begin only after the address is confirmed. If you already confirmed, no action is needed.</p><p><a href='/'>Return to SafeScan QR</a></p>"
     else:
         value = escape_html(email, quote=True)
         error_markup = f"<p class='form-field-error' id='waitlist-email-error' role='alert' data-server-error-focus>{escape_html(error)}</p>" if error else ""
-        invalid = " aria-invalid='true' aria-describedby='waitlist-email-error'" if error else ""
+        invalid = " aria-invalid='true' aria-describedby='waitlist-email-error'" if error and error_field == "email" else ""
+        consent_invalid = " aria-invalid='true' aria-describedby='waitlist-email-error'" if error and error_field == "consent" else ""
         body = (
             "<h2>Join the waitlist</h2><p>Get an email when SafeScan ships major updates.</p>"
             "<form class='legal-form' action='/waitlist' method='post'>"
             "<label for='waitlist-email'>Email address</label>"
             f"<input id='waitlist-email' name='email' type='email' required value='{value}'{invalid}>"
-            f"{error_markup}<button class='primary-button' type='submit'>Join waitlist</button></form>"
+            "<input type='hidden' name='source' value='waitlist'>"
+            f"<label class='waitlist-consent'><input type='checkbox' name='consent' value='yes' required{consent_invalid}>"
+            "<span>Send me SafeScan QR product updates. I understand I must confirm by email and can unsubscribe from any update.</span></label>"
+            f"{error_markup}<button class='primary-button' type='submit'>Request updates</button></form>"
         )
     context = legal_context(request, "Waitlist", body)
     context["eyebrow"] = "SafeScan QR updates"
@@ -287,27 +309,74 @@ async def waitlist_page(request: Request, joined: bool = Query(False)):
 
 
 @qr_app.post("/waitlist", response_class=HTMLResponse)
-async def waitlist_signup(request: Request, email: str = Form("")):
+async def waitlist_signup(request: Request, email: str = Form(""), consent: str = Form(""), source: str = Form("waitlist")):
+    limited = enforce_rate_limit(request, "waitlist_signup", 12, 60 * 60)
+    if limited:
+        return limited
     normalized_email = email.strip().lower()
     if len(normalized_email) > 254 or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", normalized_email):
         return _waitlist_page(request, email=normalized_email, error=ERRORS["email_invalid"].message, status_code=400)
-    with get_conn() as conn:
-        conn.execute(
-            "INSERT OR REPLACE INTO waitlist_signups VALUES (?, ?, ?)",
-            (normalized_email, "footer", datetime.utcnow().isoformat() + "Z")
-        )
-    # Best-effort welcome email; a no-op unless SMTP_* env vars are configured.
-    if email_sending_configured():
-        await asyncio.to_thread(
-            send_email,
-            normalized_email,
-            "You're on the SafeScan QR list",
-            "<h2>You're on the list</h2>"
-            "<p>Thanks for joining the SafeScan QR newsletter. We'll send one email per major release &mdash; no spam.</p>"
-            f"<p><a href='{APP_URL}'>Open SafeScan QR</a></p>"
-            f"<p style='color:#888;font-size:12px'>Didn't sign up? Ignore this email or reply to unsubscribe.</p>",
-        )
+    if consent != "yes":
+        return _waitlist_page(request, email=normalized_email, error="Select the checkbox to request product updates.", error_field="consent", status_code=400)
+    if not confirmation_available():
+        return _waitlist_page(request, email=normalized_email, error="Email updates are unavailable right now. Please try again later.", status_code=503)
+    token = request_confirmation(normalized_email, source if source in {"footer", "waitlist"} else "waitlist")
+    if token and not await asyncio.to_thread(send_confirmation, normalized_email, token):
+        confirmation_send_failed(normalized_email, token)
+        return _waitlist_page(request, email=normalized_email, error="We could not send the confirmation email. Please try again later.", status_code=503)
     return RedirectResponse("/waitlist?joined=1", status_code=303)
+
+
+def _waitlist_action_page(request: Request, title: str, body: str, *, status_code: int = 200):
+    response = templates.TemplateResponse(
+        "legal_page.html", legal_context(request, title, body), status_code=status_code,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Robots-Tag"] = "noindex"
+    return response
+
+
+@qr_app.get("/waitlist/confirm", response_class=HTMLResponse)
+async def waitlist_confirm_page(request: Request, token: str = Query("")):
+    if not confirmation_token_valid(token):
+        return _waitlist_action_page(request, "Confirm updates", "<h2>Link unavailable</h2><p>This confirmation link is invalid or expired. You can request a new link from the waitlist form.</p>", status_code=410)
+    body = (
+        "<h2>Confirm product updates</h2>"
+        "<p>Confirm that you want SafeScan QR product updates at the address that received the email.</p>"
+        "<form class='legal-form' method='post' action='/waitlist/confirm'>"
+        f"<input type='hidden' name='token' value='{escape_html(token, quote=True)}'>"
+        "<button class='primary-button' type='submit'>Confirm updates</button></form>"
+    )
+    return _waitlist_action_page(request, "Confirm updates", body)
+
+
+@qr_app.post("/waitlist/confirm", response_class=HTMLResponse)
+async def waitlist_confirm_submit(request: Request, token: str = Form("")):
+    limited = enforce_rate_limit(request, "waitlist_confirm", 30, 60 * 60)
+    if limited:
+        return limited
+    if not confirm_subscription(token):
+        return _waitlist_action_page(request, "Confirm updates", "<h2>Link unavailable</h2><p>This confirmation link is invalid or expired. You can request a new link from the waitlist form.</p>", status_code=410)
+    return _waitlist_action_page(request, "Updates confirmed", "<h2>Updates confirmed</h2><p>You can unsubscribe from any product update.</p>")
+
+
+def _waitlist_unsubscribe_response(request: Request, token: str):
+    if not unsubscribe(token):
+        return _waitlist_action_page(request, "Unsubscribe", "<h2>Link unavailable</h2><p>This unsubscribe link is invalid or expired. Contact SafeScan QR to stop updates.</p>", status_code=410)
+    return _waitlist_action_page(request, "Unsubscribed", "<h2>Unsubscribed</h2><p>SafeScan QR product updates have been stopped for this address.</p>")
+
+
+@qr_app.get("/waitlist/unsubscribe", response_class=HTMLResponse)
+async def waitlist_unsubscribe_link(request: Request, token: str = Query("")):
+    return _waitlist_unsubscribe_response(request, token)
+
+
+@qr_app.post("/waitlist/unsubscribe", response_class=HTMLResponse)
+async def waitlist_unsubscribe_one_click(request: Request, token: str = Query("")):
+    # RFC 8058 email clients POST to the URL in List-Unsubscribe. The query
+    # carries the bearer token; the POST body does not contain user identity.
+    return _waitlist_unsubscribe_response(request, token)
 
 @qr_app.get("/legal/terms-of-use", response_class=HTMLResponse)
 async def terms_of_use(request: Request):
@@ -490,30 +559,48 @@ async def product_wedges(request: Request):
 
 @qr_app.get("/product/pricing", response_class=HTMLResponse)
 async def product_pricing(request: Request):
-    body = "<h2>Pricing</h2><p>The SafeScan QR public demo is free during the hackathon. Alpha premium access is $1/mo for early API docs, endpoint access, and merchant QR safety workflows.</p><p><a class='primary-button' href='/pay/alpha'>Pay Now</a></p>"
+    body = "<h2>Pricing</h2><p>The SafeScan QR public demo is free. Alpha Premium card billing is US$1 per month and renews monthly until canceled. Solana is a separate one-time access option.</p><p><a class='primary-button' href='/pay/alpha'>View payment terms</a></p>"
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Pricing", body))
 
 @qr_app.get("/pay/alpha", response_class=HTMLResponse)
 async def alpha_payment_page(request: Request):
     expire_alpha_subscriptions()
     user = get_session_user(request)
-    stripe_url = alpha_stripe_checkout_url(request)
-    stripe_button = (
-        f"<a class='primary-button payment-button stripe-payment-button' style='color:#000 !important;-webkit-text-fill-color:#000;text-shadow:none;' href='{stripe_url}' target='_blank' rel='noopener noreferrer'>Pay by card with Stripe</a>"
-        if stripe_url else
-        "<span class='secondary-button payment-button payment-disabled'>Card checkout is unavailable right now</span>"
+    if user:
+        user = require_payment_user(request)
+    stripe_ready = stripe_checkout_configured()
+    stripe_token = issue_payment_form_token(user, "stripe_checkout") if user and stripe_ready else ""
+    terms = escape_html(billing_terms_text())
+    business = (
+        f"<p class='payment-note'>Seller: {escape_html(BILLING_LEGAL_ENTITY_NAME)} · "
+        f"{escape_html(BILLING_POSTAL_ADDRESS)} · "
+        f"Support: {escape_html(BILLING_SUPPORT_EMAIL)}</p>"
+        if billing_identity_ready() else
+        "<p class='payment-note'>Checkout is paused while business and refund details are verified.</p>"
     )
-    solana_url = alpha_solana_pay_url(request)
+    stripe_button = (
+        """<form action='/pay/alpha/stripe/checkout' method='post'>
+            <label><input type='checkbox' name='recurring_consent' value='yes' required>
+              I agree to recurring monthly billing on the terms shown above.</label>
+            <input type='hidden' name='payment_token' value='""" + escape_html(stripe_token) + """'>
+            <button class='primary-button payment-button stripe-payment-button' type='submit'>Continue to Stripe checkout</button>
+          </form>"""
+        if stripe_token else
+        "<p class='payment-note'>Sign in to pay by card. Card checkout remains unavailable until verified billing settings are configured.</p>"
+    )
+    solana_url = alpha_solana_pay_url(request) if user and billing_identity_ready() else ""
     solana_quote = alpha_solana_quote_for_user(user) if user and solana_url else None
+    solana_token = issue_payment_form_token(user, "solana_verify") if user and solana_url else ""
     solana_verify = (
         """<form action="/pay/alpha/solana/verify" method="post">
+          <input type='hidden' name='payment_token' value='""" + escape_html(solana_token) + """'>
           <button class="secondary-button payment-button" type="submit">Verify Solana payment</button>
         </form>"""
-        if solana_url and user else
-        "<p class='payment-note'>Sign in before paying with Solana so SafeScan can attach the payment to your account.</p>"
+        if solana_token else
+        "<p class='payment-note'>Sign in before paying with Solana; payment must be attached to your account.</p>"
     )
     solana_button = (
-        f"<a class='secondary-button payment-button' href='{solana_url}'>Pay with Solana</a>"
+        f"<a class='secondary-button payment-button' href='{escape_html(solana_url, quote=True)}'>Pay with Solana</a>"
         if solana_url else
         "<span class='secondary-button payment-button payment-disabled'>Solana checkout is unavailable right now</span>"
     )
@@ -531,28 +618,56 @@ async def alpha_payment_page(request: Request):
     )
     body = f"""
     <h2>Alpha Premium</h2>
-    <p>Pay $1/mo for Alpha access to Go Ghost privacy cleanup, SafeScan QR premium API docs, risk scoring endpoints, and merchant QR safety workflows.</p>
+    <p>Alpha access includes Go Ghost privacy cleanup, SafeScan QR premium API docs, risk scoring endpoints, and merchant QR safety workflows.</p>
     <div class="payment-panel">
       <div class="payment-option">
         <p class="eyebrow">Card</p>
-        <h3>Stripe checkout</h3>
-        <p>Use this for credit card and subscription billing.</p>
+        <h3>Monthly subscription</h3>
+        <p>{terms}</p>
+        <p>Manage or cancel from <a href='/profile'>Profile → Billing</a>.</p>
         {stripe_button}
       </div>
       <div class="payment-option payment-option-wallet">
         <h3>Wallet payment</h3>
-        <p>Use this for a Solana Pay transfer, then verify it on-chain to activate Alpha access.</p>
+        <p>Solana is a one-time payment for {ALPHA_SOLANA_ACCESS_DAYS} days of Alpha access. It does not renew. {escape_html(BILLING_REFUND_POLICY_TEXT)}</p>
         {solana_button}
         {solana_verify}
         {solana_note}
       </div>
     </div>
+    {business}
     """
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Alpha Payment", body))
 
-@qr_app.post("/pay/alpha/solana/verify", response_class=HTMLResponse)
-async def alpha_solana_payment_verify(request: Request):
+@qr_app.post("/pay/alpha/stripe/checkout")
+async def alpha_stripe_checkout(request: Request, recurring_consent: str = Form(""), payment_token: str = Form("")):
+    user = require_payment_user(request)
+    rate_limited = enforce_rate_limit(request, "stripe_checkout", 5, 3600, user_key=user["google_id"])
+    if rate_limited:
+        return rate_limited
+    consume_payment_form_token(user, "stripe_checkout", payment_token)
+    if recurring_consent != "yes":
+        raise HTTPException(status_code=400, detail="You must agree to recurring monthly billing before checkout.")
+    url = await asyncio.to_thread(create_stripe_checkout, user)
+    return RedirectResponse(url, status_code=303)
+
+@qr_app.get("/pay/alpha/manage")
+async def alpha_stripe_manage(request: Request):
+    # Cancellation stays available even if a later age check closes new sales.
     user = require_user(request)
+    rate_limited = enforce_rate_limit(request, "stripe_portal", 20, 3600, user_key=user["google_id"])
+    if rate_limited:
+        return rate_limited
+    url = await asyncio.to_thread(create_stripe_portal, user)
+    return RedirectResponse(url, status_code=303)
+
+@qr_app.post("/pay/alpha/solana/verify", response_class=HTMLResponse)
+async def alpha_solana_payment_verify(request: Request, payment_token: str = Form("")):
+    user = require_payment_user(request)
+    rate_limited = enforce_rate_limit(request, "solana_verify", 10, 3600, user_key=user["google_id"])
+    if rate_limited:
+        return rate_limited
+    consume_payment_form_token(user, "solana_verify", payment_token)
     try:
         quote_row = get_or_create_alpha_solana_reference(user)
         reference = quote_row["reference"] if quote_row else ""
@@ -598,38 +713,32 @@ async def stripe_webhook(request: Request):
         event = json.loads(payload.decode("utf-8"))
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=400, detail="Invalid Stripe webhook payload.") from exc
-    result = process_stripe_webhook_event(event)
+    result = await asyncio.to_thread(process_stripe_webhook_event, event)
+    if result.get("session_id"):
+        await asyncio.to_thread(send_confirmation_if_pending, result["session_id"])
     return {"received": True, "result": result}
 
 @qr_app.get("/pay/alpha/success", response_class=HTMLResponse)
 async def alpha_payment_success_page(request: Request):
     expire_alpha_subscriptions()
-    recorded_purchase = record_alpha_subscription_purchase(request)
-    storage_note = (
-        f"<p class='payment-note'>Subscription start saved for {recorded_purchase['email']} on {recorded_purchase['purchased_at']}.</p>"
-        if recorded_purchase else
-        "<p class='payment-note'>Sign in to SafeScan, then revisit this success page so your subscription start date can be saved to your account.</p>"
-    )
-    body = f"""
-    <h2>Alpha payment received</h2>
-    <p>Thanks for subscribing to SafeScan Alpha Premium. Your payment processor has accepted the checkout session.</p>
+    body = """
+    <h2>Checkout return</h2>
+    <p>SafeScan is checking the signed payment confirmation from Stripe. This page does not activate access. Check your profile for current billing status.</p>
     <div class="payment-panel">
       <div>
-        <p class="eyebrow">Next step</p>
-        <h3>Activate access</h3>
-        <p>Email your Stripe receipt or Solana transaction signature to <a href="mailto:{ADMIN_EMAIL}">{ADMIN_EMAIL}</a>. Include the email you use to sign in to SafeScan.</p>
+        <p class="eyebrow">Billing</p>
+        <h3>Review your account</h3>
+        <a class="primary-button payment-button" href="/profile">Open profile</a>
       </div>
       <div>
         <p class="eyebrow">Alpha docs</p>
-        <h3>Continue to docs</h3>
-        <p>Review the current Alpha docs while access is activated.</p>
+        <h3>Product information</h3>
+        <p>Review the Alpha docs while payment confirmation is pending.</p>
         <a class="primary-button payment-button" href="/resources/docs">Open docs</a>
       </div>
     </div>
-    {storage_note}
-    <p class="payment-note">Stripe webhook events update subscription access automatically after checkout, renewal, cancellation, or period-end expiration.</p>
     """
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Alpha Payment Success", body))
+    return templates.TemplateResponse("legal_page.html", legal_context(request, "Checkout Return", body))
 
 @qr_app.get("/resources/docs", response_class=HTMLResponse)
 async def resources_docs(request: Request):
@@ -827,6 +936,15 @@ async def submit_data_request(
     message = f"Request {request_id} recorded. Keep this reference for your records."
     if verified_self_request and request_type in ("access", "portability", "erasure") and status == "submitted":
         message = f"Request {request_id} recorded. Account ownership needs review before this request can be completed."
+        if request_type == "erasure":
+            with get_conn() as conn:
+                billing_record = conn.execute(
+                    """SELECT 1 FROM alpha_subscriptions WHERE user_id = ? AND provider = 'stripe'
+                       UNION SELECT 1 FROM stripe_checkout_intents WHERE user_id = ? LIMIT 1""",
+                    (session_user["google_id"], session_user["google_id"]),
+                ).fetchone()
+            if billing_record:
+                message = f"Request {request_id} recorded for billing-record review. If you have an active card subscription, cancel it from Profile → Billing; your account remains available while this request is reviewed."
     return templates.TemplateResponse("data_request.html", {
         "request": request, "email": email, "region": region,
         "request_type": request_type, "details": details, "field_errors": {},

@@ -246,12 +246,14 @@ def test_waitlist_error_keeps_email_and_success_uses_redirect(error_app):
     with app.get_conn() as conn:
         assert conn.execute("SELECT COUNT(*) FROM waitlist_signups").fetchone()[0] == 0
 
-    success = client.post("/waitlist", data={"email": "person@example.com"}, follow_redirects=False)
-    assert success.status_code == 303
-    assert success.headers["location"] == "/waitlist?joined=1"
-    joined = client.get(success.headers["location"])
-    assert "You're on the list" in joined.text
-    assert joined.headers["Cache-Control"] == "no-store"
+    missing_consent = client.post("/waitlist", data={"email": "person@example.com"})
+    assert missing_consent.status_code == 400
+    assert "Select the checkbox" in missing_consent.text
+    unavailable = client.post("/waitlist", data={"email": "person@example.com", "consent": "yes"})
+    assert unavailable.status_code == 503
+    assert "Email updates are unavailable" in unavailable.text
+    with app.get_conn() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM waitlist_signups").fetchone()[0] == 0
 
 
 def test_unexpected_json_fields_do_not_echo_names(error_app):

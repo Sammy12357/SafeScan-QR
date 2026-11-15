@@ -54,6 +54,7 @@ from .config import REMEMBER_ME_COOKIE_NAME
 from .config import REMEMBER_ME_TTL_SECONDS
 from .config import SESSION_COOKIE_NAME
 from .config import SESSION_TTL_SECONDS
+from .age_gate import ACCOUNT_MIN_AGE
 from .request_helpers import hash_ip
 from .request_helpers import make_id
 from .request_helpers import request_ip
@@ -150,9 +151,10 @@ def validate_and_rotate_remember_me(request):
                    u.role, u.status, u.last_login_at, u.login_ip, u.google_sub
             FROM persistent_sessions ps
             JOIN users u ON u.google_id = ps.user_id
+            JOIN age_eligibility a ON a.user_id = u.google_id AND a.minimum_age >= ?
             WHERE ps.token_hash = ?
             """,
-            (token_hash,),
+            (ACCOUNT_MIN_AGE, token_hash),
         ).fetchone()
         if not row:
             return None, None

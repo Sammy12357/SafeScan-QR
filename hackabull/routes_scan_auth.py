@@ -58,6 +58,12 @@ from .accounts import save_local_user
 from .accounts import save_user_to_db
 from .accounts import set_user_username
 from .accounts import verify_password
+from .age_gate import ACCOUNT_MIN_AGE
+from .age_gate import PENDING_COOKIE
+from .age_gate import PENDING_SECONDS
+from .age_gate import begin_sign_in
+from .age_gate import eligible_account
+from .age_gate import record_account_eligibility
 from .app_module import qr_app
 from .audit import SafeScanError
 from .audit import audit_log
@@ -270,6 +276,42 @@ async def scan_qr(
     result_response.headers["Pragma"] = "no-cache"
     return result_response
 
+def finish_verified_sign_in(identity, request, *, client_kind):
+    """Create an account and session only after a verified age decision."""
+    subject = identity["subject"]
+    email = identity["email"]
+    try:
+        eligible_account(identity["provider"], subject, email)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    try:
+        user_id = save_user_to_db(subject, email, request, identity.get("display_name") or "",
+                                  identity.get("picture") or "", strict_identity=True)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    record_account_eligibility(user_id)
+    user = require_user_from_google_id(user_id)
+    if user["status"] != "active":
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    run_fraud_checks("signup", email, request, {"googleId": user_id, "client": client_kind, "provider": identity["provider"]})
+    session_id = create_session(user_id, request)
+    audit_log("user.login", request=request, actor_user_id=user_id, metadata={"client": client_kind, "provider": identity["provider"]})
+    return user_id, user, session_id
+
+
+def mobile_sign_in_body(user_id, user, session_id):
+    return {
+        "session": session_id,
+        "user": {
+            "id": user_id,
+            "name": user.get("display_name") or "Safe Scanner",
+            "email": user["email"],
+            "avatarUrl": user.get("picture"),
+            "role": user.get("role", "user"),
+        },
+    }
+
+
 @qr_app.post("/auth/google", response_class=HTMLResponse)
 @qr_app.get("/auth/google", response_class=HTMLResponse)
 async def auth_google(
@@ -294,18 +336,33 @@ async def auth_google(
     try:
         idinfo = id_token.verify_oauth2_token(credential, google_requests.Request(), CLIENT_ID)
         google_id = idinfo["sub"]
-        user_email = idinfo["email"].strip().lower()
-    except ValueError:
+        email_claim = idinfo["email"]
+        if not isinstance(google_id, str) or not google_id or not isinstance(email_claim, str):
+            raise ValueError("Invalid identity claims.")
+        user_email = email_claim.strip().lower()
+        if not user_email:
+            raise ValueError("Missing email.")
+    except (ValueError, KeyError, TypeError, AttributeError, InvalidSignature):
         audit_log("auth.failed", request=request, metadata={"provider": "google"})
         raise HTTPException(status_code=401, detail="Authentication required.")
 
-    google_id = save_user_to_db(google_id, user_email, request, idinfo.get("name") or "", idinfo.get("picture") or "")
-    user = require_user_from_google_id(google_id)
-    if user["status"] != "active":
-        raise HTTPException(status_code=401, detail="Authentication required.")
-    run_fraud_checks("signup", user_email, request, {"googleId": google_id})
-    session_id = create_session(google_id, request)
-    audit_log("user.login", request=request, actor_user_id=google_id)
+    if idinfo.get("email_verified") is False:
+        raise HTTPException(status_code=401, detail="Verified email required.")
+    identity = {"provider": "google", "subject": google_id, "email": user_email,
+                "display_name": idinfo.get("name") if isinstance(idinfo.get("name"), str) else "",
+                "picture": idinfo.get("picture") if isinstance(idinfo.get("picture"), str) else ""}
+    try:
+        ticket = begin_sign_in("google", google_id, user_email, identity["display_name"], identity["picture"],
+                               client_kind="web", return_to=return_to, remember=wants_remember_me(remember_me))
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if ticket:
+        response = RedirectResponse("/auth/confirm-age", status_code=303)
+        response.set_cookie(PENDING_COOKIE, ticket, max_age=PENDING_SECONDS, httponly=True,
+                            secure=True, samesite="lax", path="/")
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    google_id, user, session_id = finish_verified_sign_in(identity, request, client_kind="web")
     if return_to != "/":
         response = RedirectResponse(return_to, status_code=303)
         set_session_cookie(response, session_id)
@@ -354,42 +411,52 @@ async def auth_verify(request: Request, payload: dict = Body(...)):
         if issuer == AUTH0_ISSUER.rstrip("/"):
             provider = "auth0_mobile"
             idinfo = verify_auth0_id_token(credential)
-            # Auth0 user_id format for Google connection: "google-oauth2|<sub>".
+            # Match the existing web Google identity only for Auth0's Google
+            # connection. Other Auth0 connections retain a namespaced subject.
             raw_sub = idinfo.get("sub") or ""
-            if "|" in raw_sub:
+            if not isinstance(raw_sub, str):
+                raise ValueError("Auth0 token has an invalid subject.")
+            if raw_sub.startswith("google-oauth2|"):
                 google_id = raw_sub.split("|", 1)[1]
             else:
-                google_id = raw_sub
+                google_id = "auth0:" + raw_sub
             if not google_id:
                 raise ValueError("Auth0 token missing subject.")
-            user_email = (idinfo.get("email") or "").strip().lower()
+            email_claim = idinfo.get("email") or ""
+            if not isinstance(email_claim, str):
+                raise ValueError("Auth0 token has an invalid email.")
+            user_email = email_claim.strip().lower()
             if not user_email:
                 raise ValueError("Auth0 token missing email.")
         else:
             idinfo = id_token.verify_oauth2_token(credential, google_requests.Request(), CLIENT_ID)
             google_id = idinfo["sub"]
-            user_email = idinfo["email"].strip().lower()
-    except ValueError:
+            email_claim = idinfo["email"]
+            if not isinstance(google_id, str) or not google_id or not isinstance(email_claim, str):
+                raise ValueError("Invalid identity claims.")
+            user_email = email_claim.strip().lower()
+            if not user_email:
+                raise ValueError("Missing email.")
+    except (ValueError, KeyError, TypeError, AttributeError, InvalidSignature):
         audit_log("auth.failed", request=request, metadata={"provider": provider})
         raise HTTPException(status_code=401, detail="Authentication required.")
 
-    google_id = save_user_to_db(google_id, user_email, request, idinfo.get("name") or "", idinfo.get("picture") or "")
-    user = require_user_from_google_id(google_id)
-    if user["status"] != "active":
-        raise HTTPException(status_code=401, detail="Authentication required.")
-    run_fraud_checks("signup", user_email, request, {"googleId": google_id, "client": "mobile", "provider": provider})
-    session_id = create_session(google_id, request)
-    audit_log("user.login", request=request, actor_user_id=google_id, metadata={"client": "mobile", "provider": provider})
-    return {
-        "session": session_id,
-        "user": {
-            "id": google_id,
-            "name": user.get("display_name") or idinfo.get("name") or "Safe Scanner",
-            "email": user_email,
-            "avatarUrl": idinfo.get("picture"),
-            "role": user.get("role", "user"),
-        },
-    }
+    if idinfo.get("email_verified") is False:
+        raise HTTPException(status_code=401, detail="Verified email required.")
+    identity = {"provider": provider, "subject": google_id, "email": user_email,
+                "display_name": idinfo.get("name") if isinstance(idinfo.get("name"), str) else "",
+                "picture": idinfo.get("picture") if isinstance(idinfo.get("picture"), str) else ""}
+    try:
+        ticket = begin_sign_in(provider, google_id, user_email, identity["display_name"], identity["picture"],
+                               client_kind="mobile", remember=False)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if ticket:
+        return JSONResponse({"ageConfirmationRequired": True, "ageTicket": ticket,
+                             "minimumAge": ACCOUNT_MIN_AGE, "expiresInSeconds": PENDING_SECONDS},
+                            status_code=202, headers={"Cache-Control": "no-store"})
+    google_id, user, session_id = finish_verified_sign_in(identity, request, client_kind="mobile")
+    return mobile_sign_in_body(google_id, user, session_id)
 
 async def _do_logout(request: Request):
     session_id = request_session_id(request)
@@ -541,6 +608,9 @@ async def auth_register(request: Request, email: str = Form(...), password: str 
     if email_account_exists(email):
         return _auth_form_error(request, "account_exists", tab="register", next_url=next_url, email=email, error_field="email")
     lid = save_local_user(email, request)
+    # Local password auth is unavailable in production. Keep developer
+    # fixtures usable while public Google/Auth0 accounts use the age flow.
+    record_account_eligibility(lid)
     try:
         with get_conn() as conn:
             conn.execute(
@@ -570,6 +640,7 @@ async def auth_login_local(request: Request, email: str = Form(...), password: s
         audit_log("auth.failed", request=request, metadata={"provider": "local"})
         return _auth_form_error(request, "credentials_invalid", tab="login", next_url=next_url, email=email)
     lid = save_local_user(email, request)
+    record_account_eligibility(lid)
     with get_conn() as conn:
         conn.execute("UPDATE local_credentials SET user_id = ? WHERE email = ?", (lid, email))
     user = require_user_from_google_id(lid)
@@ -590,6 +661,7 @@ async def auth_dev_google(request: Request, remember_me: str = Form("1"), next_u
     google_id = "dev-google-local"
     user_email = "google-demo@safescan.local"
     google_id = save_user_to_db(google_id, user_email, request)
+    record_account_eligibility(google_id)
     user = require_user_from_google_id(google_id)
     if user["status"] != "active":
         raise HTTPException(status_code=401, detail="Authentication required.")

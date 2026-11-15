@@ -63,6 +63,22 @@ def test_security_headers_are_present_on_health_response(security_app):
     assert "Server" not in response.headers
 
 
+def test_guest_home_uses_local_font_and_defers_google_signin(security_app):
+    _, client, _ = security_app
+
+    home = client.get("/")
+    css = client.get("/static/styles.css")
+    font = client.get("/static/fonts/Orbitron-wght.ttf")
+
+    assert home.status_code == css.status_code == font.status_code == 200
+    assert "accounts.google.com/gsi/client" not in home.text
+    assert "fonts.googleapis.com" not in css.text
+    assert "/static/fonts/Orbitron-wght.ttf" in css.text
+    assert font.headers["Content-Type"].startswith("font/")
+    assert "fonts.googleapis.com" not in home.headers["Content-Security-Policy"]
+    assert "fonts.gstatic.com" not in home.headers["Content-Security-Policy"]
+
+
 def test_vendored_qr_wasm_has_correct_media_type(security_app):
     _, client, _ = security_app
     response = client.get("/static/vendor/zxing-wasm/3.1.6/reader/zxing_reader.wasm")
@@ -166,7 +182,7 @@ def test_waitlist_admin_page_requires_admin(security_app):
     register(client, "user@example.com")
     with sqlite3.connect(db_path) as conn:
         conn.execute(
-            "INSERT INTO waitlist_signups VALUES (?, ?, ?)",
+            "INSERT INTO waitlist_signups (email, source, created_at) VALUES (?, ?, ?)",
             ("lead@example.com", "footer", "2026-05-11T12:00:00Z"),
         )
 
@@ -181,7 +197,7 @@ def test_admin_can_view_waitlist_signups(security_app):
     register(client, "admin@example.com")
     with sqlite3.connect(db_path) as conn:
         conn.execute(
-            "INSERT INTO waitlist_signups VALUES (?, ?, ?)",
+            "INSERT INTO waitlist_signups (email, source, created_at) VALUES (?, ?, ?)",
             ("lead@example.com", "footer", "2026-05-11T12:00:00Z"),
         )
 
@@ -414,6 +430,13 @@ def test_breach_form_keeps_input_and_escapes_saved_report(security_app):
 def test_go_ghost_page_prompts_before_workflow(security_app):
     _, client, _ = security_app
 
+    # Reach the workflow after its separate guest 18+ attestation.
+    assert client.get("/auth/confirm-adult?next=/go-ghost").status_code == 200
+    assert client.post("/auth/confirm-adult", data={
+        "birth_year": "1990", "birthday_this_year": "yes",
+        "adult_attestation": "yes",
+    }, follow_redirects=False).status_code == 303
+
     response = client.get("/go-ghost")
 
     assert response.status_code == 200
@@ -453,7 +476,7 @@ def test_waitlist_export_requires_owner(security_app):
     register(admin_client, "admin@example.com")
     with sqlite3.connect(db_path) as conn:
         conn.execute(
-            "INSERT INTO waitlist_signups VALUES (?, ?, ?)",
+            "INSERT INTO waitlist_signups (email, source, created_at) VALUES (?, ?, ?)",
             ("lead@example.com", "footer", "2026-05-11T12:00:00Z"),
         )
 
@@ -466,7 +489,7 @@ def test_waitlist_export_requires_owner(security_app):
     assert denied.status_code == 403
     assert allowed.status_code == 200
     assert allowed.headers["content-type"].startswith("text/csv")
-    assert "lead@example.com" in allowed.text
+    assert "lead@example.com" not in allowed.text  # legacy rows lack opt-in proof
 
 
 def test_admin_access_denylist_removes_contact_email_access(tmp_path, monkeypatch):

@@ -58,19 +58,19 @@ VIEWS = (
     View("history_first_use", "/history", "member"),
     View("leaderboard", "/leaderboard"),
     View("malicious_database", "/malicious-database"),
-    View("go_ghost_guest", "/go-ghost"),
+    View("go_ghost_guest", "/go-ghost", final_path="/auth/confirm-adult"),
     View("go_ghost_signed_in", "/go-ghost", "member"),
     View("generate_qr", "/generate-qr"),
     View("login", "/login"),
-    View("confirm_age", "/auth/confirm-age?email=ui-shots-member%40example.test", "member"),
+    View("confirm_adult", "/auth/confirm-adult"),
     View("profile", "/profile", "member"),
     View("onboarding_redirect", "/onboarding/username", "member", "/profile"),
     View("data_request", "/legal/data-request"),
-    View("token_guest", "/token"),
+    View("token_guest", "/token", final_path="/auth/confirm-adult"),
     View("token_member", "/token", "member"),
     View("plans", "/plans"),
     View("learn", "/learn"),
-    View("alpha_payment", "/pay/alpha"),
+    View("alpha_payment", "/pay/alpha", final_path="/auth/confirm-adult"),
     View("alpha_success", "/pay/alpha/success"),
     View("privacy", "/legal/privacy-policy"),
     View("terms", "/legal/terms-of-use"),
@@ -228,6 +228,18 @@ def context_for(browser, base_url: str, audience: str):
         check = context.request.get("/api/me")
         if check.status != 200:
             raise RuntimeError(f"Synthetic {audience} session did not persist: HTTP {check.status}")
+        # Synthetic local accounts skip OAuth onboarding; give the screenshot
+        # fixture adult access so gated feature pages can still be reviewed.
+        from datetime import datetime, timezone
+        adult_page = context.request.get("/auth/confirm-adult")
+        if adult_page.status != 200:
+            raise RuntimeError(f"Could not open synthetic {audience} adult check: HTTP {adult_page.status}")
+        adult = context.request.post("/auth/confirm-adult", form={
+            "birth_year": str(datetime.now(timezone.utc).year - 25),
+            "birthday_this_year": "yes", "adult_attestation": "yes",
+        }, max_redirects=0)
+        if adult.status != 303:
+            raise RuntimeError(f"Could not complete synthetic {audience} adult check: HTTP {adult.status}")
     return context
 
 

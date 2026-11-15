@@ -57,9 +57,11 @@ from .config import ADMIN_EMAIL
 from .config import AIRDROP_BASE_ALLOCATION
 from .config import AIRDROP_TOKEN_ALLOCATIONS
 from .config import templates
+from .email_util import marketing_email_configured
 from .history import admin_avatar
 from .history import safe_scan_history_record
 from .payload_privacy import safe_legacy_scan_value
+from .waitlist_email import confirmation_available
 
 # =============================================================================
 # ADMIN CONSOLE — data-access helpers (the admin routes follow further below)
@@ -90,6 +92,7 @@ def admin_context(request, title, page, data=None, owner_only=False, status_code
         "admin_user": admin_user,
         "is_owner": has_role(admin_user, "owner"),
         "avatar": admin_avatar(admin_user.get("email")),
+        "marketing_email_ready": marketing_email_configured() and confirmation_available(),
     }
     return templates.TemplateResponse("admin_shell.html", context, status_code=status_code)
 
@@ -391,16 +394,33 @@ def fetch_waitlist(search="", limit=500):
                 ).fetchone()
                 if not table:
                     continue
+                columns = {row[1] for row in conn.execute("PRAGMA table_info(waitlist_signups)")}
                 conn.create_function(
                     "waitlist_email_key", 1,
                     lambda value: (value or "").strip().lower(), deterministic=True,
                 )
-                rows = conn.execute(
-                    "SELECT email, source, created_at FROM waitlist_signups "
-                    "WHERE email IS NOT NULL AND instr(waitlist_email_key(email), ?) > 0 "
-                    "ORDER BY created_at DESC LIMIT ?",
-                    (normalized_search, bounded_limit),
-                ).fetchall()
+                if "confirmed_at" in columns:
+                    rows = conn.execute(
+                        """SELECT w.email, w.source, w.created_at, w.confirmed_at,
+                                  w.consent_version,
+                                  CASE WHEN s.email IS NOT NULL THEN 'unsubscribed'
+                                       WHEN w.confirmed_at IS NOT NULL THEN 'confirmed'
+                                       ELSE 'pending' END AS status
+                           FROM waitlist_signups AS w
+                           LEFT JOIN email_suppressions AS s ON s.email = w.email
+                           WHERE w.email IS NOT NULL AND instr(waitlist_email_key(w.email), ?) > 0
+                           ORDER BY w.created_at DESC LIMIT ?""",
+                        (normalized_search, bounded_limit),
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        """SELECT email, source, created_at, NULL AS confirmed_at,
+                                  NULL AS consent_version, 'legacy_unconfirmed' AS status
+                           FROM waitlist_signups
+                           WHERE email IS NOT NULL AND instr(waitlist_email_key(email), ?) > 0
+                           ORDER BY created_at DESC LIMIT ?""",
+                        (normalized_search, bounded_limit),
+                    ).fetchall()
         except sqlite3.Error:
             continue
         for row in rows:

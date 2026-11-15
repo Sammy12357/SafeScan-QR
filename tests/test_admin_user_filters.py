@@ -129,7 +129,7 @@ def test_waitlist_search_filters_before_result_limit(tmp_path, monkeypatch):
     with sqlite3.connect(path) as conn:
         conn.execute("CREATE TABLE waitlist_signups (email TEXT, source TEXT, created_at TEXT)")
         conn.executemany(
-            "INSERT INTO waitlist_signups VALUES (?, 'footer', ?)",
+            "INSERT INTO waitlist_signups (email, source, created_at) VALUES (?, 'footer', ?)",
             [(f"person-{index:02d}@example.test", f"2026-11-{30-index:02d}")
              for index in range(29)] +
             [("needle@example.test", "2026-11-01")],

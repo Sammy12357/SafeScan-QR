@@ -147,13 +147,25 @@ def safe_next_url(request: Request, raw="", fallback="/"):
         return raw
     return fallback
 
-def save_user_to_db(google_id, email, request=None, display_name="", picture=""):
+def save_user_to_db(google_id, email, request=None, display_name="", picture="", *, strict_identity=False):
     normalized_email = email.strip().lower()
     normalized_display_name = (display_name or "").strip()[:120]
     normalized_picture = (picture or "").strip()[:500]
     role = role_for_email(normalized_email)
     referral_code = hashlib.sha256(f"{normalized_email}:{APP_URL}".encode("utf-8")).hexdigest()[:10]
     with get_conn() as conn:
+        if strict_identity:
+            conn.execute("BEGIN IMMEDIATE")
+            identity_row = conn.execute(
+                "SELECT google_id FROM users WHERE google_id = ? OR google_sub = ? LIMIT 1",
+                (google_id, google_id),
+            ).fetchone()
+            email_row = conn.execute(
+                "SELECT google_id FROM users WHERE lower(email) = ? AND status != 'deleted' LIMIT 1",
+                (normalized_email,),
+            ).fetchone()
+            if email_row and (not identity_row or email_row["google_id"] != identity_row["google_id"]):
+                raise ValueError("This email is already linked to a different sign-in identity.")
         existing = conn.execute(
             """
             SELECT google_id
@@ -164,7 +176,8 @@ def save_user_to_db(google_id, email, request=None, display_name="", picture="")
             """,
             (normalized_email, google_id),
         ).fetchone()
-        resolved_google_id = existing["google_id"] if existing else google_id
+        resolved_google_id = (identity_row["google_id"] if strict_identity and identity_row else
+                              existing["google_id"] if existing else google_id)
         google_sub = google_id if not google_id.startswith("user_") and not google_id.startswith("local_") else None
         conn.execute("""
             INSERT INTO users (google_id, email, display_name, picture, last_login, role, status, last_login_at, login_ip, created_at, referral_code, google_sub)

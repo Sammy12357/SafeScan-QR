@@ -128,6 +128,9 @@ def get_user_export(email, user_id):
         )]
         requests_ = [dict(row) for row in conn.execute("SELECT * FROM data_requests WHERE email = ?", (email,))]
         age = [dict(row) for row in conn.execute("SELECT * FROM age_confirmations WHERE email = ?", (email,))]
+        age_eligibility = [dict(row) for row in conn.execute(
+            "SELECT * FROM age_eligibility WHERE user_id = ?", (user_id,)
+        )]
         opt_outs = [dict(row) for row in conn.execute("SELECT * FROM privacy_opt_outs WHERE email = ?", (email,))]
         ghost_subjects = _go_ghost_status_export(conn, "go_ghost_subjects", user_id)
         ghost_consents = _go_ghost_status_export(conn, "go_ghost_consents", user_id)
@@ -135,16 +138,32 @@ def get_user_export(email, user_id):
         ghost_legacy_jobs = [dict(row) for row in conn.execute(
             "SELECT * FROM go_ghost_removal_jobs WHERE user_id = ?", (user_id,)
         )]
+        billing_consents = [dict(row) for row in conn.execute(
+            "SELECT * FROM stripe_checkout_intents WHERE user_id = ?", (user_id,)
+        )]
+        billing_subscriptions = [dict(row) for row in conn.execute(
+            "SELECT * FROM alpha_subscriptions WHERE user_id = ?", (user_id,)
+        )]
     return {"email": email, "scans": scans, "scanEvents": events,
             "dataRequests": requests_, "ageConfirmations": age,
+            "ageEligibility": age_eligibility,
             "privacyOptOuts": opt_outs,
             "goGhostSubjects": ghost_subjects, "goGhostConsents": ghost_consents,
-            "goGhostRequests": ghost_requests, "goGhostLegacyJobs": ghost_legacy_jobs}
+            "goGhostRequests": ghost_requests, "goGhostLegacyJobs": ghost_legacy_jobs,
+            "billingConsents": billing_consents, "billingSubscriptions": billing_subscriptions}
 
 def delete_user_data(email, user_id):
     with get_conn() as conn:
         conn.execute("BEGIN IMMEDIATE")
         if not unique_email_owner(conn, email, user_id):
+            return False
+        # Keep the account so a card subscription can still be canceled and
+        # retained billing records can receive an owner-reviewed DSR decision.
+        if conn.execute(
+            """SELECT 1 FROM alpha_subscriptions WHERE user_id = ? AND provider = 'stripe'
+               UNION SELECT 1 FROM stripe_checkout_intents WHERE user_id = ? LIMIT 1""",
+            (user_id, user_id),
+        ).fetchone():
             return False
         conn.execute(
             "DELETE FROM scans WHERE user_id = ? OR ((user_id IS NULL OR user_id = '') AND lower(email) = lower(?))",
@@ -166,5 +185,8 @@ def delete_user_data(email, user_id):
         conn.execute("DELETE FROM go_ghost_removal_jobs WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM users WHERE google_id = ?", (user_id,))
         conn.execute("DELETE FROM age_confirmations WHERE email = ?", (email,))
+        conn.execute("DELETE FROM age_eligibility WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM pending_age_signins WHERE lower(email) = lower(?)", (email,))
+        conn.execute("DELETE FROM adult_age_challenges WHERE user_id = ?", (user_id,))
     return True
 

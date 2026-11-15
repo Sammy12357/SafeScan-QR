@@ -54,7 +54,11 @@ def go_ghost_app(tmp_path, monkeypatch, request):
     app = importlib.import_module("hackabull")
     routes = importlib.import_module("hackabull.routes_pages")
     app.RATE_LIMITS.clear()
-    yield TestClient(app.qr_app, base_url="https://testserver"), routes, database
+    client = TestClient(app.qr_app, base_url="https://testserver")
+    # These tests exercise the Go Ghost route after the separate 18+ gate.
+    age_gate = importlib.import_module("hackabull.age_gate")
+    client.cookies.set(age_gate.GUEST_ADULT_COOKIE, age_gate.create_guest_adult_ticket())
+    yield client, routes, database
     for name in list(sys.modules):
         if name == "hackabull" or name.startswith("hackabull.") or name in {"db", "storage"}:
             sys.modules.pop(name, None)
