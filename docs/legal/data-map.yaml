@@ -6,7 +6,7 @@
     "Retention periods have not been tied to deletion jobs.",
     "URL query strings can be stored or sent to reputation providers.",
     "Audit logs and user records store raw IP addresses.",
-    "Data-request export and deletion do not yet cover every table.",
+    "Data-request export and deletion do not yet cover every table, including new payment consent records.",
     "Go Ghost status tables exist in code but are disabled and are not created at startup."
   ],
   "tables": {
@@ -85,13 +85,45 @@
         "current_period_end",
         "cancel_at_period_end",
         "canceled_at",
-        "expires_at"
+        "expires_at",
+        "stripe_verified_at"
       ],
-      "source": "Stripe webhook, Solana payment, or success-page flow",
-      "purpose": "track paid access; success-page activation is an unresolved security defect",
+      "source": "verified Stripe webhook or verified Solana payment; legacy rows may remain unverified",
+      "purpose": "track paid access and verified Stripe lineage",
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "stripe_checkout_intents": {
+      "fields": [
+        "session_id", "user_id", "email", "price_id", "product_id",
+        "amount_cents", "currency", "consent_version", "consent_text",
+        "refund_text", "accepted_at", "created_at", "status", "receipt_sent_at"
+      ],
+      "source": "authenticated card checkout consent and Stripe Session creation",
+      "purpose": "bind a paid session to one account and retain the exact recurring billing consent",
+      "storage": "SQLite persistent disk",
+      "recipients": "Stripe receives account reference and email; internal storage retains consent",
+      "retention": "Counsel review required; not yet covered by account deletion or export",
+      "status": "active schema"
+    },
+    "stripe_webhook_events": {
+      "fields": ["event_id", "event_type", "processed_at"],
+      "source": "verified Stripe webhook",
+      "purpose": "reject duplicate payment events",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "payment_form_tokens": {
+      "fields": ["token_hash", "user_id", "session_id", "purpose", "expires_at"],
+      "source": "authenticated payment page",
+      "purpose": "one-use CSRF protection for payment POST requests",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage",
+      "retention": "Expired tokens are removed when another payment form is issued",
       "status": "active schema"
     },
     "api_keys": {

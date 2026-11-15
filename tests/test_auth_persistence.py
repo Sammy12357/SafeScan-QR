@@ -36,6 +36,13 @@ def auth_app(tmp_path, monkeypatch):
     monkeypatch.setenv("APP_URL", "https://testserver")
     monkeypatch.setenv("GOOGLE_CLIENT_ID", "test-client")
     monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test_secret")
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_secret")
+    monkeypatch.setenv("STRIPE_ALPHA_PRICE_ID", "price_alpha")
+    monkeypatch.setenv("STRIPE_ALPHA_PRODUCT_ID", "prod_alpha")
+    monkeypatch.setenv("STRIPE_BILLING_SETTINGS_CONFIRMED", "true")
+    monkeypatch.setenv("BILLING_LEGAL_ENTITY_NAME", "Example Corporation")
+    monkeypatch.setenv("BILLING_POSTAL_ADDRESS", "123 Test Street")
+    monkeypatch.setenv("BILLING_SUPPORT_EMAIL", "support@example.com")
     monkeypatch.setenv("ALPHA_SOLANA_RECIPIENT", "11111111111111111111111111111111")
     monkeypatch.setenv("ALPHA_SOLANA_AMOUNT_SOL", "0.01")
     monkeypatch.setenv("ALPHA_SOLANA_PRICE_USD", "1.00")
@@ -48,6 +55,8 @@ def auth_app(tmp_path, monkeypatch):
     monkeypatch.setattr(importlib.import_module("hackabull.routes_scan_auth"), "LOCAL_AUTH_ENABLED", True)
     module.RATE_LIMITS.clear()
     set_everywhere("run_fraud_checks", lambda *args, **kwargs: [])
+    set_everywhere("email_sending_configured", lambda: True)
+    set_everywhere("send_email", lambda *args, **kwargs: True)
 
     yield module, TestClient(module.qr_app, base_url="https://testserver"), db_path
 
@@ -98,92 +107,173 @@ def test_email_registration_persists_user_credentials_and_session(auth_app):
     assert sessions[0]["google_id"] == users[0]["google_id"]
 
 
-def test_alpha_payment_uses_stripe_link_and_records_purchase_date(auth_app):
+def stripe_subscription(*, price_id="price_alpha", status="active"):
+    return {
+        "id": "sub_123", "customer": "cus_123", "status": status,
+        "current_period_end": int(time.time()) + 30 * 86400,
+        "items": {"data": [{
+            "quantity": 1,
+            "price": {
+                "id": price_id, "product": "prod_alpha", "currency": "usd",
+                "unit_amount": 100, "recurring": {"interval": "month", "interval_count": 1},
+            },
+        }]},
+    }
+
+
+def fake_stripe_api(*, wrong_product=False):
+    def request(method, path, **kwargs):
+        if path == "/prices/price_alpha":
+            return {**stripe_subscription()["items"]["data"][0]["price"], "active": True}
+        if path == "/checkout/sessions":
+            assert kwargs["data"]["line_items[0][price]"] == "price_alpha"
+            return {"id": "cs_test_123", "url": "https://checkout.stripe.com/c/pay/test123"}
+        if path == "/subscriptions/sub_123":
+            return stripe_subscription(price_id="price_other" if wrong_product else "price_alpha")
+        if path == "/billing_portal/sessions":
+            assert kwargs["data"]["customer"] == "cus_123"
+            return {"url": "https://billing.stripe.com/p/session/test123"}
+        raise AssertionError(path)
+    return request
+
+
+def stripe_checkout_event(user_id, *, event_id="evt_checkout", payment_status="paid", amount_total=100):
+    return {
+        "id": event_id, "type": "checkout.session.completed", "livemode": False,
+        "data": {"object": {
+            "id": "cs_test_123", "object": "checkout.session", "mode": "subscription",
+            "customer": "cus_123", "subscription": "sub_123",
+            "customer_email": "different@example.com", "client_reference_id": user_id,
+            "payment_status": payment_status, "amount_subtotal": 100,
+            "amount_total": amount_total,
+            "currency": "usd",
+        }},
+    }
+
+
+def post_stripe_event(client, event, signature=None):
+    payload = json.dumps(event, separators=(",", ":"))
+    return client.post("/webhooks/stripe", content=payload, headers={"stripe-signature": signature or stripe_signature(payload)})
+
+
+def payment_token(page, action):
+    form = re.search(r"<form action=['\"]" + re.escape(action) + r"['\"](.*?)</form>", page, re.S)
+    assert form, action
+    return re.search(r"name=['\"]payment_token['\"] value=['\"]([^'\"]+)", form.group(1)).group(1)
+
+
+def start_card_checkout(client, user_email):
+    page = client.get("/pay/alpha")
+    assert page.status_code == 200
+    assert "US$1 per month" in page.text
+    assert "not refunded after a billing period starts" in page.text
+    assert "type='checkbox' name='recurring_consent' value='yes' required" in page.text
+    token = payment_token(page.text, "/pay/alpha/stripe/checkout")
+    missing_consent = client.post("/pay/alpha/stripe/checkout", data={"payment_token": token}, follow_redirects=False)
+    assert missing_consent.status_code == 400
+    page = client.get("/pay/alpha")
+    token = payment_token(page.text, "/pay/alpha/stripe/checkout")
+    checkout = client.post(
+        "/pay/alpha/stripe/checkout",
+        data={"payment_token": token, "recurring_consent": "yes"},
+        follow_redirects=False,
+    )
+    assert checkout.status_code == 303
+    assert checkout.headers["location"].startswith("https://checkout.stripe.com/")
+
+
+def test_success_page_and_unlinked_webhook_cannot_activate_access(auth_app):
     _, client, db_path = auth_app
     register(client, "alpha@example.com")
-
-    payment = client.get("/pay/alpha")
+    user_id = db_rows(db_path, "SELECT google_id FROM users WHERE email = ?", ("alpha@example.com",))[0]["google_id"]
     success = client.get("/pay/alpha/success")
-
-    assert payment.status_code == 200
-    assert "https://buy.stripe.com/00w3cxfdAb7OcKB4sC87K01" in payment.text
-    assert "https://testserver/pay/alpha/success" not in payment.text
-    assert "prefilled_email=alpha%40example.com" in payment.text
     assert success.status_code == 200
-    assert "Subscription start saved for alpha@example.com" in success.text
-    rows = db_rows(
-        db_path,
-        "SELECT email, tier, provider, status, purchased_at FROM alpha_subscriptions WHERE email = ?",
-        ("alpha@example.com",),
-    )
-    assert len(rows) == 1
-    assert rows[0]["tier"] == "alpha_premium"
-    assert rows[0]["provider"] == "stripe"
-    assert rows[0]["status"] == "active"
-    assert rows[0]["purchased_at"].endswith("Z")
+    assert "does not activate access" in success.text
+    assert not db_rows(db_path, "SELECT * FROM alpha_subscriptions")
+    forged = post_stripe_event(client, stripe_checkout_event(user_id))
+    assert forged.status_code == 200
+    assert forged.json()["result"]["ignored"] == "unknown_checkout_session"
+    assert not db_rows(db_path, "SELECT * FROM alpha_subscriptions")
 
 
-def test_stripe_webhook_stores_and_cancels_subscription(auth_app):
+def test_stripe_checkout_webhook_receipt_portal_and_cancel(auth_app):
     _, client, db_path = auth_app
     register(client, "stripe@example.com")
-    users = db_rows(db_path, "SELECT google_id FROM users WHERE email = ?", ("stripe@example.com",))
-    user_id = users[0]["google_id"]
-
-    checkout_event = {
-        "id": "evt_checkout",
-        "type": "checkout.session.completed",
-        "data": {
-            "object": {
-                "id": "cs_test_123",
-                "object": "checkout.session",
-                "customer": "cus_123",
-                "subscription": "sub_123",
-                "customer_details": {"email": "stripe@example.com"},
-                "client_reference_id": user_id,
-                "payment_status": "paid",
-                "created": 1780000000,
-            }
-        },
-    }
-    payload = json.dumps(checkout_event, separators=(",", ":"))
-    response = client.post("/webhooks/stripe", content=payload, headers={"stripe-signature": stripe_signature(payload)})
-
-    assert response.status_code == 200
-    rows = db_rows(
-        db_path,
-        "SELECT email, status, stripe_customer_id, stripe_subscription_id, checkout_session_id FROM alpha_subscriptions WHERE email = ?",
-        ("stripe@example.com",),
-    )
-    assert rows == [{
-        "email": "stripe@example.com",
-        "status": "active",
-        "stripe_customer_id": "cus_123",
-        "stripe_subscription_id": "sub_123",
-        "checkout_session_id": "cs_test_123",
-    }]
-
-    canceled_event = {
-        "id": "evt_deleted",
-        "type": "customer.subscription.deleted",
-        "data": {
-            "object": {
-                "id": "sub_123",
-                "customer": "cus_123",
-                "status": "canceled",
-                "customer_email": "stripe@example.com",
-                "metadata": {"client_reference_id": user_id},
-                "canceled_at": 1780003600,
-            }
-        },
-    }
-    canceled_payload = json.dumps(canceled_event, separators=(",", ":"))
-    canceled = client.post("/webhooks/stripe", content=canceled_payload, headers={"stripe-signature": stripe_signature(canceled_payload)})
-
+    user_id = db_rows(db_path, "SELECT google_id FROM users WHERE email = ?", ("stripe@example.com",))[0]["google_id"]
+    importlib.import_module("hackabull.payments_stripe")._stripe_request = fake_stripe_api()
+    sent = []
+    set_everywhere("send_email", lambda *args, **kwargs: sent.append(args) or True)
+    start_card_checkout(client, "stripe@example.com")
+    intent = db_rows(db_path, "SELECT user_id, consent_version, consent_text, status FROM stripe_checkout_intents")[0]
+    assert intent["user_id"] == user_id
+    assert intent["consent_version"] == "2026-11-alpha-v1"
+    assert "Cancel before the next renewal" in intent["consent_text"]
+    assert intent["status"] == "pending"
+    event = stripe_checkout_event(user_id)
+    assert post_stripe_event(client, event).status_code == 200
+    assert post_stripe_event(client, event).json()["result"]["duplicate"] is True
+    rows = db_rows(db_path, "SELECT status, stripe_customer_id, stripe_subscription_id, stripe_verified_at FROM alpha_subscriptions")
+    assert len(rows) == 1
+    assert rows[0]["status"] == "active"
+    assert rows[0]["stripe_customer_id"] == "cus_123"
+    assert rows[0]["stripe_subscription_id"] == "sub_123"
+    assert rows[0]["stripe_verified_at"]
+    assert db_rows(db_path, "SELECT receipt_sent_at FROM stripe_checkout_intents")[0]["receipt_sent_at"]
+    assert len(sent) == 1
+    assert "Manage or cancel:" in sent[0][3]
+    portal = client.get("/pay/alpha/manage", follow_redirects=False)
+    assert portal.status_code == 303
+    assert portal.headers["location"].startswith("https://billing.stripe.com/")
+    canceled = post_stripe_event(client, {
+        "id": "evt_deleted", "type": "customer.subscription.deleted", "livemode": False,
+        "data": {"object": {"id": "sub_123", "customer": "cus_123", "status": "canceled"}},
+    })
     assert canceled.status_code == 200
-    rows = db_rows(db_path, "SELECT status, canceled_at, expires_at FROM alpha_subscriptions WHERE email = ?", ("stripe@example.com",))
-    assert rows[0]["status"] == "canceled"
-    assert rows[0]["canceled_at"].endswith("Z")
-    assert rows[0]["expires_at"] == rows[0]["canceled_at"]
+    assert db_rows(db_path, "SELECT status FROM alpha_subscriptions")[0]["status"] == "canceled"
+
+
+def test_stripe_rejects_bad_signatures_unpaid_and_wrong_product(auth_app):
+    _, client, db_path = auth_app
+    register(client, "stripe@example.com")
+    user_id = db_rows(db_path, "SELECT google_id FROM users WHERE email = ?", ("stripe@example.com",))[0]["google_id"]
+    stripe_module = importlib.import_module("hackabull.payments_stripe")
+    stripe_module._stripe_request = fake_stripe_api()
+    start_card_checkout(client, "stripe@example.com")
+    event = stripe_checkout_event(user_id)
+    assert post_stripe_event(client, event, signature="t=123,v1=bad").status_code == 400
+    assert post_stripe_event(client, event, signature=stripe_signature(json.dumps(event), secret="whsec_wrong")).status_code == 400
+    assert post_stripe_event(client, stripe_checkout_event(user_id, event_id="evt_unpaid", payment_status="unpaid")).json()["result"]["ignored"] == "unpaid_or_mismatched_checkout"
+    assert post_stripe_event(client, stripe_checkout_event("another_account", event_id="evt_wrong_user")).json()["result"]["ignored"] == "unpaid_or_mismatched_checkout"
+    stripe_module._stripe_request = fake_stripe_api(wrong_product=True)
+    assert post_stripe_event(client, stripe_checkout_event(user_id, event_id="evt_wrong_product")).json()["result"]["ignored"] == "wrong_subscription_product"
+    assert not db_rows(db_path, "SELECT * FROM alpha_subscriptions WHERE provider = 'stripe'")
+
+
+def test_card_checkout_requires_verified_business_and_stripe_settings(auth_app):
+    _, client, db_path = auth_app
+    register(client, "stripe@example.com")
+    set_everywhere("STRIPE_BILLING_SETTINGS_CONFIRMED", False)
+    page = client.get("/pay/alpha")
+    assert page.status_code == 200
+    assert "action='/pay/alpha/stripe/checkout'" not in page.text
+    assert "buy.stripe.com" not in page.text
+    assert not db_rows(db_path, "SELECT * FROM stripe_checkout_intents")
+
+
+def test_billing_record_blocks_automatic_account_erasure(auth_app):
+    _, client, db_path = auth_app
+    register(client, "stripe@example.com")
+    importlib.import_module("hackabull.payments_stripe")._stripe_request = fake_stripe_api()
+    start_card_checkout(client, "stripe@example.com")
+    export = importlib.import_module("hackabull.legal").get_user_export(
+        "stripe@example.com",
+        db_rows(db_path, "SELECT google_id FROM users WHERE email = ?", ("stripe@example.com",))[0]["google_id"],
+    )
+    assert len(export["billingConsents"]) == 1
+    request = client.post("/legal/data-request", data={"email": "stripe@example.com", "request_type": "erasure"})
+    assert request.status_code == 200
+    assert "billing-record review" in request.text
+    assert db_rows(db_path, "SELECT email FROM users WHERE email = ?", ("stripe@example.com",))
 
 
 def test_solana_payment_link_and_verification_store_subscription(auth_app):
@@ -194,6 +284,7 @@ def test_solana_payment_link_and_verification_store_subscription(auth_app):
 
     assert payment.status_code == 200
     assert "Pay with Solana" in payment.text
+    assert "one-time payment for 30 days" in payment.text
     assert "reference=" in payment.text
     reference = re.search(r"reference=([1-9A-HJ-NP-Za-km-z]{32,44})", payment.text).group(1)
     rows = db_rows(
@@ -212,12 +303,13 @@ def test_solana_payment_link_and_verification_store_subscription(auth_app):
     }]
 
     set_everywhere("verify_alpha_solana_payment", lambda ref: "")
-    pending = client.post("/pay/alpha/solana/verify")
+    pending = client.post("/pay/alpha/solana/verify", data={"payment_token": payment_token(payment.text, "/pay/alpha/solana/verify")})
     assert pending.status_code == 202
     assert not db_rows(db_path, "SELECT * FROM alpha_subscriptions WHERE email = ? AND provider = 'solana'", ("solana@example.com",))
 
     set_everywhere("verify_alpha_solana_payment", lambda ref: "solana_signature_123")
-    verified = client.post("/pay/alpha/solana/verify")
+    payment = client.get("/pay/alpha")
+    verified = client.post("/pay/alpha/solana/verify", data={"payment_token": payment_token(payment.text, "/pay/alpha/solana/verify")})
 
     assert verified.status_code == 200
     assert "Solana payment verified" in verified.text
@@ -552,8 +644,9 @@ def test_solana_verification_hides_provider_detail(auth_app, monkeypatch, caplog
         raise SafeScanError("Solana RPC error: private upstream token", 502, code="payment_network_unavailable")
 
     monkeypatch.setattr(routes, "verify_alpha_solana_payment", failed_verification)
+    payment = client.get("/pay/alpha")
     with caplog.at_level("ERROR", logger="safescan.errors"):
-        response = client.post("/pay/alpha/solana/verify")
+        response = client.post("/pay/alpha/solana/verify", data={"payment_token": payment_token(payment.text, "/pay/alpha/solana/verify")})
     assert response.status_code == 502
     assert "We couldn't reach the Solana network" in unescape(response.text)
     assert "private upstream token" not in response.text

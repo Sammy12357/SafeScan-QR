@@ -220,6 +220,21 @@ def init_db():
                          client_reference_id TEXT, metadata TEXT,
                          created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
                          UNIQUE(user_id, tier, provider))''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS stripe_checkout_intents
+                        (session_id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+                         email TEXT NOT NULL, price_id TEXT NOT NULL,
+                         product_id TEXT NOT NULL, amount_cents INTEGER NOT NULL,
+                         currency TEXT NOT NULL, consent_version TEXT NOT NULL,
+                         consent_text TEXT NOT NULL, refund_text TEXT NOT NULL,
+                         accepted_at TEXT NOT NULL, created_at TEXT NOT NULL,
+                         status TEXT NOT NULL DEFAULT 'pending', receipt_sent_at TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS stripe_webhook_events
+                        (event_id TEXT PRIMARY KEY, event_type TEXT NOT NULL,
+                         processed_at TEXT NOT NULL)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS payment_form_tokens
+                        (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+                         session_id TEXT NOT NULL, purpose TEXT NOT NULL,
+                         expires_at TEXT NOT NULL)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS alpha_solana_payment_references
                         (id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
                          email TEXT NOT NULL, reference TEXT NOT NULL UNIQUE,
@@ -256,6 +271,8 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_wallet_nonces_wallet ON wallet_nonces(wallet_address)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_alpha_subscriptions_email ON alpha_subscriptions(email)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_alpha_subscriptions_purchased ON alpha_subscriptions(purchased_at)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_stripe_checkout_intents_user ON stripe_checkout_intents(user_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_payment_form_tokens_expires ON payment_form_tokens(expires_at)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_alpha_solana_reference ON alpha_solana_payment_references(reference)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_alpha_solana_user ON alpha_solana_payment_references(user_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_go_ghost_jobs_user ON go_ghost_removal_jobs(user_id)")
@@ -288,10 +305,15 @@ def init_db():
         "cancel_at_period_end": "ALTER TABLE alpha_subscriptions ADD COLUMN cancel_at_period_end INTEGER NOT NULL DEFAULT 0",
         "canceled_at": "ALTER TABLE alpha_subscriptions ADD COLUMN canceled_at TEXT",
         "expires_at": "ALTER TABLE alpha_subscriptions ADD COLUMN expires_at TEXT",
+        "stripe_verified_at": "ALTER TABLE alpha_subscriptions ADD COLUMN stripe_verified_at TEXT",
     }
     for column, ddl in alpha_subscription_migrations.items():
         if column not in alpha_subscription_columns:
             cursor.execute(ddl)
+    # Prior versions granted Stripe access on a success-page GET or an
+    # insufficiently checked webhook. Those rows have no verified lineage.
+    cursor.execute("""UPDATE alpha_subscriptions SET status = 'unverified', updated_at = CURRENT_TIMESTAMP
+                      WHERE provider = 'stripe' AND stripe_verified_at IS NULL AND status = 'active'""")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_alpha_subscriptions_stripe_subscription ON alpha_subscriptions(stripe_subscription_id)")
     cursor.execute("PRAGMA table_info(alpha_solana_payment_references)")
     alpha_solana_columns = {row[1] for row in cursor.fetchall()}
