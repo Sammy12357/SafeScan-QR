@@ -1,0 +1,627 @@
+{
+  "_format": "JSON-compatible YAML 1.2; parsed with the Python standard json module",
+  "_status": "Phase 0 engineering inventory, not an approved privacy-policy statement",
+  "_source": "Isolated SQLite schema generated from hackabull/schema.py at current main; no production records read",
+  "_known_gaps": [
+    "Retention periods have not been tied to deletion jobs.",
+    "URL query strings can be stored or sent to reputation providers.",
+    "Audit logs and user records store raw IP addresses.",
+    "Data-request export and deletion do not yet cover every table.",
+    "Go Ghost status tables exist in code but are disabled and are not created at startup."
+  ],
+  "tables": {
+    "abuse_flags": {
+      "fields": [
+        "id",
+        "email",
+        "flag_type",
+        "detail",
+        "created_at"
+      ],
+      "source": "security events and reports",
+      "purpose": "review misuse and fraud",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "age_confirmations": {
+      "fields": [
+        "email",
+        "threshold",
+        "locale",
+        "confirmed_at"
+      ],
+      "source": "age form",
+      "purpose": "record claimed age threshold outcome; current flow is not an enforced sign-in gate",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "alpha_solana_payment_references": {
+      "fields": [
+        "id",
+        "user_id",
+        "email",
+        "reference",
+        "recipient",
+        "amount_sol",
+        "amount_usd",
+        "sol_usd_price",
+        "amount_lamports",
+        "quote_expires_at",
+        "status",
+        "signature",
+        "created_at",
+        "updated_at",
+        "expires_at"
+      ],
+      "source": "payment quote and chain verification",
+      "purpose": "reconcile one-time Solana payments",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "alpha_subscriptions": {
+      "fields": [
+        "id",
+        "user_id",
+        "email",
+        "tier",
+        "provider",
+        "status",
+        "purchased_at",
+        "checkout_session_id",
+        "stripe_payment_link",
+        "client_reference_id",
+        "metadata",
+        "created_at",
+        "updated_at",
+        "stripe_customer_id",
+        "stripe_subscription_id",
+        "current_period_start",
+        "current_period_end",
+        "cancel_at_period_end",
+        "canceled_at",
+        "expires_at"
+      ],
+      "source": "Stripe webhook, Solana payment, or success-page flow",
+      "purpose": "track paid access; success-page activation is an unresolved security defect",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "api_keys": {
+      "fields": [
+        "id",
+        "name",
+        "key_hint",
+        "key_hash",
+        "scopes",
+        "status",
+        "created_by",
+        "created_at",
+        "expires_at",
+        "last_used_at",
+        "revoked_at"
+      ],
+      "source": "administrator",
+      "purpose": "manage API access",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "audit_logs": {
+      "fields": [
+        "id",
+        "actor_user_id",
+        "action",
+        "target_type",
+        "target_id",
+        "metadata",
+        "ip_address",
+        "user_agent",
+        "created_at"
+      ],
+      "source": "requests and administrative actions",
+      "purpose": "security and operational audit; includes raw IP address",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "breach_reports": {
+      "fields": [
+        "id",
+        "discovery_date",
+        "data_categories",
+        "users_affected",
+        "likely_consequences",
+        "measures_taken",
+        "created_at",
+        "template"
+      ],
+      "source": "administrator",
+      "purpose": "incident response records",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "consent_logs": {
+      "fields": [
+        "id",
+        "user_id",
+        "ip_hash",
+        "consent_given",
+        "consent_type",
+        "banner_version",
+        "timestamp",
+        "user_agent",
+        "locale",
+        "expiry_date"
+      ],
+      "source": "consent banner/API",
+      "purpose": "record consent choices",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "data_requests": {
+      "fields": [
+        "id",
+        "email",
+        "region",
+        "request_type",
+        "details",
+        "status",
+        "submitted_at",
+        "completed_at"
+      ],
+      "source": "privacy request form",
+      "purpose": "track access, deletion and correction requests",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "device_fingerprints": {
+      "fields": [
+        "id",
+        "user_id",
+        "fingerprint",
+        "first_seen",
+        "last_seen"
+      ],
+      "source": "scan or wallet client",
+      "purpose": "fraud and abuse review",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "discord_links": {
+      "fields": [
+        "id",
+        "user_id",
+        "discord_id",
+        "discord_username",
+        "guild_member",
+        "role_granted",
+        "linked_at"
+      ],
+      "source": "Discord OAuth",
+      "purpose": "link account to Discord identity",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "domain_age_cache": {
+      "fields": [
+        "domain",
+        "creation_date",
+        "age_days",
+        "source",
+        "fetched_at",
+        "expires_on",
+        "registrar",
+        "error"
+      ],
+      "source": "public domain-age services",
+      "purpose": "cache URL domain age",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "fraud_flags": {
+      "fields": [
+        "id",
+        "user_id",
+        "check_name",
+        "severity",
+        "reason",
+        "metadata",
+        "auto_disqualify",
+        "reviewed",
+        "reviewed_by",
+        "reviewed_at",
+        "review_outcome",
+        "created_at"
+      ],
+      "source": "fraud checks",
+      "purpose": "review suspect account or scan activity",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "go_ghost_removal_jobs": {
+      "fields": [
+        "id",
+        "user_id",
+        "email",
+        "broker",
+        "status",
+        "detail",
+        "target_url",
+        "created_at",
+        "updated_at"
+      ],
+      "source": "legacy Go Ghost workflows",
+      "purpose": "legacy broker request tracking; may contain personal details",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "legacy/inactive"
+    },
+    "ip_registry": {
+      "fields": [
+        "id",
+        "ip_address",
+        "user_id",
+        "event_type",
+        "created_at"
+      ],
+      "source": "request connection",
+      "purpose": "fraud and abuse review; includes raw IP address",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "local_credentials": {
+      "fields": [
+        "email",
+        "password_hash",
+        "created_at",
+        "user_id"
+      ],
+      "source": "legacy local sign-in",
+      "purpose": "password authentication; local routes disabled in production",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "legacy/inactive"
+    },
+    "persistent_sessions": {
+      "fields": [
+        "id",
+        "user_id",
+        "token_hash",
+        "created_at",
+        "expires_at",
+        "last_used",
+        "revoked_at",
+        "ip_hash",
+        "user_agent"
+      ],
+      "source": "remember-me login",
+      "purpose": "persistent account sessions",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "privacy_opt_outs": {
+      "fields": [
+        "id",
+        "email",
+        "region",
+        "opt_out_type",
+        "timestamp"
+      ],
+      "source": "privacy request form",
+      "purpose": "record opt-out requests",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "referrals": {
+      "fields": [
+        "id",
+        "referrer_email",
+        "referred_email",
+        "counted",
+        "created_at"
+      ],
+      "source": "referral entry",
+      "purpose": "track referral credits",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "scan_events": {
+      "fields": [
+        "email",
+        "payload_hash",
+        "url_found",
+        "first_scanned_at",
+        "user_id"
+      ],
+      "source": "QR scans",
+      "purpose": "deduplicate and count account scans; URL fields can contain sensitive query strings",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "scan_history": {
+      "fields": [
+        "id",
+        "email",
+        "url",
+        "risk_score",
+        "verdict",
+        "signals",
+        "reported",
+        "created_at",
+        "classification",
+        "user_id"
+      ],
+      "source": "QR scans",
+      "purpose": "show account scan history; URL fields can contain sensitive query strings",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "scan_results": {
+      "fields": [
+        "url",
+        "status",
+        "timestamp"
+      ],
+      "source": "URL analysis",
+      "purpose": "cache URL verdicts; URLs can contain sensitive query strings",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "scan_velocity": {
+      "fields": [
+        "user_id",
+        "scans_last_hour",
+        "scans_last_day",
+        "last_scan_at",
+        "last_scan_url",
+        "duplicate_count",
+        "fast_scan_count",
+        "updated_at"
+      ],
+      "source": "QR scans",
+      "purpose": "identify unusual scanning rate; last URL can contain sensitive query strings",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "scans": {
+      "fields": [
+        "email",
+        "url_found",
+        "scan_count",
+        "wallet_address",
+        "tokens_sent",
+        "airdrop_eligible",
+        "airdrop_tokens_sent",
+        "airdrop_sent_at",
+        "user_id"
+      ],
+      "source": "QR scans and wallet actions",
+      "purpose": "track counts and wallet use; URL field can contain sensitive query strings",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "sessions": {
+      "fields": [
+        "id",
+        "google_id",
+        "created_at",
+        "expires_at",
+        "last_active",
+        "revoked_at",
+        "ip_hash",
+        "user_agent"
+      ],
+      "source": "account login",
+      "purpose": "short-lived authentication sessions",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "upload_artifacts": {
+      "fields": [
+        "id",
+        "user_id",
+        "email",
+        "object_key",
+        "backend",
+        "content_type",
+        "byte_size",
+        "sha256",
+        "created_at"
+      ],
+      "source": "retained QR uploads",
+      "purpose": "track explicitly retained upload objects and hashes",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "url_blocklist": {
+      "fields": [
+        "id",
+        "url",
+        "reason",
+        "added_by",
+        "created_at",
+        "removed_at"
+      ],
+      "source": "administrator",
+      "purpose": "store confirmed URL blocklist decisions",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "url_reports": {
+      "fields": [
+        "id",
+        "url",
+        "reporter_email",
+        "reason",
+        "risk_score",
+        "status",
+        "created_at",
+        "reviewed_at",
+        "reviewed_by"
+      ],
+      "source": "public reports and administrator review",
+      "purpose": "review reported URL threats; URL can contain sensitive query strings",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "users": {
+      "fields": [
+        "google_id",
+        "email",
+        "last_login",
+        "role",
+        "status",
+        "last_login_at",
+        "login_ip",
+        "created_at",
+        "deleted_at",
+        "airdrop_status",
+        "fraud_score",
+        "display_name",
+        "picture",
+        "referral_code",
+        "google_sub",
+        "username"
+      ],
+      "source": "identity provider and account profile",
+      "purpose": "authenticate and manage accounts; includes raw login IP and profile picture URL",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "waitlist_signups": {
+      "fields": [
+        "email",
+        "source",
+        "created_at"
+      ],
+      "source": "waitlist form",
+      "purpose": "store update-email signups; confirmation and suppression are not yet implemented",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "wallet_nonces": {
+      "fields": [
+        "user_id",
+        "wallet_address",
+        "nonce",
+        "message",
+        "issued_at",
+        "expires_at",
+        "used",
+        "created_at"
+      ],
+      "source": "wallet link challenge",
+      "purpose": "verify wallet control",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "wallets": {
+      "fields": [
+        "id",
+        "user_id",
+        "address",
+        "verified",
+        "connected_at",
+        "sol_balance",
+        "tx_count",
+        "wallet_age_days",
+        "onchain_verified_at",
+        "disconnected_at"
+      ],
+      "source": "wallet link and chain checks",
+      "purpose": "show connected wallet and on-chain activity",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    }
+  },
+  "planned_disabled_tables": {
+    "go_ghost_subjects": [
+      "subject_id",
+      "user_id",
+      "relationship",
+      "created_at"
+    ],
+    "go_ghost_consents": [
+      "user_id",
+      "subject_id",
+      "version",
+      "accepted_at",
+      "family_authority_attested_at"
+    ],
+    "go_ghost_requests": [
+      "user_id",
+      "subject_id",
+      "broker_id",
+      "state",
+      "source",
+      "failure_code",
+      "recipe_version",
+      "revision",
+      "created_at",
+      "updated_at",
+      "submitted_at",
+      "confirmed_at",
+      "next_check_at"
+    ]
+  }
+}
