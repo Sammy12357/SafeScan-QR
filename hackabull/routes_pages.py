@@ -52,9 +52,8 @@ from removals.regions import US_STATES
 
 from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party
 import safescan_model_calibration as sm_calibration
-from .admin_data import COOKIE_POLICY_HTML
-from .admin_data import PRIVACY_POLICY_HTML
-from .admin_data import TERMS_HTML
+from .legal_agreements import DOCUMENTS
+from .legal_agreements import published_document
 from .app_module import qr_app
 from .audit import SafeScanError
 from .audit import audit_log
@@ -280,7 +279,25 @@ async def api_go_ghost_removal(request: Request, broker: str, payload: dict = Bo
 
 @qr_app.get("/legal/privacy-policy", response_class=HTMLResponse)
 async def privacy_policy(request: Request):
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Privacy Policy", PRIVACY_POLICY_HTML))
+    return _agreement_page(request, "privacy")
+
+
+def _agreement_page(request: Request, document: str, version: str | None = None):
+    snapshot = published_document(document, version)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Document version not found.")
+    if version is not None and version != DOCUMENTS[document]["current"]:
+        snapshot["body_html"] = (
+            "<p><strong>Archived source snapshot.</strong> This version is not the current document. "
+            f"<a href='/legal/{'terms-of-use' if document == 'terms' else 'privacy-policy' if document == 'privacy' else 'cookie-policy'}'>Read the current version.</a></p>"
+            + snapshot["body_html"]
+        )
+    context = legal_context(request, snapshot["title"], snapshot["body_html"])
+    context["version"] = snapshot["version"]
+    context["last_updated"] = snapshot["last_updated"]
+    response = templates.TemplateResponse("legal_page.html", context)
+    response.headers["Cache-Control"] = "public, max-age=300" if version is None else "public, max-age=86400"
+    return response
 
 def _waitlist_page(request: Request, *, email: str = "", error: str = "", error_field: str = "email", joined: bool = False, status_code: int = 200):
     if joined:
@@ -382,23 +399,34 @@ async def waitlist_unsubscribe_one_click(request: Request, token: str = Query(""
 
 @qr_app.get("/legal/terms-of-use", response_class=HTMLResponse)
 async def terms_of_use(request: Request):
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Terms of Use", TERMS_HTML))
+    return _agreement_page(request, "terms")
 
 @qr_app.get("/legal/privacy", response_class=HTMLResponse)
 async def privacy_policy_alias(request: Request):
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Privacy Policy", PRIVACY_POLICY_HTML))
+    return _agreement_page(request, "privacy")
 
 @qr_app.get("/legal/terms", response_class=HTMLResponse)
 async def terms_of_use_alias(request: Request):
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Terms of Use", TERMS_HTML))
+    return _agreement_page(request, "terms")
 
 @qr_app.get("/legal/cookie-policy", response_class=HTMLResponse)
 async def cookie_policy(request: Request):
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Cookie Policy", COOKIE_POLICY_HTML))
+    return _agreement_page(request, "cookie")
+
+
+@qr_app.get("/legal/documents/{document}/{version}", response_class=HTMLResponse)
+async def archived_legal_document(request: Request, document: str, version: str):
+    return _agreement_page(request, document, version)
 
 @qr_app.get("/legal/terms-history", response_class=HTMLResponse)
 async def terms_history(request: Request):
-    body = "<h2>Version History</h2><p>v1.0 - May 2026: Initial SafeScan QR Terms of Use.</p>"
+    rows = []
+    for document, metadata in DOCUMENTS.items():
+        for version, updated in metadata["versions"].items():
+            rows.append(
+                f"<li><a href='/legal/documents/{document}/{version}'>{escape_html(metadata['title'])} {escape_html(version)}</a> — {escape_html(updated)}</li>"
+            )
+    body = "<h2>Document snapshots</h2><p>These links preserve the repository's versioned document source. Historical deployment details may differ.</p><ul>" + "".join(rows) + "</ul>"
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Terms History", body))
 
 @qr_app.get("/changelog", response_class=HTMLResponse)

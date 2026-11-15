@@ -483,6 +483,7 @@ def test_google_login_persists_provider_user_and_session(auth_app, monkeypatch):
     response = client.post("/auth/confirm-age", data={
         "birth_year": str(datetime.now(timezone.utc).year - 25),
         "birthday_this_year": "yes",
+        "legal_consent": "yes", "terms_version": "v1.1", "privacy_version": "v1.1",
     })
 
     assert response.status_code == 200
@@ -512,6 +513,7 @@ def test_google_then_local_registration_blocks_duplicate_email(auth_app, monkeyp
     google_response = client.post("/auth/confirm-age", data={
         "birth_year": str(datetime.now(timezone.utc).year - 25),
         "birthday_this_year": "yes",
+        "legal_consent": "yes", "terms_version": "v1.1", "privacy_version": "v1.1",
     })
     local_response = register(TestClient(module.qr_app, base_url="https://testserver"), "shared@example.com")
 
@@ -544,6 +546,7 @@ def test_mobile_sign_in_then_local_registration_blocks_duplicate_email(auth_app,
         "ageTicket": challenge.json()["ageTicket"],
         "birthYear": str(datetime.now(timezone.utc).year - 25),
         "birthdayThisYear": "yes",
+        "legalConsent": True, "termsVersion": "v1.1", "privacyVersion": "v1.1",
     })
     local_response = register(TestClient(module.qr_app, base_url="https://testserver"), "mobile-shared@example.com")
 

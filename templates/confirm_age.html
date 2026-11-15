@@ -36,6 +36,13 @@
           <input type="checkbox" name="adult_attestation" value="yes" required>
           <span>I confirm that I am at least 18 years old.</span>
         </label>
+        {% else %}
+        <input type="hidden" name="terms_version" value="{{ agreement_versions.terms }}">
+        <input type="hidden" name="privacy_version" value="{{ agreement_versions.privacy }}">
+        <label class="checkbox-row">
+          <input type="checkbox" name="legal_consent" value="yes" required>
+          <span>I agree to the <a href="/legal/terms-of-use" target="_blank" rel="noopener noreferrer">Terms of Use ({{ agreement_versions.terms }})</a> and <a href="/legal/privacy-policy" target="_blank" rel="noopener noreferrer">Privacy Policy ({{ agreement_versions.privacy }})</a>.</span>
+        </label>
         {% endif %}
         <button class="primary-button" type="submit">Continue</button>
       </form>

@@ -84,6 +84,11 @@ from .history import serialize_scan_history_row
 from .homograph import host_forms
 from .leaderboard import get_global_leaderboard
 from .legal import legal_context
+from .legal_agreements import TERMS_COOKIE
+from .legal_agreements import consume_terms_sign_in
+from .legal_agreements import current_versions
+from .legal_agreements import pending_terms_sign_in
+from .legal_agreements import validate_acceptance
 from .malicious_db import get_malicious_qr_codes
 from .referrals import get_scan_count
 from .routes_scan_auth import finish_verified_sign_in
@@ -278,11 +283,11 @@ async def confirm_age_page(request: Request):
     if not pending_sign_in(ticket, "web"):
         return templates.TemplateResponse("confirm_age.html", {
             "request": request, "threshold": ACCOUNT_MIN_AGE, "mode": "account",
-            "expired": True, "blocked": False, "error": ""
+            "expired": True, "blocked": False, "error": "", "agreement_versions": current_versions()
         }, status_code=410)
     response = templates.TemplateResponse("confirm_age.html", {
         "request": request, "threshold": ACCOUNT_MIN_AGE, "mode": "account",
-        "expired": False, "blocked": False, "error": ""
+        "expired": False, "blocked": False, "error": "", "agreement_versions": current_versions()
     })
     response.headers["Cache-Control"] = "no-store"
     return response
@@ -292,6 +297,9 @@ async def confirm_age_submit(
     request: Request,
     birth_year: str = Form(""),
     birthday_this_year: str = Form(""),
+    legal_consent: str = Form(""),
+    terms_version: str = Form(""),
+    privacy_version: str = Form(""),
 ):
     ticket = request.cookies.get(PENDING_COOKIE, "")
     if not pending_sign_in(ticket, "web"):
@@ -301,8 +309,16 @@ async def confirm_age_submit(
     except ValueError as exc:
         return templates.TemplateResponse("confirm_age.html", {
             "request": request, "threshold": ACCOUNT_MIN_AGE, "mode": "account",
-            "expired": False, "blocked": False, "error": str(exc)
+            "expired": False, "blocked": False, "error": str(exc), "agreement_versions": current_versions()
         }, status_code=400)
+    if age >= ACCOUNT_MIN_AGE:
+        try:
+            accepted_versions = validate_acceptance(legal_consent == "yes", terms_version, privacy_version)
+        except ValueError as exc:
+            return templates.TemplateResponse("confirm_age.html", {
+                "request": request, "threshold": ACCOUNT_MIN_AGE, "mode": "account",
+                "expired": False, "blocked": False, "error": str(exc), "agreement_versions": current_versions()
+            }, status_code=400)
     pending = consume_sign_in(ticket, "web", age)
     if not pending:
         raise HTTPException(status_code=410, detail="Age confirmation expired. Sign in again.")
@@ -314,7 +330,8 @@ async def confirm_age_submit(
         response.delete_cookie(PENDING_COOKIE, path="/", secure=True, httponly=True, samesite="lax")
         response.headers["Cache-Control"] = "no-store"
         return response
-    user_id, _, session_id = finish_verified_sign_in(pending, request, client_kind="web")
+    user_id, _, session_id = finish_verified_sign_in(pending, request, client_kind="web",
+                                                     accepted_versions=accepted_versions)
     response = response_after_login(user_id, request, pending["return_to"])
     set_session_cookie(response, session_id)
     if pending["remember_me"]:
@@ -327,7 +344,8 @@ async def confirm_age_submit(
 @qr_app.post("/auth/confirm-age/mobile")
 async def confirm_age_mobile(request: Request, payload: dict = Body(...)):
     # This is a one-time continuation, not a second identity-verification path.
-    if not isinstance(payload, dict) or set(payload) != {"ageTicket", "birthYear", "birthdayThisYear"}:
+    if not isinstance(payload, dict) or set(payload) != {"ageTicket", "birthYear", "birthdayThisYear",
+                                                       "legalConsent", "termsVersion", "privacyVersion"}:
         raise HTTPException(status_code=400, detail="Invalid age confirmation request.")
     ticket = payload.get("ageTicket")
     if not isinstance(ticket, str) or not pending_sign_in(ticket, "mobile"):
@@ -336,12 +354,81 @@ async def confirm_age_mobile(request: Request, payload: dict = Body(...)):
         age = age_from_year(payload.get("birthYear"), payload.get("birthdayThisYear"))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if age >= ACCOUNT_MIN_AGE:
+        try:
+            accepted_versions = validate_acceptance(payload.get("legalConsent"),
+                                                    payload.get("termsVersion"), payload.get("privacyVersion"))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     pending = consume_sign_in(ticket, "mobile", age)
     if not pending:
         raise HTTPException(status_code=410, detail="Age confirmation expired. Sign in again.")
     if age < ACCOUNT_MIN_AGE:
         raise HTTPException(status_code=403, detail="SafeScan accounts are unavailable below the minimum age.")
-    user_id, user, session_id = finish_verified_sign_in(pending, request, client_kind="mobile")
+    user_id, user, session_id = finish_verified_sign_in(pending, request, client_kind="mobile",
+                                                       accepted_versions=accepted_versions)
+    return mobile_sign_in_body(user_id, user, session_id)
+
+
+@qr_app.get("/auth/accept-terms", response_class=HTMLResponse)
+async def accept_terms_page(request: Request):
+    ticket = request.cookies.get(TERMS_COOKIE, "")
+    pending = pending_terms_sign_in(ticket, "web")
+    response = templates.TemplateResponse("accept_terms.html", {
+        "request": request, "expired": not bool(pending), "error": "",
+        "agreement_versions": current_versions(),
+    }, status_code=200 if pending else 410)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@qr_app.post("/auth/accept-terms", response_class=HTMLResponse)
+async def accept_terms_submit(request: Request, legal_consent: str = Form(""),
+                              terms_version: str = Form(""), privacy_version: str = Form("")):
+    ticket = request.cookies.get(TERMS_COOKIE, "")
+    if not pending_terms_sign_in(ticket, "web"):
+        raise HTTPException(status_code=410, detail="Agreement confirmation expired. Sign in again.")
+    try:
+        accepted_versions = validate_acceptance(legal_consent == "yes", terms_version, privacy_version)
+    except ValueError as exc:
+        response = templates.TemplateResponse("accept_terms.html", {
+            "request": request, "expired": False, "error": str(exc),
+            "agreement_versions": current_versions(),
+        }, status_code=400)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    pending = consume_terms_sign_in(ticket, "web")
+    if not pending:
+        raise HTTPException(status_code=410, detail="Agreement confirmation expired. Sign in again.")
+    user_id, _, session_id = finish_verified_sign_in(pending, request, client_kind="web",
+                                                     accepted_versions=accepted_versions)
+    response = response_after_login(user_id, request, pending["return_to"])
+    set_session_cookie(response, session_id)
+    if pending["remember_me"]:
+        issue_remember_me_cookie(response, user_id, request)
+    response.delete_cookie(TERMS_COOKIE, path="/", secure=True, httponly=True, samesite="lax")
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@qr_app.post("/auth/accept-terms/mobile")
+async def accept_terms_mobile(request: Request, payload: dict = Body(...)):
+    expected = {"termsTicket", "legalConsent", "termsVersion", "privacyVersion"}
+    if not isinstance(payload, dict) or set(payload) != expected:
+        raise HTTPException(status_code=400, detail="Invalid agreement confirmation request.")
+    ticket = payload.get("termsTicket")
+    if not isinstance(ticket, str) or not pending_terms_sign_in(ticket, "mobile"):
+        raise HTTPException(status_code=410, detail="Agreement confirmation expired. Sign in again.")
+    try:
+        accepted_versions = validate_acceptance(payload.get("legalConsent"),
+                                                payload.get("termsVersion"), payload.get("privacyVersion"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    pending = consume_terms_sign_in(ticket, "mobile")
+    if not pending:
+        raise HTTPException(status_code=410, detail="Agreement confirmation expired. Sign in again.")
+    user_id, user, session_id = finish_verified_sign_in(pending, request, client_kind="mobile",
+                                                       accepted_versions=accepted_versions)
     return mobile_sign_in_body(user_id, user, session_id)
 
 
