@@ -2,6 +2,29 @@
    Part of styles.css, imported by it in cascade order. */
 
 :root {
+  /* Shared spacing scale. Existing layouts migrate to these tokens in Phase 2. */
+  --space-0: 0;
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 20px;
+  --space-7: 24px;
+  --space-8: 32px;
+  --space-9: 40px;
+  --space-10: 48px;
+  --space-11: 64px;
+  --space-12: 96px;
+
+  --gap-inline: var(--space-3);
+  --gap-stack: var(--space-5);
+  --gap-section: var(--space-10);
+  --pad-control-y: var(--space-4);
+  --pad-control-x: var(--space-5);
+  --pad-card: var(--space-7);
+  --pad-page: clamp(var(--space-5), 4vw, var(--space-8));
+
   --body-font: "Space Grotesk", "Aptos", "Segoe UI", sans-serif;
   --display-font: "Orbitron", "Space Grotesk", "Aptos", "Segoe UI", sans-serif;
   --bg: #0b0e11;
