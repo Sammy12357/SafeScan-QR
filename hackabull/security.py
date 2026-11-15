@@ -19,6 +19,8 @@ from decimal import Decimal, InvalidOperation
 from html import escape as escape_html
 from urllib.parse import quote, urlencode, urljoin, urlparse, parse_qsl
 from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
+from threading import Lock
 from xml.etree import ElementTree
 
 from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body, HTTPException
@@ -66,20 +68,57 @@ from requests.structures import CaseInsensitiveDict
 # =============================================================================
 # RATE LIMITING, PAYLOAD VALIDATION & SSRF GUARDS
 # =============================================================================
+MAX_ACTIVE_RATE_LIMIT_KEYS = 4096
+_LEGACY_RATE_LIMIT_WINDOW_SECONDS = 60 * 60
+_rate_limit_lock = Lock()
+
+
+@dataclass
+class _RateLimitEntry:
+    hits: list[float]
+    expires_at: float
+
+
+def _rate_limit_expiry(entry) -> float:
+    if isinstance(entry, _RateLimitEntry):
+        return entry.expires_at
+    # Older tests may seed a timestamp list directly. Never expire such a key
+    # before the longest window used by the current callers has elapsed.
+    return (max(entry) + _LEGACY_RATE_LIMIT_WINDOW_SECONDS) if entry else 0.0
+
+
 def enforce_rate_limit(request, bucket, limit, window_seconds, user_key=None):
-    identity = user_key or request_ip(request)
+    identity = str(user_key or request_ip(request))
+    if len(identity) > 64:
+        identity = hashlib.sha256(identity.encode("utf-8", "replace")).hexdigest()
     key = f"{bucket}:{identity}"
     now = time.time()
-    hits = [stamp for stamp in RATE_LIMITS.get(key, []) if now - stamp < window_seconds]
-    if len(hits) >= limit:
-        retry_after = max(1, int(window_seconds - (now - hits[0])))
+    retry_after = None
+    with _rate_limit_lock:
+        if key not in RATE_LIMITS and len(RATE_LIMITS) >= MAX_ACTIVE_RATE_LIMIT_KEYS:
+            for old_key, entry in list(RATE_LIMITS.items()):
+                if _rate_limit_expiry(entry) <= now:
+                    del RATE_LIMITS[old_key]
+            if len(RATE_LIMITS) >= MAX_ACTIVE_RATE_LIMIT_KEYS:
+                # Do not evict a live key: that would reset an attacker's
+                # allowance. Reject new identities until a slot expires.
+                next_expiry = min(_rate_limit_expiry(entry) for entry in RATE_LIMITS.values())
+                retry_after = max(1, math.ceil(next_expiry - now))
+        if retry_after is None:
+            entry = RATE_LIMITS.get(key)
+            previous = entry.hits if isinstance(entry, _RateLimitEntry) else (entry or [])
+            hits = [stamp for stamp in previous if now - stamp < window_seconds]
+            if len(hits) >= limit:
+                retry_after = max(1, math.ceil(window_seconds - (now - hits[0])))
+            else:
+                hits.append(now)
+                RATE_LIMITS[key] = _RateLimitEntry(hits, now + window_seconds)
+    if retry_after is not None:
         audit_log("auth.rate_limited", request=request, metadata={"bucket": bucket, "retryAfter": retry_after})
         return error_response(
             request, 429, code="rate_limited",
             headers={"Retry-After": str(retry_after)},
         )
-    hits.append(now)
-    RATE_LIMITS[key] = hits
     return None
 
 def validate_strict_payload(payload, allowed_fields):

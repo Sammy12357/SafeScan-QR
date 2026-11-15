@@ -3,6 +3,7 @@
 import importlib
 import sqlite3
 import sys
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -120,6 +121,65 @@ def test_dispute_submission_rejects_invalid_and_oversized_input_and_honeypot(lis
     assert rows(db_path, "SELECT * FROM listing_disputes") == []
     limited = submit(client, listing_id)
     assert limited.status_code == 429
+
+
+def test_rate_limiter_bounds_distinct_keys_without_eviction_and_reuses_expired_slots(listing_app, monkeypatch):
+    module, _, _ = listing_app
+    security = importlib.import_module("hackabull.security")
+    monkeypatch.setattr(security, "MAX_ACTIVE_RATE_LIMIT_KEYS", 2)
+    clock = [100.0]
+    monkeypatch.setattr(security, "time", SimpleNamespace(time=lambda: clock[0]))
+    monkeypatch.setattr(security, "audit_log", lambda *args, **kwargs: None)
+
+    def request_for(address):
+        from starlette.requests import Request
+        return Request({"type": "http", "method": "GET", "path": "/",
+                        "headers": [(b"accept", b"application/json")],
+                        "client": (address, 1234), "scheme": "https", "server": ("testserver", 443)})
+
+    first = request_for("198.51.100.1")
+    second = request_for("198.51.100.2")
+    overflow = request_for("198.51.100.3")
+    assert security.enforce_rate_limit(first, "listing_dispute", 1, 10) is None
+    assert security.enforce_rate_limit(second, "listing_dispute", 1, 10) is None
+    capacity_response = security.enforce_rate_limit(overflow, "listing_dispute", 1, 10)
+    assert capacity_response.status_code == 429
+    assert capacity_response.headers["Retry-After"] == "10"
+    assert len(module.RATE_LIMITS) == 2
+    assert security.enforce_rate_limit(first, "listing_dispute", 1, 10).status_code == 429
+    assert len(module.RATE_LIMITS) == 2
+
+    clock[0] = 111.0
+    assert security.enforce_rate_limit(overflow, "listing_dispute", 1, 10) is None
+    assert len(module.RATE_LIMITS) == 1
+    assert security.enforce_rate_limit(overflow, "listing_dispute", 1, 10).status_code == 429
+    long_identity = request_for("x" * 10_000)
+    assert security.enforce_rate_limit(long_identity, "listing_dispute", 1, 10) is None
+    assert len(module.RATE_LIMITS) == 2
+    assert all(len(key) <= len("listing_dispute:") + 64 for key in module.RATE_LIMITS)
+
+
+def test_persistent_domain_cap_survives_distinct_ips(listing_app):
+    _, client, db_path = listing_app
+    seed_blocklist(db_path, "https://example.com/path")
+    listing_id = client.get("/api/malicious-qr").json()["entries"][0]["id"]
+    for index in range(10):
+        response = client.post(
+            f"/malicious-database/dispute/{listing_id}",
+            data={"contact_email": f"person{index}@example.net",
+                  "claim": "Please review this disputed QR URL observation and the listed domain."},
+            headers={"x-forwarded-for": f"198.51.100.{index + 1}"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+    eleventh = client.post(
+        f"/malicious-database/dispute/{listing_id}",
+        data={"contact_email": "person11@example.net",
+              "claim": "Please review this disputed QR URL observation and the listed domain."},
+        headers={"x-forwarded-for": "198.51.100.11"},
+    )
+    assert eleventh.status_code == 429
+    assert rows(db_path, "SELECT COUNT(*) AS total FROM listing_disputes")[0]["total"] == 10
 
 
 def test_cross_origin_dispute_post_is_blocked(listing_app):
