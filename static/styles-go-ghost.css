@@ -17,6 +17,7 @@
 .ghost-progress-breakdown { max-width: 260px; font-size: 0.76rem; line-height: 1.4; }
 .ghost-brand-picker { display: grid; gap: 6px; margin: 14px 0; color: var(--text); font-weight: 800; }
 .ghost-brand-picker[hidden] { display: none; }
+.ghost-automation-table[hidden], #ghostFirstUseState[hidden], #goGhostNoBrokerState[hidden] { display: none; }
 .ghost-brand-picker select { width: 100%; min-height: 46px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-strong); color: var(--text); font: inherit; }
 .ghost-scope-actions [hidden] { display: none !important; }
 .go-ghost-keyword-form { margin-top: 16px; padding: 14px; border: 1px solid rgba(var(--accent-rgb), 0.18); border-radius: 8px; background: rgba(var(--accent-rgb), 0.045); }

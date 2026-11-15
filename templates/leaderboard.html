@@ -1,5 +1,6 @@
 {# Public leaderboard page: ranks top scanners. Live-updated by
    static/leaderboard.js polling the leaderboard API. #}
+{% from "_states.html" import empty_state %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -36,7 +37,6 @@
     .lb-username-you::after { content: " (you)"; color: var(--accent); font-size: 0.78rem; font-weight: 400; }
     .lb-num { color: var(--text); }
     .lb-date { color: var(--muted); font-size: 0.82rem; }
-    .lb-empty { color: var(--muted); text-align: center; padding: 60px 0; font-size: 0.95rem; }
     .medal { margin-right: 4px; }
     /* Mobile: tighten cell padding, let names wrap, and drop the timestamp
        column (least essential) so the table fits without horizontal scroll.
@@ -81,7 +81,9 @@
         {% endfor %}
       </tbody>
     </table>
-    <p class="lb-empty"{% if leaders %} style="display:none"{% endif %}>No scans yet. Be the first scanner on the board.</p>
+    <div class="lb-empty"{% if leaders %} style="display:none"{% endif %}>
+      {{ empty_state(icon='scan', title='No scanners on the board yet', body='Scan a QR code and save it to start the leaderboard.', action_label='Scan a QR code', action_href='/#scanner') }}
+    </div>
   </div>
   {% include "footer.html" %}
   <script src="/static/app-core.js?v=native-scroll-v3"></script>

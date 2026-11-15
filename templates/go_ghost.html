@@ -1,5 +1,6 @@
 {# "Go Ghost" page: guides manual opt-outs from data-broker and people-search
    sites. Driven by static/app-go-ghost.js and static/app-go-ghost-ui.js. #}
+{% from "_states.html" import empty_state %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -9,7 +10,7 @@
   <script src="/static/ui-states.js?v=ui-states-v1"></script>
   <title>Go Ghost | SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg?v=rose-theme-v1" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=ui-states-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=ui-empty-v1">
 </head>
 <body>
   <div class="page-shell go-ghost-shell">
@@ -37,7 +38,7 @@
     <div id="goGhostLegacyActions" class="go-ghost-actions" hidden><button id="eraseGhostLegacyButton" class="secondary-button" type="button">Retry erasing older details</button></div>
 
     <main class="go-ghost-layout" id="goGhostWorkspace" hidden data-browser-automation-available="{{ 'true' if browser_automation_available else 'false' }}" data-account-id="{{ go_ghost_account_id }}" data-account-name="{{ go_ghost_account_name }}" data-account-email="{{ go_ghost_account_email }}">
-      <section class="go-ghost-card result-card-wide">
+      <section class="go-ghost-card result-card-wide" id="goGhostSearchCleanup">
         <div class="panel-header">
           <div>
             <p class="eyebrow">Step 1</p>
@@ -77,6 +78,9 @@
         <p class="go-ghost-copy">This directory covers mainly U.S. people-search records. Outside the U.S., Search opens the broker's manual instructions without adding your name or location to a link.</p>
         <p class="go-ghost-copy">Signed-in profiles stay on this browser. Guest details are kept in this tab's session. Each person has separate progress.</p>
 
+        <div id="ghostFirstUseState">
+          {{ empty_state(icon='lock', title='Start with your details', body='Add the minimum details needed to search for your listing. They stay in this browser.', action_label='Add details', action_href='#goGhostProfileForm', compact=true, heading_level=3) }}
+        </div>
         <form id="goGhostProfileForm" class="go-ghost-form go-ghost-keyword-form">
           <p id="ghostProfileReviewNotice" class="go-ghost-copy" role="status">Enter the required details, review them, then save before opening broker links.</p>
           <p id="ghostSavedProfileHint" class="go-ghost-copy" hidden></p>
@@ -160,6 +164,9 @@
           <div class="ghost-automation-row ghost-automation-head"><span>Site</span><span>Effort</span><span>You do</span><span>Status</span></div>
           <div id="goGhostAutomationRows" class="ghost-automation-rows"></div>
         </div>
+        <div id="goGhostNoBrokerState" hidden>
+          {{ empty_state(icon='search', title='No broker sites available', body='Try again later, or use the search cleanup links above.', action_label='Go to search cleanup', action_href='#goGhostSearchCleanup', compact=true, heading_level=3) }}
+        </div>
       </section>
     </main>
 
@@ -225,7 +232,7 @@
   <script src="/static/app-widgets.js?v=ghost-assist-v1"></script>
   <script src="/static/go-ghost-state.js?v=ghost-state-ui-v3"></script>
   <script src="/static/app-go-ghost.js?v=ghost-state-ui-v3"></script>
-  <script src="/static/app-go-ghost-ui.js?v=ghost-drop-card-v1"></script>
+  <script src="/static/app-go-ghost-ui.js?v=ui-empty-v1"></script>
   <script src="/static/app-generate-qr.js?v=ghost-assist-v1"></script>
 </body>
 </html>

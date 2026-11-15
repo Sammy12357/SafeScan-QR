@@ -1,5 +1,6 @@
 {# Standalone admin data-table fragment (e.g. a user drawer / exportable view)
    rendered outside the full admin shell. #}
+{% from "_states.html" import empty_state %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -16,7 +17,11 @@
       <p class="eyebrow">Internal admin</p>
       <h1>{{ title }}</h1>
       {% if message %}<div class="request-message">{{ message }}</div>{% endif %}
-      {{ body_html | safe }}
+      {% if empty_state_title %}
+        {{ empty_state(icon='info', title=empty_state_title, body=empty_state_body, action_label='Open admin dashboard', action_href='/admin', compact=true) }}
+      {% else %}
+        {{ body_html | safe }}
+      {% endif %}
     </section>
   </div>
 </body>
