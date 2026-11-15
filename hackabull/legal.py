@@ -71,13 +71,24 @@ def legal_context(request: Request, title, body_html):
     }
 
 
-_GO_GHOST_STATUS_TABLES = frozenset({
-    "go_ghost_subjects", "go_ghost_consents", "go_ghost_requests",
-})
+_GO_GHOST_STATUS_SQL = {
+    "go_ghost_subjects": (
+        "SELECT * FROM go_ghost_subjects WHERE user_id = ?",
+        "DELETE FROM go_ghost_subjects WHERE user_id = ?",
+    ),
+    "go_ghost_consents": (
+        "SELECT * FROM go_ghost_consents WHERE user_id = ?",
+        "DELETE FROM go_ghost_consents WHERE user_id = ?",
+    ),
+    "go_ghost_requests": (
+        "SELECT * FROM go_ghost_requests WHERE user_id = ?",
+        "DELETE FROM go_ghost_requests WHERE user_id = ?",
+    ),
+}
 
 
 def _go_ghost_status_table_exists(conn, table):
-    if table not in _GO_GHOST_STATUS_TABLES:
+    if table not in _GO_GHOST_STATUS_SQL:
         raise ValueError("Unknown Go Ghost status table")
     return conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)
@@ -88,7 +99,7 @@ def _go_ghost_status_export(conn, table, user_id):
     if not _go_ghost_status_table_exists(conn, table):
         return []
     return [dict(row) for row in conn.execute(
-        f"SELECT * FROM {table} WHERE user_id = ?", (user_id,)
+        _GO_GHOST_STATUS_SQL[table][0], (user_id,)
     )]
 
 def get_user_export(email, user_id):
@@ -151,7 +162,7 @@ def delete_user_data(email, user_id):
         # each Go Ghost table explicitly, including the retired PII-bearing jobs.
         for table in ("go_ghost_requests", "go_ghost_consents", "go_ghost_subjects"):
             if _go_ghost_status_table_exists(conn, table):
-                conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
+                conn.execute(_GO_GHOST_STATUS_SQL[table][1], (user_id,))
         conn.execute("DELETE FROM go_ghost_removal_jobs WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM users WHERE google_id = ?", (user_id,))
         conn.execute("DELETE FROM age_confirmations WHERE email = ?", (email,))
