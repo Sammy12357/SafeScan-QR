@@ -238,8 +238,8 @@ async def remember_me_middleware(request: Request, call_next):
 CSP_POLICY = "; ".join([
     "default-src 'self'",
     "script-src 'self' 'wasm-unsafe-eval' https://accounts.google.com https://apis.google.com",
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self'",
     "img-src 'self' data: blob: https://lh3.googleusercontent.com https://ssl.gstatic.com https://www.gstatic.com",
     # URL reputation providers, Solana RPC, and the AI verdict
     # providers (Anthropic/OpenAI) are all called server-side via `requests`
