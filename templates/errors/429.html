@@ -1,0 +1,8 @@
+{% extends "errors/_base.html" %}
+{% block page_title %}Please wait{% endblock %}
+{% block heading %}You're going a bit fast{% endblock %}
+{% block description %}Try again in <span data-retry-countdown>{{ retry_after }}</span> seconds.{% endblock %}
+{% block actions %}
+  <button class="primary-button" type="button" data-retry-button disabled>Try again</button>
+  <a class="secondary-button" href="/">Go home</a>
+{% endblock %}

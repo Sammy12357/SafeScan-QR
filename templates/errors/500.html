@@ -1,0 +1,8 @@
+{% extends "errors/_base.html" %}
+{% block page_title %}Something went wrong{% endblock %}
+{% block heading %}Something broke on our side{% endblock %}
+{% block description %}We've logged it. Try again in a minute. If it keeps happening, share the reference below with support.{% endblock %}
+{% block actions %}
+  <button class="primary-button" type="button" data-retry-button>Try again</button>
+  <a class="secondary-button" href="/">Go home</a>
+{% endblock %}

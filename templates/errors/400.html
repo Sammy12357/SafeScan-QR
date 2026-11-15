@@ -1,0 +1,8 @@
+{% extends "errors/_base.html" %}
+{% block page_title %}Request needs attention{% endblock %}
+{% block heading %}{{ error_message }}{% endblock %}
+{% block description %}{{ hint }}{% endblock %}
+{% block actions %}
+  <button class="primary-button" type="button" data-retry-button>Try again</button>
+  <a class="secondary-button" href="/">Go home</a>
+{% endblock %}

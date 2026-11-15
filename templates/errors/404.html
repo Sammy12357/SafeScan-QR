@@ -1,0 +1,10 @@
+{% extends "errors/_base.html" %}
+{% block page_title %}Page not found{% endblock %}
+{% block heading %}We can't find that page{% endblock %}
+{% block description %}The link may be old or mistyped. Choose where to go next.{% endblock %}
+{% block actions %}
+  <a class="primary-button" href="/#scanner">Scan a QR code</a>
+  <a class="secondary-button" href="/history">Scan history</a>
+  <a class="secondary-button" href="/learn">Learn</a>
+  <a class="secondary-button" href="/">Home</a>
+{% endblock %}
