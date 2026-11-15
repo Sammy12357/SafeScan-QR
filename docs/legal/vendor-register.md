@@ -1,6 +1,6 @@
 # Outbound host and vendor register
 
-Baseline: repository commit `a2ce01b`, reviewed 2026-11-15. This is a **code-path inventory**, not a claim that every optional integration is enabled in production, that a provider's contract permits a use, or that no other network traffic occurs. Render environment values, DNS/CDN configuration, browser network captures, package behavior and vendor agreements remain unverified. “Automatic” means a normal page or scan may contact the host without an additional vendor-specific click.
+Baseline: repository commit `ad3e52a` (merged Phase 1), reviewed 2026-11-15. This is a **code-path inventory**, not a claim that every optional integration is enabled in production, that a provider's contract permits a use, or that no other network traffic occurs. Render environment values, DNS/CDN configuration, browser network captures, package behavior and vendor agreements remain unverified. “Automatic” means a normal page or scan may contact the host without an additional vendor-specific click.
 
 ## Browser requests and navigations
 
@@ -18,7 +18,7 @@ Baseline: repository commit `a2ce01b`, reviewed 2026-11-15. This is a **code-pat
 
 | Destination / provider | Data sent / reason | Activation and source |
 | --- | --- | --- |
-| `webrisk.googleapis.com` (Google Web Risk) | Full scanned URL in `uri` query parameter, plus configured API key; threat lookup. A URL may itself contain personal tokens. | Conditional on `GOOGLE_WEB_RISK_API_KEY`; `hackabull/reputation.py` `check_url_reputation`. Production key/contract unverified. |
+| `webrisk.googleapis.com` (Google Web Risk) | Full scanned URL, including its query, in the lookup request plus configured API key; threat lookup. A URL may itself contain personal tokens. Phase 4 strips the query from SafeScan's stored scan reference after the check; this does **not** change what Web Risk receives. | Conditional on `GOOGLE_WEB_RISK_API_KEY`; `hackabull/reputation.py` `check_url_reputation`. Production key/contract unverified. |
 | `safebrowsing.googleapis.com` (Google Safe Browsing) | Full scanned URL in JSON threat entries; legacy fallback. | Conditional on legacy Safe Browsing configuration and no Web Risk key; `hackabull/reputation.py`. Commercial-use eligibility must be reviewed before enabling. |
 | `data.phishtank.com`, `cdn.phishtank.com` (PhishTank) | Application key in feed URL; downloads a verified online phishing feed into local storage. Individual scanned URLs are looked up locally and are **not** sent to PhishTank by this path. | Conditional on `PHISHTANK_APP_KEY` and `SAFESCAN_PHISHTANK_TERMS_CONFIRMED`; only these two download hosts are allowed on redirects. `hackabull/phish_feed.py`. Current production feed status and terms evidence unverified. |
 | `rdap.org` | Registrable domain for domain-age lookup, not the full scanned URL. | Scan-time path when domain-age data is needed; `hackabull/domain_age.py` `fetch_domain_age_rdap`. |

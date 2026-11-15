@@ -434,6 +434,9 @@ def init_db():
                          guild_member INTEGER DEFAULT 0,
                          role_granted INTEGER DEFAULT 0,
                          linked_at TEXT NOT NULL)''')
+    # Earlier result-cache rows used raw URLs, including possible auth query
+    # values. The cache is disposable, so purge these on upgrade.
+    cursor.execute("DELETE FROM scan_results WHERE url NOT LIKE 'hmac:%'")
     conn.commit()
     conn.close()
 

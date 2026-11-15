@@ -1,13 +1,15 @@
 {
   "_format": "JSON-compatible YAML 1.2; parsed with the Python standard json module",
-  "_status": "Phase 0 engineering inventory, not an approved privacy-policy statement",
-  "_source": "Isolated SQLite schema generated from hackabull/schema.py at Phase 1 age-gate branch; no production records read",
+  "_status": "Phase 4 engineering inventory and rights triage; attorney review required before public-policy use",
+  "_source": "Isolated SQLite schema generated from hackabull/schema.py after merged Phase 1 payment and age work; no production records read",
   "_known_gaps": [
-    "Retention periods have not been tied to deletion jobs.",
-    "URL query strings can be stored or sent to reputation providers.",
-    "Audit logs and user records store raw IP addresses.",
-    "Data-request export and deletion do not yet cover every table, including new payment consent records.",
-    "Go Ghost status tables exist in code but are disabled and are not created at startup."
+    "Account inactivity deletion is not automated; the current public two-year promise requires correction or a safe job after billing/legal-hold review.",
+    "Stored scan URLs now drop query and fragment, but external Web Risk requests still receive the full URL when enabled; reported URLs, fraud metadata and historic backups require separate review.",
+    "Audit logs and user records can store raw IP addresses.",
+    "Go Ghost status tables exist in code but are disabled and are not created at startup.",
+    "Field-specific purposes, recipients, legal basis and retention are not yet mapped; the table descriptions below are an engineering inventory.",
+    "Self-service access and erasure now cover more owner-linked records, but security/payment/referral/upload evidence requires manual review. Display-name correction is automated; other corrections are not. Backups and external provider records are not automatically erased.",
+    "rights_class is a table-level engineering treatment. Individual fields still need owner-approved purposes, legal bases, recipient disclosures and retention periods; unlinked identifiers require a matching design before automated access or erasure."
   ],
   "tables": {
     "abuse_flags": {
@@ -23,7 +25,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "manual_review"
     },
     "adult_age_challenges": {
       "fields": [
@@ -37,7 +40,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "10-minute expiry; expired rows removed lazily; backup retention unverified",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "self_service_redacted_secrets"
     },
     "age_confirmations": {
       "fields": [
@@ -51,7 +55,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "legacy table retained for existing records"
+      "status": "legacy table retained for existing records",
+      "rights_class": "self_service"
     },
     "age_denials": {
       "fields": [
@@ -63,7 +68,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "24-hour expiry; expired rows removed lazily; backup retention unverified",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "not_directly_attributable"
     },
     "age_eligibility": {
       "fields": [
@@ -77,7 +83,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "until account deletion; automated retention job not yet verified",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "self_service"
     },
     "alpha_solana_payment_references": {
       "fields": [
@@ -102,7 +109,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "manual_review"
     },
     "alpha_subscriptions": {
       "fields": [
@@ -133,29 +141,47 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "manual_review"
     },
     "stripe_checkout_intents": {
       "fields": [
-        "session_id", "user_id", "email", "price_id", "product_id",
-        "amount_cents", "currency", "consent_version", "consent_text",
-        "refund_text", "accepted_at", "created_at", "status", "receipt_sent_at"
+        "session_id",
+        "user_id",
+        "email",
+        "price_id",
+        "product_id",
+        "amount_cents",
+        "currency",
+        "consent_version",
+        "consent_text",
+        "refund_text",
+        "accepted_at",
+        "created_at",
+        "status",
+        "receipt_sent_at"
       ],
       "source": "authenticated card checkout consent and Stripe Session creation",
       "purpose": "bind a paid session to one account and retain the exact recurring billing consent",
       "storage": "SQLite persistent disk",
       "recipients": "Stripe receives account reference and email; internal storage retains consent",
       "retention": "Counsel review required; not yet covered by account deletion or export",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "manual_review"
     },
     "stripe_webhook_events": {
-      "fields": ["event_id", "event_type", "processed_at"],
+      "fields": [
+        "event_id",
+        "event_type",
+        "processed_at"
+      ],
       "source": "verified Stripe webhook",
       "purpose": "reject duplicate payment events",
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "not_directly_attributable"
     },
     "payment_form_tokens": {
       "fields": ["token_hash", "user_id", "session_id", "purpose", "expires_at"],
@@ -164,7 +190,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage",
       "retention": "Expired tokens are removed when another protected form is issued",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "self_service_redacted_secrets"
     },
     "api_keys": {
       "fields": [
@@ -185,7 +212,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "manual_review"
     },
     "audit_logs": {
       "fields": [
@@ -204,7 +232,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "manual_review"
     },
     "breach_reports": {
       "fields": [
@@ -222,7 +251,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "not_directly_attributable"
     },
     "consent_logs": {
       "fields": [
@@ -242,7 +272,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "manual_review"
     },
     "data_requests": {
       "fields": [
@@ -260,7 +291,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "manual_review"
     },
     "device_fingerprints": {
       "fields": [
@@ -275,7 +307,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "self_service"
     },
     "discord_links": {
       "fields": [
@@ -292,7 +325,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "self_service"
     },
     "domain_age_cache": {
       "fields": [
@@ -310,7 +344,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "not_directly_attributable"
     },
     "fraud_flags": {
       "fields": [
@@ -332,7 +367,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "manual_review"
     },
     "go_ghost_removal_jobs": {
       "fields": [
@@ -351,7 +387,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "legacy/inactive"
+      "status": "legacy/inactive",
+      "rights_class": "self_service"
     },
     "guest_adult_tickets": {
       "fields": [
@@ -363,7 +400,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "24-hour expiry; expired rows removed lazily; backup retention unverified",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "not_directly_attributable"
     },
     "ip_registry": {
       "fields": [
@@ -378,7 +416,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "manual_review"
     },
     "local_credentials": {
       "fields": [
@@ -392,7 +431,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "legacy/inactive"
+      "status": "legacy/inactive",
+      "rights_class": "self_service_redacted_secrets"
     },
     "pending_age_signins": {
       "fields": [
@@ -412,7 +452,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "10-minute expiry; expired rows removed lazily; backup retention unverified",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "self_service_redacted_secrets"
     },
     "persistent_sessions": {
       "fields": [
@@ -431,7 +472,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "self_service_redacted_secrets"
     },
     "privacy_opt_outs": {
       "fields": [
@@ -446,7 +488,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "manual_review"
     },
     "referrals": {
       "fields": [
@@ -461,7 +504,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "manual_review"
     },
     "scan_events": {
       "fields": [
@@ -476,7 +520,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "self_service"
     },
     "scan_history": {
       "fields": [
@@ -496,7 +541,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "self_service"
     },
     "scan_results": {
       "fields": [
@@ -509,7 +555,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "not_directly_attributable"
     },
     "scan_velocity": {
       "fields": [
@@ -527,7 +574,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "self_service"
     },
     "scans": {
       "fields": [
@@ -546,7 +594,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "self_service"
     },
     "sessions": {
       "fields": [
@@ -564,7 +613,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "self_service_redacted_secrets"
     },
     "upload_artifacts": {
       "fields": [
@@ -583,7 +633,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "manual_review"
     },
     "url_blocklist": {
       "fields": [
@@ -599,7 +650,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "manual_review"
     },
     "url_reports": {
       "fields": [
@@ -618,7 +670,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "manual_review"
     },
     "users": {
       "fields": [
@@ -644,7 +697,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "self_service"
     },
     "waitlist_signups": {
       "fields": [
@@ -661,7 +715,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "self_service"
     },
     "waitlist_email_tokens": {
       "fields": [
@@ -677,7 +732,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Expired and used token cleanup is not yet scheduled",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "self_service_redacted_secrets"
     },
     "email_suppressions": {
       "fields": [
@@ -690,7 +746,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "manual_review"
     },
     "wallet_nonces": {
       "fields": [
@@ -708,7 +765,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "self_service_redacted_secrets"
     },
     "wallets": {
       "fields": [
@@ -728,7 +786,8 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
-      "status": "active schema"
+      "status": "active schema",
+      "rights_class": "self_service"
     }
   },
   "planned_disabled_tables": {
@@ -760,5 +819,11 @@
       "confirmed_at",
       "next_check_at"
     ]
+  },
+  "_phase4a_controls": {
+    "scan_storage": "New scan references strip query and fragment; result cache uses HMAC; startup scrubs legacy scan tables. See phase-4-privacy-operations.md.",
+    "consent_retention": "Published five-calendar-year consent retention is now enforced at startup and daily, except under explicit RETENTION_LEGAL_HOLD.",
+    "cache_retention": "Result-cache rows expire after 24 hours.",
+    "limits": "This is not a complete field-level policy or data-rights implementation; billing and backups need owner/counsel review."
   }
 }

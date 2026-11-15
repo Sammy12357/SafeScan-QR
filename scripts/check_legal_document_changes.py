@@ -66,10 +66,14 @@ def check(base: str) -> list[str]:
 
     for kind, legacy_name in KINDS.items():
         old_entry, new_entry = old_meta.get(kind, {}), new_meta.get(kind, {})
-        old_version = old_entry.get("current", old_global_version)
-        new_version = new_entry.get("current", new_global_version)
-        old_date = old_entry.get("versions", {}).get(old_version, old_global_date)
-        new_date = new_entry.get("versions", {}).get(new_version, new_global_date)
+        old_fallback_version = (_literal(old_config, "COOKIE_POLICY_VERSION") or old_global_version) if kind == "cookie" else old_global_version
+        new_fallback_version = (_literal(new_config, "COOKIE_POLICY_VERSION") or new_global_version) if kind == "cookie" else new_global_version
+        old_fallback_date = (_literal(old_config, "COOKIE_POLICY_LAST_UPDATED") or old_global_date) if kind == "cookie" else old_global_date
+        new_fallback_date = (_literal(new_config, "COOKIE_POLICY_LAST_UPDATED") or new_global_date) if kind == "cookie" else new_global_date
+        old_version = old_entry.get("current", old_fallback_version)
+        new_version = new_entry.get("current", new_fallback_version)
+        old_date = old_entry.get("versions", {}).get(old_version, old_fallback_date)
+        new_date = new_entry.get("versions", {}).get(new_version, new_fallback_date)
         legacy_changed = _assigned_source(old_admin, legacy_name) != _assigned_source(new_admin, legacy_name)
         current_changed = old_version != new_version
         if old_entry:
@@ -85,12 +89,13 @@ def check(base: str) -> list[str]:
             continue
         if not isinstance(new_date, str) or new_date == old_date:
             errors.append(f"{kind}: public text changed without a new effective date")
-        if new_entry:
-            current_path = f"hackabull/legal_published/{kind}.{new_version}.html"
-            if not _current(current_path):
-                errors.append(f"{kind}: current version has no published snapshot")
-            if old_version and not _current(f"hackabull/legal_published/{kind}.{old_version}.html"):
-                errors.append(f"{kind}: previous version has no published snapshot")
+        current_path = f"hackabull/legal_published/{kind}.{new_version}.html"
+        if not _current(current_path):
+            errors.append(f"{kind}: current version has no published snapshot")
+        elif (current_text := _literal(new_admin, legacy_name)) is not None and _current(current_path) != current_text:
+            errors.append(f"{kind}: current snapshot does not match public text")
+        if old_version and not _current(f"hackabull/legal_published/{kind}.{old_version}.html"):
+            errors.append(f"{kind}: previous version has no published snapshot")
         if not re.search(rf"\b{kind}\b[^\n]*\b{re.escape(new_version)}\b", changelog, re.I):
             errors.append(f"{kind}: add {new_version} to legal-document-changelog.md")
         if new_version not in packet:

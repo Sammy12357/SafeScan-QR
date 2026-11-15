@@ -73,6 +73,8 @@ from .config import BILLING_REFUND_POLICY_TEXT
 from .config import BILLING_SUPPORT_EMAIL
 from .config import CLIENT_ID
 from .config import CONSENT_BANNER_VERSION
+from .config import COOKIE_POLICY_LAST_UPDATED
+from .config import COOKIE_POLICY_VERSION
 from .config import GO_GHOST_BROWSER_AUTOMATION_AVAILABLE
 from .config import LEGAL_LAST_UPDATED
 from .config import LEGAL_VERSION
@@ -90,6 +92,7 @@ from .waitlist_email import send_confirmation
 from .waitlist_email import unsubscribe
 from .history import index_user_context
 from .legal import delete_user_data
+from .legal import correct_display_name
 from .legal import get_user_export
 from .legal import legal_context
 from .payments_solana import alpha_solana_pay_url
@@ -394,7 +397,9 @@ async def terms_of_use_alias(request: Request):
 
 @qr_app.get("/legal/cookie-policy", response_class=HTMLResponse)
 async def cookie_policy(request: Request):
-    return templates.TemplateResponse("legal_page.html", legal_context(request, "Cookie Policy", COOKIE_POLICY_HTML))
+    context = legal_context(request, "Cookie Policy", COOKIE_POLICY_HTML)
+    context.update(version=COOKIE_POLICY_VERSION, last_updated=COOKIE_POLICY_LAST_UPDATED)
+    return templates.TemplateResponse("legal_page.html", context)
 
 @qr_app.get("/legal/terms-history", response_class=HTMLResponse)
 async def terms_history(request: Request):
@@ -897,7 +902,8 @@ async def do_not_sell(request: Request):
 async def data_request_page(request: Request, email: str = Query("")):
     return templates.TemplateResponse("data_request.html", {
         "request": request, "email": email, "message": "", "export_data": "",
-        "region": "", "request_type": "access", "details": "", "field_errors": {},
+        "region": "", "request_type": "access", "details": "", "correction_field": "other",
+        "correction_value": "", "field_errors": {},
         "version": LEGAL_VERSION, "last_updated": LEGAL_LAST_UPDATED
     }, headers={"Cache-Control": "no-store"})
 
@@ -907,7 +913,9 @@ async def submit_data_request(
     email: str = Form(""),
     region: str = Form(""),
     request_type: str = Form(""),
-    details: str = Form("")
+    details: str = Form(""),
+    correction_field: str = Form("other"),
+    correction_value: str = Form("")
 ):
     email = email.strip().lower()
     region = region.strip()
@@ -925,10 +933,15 @@ async def submit_data_request(
         field_errors["request_type"] = "Choose the type of request."
     if len(details) > 5000:
         field_errors["details"] = "Use 5,000 characters or fewer for the details."
+    if len(correction_field) > 40 or len(correction_value) > 120:
+        field_errors["correction_value"] = "Use 120 characters or fewer for the corrected value."
+    if correction_field not in {"other", "display_name"}:
+        field_errors["correction_field"] = "Choose a correction field."
     if field_errors:
         return templates.TemplateResponse("data_request.html", {
             "request": request, "email": email, "region": region,
             "request_type": request_type, "details": details,
+            "correction_field": correction_field, "correction_value": correction_value,
             "message": "", "export_data": "", "field_errors": field_errors,
             "version": LEGAL_VERSION, "last_updated": LEGAL_LAST_UPDATED,
         }, status_code=400, headers={"Cache-Control": "no-store"})
@@ -943,12 +956,16 @@ async def submit_data_request(
             export = get_user_export(session_user["email"], session_user.get("google_id"))
             if export is not None:
                 export_data = json.dumps(export, indent=2)
-                status = "completed"
+                status = "submitted" if export["manualReview"] else "completed"
     elif request_type == "erasure":
         if verified_self_request:
             if delete_user_data(session_user["email"], session_user.get("google_id")):
                 status = "completed"
-                audit_log("account.deleted", request=request, actor_user_id=session_user.get("google_id"), target_type="user", target_id=email)
+                audit_log("account.deleted", request=request, target_type="data_request", target_id=request_id)
+    elif request_type == "rectification":
+        if verified_self_request and correction_field == "display_name":
+            if correct_display_name(email, session_user.get("google_id"), correction_value):
+                status = "completed"
     elif request_type in ("do_not_sell", "limit_sensitive", "object", "revoke_consent"):
         with get_conn() as conn:
             conn.execute(
@@ -956,15 +973,22 @@ async def submit_data_request(
                 (make_id("opt"), email, region, request_type, now)
             )
 
+    request_details = details
+    if request_type == "rectification" and correction_field == "display_name":
+        request_details = json.dumps({"field": "display_name", "requested_value": correction_value.strip(), "notes": details})
     with get_conn() as conn:
         conn.execute(
             "INSERT INTO data_requests VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (request_id, email, region, request_type, details, status, now, now if status == "completed" else None)
+            (request_id, email, region, request_type, request_details, status, now, now if status == "completed" else None)
         )
 
     message = f"Request {request_id} recorded. Keep this reference for your records."
-    if verified_self_request and request_type in ("access", "portability", "erasure") and status == "submitted":
-        message = f"Request {request_id} recorded. Account ownership needs review before this request can be completed."
+    if verified_self_request and request_type in ("access", "portability", "erasure", "rectification") and status == "submitted":
+        message = f"Request {request_id} recorded. Account ownership or retained records need review before this request can be completed."
+        if request_type in ("access", "portability") and export_data:
+            message = f"Request {request_id} recorded. The available export is below; security or provider records still need manual review before this request is complete."
+        if request_type == "rectification":
+            message = f"Request {request_id} recorded for manual review. Only a signed-in account's display name can be corrected automatically."
         if request_type == "erasure":
             with get_conn() as conn:
                 billing_record = conn.execute(
@@ -977,9 +1001,23 @@ async def submit_data_request(
     return templates.TemplateResponse("data_request.html", {
         "request": request, "email": email, "region": region,
         "request_type": request_type, "details": details, "field_errors": {},
+        "correction_field": correction_field, "correction_value": correction_value,
         "message": message, "export_data": export_data,
         "version": LEGAL_VERSION, "last_updated": LEGAL_LAST_UPDATED
     }, headers={"Cache-Control": "no-store"})
+
+
+@qr_app.post("/legal/data-export")
+async def download_my_data(request: Request):
+    """Download an owner-scoped JSON export without trusting a form email."""
+    user = require_user(request)
+    export = get_user_export(user["email"], user["google_id"])
+    if export is None:
+        raise HTTPException(status_code=409, detail="Account ownership needs review before export.")
+    return Response(
+        json.dumps(export, ensure_ascii=False, indent=2), media_type="application/json",
+        headers={"Cache-Control": "no-store", "Content-Disposition": 'attachment; filename="safescan-data.json"'},
+    )
 
 @qr_app.post("/api/consent")
 async def log_consent(request: Request, payload: dict = Body(...)):

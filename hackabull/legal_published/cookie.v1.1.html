@@ -1,0 +1,25 @@
+
+<p><strong>Draft for attorney review.</strong> This table describes first-party storage found in SafeScan's application source as of the proposed update. It is not a complete inventory of a particular browser session or of provider, CDN, or hosting storage. Those require a production browser and network review before approval.</p>
+<h2>First-party cookies and browser storage</h2>
+<table class="legal-table">
+  <thead><tr><th>Name or key family</th><th>Storage</th><th>Purpose</th><th>Category</th><th>Code-enforced lifetime</th></tr></thead>
+  <tbody>
+    <tr><td><code>__Host-safescan_session</code></td><td>Cookie</td><td>Authenticates a signed-in session.</td><td>Essential</td><td>Up to 24 hours; may be reissued on restoration.</td></tr>
+    <tr><td><code>__Host-safescan_remember</code></td><td>Cookie</td><td>Opaque remember-me token, rotated when used.</td><td>Essential</td><td>30 days by default; deployment setting may change this.</td></tr>
+    <tr><td><code>__Host-safescan_pending_age</code></td><td>Cookie</td><td>Temporary age-check ticket after sign-in.</td><td>Essential</td><td>Up to 10 minutes; removed after the decision.</td></tr>
+    <tr><td><code>__Host-safescan_adult_challenge</code></td><td>Cookie</td><td>Temporary challenge for an adult feature attestation.</td><td>Essential</td><td>Up to 10 minutes.</td></tr>
+    <tr><td><code>__Host-safescan_adult_guest</code></td><td>Cookie</td><td>Opaque guest token for adult-gated features.</td><td>Essential</td><td>Up to 24 hours.</td></tr>
+    <tr><td><code>safescan_theme</code></td><td>Local storage</td><td>Remembers light or dark display preference.</td><td>Functional</td><td>Until cleared; no automatic expiry in code.</td></tr>
+    <tr><td><code>safeScanConsent</code></td><td>Local storage</td><td>Remembers privacy choice and time; the banner asks again after 365 days.</td><td>Essential</td><td>Stored until cleared; re-prompted, not deleted, after 365 days.</td></tr>
+    <tr><td><code>safeScanConsentId</code></td><td>Local storage</td><td>Stores the consent record ID returned by SafeScan.</td><td>Essential</td><td>Until cleared; no automatic expiry in code.</td></tr>
+    <tr><td><code>phishproofAirdropProfile</code></td><td>Local storage</td><td>Local rewards and wallet profile state; server records control verification.</td><td>Functional</td><td>Until cleared or removed by the app.</td></tr>
+    <tr><td><code>safeScanGoGhostV2:account:&lt;encoded account id&gt;</code></td><td>Local storage</td><td>Account-scoped Go Ghost subjects, progress, consent, and family attestations; may contain personal details entered by the user.</td><td>Functional</td><td>Until cleared; no automatic expiry in code.</td></tr>
+    <tr><td><code>safeScanGoGhostV2:guest</code></td><td>Session storage</td><td>Guest Go Ghost subjects, progress, consent, and family attestations.</td><td>Functional</td><td>Browser tab/session lifetime; removed when the signed-in workspace opens.</td></tr>
+    <tr><td><code>safescan_sidenav_open</code></td><td>Session storage</td><td>Remembers whether the navigation panel was open.</td><td>Functional</td><td>Browser tab/session lifetime.</td></tr>
+    <tr><td><code>safescan:actor-email:&lt;actor id&gt;</code></td><td>Session storage</td><td>Admin-only cache of an audit actor's email address.</td><td>Functional</td><td>Browser tab/session lifetime.</td></tr>
+  </tbody>
+</table>
+<p>With a fresh “Accept All” choice, the scanner may send first-party performance counts. The event body omits QR text, images, and device IDs, but the network request may still carry transport metadata such as an IP address. Global Privacy Control suppresses these optional counts even if a previous choice allowed them; a <code>Sec-GPC: 1</code> request also prevents the server from recording an “all” choice. Applicability to sale or sharing rights and provider behavior needs counsel and production review.</p>
+<p>Older versions may have left <code>safeScanGoGhostProfile</code>, <code>safeScanGoGhostProgress</code>, or <code>safeScanGoGhostConsent</code> in local storage. Current Go Ghost code removes these legacy keys when it runs; they are not active storage keys. Provider-set cookies and browser cache are not covered by the first-party table.</p>
+<h2>Disable Cookies</h2>
+<p>You can manage cookies in <a href="https://support.google.com/chrome/answer/95647" target="_blank" rel="noopener noreferrer">Chrome</a>, <a href="https://support.mozilla.org/en-US/kb/clear-cookies-and-site-data-firefox" target="_blank" rel="noopener noreferrer">Firefox</a>, <a href="https://support.apple.com/guide/safari/manage-cookies-sfri11471/mac" target="_blank" rel="noopener noreferrer">Safari</a>, and <a href="https://support.microsoft.com/microsoft-edge" target="_blank" rel="noopener noreferrer">Edge</a>.</p>

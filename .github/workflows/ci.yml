@@ -24,8 +24,17 @@ jobs:
         with:
           python-version: "3.11"
       - name: Require versioned legal text and attorney review record
+        env:
+          LEGAL_EVENT_NAME: ${{ github.event_name }}
+          LEGAL_REF_NAME: ${{ github.ref_name }}
         run: |
-          base=$(bash scripts/security_diff_base.sh)
+          if [[ "$LEGAL_EVENT_NAME" == "push" && "$LEGAL_REF_NAME" != "main" ]]; then
+            # A draft branch can revise its proposed version before merge.
+            # Compare the whole draft against main, not its previous push.
+            base=$(git merge-base HEAD refs/remotes/origin/main)
+          else
+            base=$(bash scripts/security_diff_base.sh)
+          fi
           python scripts/check_legal_document_changes.py "$base"
 
   test:

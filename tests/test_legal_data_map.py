@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_data_map_covers_current_tables_and_columns(tmp_path):
     documented = json.loads((ROOT / "docs/legal/data-map.yaml").read_text(encoding="utf-8"))
-    assert documented["_status"].startswith("Phase 0 engineering inventory")
+    assert documented["_status"].startswith("Phase 4 engineering inventory")
 
     environment = os.environ.copy()
     environment.update({
@@ -43,3 +43,6 @@ print(json.dumps(tables))
         assert mapped[table]["source"]
         assert mapped[table]["purpose"]
         assert mapped[table]["retention"]
+        assert mapped[table]["rights_class"] in {
+            "self_service", "self_service_redacted_secrets", "manual_review", "not_directly_attributable",
+        }

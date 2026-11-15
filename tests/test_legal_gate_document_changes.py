@@ -22,6 +22,12 @@ def _run(monkeypatch, *, old_text="old", new_text="new", old_version="v1.0",
         "hackabull/config.py": f'LEGAL_VERSION = "{new_version}"\nLEGAL_LAST_UPDATED = "{new_date}"',
         "docs/legal/legal-document-changelog.md": log,
         "docs/legal/attorney-packet.md": packet,
+        "hackabull/legal_published/terms.v1.0.html": "old",
+        f"hackabull/legal_published/terms.{new_version}.html": "new",
+        "hackabull/legal_published/privacy.v1.0.html": "old privacy",
+        f"hackabull/legal_published/privacy.{new_version}.html": "new privacy",
+        "hackabull/legal_published/cookie.v1.0.html": "old cookie",
+        f"hackabull/legal_published/cookie.{new_version}.html": "new cookie",
     }
     monkeypatch.setattr(GATE, "_git_show", lambda _base, path: old.get(path))
     monkeypatch.setattr(GATE, "_current", lambda path: current.get(path))
@@ -44,3 +50,24 @@ def test_changed_terms_need_new_version_date_and_review_records(monkeypatch):
 
 def test_unmodified_legal_text_does_not_need_version_bump(monkeypatch):
     assert _run(monkeypatch, old_text="same", new_text="same") == []
+
+
+def test_cookie_policy_uses_its_own_version_and_requires_snapshots(monkeypatch):
+    old = {
+        "hackabull/admin_data.py": 'COOKIE_POLICY_HTML = "old"',
+        "hackabull/config.py": 'LEGAL_VERSION = "v1.0"\nLEGAL_LAST_UPDATED = "May 2026"',
+    }
+    current = {
+        "hackabull/admin_data.py": 'COOKIE_POLICY_HTML = "new"',
+        "hackabull/config.py": 'LEGAL_VERSION = "v1.0"\nLEGAL_LAST_UPDATED = "May 2026"\nCOOKIE_POLICY_VERSION = "v1.1"\nCOOKIE_POLICY_LAST_UPDATED = "November 15, 2026 (proposed)"',
+        "docs/legal/legal-document-changelog.md": "| cookie | v1.1 |",
+        "docs/legal/attorney-packet.md": "Cookie Policy v1.1 needs review",
+    }
+    monkeypatch.setattr(GATE, "_git_show", lambda _base, path: old.get(path))
+    monkeypatch.setattr(GATE, "_current", lambda path: current.get(path))
+    errors = GATE.check("a" * 40)
+    assert any("current version has no published snapshot" in error for error in errors)
+    assert any("previous version has no published snapshot" in error for error in errors)
+    current["hackabull/legal_published/cookie.v1.0.html"] = "old"
+    current["hackabull/legal_published/cookie.v1.1.html"] = "new"
+    assert GATE.check("a" * 40) == []

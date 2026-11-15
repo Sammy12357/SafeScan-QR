@@ -152,16 +152,21 @@ def test_unique_owner_keeps_own_and_legacy_rows_but_not_foreign_id(live_app):
     assert {row["user_id"] for row in scans["events"]} == {first_id, None}
     assert len(scans["scans"]) == 1
     export = importlib.import_module("hackabull.legal").get_user_export("unique@example.com", first_id)
-    assert {row["payload_hash"] for row in export["scanEvents"]} == {"first", "legacy"}
+    assert {row["payload_hash"] for row in export["scanEvents"]} == {"first"}
+    assert "records matched by email require ownership review" in export["manualReview"]
     assert first.get("/api/user/profile").json()["scanCount"] == 3
     with sqlite3.connect(database) as conn:
         conn.execute("UPDATE scans SET user_id = 'unrelated-id' WHERE email = 'unique@example.com'")
     assert first.get("/api/user/profile").json()["scanCount"] == 0
     assert first.get("/api/scans").json()["scans"] == []
+    # Registration's security audit record requires manual erasure review.
+    # Pending review must leave even the otherwise owner-linked rows intact.
+    assert _rows(database, "SELECT action FROM audit_logs WHERE actor_user_id = ?", (first_id,)) == [{"action": "user.register"}]
     erased = first.post("/legal/data-request", data={"email": "unique@example.com", "request_type": "erasure"})
     assert erased.status_code == 200
-    assert _rows(database, "SELECT id FROM scan_history") == [{"id": "second"}]
-    assert _rows(database, "SELECT payload_hash FROM scan_events") == [{"payload_hash": "second"}]
+    assert _rows(database, "SELECT status FROM data_requests WHERE request_type = 'erasure'") == [{"status": "submitted"}]
+    assert {row["id"] for row in _rows(database, "SELECT id FROM scan_history")} == {"first", "second", "legacy"}
+    assert {row["payload_hash"] for row in _rows(database, "SELECT payload_hash FROM scan_events")} == {"first", "second", "legacy"}
     assert _rows(database, "SELECT user_id FROM scans") == [{"user_id": "unrelated-id"}]
 
 

@@ -66,6 +66,7 @@ from .payload_privacy import is_web_url_payload
 from .payload_privacy import private_history_signals
 from .payload_privacy import safe_legacy_scan_value
 from .payload_privacy import scan_storage_reference
+from .payload_privacy import minimize_url_text
 from .request_helpers import make_id
 from .scoring import status_from_risk
 
@@ -102,7 +103,7 @@ def scan_classification_from_row(row):
     return scan_classification(verdict, risk_score)
 
 def compact_text(value, limit=SCAN_HISTORY_MAX_SIGNAL_TEXT):
-    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    text = re.sub(r"\s+", " ", minimize_url_text(str(value or ""))).strip()
     if len(text) <= limit:
         return text
     return text[: max(0, limit - 1)].rstrip() + "..."
@@ -136,8 +137,13 @@ def serialize_scan_history_row(row):
     classification = scan_classification_from_row(row)
     stored_url = row["url"] or ""
     safe_url = safe_legacy_scan_value(stored_url)
-    if safe_url != stored_url:
+    if safe_url != stored_url and not is_web_url_payload(stored_url):
         signals = private_history_signals(None, int(row["risk_score"] or 0))
+    if isinstance(signals, list):
+        signals = [
+            {key: minimize_url_text(value) if isinstance(value, str) else value for key, value in item.items()}
+            if isinstance(item, dict) else item for item in signals
+        ]
     return {
         "scanId": row["id"],
         "id": row["id"],
@@ -160,9 +166,12 @@ def safe_scan_history_record(row):
     """Scrub pre-fix private QR rows before rendering admin views."""
     result = dict(row)
     safe_url = safe_legacy_scan_value(result.get("url"))
-    if safe_url != result.get("url"):
+    if safe_url != result.get("url") and not is_web_url_payload(result.get("url")):
         result["url"] = safe_url
         result["signals"] = json.dumps(private_history_signals(None, int(result.get("risk_score") or 0)))
+    elif safe_url != result.get("url"):
+        result["url"] = safe_url
+        result["signals"] = minimize_url_text(result.get("signals") or "")
     return result
 
 def group_scan_history(items):
@@ -236,7 +245,7 @@ def save_user_scan(user_id, url, analysis, email=None, reported=False):
             (
                 scan_id,
                 resolved_email,
-                url[:2048],
+                scan_storage_reference(url, user_id),
                 risk_score,
                 verdict,
                 json.dumps(compact_signals, separators=(",", ":")),
@@ -263,7 +272,7 @@ def get_user_scan_history(user_id, limit=100):
             """,
             (user_id, bounded_limit),
         ).fetchall()
-    return [dict(row) for row in rows]
+    return [safe_scan_history_record(row) for row in rows]
 
 
 def persist_qr_upload(content: bytes, filename: str, content_type: str, user: dict | None, *, retain: bool = False):

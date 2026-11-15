@@ -167,3 +167,23 @@ def test_gpc_overrides_prior_all_choice_in_browser_and_server(browser_site):
         assert page.evaluate("JSON.parse(localStorage.getItem('safeScanConsent')).consentType") == "essential_only"
     finally:
         context.close()
+
+
+def test_guest_storage_keys_observed_in_browser_are_disclosed(browser_site):
+    browser, base_url = browser_site
+    context = browser.new_context(base_url=base_url)
+    try:
+        page = context.new_page()
+        page.goto("/", wait_until="domcontentloaded")
+        with page.expect_response("**/api/consent"):
+            page.locator('[data-consent-choice="essential_only"]').click()
+        page.wait_for_function("Boolean(localStorage.getItem('safeScanConsent'))")
+        observed = page.evaluate("({local: Object.keys(localStorage), session: Object.keys(sessionStorage)})")
+        observed["cookies"] = [cookie["name"] for cookie in context.cookies()]
+        policy = (ROOT / "hackabull/admin_data.py").read_text()
+        inventory = (ROOT / "docs/legal/storage-inventory.md").read_text()
+        assert observed["local"]
+        for names in observed.values():
+            assert all(name in policy and name in inventory for name in names), names
+    finally:
+        context.close()

@@ -50,6 +50,7 @@ from storage import upload_bytes as storage_upload_bytes
 from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party
 import safescan_model_calibration as sm_calibration
 from .config import AIRDROP_ADMIN_SECRET
+from .payload_privacy import private_result_cache_key
 
 # =============================================================================
 # RESULT CACHE & REQUEST HELPERS (IP, locale, ids)
@@ -57,7 +58,7 @@ from .config import AIRDROP_ADMIN_SECRET
 def get_cached_result(target_url: str):
     with get_conn() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT status, timestamp FROM scan_results WHERE url = ?", (target_url,))
+        cursor.execute("SELECT status, timestamp FROM scan_results WHERE url = ?", (private_result_cache_key(target_url),))
         row = cursor.fetchone()
     if row:
         last_scan = datetime.fromisoformat(row[1])
@@ -68,7 +69,7 @@ def get_cached_result(target_url: str):
 def save_to_cache(target_url: str, status: str):
     with get_conn() as conn:
         cursor = conn.cursor()
-        cursor.execute("INSERT OR REPLACE INTO scan_results VALUES (?, ?, ?)", (target_url, status, datetime.now().isoformat()))
+        cursor.execute("INSERT OR REPLACE INTO scan_results VALUES (?, ?, ?)", (private_result_cache_key(target_url), status, datetime.now().isoformat()))
 
 def make_id(prefix):
     return f"{prefix}_{hashlib.sha256(f'{prefix}:{datetime.utcnow().isoformat()}:{os.urandom(8)}'.encode('utf-8')).hexdigest()[:24]}"
