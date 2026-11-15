@@ -257,9 +257,12 @@ cookieConsentBanner?.addEventListener("click", async (event) => {
       let cached = true;
       try {
         window.localStorage.setItem("safeScanConsent", JSON.stringify(record));
-        if (body.id) window.localStorage.setItem("safeScanConsentId", body.id);
       } catch {
         cached = false;
+      }
+      if (body.id) {
+        try { window.localStorage.setItem("safeScanConsentId", body.id); }
+        catch { /* The choice itself may still be remembered. */ }
       }
       document.getElementById("consentSaveFeedback")?.remove();
       if (cached) cookieConsentBanner.classList.add("hidden");

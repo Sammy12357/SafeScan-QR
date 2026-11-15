@@ -92,12 +92,37 @@ def test_consent_success_with_blocked_storage_is_reported_as_recorded(browser_si
         with page.expect_response("**/api/consent") as saved:
             page.locator("[data-consent-choice='essential_only']").click()
         assert saved.value.status == 200
+        page.get_by_text("Privacy choice recorded", exact=True).wait_for()
         assert page.locator(".consent-title").inner_text() == "Privacy choice recorded"
         assert "couldn't remember it" in page.locator(".consent-copy").inner_text()
         assert page.locator("#consentSaveFeedback").count() == 0
         assert page.locator("#cookieConsentBanner").is_visible()
         page.get_by_role("button", name="Close", exact=True).click()
         assert page.locator("#cookieConsentBanner").is_hidden()
+    finally:
+        context.close()
+
+
+def test_consent_choice_survives_optional_id_storage_failure(browser_site):
+    browser, base_url = browser_site
+    context = browser.new_context(base_url=base_url)
+    try:
+        page = context.new_page()
+        page.add_init_script("""
+            const originalSetItem = Storage.prototype.setItem;
+            Storage.prototype.setItem = function(key, value) {
+                if (key === 'safeScanConsentId') throw new DOMException('Storage blocked', 'QuotaExceededError');
+                return originalSetItem.call(this, key, value);
+            };
+        """)
+        page.goto("/", wait_until="domcontentloaded")
+        with page.expect_response("**/api/consent") as saved:
+            page.locator("[data-consent-choice='essential_only']").click()
+        assert saved.value.status == 200
+        page.locator("#cookieConsentBanner").wait_for(state="hidden")
+        assert page.locator("#cookieConsentBanner").is_hidden()
+        assert page.evaluate("localStorage.getItem('safeScanConsent')") is not None
+        assert page.locator(".consent-title").inner_text() == "Privacy preferences"
     finally:
         context.close()
 
