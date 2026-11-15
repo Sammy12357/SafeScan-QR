@@ -205,6 +205,30 @@ def test_go_ghost_page_prompts_before_workflow(security_app):
     assert "broker-card" not in response.text
 
 
+def test_admin_breach_preview_escapes_submitted_html(security_app):
+    _, client, db_path = security_app
+    assert register(client, "admin@example.com").status_code == 303
+    payload = "<svg onload=alert(1)>"
+
+    response = client.post(
+        "/admin/report-breach",
+        data={
+            "discovery_date": "2026-11-14",
+            "data_categories": payload,
+            "users_affected": "1",
+            "likely_consequences": "None known",
+            "measures_taken": "Investigating",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "&lt;svg onload=alert(1)&gt;" in response.text
+    assert payload not in response.text
+    with sqlite3.connect(db_path) as conn:
+        stored = conn.execute("SELECT data_categories FROM breach_reports").fetchone()[0]
+    assert stored == payload
+
+
 def test_waitlist_export_requires_owner(security_app):
     _, admin_client, db_path = security_app
     register(admin_client, "admin@example.com")

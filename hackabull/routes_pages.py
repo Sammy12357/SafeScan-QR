@@ -830,7 +830,7 @@ async def report_breach(
     with get_conn() as conn:
         conn.execute("INSERT INTO breach_reports VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (report_id, discovery_date, data_categories, users_affected, likely_consequences, measures_taken, now, template))
     audit_log("admin.breach_report_created", request=request, actor_user_id=admin_user.get("google_id"), target_type="breach_report", target_id=report_id)
-    body = f"<h2>Breach Report {report_id}</h2><pre class='legal-json'>{template}</pre>"
+    body = f"<h2>Breach Report {escape_html(report_id)}</h2><pre class='legal-json'>{escape_html(template)}</pre>"
     return templates.TemplateResponse("admin_table.html", {"request": request, "title": "Breach Template", "body_html": body, "message": "Report logged. Connect email provider for live admin notifications."})
 
 @qr_app.get("/api/health")
