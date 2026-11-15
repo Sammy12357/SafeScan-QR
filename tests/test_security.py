@@ -192,6 +192,117 @@ def test_admin_can_view_waitlist_signups(security_app):
     assert "Waitlist" in response.text
 
 
+def test_admin_user_detail_uses_stable_account_id_and_rejects_ambiguous_email(security_app):
+    _, client, db_path = security_app
+    register(client, "admin@example.com")
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            "INSERT INTO users (google_id, email, display_name) VALUES (?, ?, ?)",
+            [("account-A", "shared@example.test", "Account A"),
+             ("auth0|account/B", "SHARED@example.test", "Account B")],
+        )
+        conn.execute(
+            "INSERT INTO scan_history (id, email, user_id, url, risk_score, verdict, signals, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("B-scan", "shared@example.test", "auth0|account/B", "https://b.example.test", 42,
+             "CAUTION", "[]", "2026-11-04"),
+        )
+
+    a = client.get("/admin/users/detail", params={"account_id": "account-A"})
+    b = client.get("/admin/users/detail", params={"account_id": "auth0|account/B"})
+    ambiguous = client.get("/admin/users/shared@example.test/drawer")
+    assert a.status_code == 200
+    assert "Account A" in a.text
+    assert "https://b.example.test" not in a.text
+    assert b.status_code == 200
+    assert "Account B" in b.text
+    assert "https://b.example.test" not in b.text
+    assert "Scan history is unavailable while account ownership is reviewed" in b.text
+    assert ambiguous.status_code == 404
+
+
+def test_admin_email_actions_fail_closed_for_duplicate_accounts(security_app):
+    _, client, db_path = security_app
+    register(client, "owner@example.com")
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            "INSERT INTO users (google_id, email) VALUES (?, ?)",
+            [("account-A", "shared@example.test"), ("account-B", "SHARED@example.test")],
+        )
+        conn.execute(
+            "INSERT INTO fraud_flags (id, user_id, check_name, severity, reason, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("legacy-flag", "shared@example.test", "test", "medium", "Review", "2026-11-04"),
+        )
+        audit_before = conn.execute("SELECT COUNT(*) FROM audit_logs").fetchone()[0]
+
+    for path, payload in (
+        ("/admin/users/shared@example.test/suspend", {"action": "suspend"}),
+        ("/admin/users/shared@example.test/role", {"role": "admin"}),
+        ("/admin/users/shared@example.test/delete", {"confirm": "DELETE"}),
+        ("/admin/airdrop/shared@example.test/status", {"status": "disqualified"}),
+        ("/admin/fraud/shared@example.test/review", {"outcome": "disqualified"}),
+    ):
+        response = client.post(path, data=payload)
+        assert response.status_code == 409
+        assert "This account needs ownership review" in response.text
+
+    missing = client.post("/admin/users/missing@example.test/suspend", data={"action": "suspend"})
+    assert missing.status_code == 404
+    assert "find that account" in missing.text
+    assert "All Users" in missing.text
+
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute(
+            "SELECT google_id, status, role, airdrop_status FROM users "
+            "WHERE google_id IN ('account-A', 'account-B') ORDER BY google_id"
+        ).fetchall() == [
+            ("account-A", "active", "user", "eligible"),
+            ("account-B", "active", "user", "eligible"),
+        ]
+        assert conn.execute("SELECT reviewed FROM fraud_flags WHERE id = 'legacy-flag'").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM audit_logs").fetchone()[0] == audit_before
+
+
+def test_fraud_review_includes_id_flags_without_assigning_shared_email_flags(security_app):
+    module, client, db_path = security_app
+    register(client, "admin@example.com")
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            "INSERT INTO users (google_id, email) VALUES (?, ?)",
+            [("account-A", "shared@example.test"), ("account-B", "SHARED@example.test"),
+             ("account-C", "unique@example.test")],
+        )
+        conn.executemany(
+            "INSERT INTO fraud_flags (id, user_id, check_name, severity, reason, created_at) "
+            "VALUES (?, ?, 'test', 'medium', 'Review', '2026-11-04')",
+            [("A-id", "account-A"), ("B-id", "account-B"),
+             ("shared-legacy", "shared@example.test"),
+             ("unique-legacy", "UNIQUE@EXAMPLE.TEST")],
+        )
+
+    data = module.fetch_fraud_data()
+    by_id = {row["google_id"]: row for row in data["rows"] if row["google_id"]}
+    assert by_id["account-A"]["signal_count"] == 1
+    assert by_id["account-B"]["signal_count"] == 1
+    assert by_id["account-C"]["signal_count"] == 1
+    assert by_id["account-A"]["ambiguous_email"] == 1
+    assert by_id["account-C"]["ambiguous_email"] == 0
+    unassigned = [row for row in data["rows"] if row["google_id"] is None]
+    assert len(unassigned) == 1
+    assert unassigned[0]["email"] == "shared@example.test"
+    assert unassigned[0]["signal_count"] == 1
+    page = client.get("/admin/airdrop/fraud")
+    assert page.status_code == 200
+    assert "Account ownership needs review; action unavailable" in page.text
+    assert "No fraud flags to review" not in page.text
+    reviewed = client.post("/admin/fraud/unique@example.test/review", data={"outcome": "cleared"}, follow_redirects=False)
+    assert reviewed.status_code == 303
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT reviewed FROM fraud_flags WHERE id = 'unique-legacy'").fetchone()[0] == 1
+        assert conn.execute("SELECT reviewed FROM fraud_flags WHERE id = 'shared-legacy'").fetchone()[0] == 0
+
+
 def test_admin_user_actions_keep_invalid_input_without_mutation(security_app):
     _, client, db_path = security_app
     register(client, "owner@example.com")

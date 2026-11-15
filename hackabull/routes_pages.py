@@ -858,7 +858,11 @@ async def consent_log(request: Request, secret: str = Query("")):
     body = "<table class='legal-table'><thead><tr><th>Time</th><th>User</th><th>Type</th><th>IP Hash</th><th>Locale</th></tr></thead><tbody>"
     body += "".join(f"<tr><td>{row['timestamp']}</td><td>{row['user_id'] or ''}</td><td>{row['consent_type']}</td><td>{row['ip_hash'][:16]}...</td><td>{row['locale'] or ''}</td></tr>" for row in rows)
     body += "</tbody></table>"
-    return templates.TemplateResponse("admin_table.html", {"request": request, "title": "Consent Log", "body_html": body, "message": ""})
+    return templates.TemplateResponse("admin_table.html", {
+        "request": request, "title": "Consent Log", "body_html": body, "message": "",
+        "empty_state_title": "No consent records yet" if not rows else "",
+        "empty_state_body": "Consent decisions will appear here when they are recorded.",
+    })
 
 @qr_app.get("/admin/data-processing-log", response_class=HTMLResponse)
 async def data_processing_log(request: Request, secret: str = Query("")):

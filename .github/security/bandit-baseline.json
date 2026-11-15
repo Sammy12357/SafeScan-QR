@@ -4,39 +4,39 @@
   "findings": [
     {
       "filename": "hackabull/admin_data.py",
-      "line_number": 110,
+      "line_number": 202,
       "test_id": "B608",
       "issue_severity": "MEDIUM",
       "issue_confidence": "MEDIUM",
       "issue_text": "Possible SQL injection vector through string-based query construction.",
-      "code_sha256": "e95f3a5f311057eed7d750a00c90b76bd8bf318b8fde724f38dc36b40a4bd825"
+      "code_sha256": "a023cc1d521b303efd3ab0ee1c7051935ec6b0a3b397ce93a5bd410adcab6709"
     },
     {
       "filename": "hackabull/admin_data.py",
-      "line_number": 112,
+      "line_number": 207,
       "test_id": "B608",
       "issue_severity": "MEDIUM",
       "issue_confidence": "MEDIUM",
       "issue_text": "Possible SQL injection vector through string-based query construction.",
-      "code_sha256": "778eccbf6b91f8bd5b7c6da2aee6c87a9d5125d786fd4bc76dafe8e5c4ee52da"
+      "code_sha256": "d954b1eccd62db6bff0b4c0f775f273335d5baf4a749b3f33842a859e76c5527"
     },
     {
       "filename": "hackabull/admin_data.py",
-      "line_number": 217,
+      "line_number": 360,
       "test_id": "B608",
       "issue_severity": "MEDIUM",
       "issue_confidence": "MEDIUM",
       "issue_text": "Possible SQL injection vector through string-based query construction.",
-      "code_sha256": "f849adc6046cafdf5aceef6455b8a49789ea356cf088d1169cd4afd20a5e6fa8"
+      "code_sha256": "8b910e4ba741f7be764e46e851d05d9df424de13360b0ed5b17211ce61a39294"
     },
     {
       "filename": "hackabull/admin_data.py",
-      "line_number": 354,
+      "line_number": 555,
       "test_id": "B608",
       "issue_severity": "MEDIUM",
       "issue_confidence": "MEDIUM",
       "issue_text": "Possible SQL injection vector through string-based query construction.",
-      "code_sha256": "51da60f1cdd2ac18c9419d23fdcaaba3d5de75033bca4f33600bd230ebb85fec"
+      "code_sha256": "e8657d17ab671fc70a04877bb9d1d07533229efc9e0ed85e4bbc652bce7a41ef"
     },
     {
       "filename": "hackabull/qr_decode.py",

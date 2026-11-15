@@ -1,5 +1,6 @@
 {# Standalone admin data-table fragment (e.g. a user drawer / exportable view)
    rendered outside the full admin shell. #}
+{% from "_states.html" import empty_state %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -8,7 +9,7 @@
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <script src="/static/ui-states.js?v=ui-loading-v1"></script>
   <title>{{ title }} | SafeScan QR</title>
-  <link rel="stylesheet" href="/static/styles.css?v=ui-loading-v2">
+  <link rel="stylesheet" href="/static/styles.css?v=ui-phase7-v1">
 </head>
 <body>
   <div class="page-shell legal-shell">
@@ -18,6 +19,8 @@
       {% if message %}<div class="request-message" role="status">{{ message }}</div>{% endif %}
       {% if breach_form %}
         {% include "partials/breach_form.html" %}
+      {% elif empty_state_title %}
+        {{ empty_state(icon='info', title=empty_state_title, body=empty_state_body, action_label='Open admin dashboard', action_href='/admin', compact=true) }}
       {% else %}
         {{ body_html | safe }}
       {% endif %}

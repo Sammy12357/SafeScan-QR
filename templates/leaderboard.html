@@ -1,5 +1,6 @@
 {# Public leaderboard page: ranks top scanners. Live-updated by
    static/leaderboard.js polling the leaderboard API. #}
+{% from "_states.html" import empty_state %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -8,8 +9,8 @@
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <script src="/static/ui-states.js?v=ui-loading-v1"></script>
   <title>Leaderboard | SafeScan QR</title>
-  <link rel="stylesheet" href="/static/styles.css?v=ui-loading-v2">
-  <link rel="stylesheet" href="/static/styles-leaderboard.css?v=ui-spacing-v2">
+  <link rel="stylesheet" href="/static/styles.css?v=ui-phase7-v1">
+  <link rel="stylesheet" href="/static/styles-leaderboard.css?v=ui-phase7-v1">
 </head>
 <body>
   <div class="lb-shell">
@@ -42,7 +43,9 @@
         {% endfor %}
       </tbody>
     </table>
-    <p class="lb-empty{% if leaders %} lb-initially-hidden{% endif %}">No scans yet. Be the first scanner on the board.</p>
+    <div class="lb-empty{% if leaders %} lb-initially-hidden{% endif %}">
+      {{ empty_state(icon='scan', title='No scanners on the board yet', body='Scan a QR code and save it to start the leaderboard.', action_label='Scan a QR code', action_href='/#scanner') }}
+    </div>
   </div>
   {% include "footer.html" %}
   <script src="/static/app-core.js?v=ui-loading-v2"></script>

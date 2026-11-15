@@ -1,6 +1,6 @@
 # UI state inventory
 
-Audited on 2026-11-14 at `83eed0a`. Each cell describes the **current state → intended state**. “None” means the view has no asynchronous content or meaningful empty condition; it is a deliberate decision, not an unexamined blank. Paths sharing a template are grouped only when their state behavior is identical. The state work in later phases should update this inventory as behavior lands.
+Audited on 2026-11-14 at `83eed0a`. The table records the **baseline → target** for each view. “None” means the view has no asynchronous content or meaningful empty condition; it is a deliberate decision, not an unexamined blank. Paths sharing a template are grouped only when their state behavior is identical. Delivered empty and no-access states are recorded below the baseline table.
 
 | View / route and template | Loading | Empty / no access | Error | Implementation note |
 | --- | --- | --- | --- | --- |
@@ -43,6 +43,28 @@ Audited on 2026-11-14 at `83eed0a`. Each cell describes the **current state → 
 | Data-processing log `/admin/data-processing-log` (`admin_table.html`) | Current: server-rendered table. → Busy only for refresh. | Current: empty generated table body. → Compact no-entries state. | Current: JSON on failure. → Admin notice. | Separate from audit logs. |
 | Breach report `/admin/report-breach` (`admin_table.html`) | Current: full-page POST. → Busy submit. | None; form is initial content. | Current: JSON on failure. → Field-linked error and summary; preserve safe entered fields. | Staff-only action. |
 | Error pages for browser navigation (future `errors/*.html`) | None; error is resolved response. | None; error page itself is content. | Current: raw JSON for 403/404/429/500/503. → Status-specific HTML with a recovery action, no-index/no-store and request reference where useful. | API and webhook errors must remain JSON with string `error`. |
+
+## Delivered empty and no-access states (Phase 7)
+
+The following states are implemented with the shared `empty_state` macro. Each synthetic route capture has a paired before/after image at 375, 768, and 1440 CSS px in dark and light theme in the [Phase 7 comparison matrix](screenshots/ui-phase-7/README.md). The mock-only `/__states` gallery also shows the shared first-use, no-results, and no-access components.
+
+| View / route | Delivered behavior | Route capture |
+| --- | --- | --- |
+| Scan result `/search_qr_api` | If no visible reason row remains after filtering, show a neutral explanation and a scan-again action. It does not claim the result is safe. | `scan_result` |
+| History `/history` | Signed out: sign-in action. Signed in with no saved scans: scanner action. | `history_guest`, `history` |
+| Leaderboard `/leaderboard` | No rankings: scanner action. The live refresh hook still toggles the state when the API returns rows. | `leaderboard` |
+| Profile `/profile` | No public username: jump to the username form. Discord enabled but unlinked: link action. | `profile` |
+| Go Ghost `/go-ghost` | New profile: add reviewed details. Empty local broker registry: search cleanup link. A lack of broker listings is never inferred from a blank local table. | `go_ghost`, `go_ghost_brokers` |
+| Admin dashboard and activity `/admin`, `/admin/activity` | Empty chart, verdicts, signups, reports, and activity each have a compact explanation and relevant action. | `admin_dashboard`, `admin_activity` |
+| Admin users and detail `/admin/users`, `/admin/users/detail?account_id=…`, legacy `/admin/users/{email}/drawer` | No users/no filter matches have different copy. Tier and review filters run before pagination; scan counts and history are withheld when canonical email ownership is ambiguous, including old ID-bound rows. View links use the stable account ID. Existing user detail shows account facts and contextual wallet, flag, scan, and activity states; ambiguous email links return 404 and ID-based detail shows ownership-review warnings for withheld legacy sections. Ambiguous email action controls are unavailable, and all five email-keyed admin mutation routes reject ambiguity before changing a row. | `admin_users`, `admin_users_filtered`, `admin_users_ambiguous`, `admin_user_drawer`, `admin_user_drawer_ambiguous` |
+| Admin scans and risk logs `/admin/scans`, `/admin/risk-logs` | No scans, no malicious scans, and no filter matches are distinct. | `admin_scans`, `admin_scans_filtered`, `admin_risk_logs` |
+| Admin waitlist `/admin/waitlist` | No signups and no search matches have distinct actions. Search filtering happens before the result limit so later matches do not appear empty. | `admin_waitlist`, `admin_waitlist_filtered` |
+| Admin reports and blocklist `/admin/reports` | Empty report and blocklist tabs each explain what will appear. | `admin_reports`, `admin_blocklist` |
+| Admin airdrop and wallets `/admin/airdrop`, `/admin/airdrop/wallets` | Empty wallet queue has a link to users. Distribution stays disabled when nobody qualifies. Shared-email rows cannot use email-keyed status actions or qualify for distribution. | `admin_airdrop`, `admin_airdrop_ambiguous`, `admin_wallet_registry` |
+| Admin fraud, audit, and API keys | Empty review, audit, filtered audit, and API-key tables each provide a next action. ID-keyed fraud flags appear for their account; ambiguous legacy-email flags remain visible as unassigned rows without an action. | `admin_fraud`, `admin_fraud_unassigned`, `admin_logs`, `admin_logs_filtered`, `admin_api_keys` |
+| Consent log `/legal/consent-log` | No consent rows: a compact state replaces the empty generated table. | `consent_log` |
+
+The data-processing log always renders a fixed category inventory, so it has content even when the site has no users. The breach report page begins with a form. Neither needs an empty panel.
 
 ## Visual baseline coverage
 

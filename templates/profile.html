@@ -1,5 +1,6 @@
 {# User profile / account settings page: username, linked wallet, and account
    actions for the signed-in user. #}
+{% from "_states.html" import empty_state %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -8,7 +9,7 @@
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <script src="/static/ui-states.js?v=ui-loading-v1"></script>
   <title>Profile | SafeScan QR</title>
-  <link rel="stylesheet" href="/static/styles.css?v=ui-loading-v2">
+  <link rel="stylesheet" href="/static/styles.css?v=ui-phase7-v1">
   <link rel="stylesheet" href="/static/styles-profile.css?v=ui-spacing-v2">
 </head>
 <body>
@@ -25,10 +26,9 @@
           <p class="success-text">Username set: {{ username }}</p>
           <p class="profile-muted">Your username appears on the leaderboard instead of your email.</p>
         {% else %}
-          <h2>Choose a username</h2>
-          <p class="profile-muted">Set this once so the leaderboard can show a public name without exposing your email.</p>
+          {{ empty_state(icon='info', title='No public username yet', body='Choose a name for the leaderboard without showing your email.', action_label='Choose a username', action_href='#usernameForm', compact=true) }}
           {% if error and entered_username is defined %}<p class="error-text" role="alert">{{ error }}</p>{% endif %}
-          <form action="/profile/username" method="post" class="profile-form">
+          <form id="usernameForm" action="/profile/username" method="post" class="profile-form">
             <label>
               Username
               <input name="username" autocomplete="username" minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" placeholder="safescanner" required value="{{ entered_username | default('') }}" {% if error %}aria-invalid="true" aria-describedby="username-error"{% endif %}>
@@ -59,8 +59,7 @@
             <button class="sign-out-button" type="submit">Unlink Discord</button>
           </form>
         {% else %}
-          <p class="profile-muted">Link your Discord account to verify yourself in the SafeScan community server and unlock the Verified role (and future airdrop perks).</p>
-          <a class="profile-button" href="/auth/discord">Link Discord</a>
+          {{ empty_state(icon='info', title='No Discord account linked', body='Link Discord to verify your account in the SafeScan community server.', action_label='Link Discord', action_href='/auth/discord', compact=true, heading_level=3) }}
         {% endif %}
       </section>
       {% endif %}

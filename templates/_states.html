@@ -3,10 +3,11 @@
 <svg class="{{ class_name }}" aria-hidden="true" focusable="false"><use href="/static/icons/states.svg#{{ name }}"></use></svg>
 {%- endmacro %}
 
-{% macro empty_state(icon='scan', title='Nothing here yet', body='', action_label='', action_href='', secondary=none, compact=false) -%}
+{% macro empty_state(icon='scan', title='Nothing here yet', body='', action_label='', action_href='', secondary=none, compact=false, heading_level=2) -%}
 <section class="state state-empty{% if compact %} state-compact{% endif %}" role="status">
   {{ state_icon(icon) }}
-  <h2 class="state-title">{{ title }}</h2>
+  {% set level = 3 if heading_level == 3 else 2 %}
+  <h{{ level }} class="state-title">{{ title }}</h{{ level }}>
   {% if body %}<p class="state-body">{{ body }}</p>{% endif %}
   {% if action_label or secondary %}
   <div class="state-actions">

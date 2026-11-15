@@ -26,7 +26,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--body-font);
 .lb-username-you::after { content: " (you)"; color: var(--accent); font-size: 0.78rem; font-weight: 400; }
 .lb-num { color: var(--text); }
 .lb-date { color: var(--muted); font-size: 0.82rem; }
-.lb-empty { color: var(--muted); text-align: center; padding: var(--space-11) var(--space-0); font-size: 0.95rem; }
+.lb-empty { color: var(--muted); text-align: center; padding: var(--space-0); font-size: 0.95rem; }
 .medal { margin-right: var(--space-2); }
 /* Mobile: tighten cell padding, let names wrap, and drop the timestamp
    column (least essential) so the table fits without horizontal scroll.
