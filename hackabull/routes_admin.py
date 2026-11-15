@@ -124,10 +124,8 @@ async def admin_activity(request: Request):
 
 @qr_app.get("/admin/users", response_class=HTMLResponse)
 async def admin_users(request: Request, search: str = Query(""), status: str = Query(""), role: str = Query(""), tier: str = Query(""), page: int = Query(1), flag: str = Query("")):
-    data = fetch_admin_users(search=search, status=status, role=role, tier=tier, page=page)
+    data = fetch_admin_users(search=search, status=status, role=role, tier=tier, page=page, flag=flag)
     data.update({"filters": {"search": search, "status": status, "role": role, "tier": tier, "flag": flag}})
-    if flag == "review":
-        data["rows"] = [row for row in data["rows"] if row.get("fraud_flags")]
     return admin_context(request, "All Users", "users", data)
 
 def _admin_user_detail_page(request: Request, reference: str):

@@ -93,51 +93,115 @@ def admin_context(request, title, page, data=None, owner_only=False, status_code
     }
     return templates.TemplateResponse("admin_shell.html", context, status_code=status_code)
 
-def fetch_admin_users(search="", status="", role="", tier="", page=1, limit=25):
+def fetch_admin_users(search="", status="", role="", tier="", page=1, limit=25, flag=""):
+    """Filter and paginate account rows after resolving their record ownership.
+
+    Email-keyed legacy data is attributed only when one account owns that
+    canonical email. Stable account-ID records remain visible for their owner.
+    The database performs the filtering/counting so a later page cannot make
+    the current page appear empty and Python holds only one page of rows.
+    """
     clauses = []
     params = []
     if search:
-        clauses.append("(u.email LIKE ? OR u.google_id LIKE ? OR COALESCE(u.display_name, '') LIKE ?)")
+        clauses.append("(e.email LIKE ? OR e.google_id LIKE ? OR COALESCE(e.display_name, '') LIKE ?)")
         params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
     if status:
-        clauses.append("u.status = ?")
+        clauses.append("e.status = ?")
         params.append(status)
     if role:
-        clauses.append("u.role = ?")
+        clauses.append("e.role = ?")
         params.append(role)
+    if tier:
+        clauses.append("lower(e.tier) = lower(?)")
+        params.append(tier)
+    if flag == "review":
+        clauses.append("e.fraud_flags > 0")
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-    offset = max(0, page - 1) * limit
+    page = max(1, int(page))
+    limit = max(1, min(int(limit), 10000))
+    source = """
+        WITH email_owners AS (
+            SELECT canonical_email_key(email) AS email_key, COUNT(*) AS owner_count
+            FROM users
+            WHERE email IS NOT NULL
+            GROUP BY canonical_email_key(email)
+        ), scans_by_id AS (
+            SELECT user_id, SUM(COALESCE(scan_count, 0)) AS scan_count,
+                   MAX(wallet_address) AS wallet_address,
+                   SUM(COALESCE(tokens_sent, 0)) AS tokens_sent,
+                   SUM(COALESCE(airdrop_tokens_sent, 0)) AS airdrop_tokens_sent,
+                   MAX(airdrop_sent_at) AS airdrop_sent_at
+            FROM scans WHERE user_id IS NOT NULL AND user_id != '' GROUP BY user_id
+        ), legacy_scans AS (
+            SELECT canonical_email_key(email) AS email_key, SUM(COALESCE(scan_count, 0)) AS scan_count,
+                   MAX(wallet_address) AS wallet_address,
+                   SUM(COALESCE(tokens_sent, 0)) AS tokens_sent,
+                   SUM(COALESCE(airdrop_tokens_sent, 0)) AS airdrop_tokens_sent,
+                   MAX(airdrop_sent_at) AS airdrop_sent_at
+            FROM scans WHERE user_id IS NULL OR user_id = '' GROUP BY canonical_email_key(email)
+        ), referral_counts AS (
+            SELECT canonical_email_key(referrer_email) AS email_key, COUNT(*) AS referral_count
+            FROM referrals WHERE counted = 1 GROUP BY canonical_email_key(referrer_email)
+        ), fraud_counts AS (
+            SELECT user_id, COUNT(*) AS fraud_flags
+            FROM fraud_flags WHERE reviewed = 0 GROUP BY user_id
+        ), owned_users AS (
+            SELECT u.*, canonical_email_key(u.email) AS email_key,
+                   CASE WHEN o.email_key IS NOT NULL AND o.owner_count = 1 THEN 1 ELSE 0 END AS unique_email,
+                   CASE WHEN o.email_key IS NULL OR o.owner_count != 1 THEN 1 ELSE 0 END AS ambiguous_email
+            FROM users u
+            LEFT JOIN email_owners o ON o.email_key = canonical_email_key(u.email)
+        ), account_data AS (
+            SELECT u.*,
+                   COALESCE(s.scan_count, 0) + COALESCE(legacy_s.scan_count, 0) AS scan_count,
+                   COALESCE(w.address, legacy_w.address, s.wallet_address, legacy_s.wallet_address) AS wallet_address,
+                   COALESCE(w.verified, legacy_w.verified) AS wallet_verified,
+                   COALESCE(w.sol_balance, legacy_w.sol_balance) AS sol_balance,
+                   COALESCE(w.tx_count, legacy_w.tx_count) AS tx_count,
+                   COALESCE(w.wallet_age_days, legacy_w.wallet_age_days) AS wallet_age_days,
+                   COALESCE(w.onchain_verified_at, legacy_w.onchain_verified_at) AS onchain_verified_at,
+                   COALESCE(s.tokens_sent, 0) + COALESCE(legacy_s.tokens_sent, 0) AS tokens_sent,
+                   COALESCE(s.airdrop_tokens_sent, 0) + COALESCE(legacy_s.airdrop_tokens_sent, 0) AS airdrop_tokens_sent,
+                   COALESCE(s.airdrop_sent_at, legacy_s.airdrop_sent_at) AS airdrop_sent_at,
+                   CASE WHEN u.unique_email = 1 THEN COALESCE(r.referral_count, 0) ELSE 0 END AS referral_count,
+                   COALESCE(f_id.fraud_flags, 0) +
+                       CASE WHEN u.unique_email = 1 AND u.google_id != u.email
+                            THEN COALESCE(f_legacy.fraud_flags, 0) ELSE 0 END AS fraud_flags
+            FROM owned_users u
+            LEFT JOIN scans_by_id s ON s.user_id = u.google_id
+            LEFT JOIN legacy_scans legacy_s ON u.unique_email = 1 AND legacy_s.email_key = u.email_key
+            LEFT JOIN referral_counts r ON u.unique_email = 1 AND r.email_key = u.email_key
+            LEFT JOIN fraud_counts f_id ON f_id.user_id = u.google_id
+            LEFT JOIN fraud_counts f_legacy ON u.unique_email = 1 AND f_legacy.user_id = u.email
+            LEFT JOIN wallets w ON w.user_id = u.google_id AND w.verified = 1
+            LEFT JOIN wallets legacy_w ON u.unique_email = 1 AND legacy_w.user_id = u.email
+                AND legacy_w.verified = 1 AND w.user_id IS NULL
+        ), enriched AS (
+            SELECT account_data.*,
+                   CASE
+                       WHEN scan_count >= 50 AND referral_count >= 2 THEN 'Guardian'
+                       WHEN scan_count >= 5 AND referral_count >= 1 THEN 'Referrer'
+                       WHEN scan_count >= 5 THEN 'Scanner'
+                       ELSE 'Registered'
+                   END AS tier
+            FROM account_data
+        )
+    """
     with get_conn() as conn:
         conn.row_factory = sqlite3.Row
-        total = conn.execute(f"SELECT COUNT(*) FROM users u {where}", params).fetchone()[0]
+        conn.create_function("canonical_email_key", 1, canonical_email_key, deterministic=True)
+        total = conn.execute(f"{source} SELECT COUNT(*) FROM enriched e {where}", params).fetchone()[0]
+        pages = max(1, (total + limit - 1) // limit)
+        page = min(page, pages)
+        offset = (page - 1) * limit
         rows = [dict(row) for row in conn.execute(
-            f"""
-            SELECT u.*, COALESCE(s.scan_count, 0) AS scan_count,
-                   COALESCE(w.address, s.wallet_address) AS wallet_address,
-                   w.verified AS wallet_verified, w.sol_balance, w.tx_count,
-                   w.wallet_age_days, w.onchain_verified_at,
-                   COALESCE(s.tokens_sent, 0) AS tokens_sent,
-                   COALESCE(s.airdrop_tokens_sent, 0) AS airdrop_tokens_sent,
-                   s.airdrop_sent_at,
-                   COALESCE((SELECT COUNT(*) FROM referrals r WHERE r.referrer_email = u.email AND r.counted = 1), 0) AS referral_count,
-                   COALESCE((SELECT COUNT(*) FROM fraud_flags f WHERE f.user_id = u.email AND f.reviewed = 0), 0) AS fraud_flags
-            FROM users u
-            LEFT JOIN scans s ON s.email = u.email
-            LEFT JOIN wallets w ON w.user_id = u.email AND w.verified = 1
-            {where}
-            ORDER BY COALESCE(u.last_login_at, u.last_login, u.created_at) DESC
-            LIMIT ? OFFSET ?
-            """,
+            f"{source} SELECT * FROM enriched e {where} "
+            "ORDER BY COALESCE(e.last_login_at, e.last_login, e.created_at) DESC, e.google_id "
+            "LIMIT ? OFFSET ?",
             params + [limit, offset]
         )]
-    for row in rows:
-        scan_count = int(row.get("scan_count") or 0)
-        referrals = int(row.get("referral_count") or 0)
-        tier_name = airdrop_tier(scan_count, referrals)
-        row["tier"] = "Registered" if tier_name == "Pending" else tier_name
-    if tier:
-        rows = [row for row in rows if row["tier"].lower() == tier.lower()]
-    return {"rows": rows, "total": total, "page": page, "limit": limit, "pages": max(1, (total + limit - 1) // limit)}
+    return {"rows": rows, "total": total, "page": page, "limit": limit, "pages": pages}
 
 def fetch_user_detail(reference):
     with get_conn() as conn:
@@ -307,9 +371,15 @@ def fetch_waitlist(search="", limit=500):
                 ).fetchone()
                 if not table:
                     continue
+                conn.create_function(
+                    "waitlist_email_key", 1,
+                    lambda value: (value or "").strip().lower(), deterministic=True,
+                )
                 rows = conn.execute(
-                    "SELECT email, source, created_at FROM waitlist_signups ORDER BY created_at DESC LIMIT ?",
-                    (bounded_limit,),
+                    "SELECT email, source, created_at FROM waitlist_signups "
+                    "WHERE email IS NOT NULL AND instr(waitlist_email_key(email), ?) > 0 "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (normalized_search, bounded_limit),
                 ).fetchall()
         except sqlite3.Error:
             continue
