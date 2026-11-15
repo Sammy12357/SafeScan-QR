@@ -195,9 +195,7 @@ body.sidenav-open .sidenav { transform: translateX(0); }
 .hero-copy h1 { font-family: var(--display-font); margin: var(--space-3) var(--space-0) var(--space-5); font-size: clamp(3.35rem, 7vw, 6.6rem); line-height: 0.9; letter-spacing: 0; font-variant: normal; max-width: 760px; }
 .hero-problem { font-family: var(--display-font); margin: var(--space-0) var(--space-0) var(--space-4); color: var(--text); font-size: 1.25rem; font-weight: 800; line-height: 1.35; max-width: 680px; }
 .eyebrow { font-family: var(--display-font); margin: var(--space-0); color: var(--accent); text-transform: uppercase; letter-spacing: 0.18em; font-size: 0.74rem; }
-.powered-by-solana { font-family: var(--display-font); display: inline-flex; align-items: center; gap: var(--space-3); color: var(--muted); font-size: 0.74rem; font-weight: 700; letter-spacing: 0.08em; line-height: 1; white-space: nowrap; }
-.powered-by-solana span { display: inline-flex; align-items: center; }
-.powered-by-solana svg { width: 38px; height: 24px; display: block; flex: 0 0 auto; transform: translateY(1px); filter: drop-shadow(0 0 8px rgba(var(--accent-rgb), 0.18)); }
+.wallet-platform-note { font-family: var(--display-font); color: var(--muted); font-size: 0.74rem; font-weight: 700; letter-spacing: 0.08em; line-height: 1; white-space: nowrap; margin: var(--space-0); }
 .hero-text, .story-card p, .airdrop-copy, .visual-copy, .result-support, .decision-text { color: var(--muted); line-height: 1.65; }
 .hero-text { max-width: 680px; font-size: 1.08rem; }
 .hero-actions, .button-row { display: flex; flex-wrap: wrap; gap: var(--space-4); margin-top: var(--space-7); }
@@ -224,7 +222,7 @@ body.sidenav-open .sidenav { transform: translateX(0); }
 .hero-metrics span { display: block; color: var(--accent); font-family: var(--display-font); font-size: 1rem; font-weight: 800; }
 .hero-metrics p { margin: var(--space-3) var(--space-0) var(--space-0); color: var(--muted); font-size: 0.88rem; }
 .spline-showcase { min-height: 530px; padding: var(--space-0); overflow: hidden; transform-style: preserve-3d; background: #0b0e11; }
-.spline-showcase::before { content: ""; position: absolute; inset: var(--space-0); z-index: 0; pointer-events: none; opacity: 1; background: url("./safescan-3d-fallback.png?v=opening-model-v1") center / cover no-repeat; filter: hue-rotate(180deg) saturate(1.15); transition: opacity 0.42s ease; }
+.spline-showcase::before { content: ""; position: absolute; inset: var(--space-0); z-index: 0; pointer-events: none; opacity: 1; background: url("./safescan-logo.svg") center 34% / 190px no-repeat, radial-gradient(circle at 48% 42%, rgba(var(--accent-rgb), 0.18), transparent 46%), linear-gradient(150deg, #111421, #07090d); transition: opacity 0.42s ease; }
 .spline-showcase::after { content: none; }
 .three-scene { position: absolute; inset: var(--space-0); width: 100%; height: 100%; display: block !important; opacity: 1 !important; visibility: visible !important; pointer-events: none; z-index: 1 !important; }
 .three-scene:active { cursor: grabbing; }

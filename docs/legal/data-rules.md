@@ -1,0 +1,9 @@
+# Image and biometric processing rule
+
+SafeScan uses a camera frame or upload to find and decode QR content. When enabled, its local QR image classifier can contribute to destination-risk scoring. **Do not add face, voice, fingerprint, or other biometric detection, measurement, recognition, matching, or template extraction** to any image, frame, upload, account photo, or scan pipeline. Displaying a Google account profile picture is a separate account UI use; it does not authorize analysis of that picture.
+
+The browser camera checks frames locally. A captured photo is sent to SafeScan for a server retry only after the user chooses that action. Uploaded images and PDF pages pass through a bounded QR decoding worker; the application does not create a persistent image record. The multipart upload parser may temporarily spool a large upload while processing, so public copy should not claim that every byte always stays in RAM. The decoded QR payload can follow the scan-history rules. See the public Privacy Policy and the Phase 4 data map for the full retention and provider review.
+
+OpenCV is retained for QR decoding and image preprocessing. It is a general computer-vision package; its presence does not permit use of its face or biometric modules. `tests/test_legal_gate_licenses.py` rejects known face/voice analysis imports and calls in application Python and JavaScript. Review new ML models and dependencies manually as well: a pattern test cannot prove that arbitrary code has no biometric behavior.
+
+If a future feature requires biometric analysis, stop implementation until the owner and qualified privacy counsel have assessed it, updated the data map and policy, and obtained any needed consent. This document is an internal product rule, not a statement that a particular biometric law does or does not apply.

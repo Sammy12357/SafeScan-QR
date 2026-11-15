@@ -589,21 +589,33 @@ def _decode_qr_upload_inprocess(contents, filename="", content_type=""):
 
     if _looks_like_pdf(contents, filename, content_type):
         try:
-            import fitz
-            document = fitz.open(stream=contents, filetype="pdf")
+            import pypdfium2 as pdfium
+            # PDFium is used only in this killable upload worker. Its API is
+            # not thread safe, so page rendering must stay in this process.
+            document = pdfium.PdfDocument(contents)
             try:
-                if document.page_count > MAX_QR_PDF_PAGES:
+                if len(document) > MAX_QR_PDF_PAGES:
                     raise QRDecodeAmbiguityError(
                         f"This PDF has more than {MAX_QR_PDF_PAGES} pages, so SafeScan cannot inspect every page. Upload a shorter PDF or crop one QR code."
                     )
-                for page_index in range(min(document.page_count, MAX_QR_PDF_PAGES)):
-                    page = document.load_page(page_index)
-                    if page.rect.width * page.rect.height * 2.5 * 2.5 > MAX_QR_IMAGE_PIXELS:
-                        raise QRDecodeSafetyError("Rendered PDF page exceeds the 40 megapixel QR image limit.")
-                    pixmap = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5), alpha=False)
-                    with Image.open(io.BytesIO(pixmap.tobytes("png"))) as image:
-                        payload, qr_image = _decode_qr_from_pil_image(image, is_pure=True)
-                        remember(payload, qr_image, distinct_source=True)
+                for page_index in range(len(document)):
+                    page = document[page_index]
+                    try:
+                        width, height = page.get_size()
+                        if not math.isfinite(width) or not math.isfinite(height) or width <= 0 or height <= 0:
+                            raise QRDecodeSafetyError("Rendered PDF page exceeds the 40 megapixel QR image limit.")
+                        pixels = math.ceil(width * 2.5) * math.ceil(height * 2.5)
+                        if pixels > MAX_QR_IMAGE_PIXELS:
+                            raise QRDecodeSafetyError("Rendered PDF page exceeds the 40 megapixel QR image limit.")
+                        bitmap = page.render(scale=2.5, prefer_bgrx=True, rev_byteorder=True)
+                        try:
+                            with bitmap.to_pil().convert("RGB") as image:
+                                payload, qr_image = _decode_qr_from_pil_image(image, is_pure=True)
+                                remember(payload, qr_image, distinct_source=True)
+                        finally:
+                            bitmap.close()
+                    finally:
+                        page.close()
             finally:
                 document.close()
         except (QRDecodeAmbiguityError, QRDecodeSafetyError):
