@@ -97,7 +97,8 @@ def fetch_admin_users(search="", status="", role="", tier="", page=1, limit=25, 
     """Filter and paginate account rows after resolving their record ownership.
 
     Email-keyed legacy data is attributed only when one account owns that
-    canonical email. Stable account-ID records remain visible for their owner.
+    canonical email. Old scan backfills may have guessed an ID, so all scan
+    counts are withheld on an email collision, including ID-bound rows.
     The database performs the filtering/counting so a later page cannot make
     the current page appear empty and Python holds only one page of rows.
     """

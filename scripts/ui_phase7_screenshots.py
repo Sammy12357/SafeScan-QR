@@ -66,7 +66,7 @@ def fixture_contexts() -> dict[str, tuple[str, dict]]:
     }
     ambiguous_user = {
         "google_id": "account-A", "email": "shared@example.test", "display_name": "Shared Email A",
-        "status": "active", "role": "user", "tier": "Registered", "scan_count": 0,
+        "status": "active", "role": "user", "tier": "Ownership review", "scan_count": 0,
         "referral_count": 0, "wallet_address": None, "created_at": "2026-11-01",
         "last_login_at": None, "last_login": None, "ambiguous_email": 1,
     }
@@ -128,7 +128,7 @@ def fixture_contexts() -> dict[str, tuple[str, dict]]:
         "admin_airdrop_ambiguous": admin_fixture("Tier Overview", "airdrop", {
             **empty_airdrop, "wallet_users": [{
                 **ambiguous_user, "wallet_address": "SyntheticWalletAddress",
-                "estimated_sqr": 0, "distribution_status": "pending", "fraud_flags": 0,
+                "estimated_sqr": 0, "distribution_status": "ownership review", "fraud_flags": 0,
             }],
         }, "/admin/airdrop"),
         "admin_wallet_registry": admin_fixture("Wallet Registry", "airdrop", empty_airdrop, "/admin/airdrop/wallets"),
