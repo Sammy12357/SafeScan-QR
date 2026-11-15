@@ -81,6 +81,8 @@ def run(base_url: str) -> None:
             rows.first.wait_for()
             rows.first.click()
             scope = ghost.locator("#goGhostScopeModal")
+            scope.wait_for(state="visible")
+            ghost.wait_for_function("Boolean(document.activeElement?.closest('#goGhostScopeModal'))")
             assert scope.is_visible() and inside(ghost, "#goGhostScopeModal")
             ghost.keyboard.press("Shift+Tab")
             assert inside(ghost, "#goGhostScopeModal"), "Go Ghost site details let focus move behind it"
