@@ -1,0 +1,40 @@
+/* Page-specific styles for leaderboard.html. Loaded after styles.css. */
+body { background: var(--bg); color: var(--text); font-family: var(--body-font); margin: var(--space-0); }
+.lb-shell { width: min(1180px, calc(100% - 32px)); margin: var(--space-0) auto; padding: var(--space-10) var(--space-0) calc(var(--space-11) + var(--space-5)); }
+.lb-back { display: inline-flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-8); font-size: 0.85rem; color: var(--muted); text-decoration: none; }
+.lb-back:hover { color: var(--text); }
+.lb-eyebrow { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.16em; color: var(--accent); margin: var(--space-0) var(--space-0) var(--space-3); }
+.lb-shell h1 { margin: var(--space-0) var(--space-0) var(--space-3); font-size: 2rem; font-weight: 700; }
+.lb-sub { color: var(--muted); font-size: 0.9rem; margin: var(--space-0) var(--space-0) var(--space-8); }
+.lb-table { width: 100%; border-collapse: collapse; }
+.lb-initially-hidden { display: none; }
+.lb-table thead th {
+  text-align: left; font-size: 0.72rem; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--muted);
+  padding: var(--space-0) var(--space-5) var(--space-4); border-bottom: 1px solid var(--line);
+}
+.lb-table tbody tr {
+  border-bottom: 1px solid var(--line);
+  transition: background 0.15s;
+}
+.lb-table tbody tr:hover { background: color-mix(in srgb, var(--accent) 4%, transparent); }
+.lb-table tbody tr.current-user { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.lb-table td { padding: var(--space-4) var(--space-5); font-size: 0.9rem; }
+.lb-rank { color: var(--muted); font-weight: 700; width: 48px; }
+.lb-rank-top { color: var(--accent); }
+.lb-username { font-weight: 600; }
+.lb-username-you::after { content: " (you)"; color: var(--accent); font-size: 0.78rem; font-weight: 400; }
+.lb-num { color: var(--text); }
+.lb-date { color: var(--muted); font-size: 0.82rem; }
+.lb-empty { color: var(--muted); text-align: center; padding: var(--space-11) var(--space-0); font-size: 0.95rem; }
+.medal { margin-right: var(--space-2); }
+/* Mobile: tighten cell padding, let names wrap, and drop the timestamp
+   column (least essential) so the table fits without horizontal scroll.
+   Applies to JS-rebuilt rows too since it targets nth-child. */
+@media (max-width: 640px) {
+  .lb-shell { padding-top: var(--space-8); }
+  .lb-table thead th, .lb-table td { padding: var(--space-4) var(--space-3); font-size: 0.82rem; }
+  .lb-table th:nth-child(5), .lb-table td:nth-child(5) { display: none; }
+  .lb-username { overflow-wrap: anywhere; }
+  .lb-rank { width: 36px; }
+}

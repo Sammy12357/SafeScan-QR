@@ -47,10 +47,12 @@
     var empty = document.querySelector(".lb-empty");
     if (!entries || !entries.length) {
       if (table) table.style.display = "none";
+      if (empty) empty.classList.remove("lb-initially-hidden");
       if (empty) empty.style.display = "";
       return;
     }
     if (empty) empty.style.display = "none";
+    if (table) table.classList.remove("lb-initially-hidden");
     if (table) table.style.display = "";
     var tbody = document.getElementById("lbBody");
     if (!tbody) return;
