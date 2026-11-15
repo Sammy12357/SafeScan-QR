@@ -88,9 +88,37 @@ async function main() {
   assert.equal(rows.includes('Run auto fill'), false);
 
   elements.ghostNameInput.value = 'Example Person';
+  elements.ghostLocationInput.value = 'Tampa, FL';
+  elements.ghostAddressInput.value = '123 Private Street';
+  elements.ghostPhoneInput.value = '8135550100';
   elements.ghostEmailInput.value = 'person@example.com';
   elements.ghostNameInput.handlers.input();
+  elements.ghostLocationInput.handlers.input();
+  elements.ghostAddressInput.handlers.input();
+  elements.ghostPhoneInput.handlers.input();
   elements.ghostEmailInput.handlers.input();
+  const brokerUrls = vm.runInContext('goGhostBrokers.map(broker => [broker.id, goGhostBrokerOptOutUrl(broker)])', context);
+  const brokerUrlById = Object.fromEntries(brokerUrls);
+  for (const id of ['intelius', 'ussearch', 'instantcheckmate', 'truthfinder']) {
+    assert.equal(brokerUrlById[id], 'https://suppression.peopleconnect.us/');
+  }
+  assert.equal(brokerUrlById.beenverified, 'https://www.beenverified.com/svc/optout/search/optouts');
+  assert.equal(brokerUrlById.peoplelooker, 'https://www.peoplelooker.com/svc/optout/search/optouts');
+  assert.equal(brokerUrlById.neighborwho, 'https://www.neighborwho.com/svc/optout/search/optouts');
+  assert.equal(brokerUrls.some(([, url]) => /Private|8135550100|person%40example|person@example/i.test(url)), false);
+  const familyPacket = vm.runInContext(`goGhostCopyPacket(goGhostBrokers[0],
+    {name: 'Family Member', address: '', location: '', email: ''}, 'https://example.test/search')`, context);
+  assert.doesNotMatch(familyPacket, /I am the subject|Requester type:/i);
+  const googleSearchUrls = vm.runInContext(`goGhostBrokers.filter(broker => broker.searchUrl({name: 'Example Person', location: 'Tampa, FL'}).startsWith('https://www.google.com/'))
+    .map(broker => goGhostBrokerSearchUrl(broker, {name: 'Example Person', location: 'Tampa, FL', address: '123 Private Street', phone: '8135550100', email: 'person@example.com'}))`, context);
+  assert.equal(googleSearchUrls.length, 5);
+  for (const url of googleSearchUrls) {
+    const query = new URL(url).searchParams.get('q');
+    assert.match(query, /Example Person FL/);
+    assert.doesNotMatch(query, /Private|Tampa|8135550100|person@example/i);
+  }
+  assert.equal(vm.runInContext("ghostSearchRegion('123 Private Street, Tampa, FL')", context), 'FL');
+  assert.equal(vm.runInContext("ghostSearchRegion('123 Private Street')", context), '');
   const lastId = brokerIds.at(-1);
   elements.goGhostAutomationRows.handlers.click({
     target: {closest: selector => selector === '[data-ghost-scope]'
@@ -143,6 +171,16 @@ async function main() {
   assert.equal(elements.ghostProgressCount.textContent, '0 / 18', 'legacy no-match is not a removal');
   assert.match(elements.goGhostAutomationRows.innerHTML, /data-ghost-scope="cyberbackgroundchecks"[\s\S]*?No match/);
   assert.equal(opened.some(url => url.includes('safescan_prefill')), false);
+
+  assert.equal(saved.has('safeScanGoGhostConsent'), true);
+  elements.clearGhostDataButton.handlers.click();
+  for (const key of ['safeScanGoGhostProfile', 'safeScanGoGhostProgress', 'safeScanGoGhostConsent']) {
+    assert.equal(saved.has(key), false, `${key} should be cleared`);
+  }
+  assert.equal(elements.goGhostWorkspace.hidden, true);
+  assert.equal(elements.goGhostConsentModal.classList.contains('hidden'), false);
+  assert.equal(elements.ghostNameInput.value, '');
+  assert.equal(elements.ghostProgressCount.textContent, '0 / 18');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });

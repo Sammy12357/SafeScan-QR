@@ -174,7 +174,7 @@ function renderGoGhostBrokers() {
   goGhostBrokerList.innerHTML = goGhostBrokers.map((broker) => {
     const state = progress[broker.id] || {};
     const searchUrl = goGhostBrokerSearchUrl(broker, profile);
-    const optOutUrl = goGhostBrokerOptOutUrl(broker, profile);
+    const optOutUrl = goGhostBrokerOptOutUrl(broker);
     return `
       <article class="broker-card" data-ghost-broker="${broker.id}">
         <div>
@@ -281,8 +281,7 @@ async function runGhostScopeAction(action) {
   }
   if (action === "finish") {
     // One-click handoff after a CAPTCHA/listing checkpoint: open the opt-out
-    // page and copy the details packet. Most broker pages ignore query-string
-    // prefill values, so clipboard fallback is the reliable part.
+    // page and copy the details packet without putting them in the URL.
     showCopyToast(await openGhostOptOutWithPacket(broker, profile, searchUrl));
     return;
   }
@@ -309,7 +308,7 @@ async function runGhostScopeAction(action) {
 }
 
 function hydrateGoGhostProfile() {
-  const profile = getGhostProfile();
+  const profile = readJsonStorage(GO_GHOST_PROFILE_KEY, {});
   if (ghostNameInput) ghostNameInput.value = profile.name || "";
   if (ghostLocationInput) ghostLocationInput.value = profile.location || "";
   if (ghostAddressInput) ghostAddressInput.value = profile.address || "";
@@ -357,9 +356,14 @@ if (goGhostWorkspace) {
   clearGhostDataButton?.addEventListener("click", () => {
     window.localStorage.removeItem(GO_GHOST_PROFILE_KEY);
     window.localStorage.removeItem(GO_GHOST_PROGRESS_KEY);
+    window.localStorage.removeItem(GO_GHOST_CONSENT_KEY);
     hydrateGoGhostProfile();
     renderGoGhostAutomationScope();
     renderGoGhostProgress();
+    if (goGhostWorkspace) goGhostWorkspace.hidden = true;
+    goGhostScopeModal?.classList.add("hidden");
+    goGhostConsentModal?.classList.remove("hidden");
+    startGoGhostButton?.focus();
     showCopyToast("Go Ghost data cleared");
   });
 
