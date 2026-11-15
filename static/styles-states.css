@@ -80,6 +80,7 @@
 .scan-progress-steps li.is-current::before { color: var(--accent); content: 'Now'; }
 .scan-progress-hint { margin: var(--space-0); color: var(--muted); font-size: .9rem; }
 .scan-progress-host { margin-top: var(--space-5); }
+.action-feedback { margin-top: var(--space-3); }
 @media (prefers-reduced-motion: reduce) {
   .state-spinner, .button-spinner, .skeleton-line { animation: none; }
 }

@@ -119,13 +119,19 @@ blockReportButton?.addEventListener("click", () => {
     parsed = null;
   }
   if (!parsed || !["http:", "https:"].includes(parsed.protocol)) {
-    if (reportStatus) reportStatus.textContent = "Only web URLs can be reported here. This payload was not submitted.";
+    if (reportStatus) {
+      reportStatus.setAttribute("role", "alert");
+      reportStatus.textContent = "Only web URLs can be reported here. This payload was not submitted.";
+    }
     return;
   }
 
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 15000);
-  if (reportStatus) reportStatus.textContent = "Submitting report…";
+  if (reportStatus) {
+    reportStatus.removeAttribute("role");
+    reportStatus.textContent = "Submitting report…";
+  }
   UIStates.busy(blockReportButton, async () => {
     try {
       const response = await fetch("/api/report", {
@@ -139,11 +145,14 @@ blockReportButton?.addEventListener("click", () => {
       if (!result.id || result.status !== "pending") throw new Error("Report was not confirmed");
       if (reportStatus) reportStatus.textContent = "Report submitted for review. This does not block the link on your device.";
     } catch (error) {
-      if (reportStatus) reportStatus.textContent = error?.name === "AbortError"
-        ? "We couldn't confirm the report after 15 seconds. Check whether it was received before submitting again."
-        : navigator.onLine === false
-          ? "You're offline. Reconnect and submit the report again."
-          : "We couldn't confirm this report was received. Check your connection and try again.";
+      if (reportStatus) {
+        reportStatus.setAttribute("role", "alert");
+        reportStatus.textContent = error?.name === "AbortError"
+          ? "We couldn't confirm the report after 15 seconds. Check whether it was received before submitting again."
+          : navigator.onLine === false
+            ? "You're offline. Reconnect and submit the report again."
+            : "We couldn't confirm this report was received. Check your connection and try again.";
+      }
     } finally {
       window.clearTimeout(timeout);
     }

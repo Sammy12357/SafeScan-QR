@@ -185,6 +185,7 @@ async function copyTextToClipboard(value) {
   }
 
   const textarea = document.createElement("textarea");
+  const previousFocus = document.activeElement;
   textarea.value = value;
   textarea.setAttribute("readonly", "");
   textarea.style.position = "fixed";
@@ -199,6 +200,9 @@ async function copyTextToClipboard(value) {
     copied = document.execCommand("copy");
   } finally {
     textarea.remove();
+    if (previousFocus?.isConnected && typeof previousFocus.focus === "function") {
+      try { previousFocus.focus({ preventScroll: true }); } catch { previousFocus.focus(); }
+    }
   }
   return copied;
 }
@@ -539,6 +543,19 @@ function showWalletFeedback(type, message, retry) {
   }
 }
 
+function showActionFeedback(anchor, id, message) {
+  if (!anchor || !window.UIStates) return;
+  let host = document.getElementById(id);
+  if (!host) {
+    host = document.createElement("div");
+    host.id = id;
+    host.className = "action-feedback";
+    const panel = anchor.closest(".wallet-panel, .token-address-row") || anchor;
+    panel.insertAdjacentElement("afterend", host);
+  }
+  UIStates.notice(host, { type: "danger", message });
+}
+
 async function disconnectWalletConnection(wallet = null, options = {}) {
   const { closeModal = false, notify = true } = options;
   const profile = getCurrentProfile();
@@ -578,26 +595,60 @@ dom.demoWalletButton?.addEventListener("click", () => {
 dom.copyTokenAddressButton?.addEventListener("click", async () => {
   const tokenAddress = dom.tokenAddress?.textContent?.trim() || "";
   window.clearTimeout(dom.copyTokenAddressButton.dataset.resetTimer);
-  const isCopied = dom.copyTokenAddressButton.textContent.trim() === "Copied";
-  dom.copyTokenAddressButton.textContent = tokenAddress ? (isCopied ? "Copy" : "Copied") : "Copy failed";
-  dom.tokenAddress?.classList.remove("token-address-copied");
-  void dom.tokenAddress?.offsetWidth;
-  dom.tokenAddress?.classList.add("token-address-copied");
-
-  copyTextToClipboard(tokenAddress).catch(() => {});
+  if (!tokenAddress) {
+    showActionFeedback(dom.copyTokenAddressButton, "tokenCopyFeedback", "No token address is available to copy.");
+    return;
+  }
+  try {
+    const copied = await copyTextToClipboard(tokenAddress);
+    if (!copied) throw new Error("Clipboard did not confirm the copy");
+    document.getElementById("tokenCopyFeedback")?.remove();
+    dom.copyTokenAddressButton.textContent = "Copied";
+    dom.tokenAddress?.classList.remove("token-address-copied");
+    void dom.tokenAddress?.offsetWidth;
+    dom.tokenAddress?.classList.add("token-address-copied");
+    dom.copyTokenAddressButton.dataset.resetTimer = String(window.setTimeout(() => {
+      dom.copyTokenAddressButton.textContent = "Copy";
+    }, 1400));
+  } catch {
+    dom.copyTokenAddressButton.textContent = "Copy";
+    showActionFeedback(dom.copyTokenAddressButton, "tokenCopyFeedback", "We couldn't copy the address. Check your browser's clipboard permission and try again.");
+  }
 });
 
-dom.topCopyReferralButton?.addEventListener("click", async () => {
-  try {
-    const response = await fetch("/api/referral", { credentials: "same-origin" });
-    const body = await response.json();
-    const referralLink = body.referralLink || body.link;
-    if (!response.ok || !referralLink) throw new Error(body.detail || "Referral link unavailable.");
-    const copied = await copyTextToClipboard(referralLink);
-    showCopyToast(copied ? "Copied link" : "Copy failed");
-  } catch {
-    showCopyToast("Sign in first");
-  }
+dom.topCopyReferralButton?.addEventListener("click", () => {
+  if (dom.topCopyReferralButton.disabled) return;
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 15000);
+  UIStates.busy(dom.topCopyReferralButton, async () => {
+    try {
+      const body = await UIStates.fetchJson("/api/referral", { credentials: "same-origin", signal: controller.signal });
+      const referralLink = body.referralLink || body.link;
+      if (!referralLink) throw new Error("Referral link unavailable");
+      let copied = false;
+      try { copied = await copyTextToClipboard(referralLink); } catch { /* Show the same clipboard guidance below. */ }
+      if (!copied) {
+        const copyProblem = new Error("Clipboard did not confirm the copy");
+        copyProblem.code = "clipboard_failed";
+        throw copyProblem;
+      }
+      document.getElementById("referralCopyFeedback")?.remove();
+      showCopyToast("Copied link");
+    } catch (problem) {
+      const message = problem?.status === 401
+        ? "Sign in to copy your referral link."
+        : controller.signal.aborted
+          ? "The referral link took too long to load. Try again."
+          : problem?.code === "offline"
+            ? "You're offline. Reconnect and try again."
+            : problem?.code === "clipboard_failed"
+              ? "We couldn't copy the link. Check your browser's clipboard permission and try again."
+              : "Your referral link isn't available right now. Try again later.";
+      showActionFeedback(dom.topCopyReferralButton, "referralCopyFeedback", message);
+    } finally {
+      window.clearTimeout(timer);
+    }
+  }, { label: "Copying…" });
 });
 
 function showAnalysisProgress(label, form = null) {
