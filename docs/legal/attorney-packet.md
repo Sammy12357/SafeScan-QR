@@ -1,4 +1,29 @@
-# Attorney review packet — Phase 0
+# Attorney review packet — Phase 0 baseline and later release gates
+
+## Current engineering status (2026-11-15)
+
+**ATTORNEY REVIEW NEEDED.** This section distinguishes the historical Phase 0 observations below from later engineering work. It does not approve public policies or establish the site's legal status.
+
+- Phase 1 is merged: server-controlled account and adult age checks, self-hosted Orbitron, consent/suppression controls, and account-bound Stripe checkout and verified-event entitlement are implemented. Marketing email remains disabled without a real legal name and postal address. Card checkout remains disabled without verified business, Stripe, email, and refund settings. Sam chose: “No refunds after a billing period starts”; code preserves the required-by-law exception. The old Stripe Payment Link still must be disabled before card checkout opens.
+- Phase 2 is a separate draft: bounded scan and QR claims, versioned Terms and Privacy snapshots, recorded acceptance and reacceptance. Its public legal text, effective date, governing-law and dispute clauses, entity identity, and matching mobile client need review before release.
+- Phase 6 is merged: public token features and distribution default to off, and existing users can disconnect a linked wallet while features are off. Do not turn on either switch without owner authorization and specialist review.
+- Phase 7 is merged: the accessibility statement and automated checks describe a tested scope and known gaps; they do not establish full conformance or resolve every assistive-technology issue.
+- Phases 3–5 are separate engineering drafts or in progress: dependency/asset notices, privacy operations, and public listing disputes. Their tests and internal documents do not prove production configuration or legal sufficiency. In particular, the Phase 3 license review must reconcile bundled native code and IP ownership, and Phase 4 retention needs operator evidence.
+- Phase 8 adds CI source checks, a PR checklist, a legal-document change log and a project skill. The data-map check verifies table/column presence and table-level metadata; it does not establish a per-field purpose, recipient, or retention rule or generate the public policy. Source checks can catch specified regressions; they cannot establish production network traffic, vendor contracts, deletion from backups, the accuracy of every claim, or accessibility conformance. Recheck this packet as each draft merges.
+
+### Decisions for the owner and qualified counsel
+
+| Decision | Evidence to provide or review | Release boundary |
+| --- | --- | --- |
+| Real contracting entity, address, code/domain ownership, and trademark rights | Formation and assignment records; proposed Terms name and notice address | Do not call placeholders a real counterparty. |
+| Terms, Privacy and Cookie Policy, including refund, arbitration, liability and international-transfer wording | Versioned snapshots, data map, actual production settings and provider contracts | Approve text and effective dates before publication of revised terms. |
+| Marketing email | Verified legal sender name and postal mailing address; delivery and unsubscribe evidence | Leave commercial updates disabled until complete. |
+| Card subscription | Stripe product, portal, checkout disclosures, receipt settings, disabled old Payment Link, and chosen refund wording | Leave new checkout disabled until all settings are verified. |
+| Runtime and asset licenses | Phase 3 license manifest, native wheel notices, proprietary root-license decision, brand rights | Review before Phase 3 merge or any distribution of new assets. |
+| False-positive listing process | Phase 5 dispute route, evidence and retention, response staffing | Review before presenting disputed public listings as adjudicated fact. |
+| SQR token and airdrop | Phase 6 off-switch design, actual distribution history and planned jurisdictions | Keep features and distribution off pending specialist counsel and owner authorization. |
+
+The entries below retain the original Phase 0 baseline for context. Their “current” language refers to that earlier code review, not necessarily to merged Phase 1 or draft phases.
 
 ## Phase 6 token controls — November 15, 2026
 
