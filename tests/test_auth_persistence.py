@@ -554,6 +554,11 @@ def test_solana_verification_hides_provider_detail(auth_app, monkeypatch, caplog
     assert "We couldn't reach the Solana network" in unescape(response.text)
     assert "private upstream token" not in response.text
     assert response.headers["X-Request-ID"] in caplog.text
+    assert "private upstream token" not in caplog.text
+    record = next(json.loads(item.getMessage()) for item in caplog.records if item.name == "safescan.errors")
+    assert record["route"] == "/pay/alpha/solana/verify"
+    assert record["status_code"] == 502
+    assert record["code"] == "payment_network_unavailable"
 
 
 def test_solana_network_failure_uses_public_error_code(auth_app, monkeypatch):

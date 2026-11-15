@@ -268,7 +268,7 @@ def _waitlist_page(request: Request, *, email: str = "", error: str = "", joined
         )
     context = legal_context(request, "Waitlist", body)
     context["eyebrow"] = "SafeScan QR updates"
-    return templates.TemplateResponse("legal_page.html", context, status_code=status_code)
+    return templates.TemplateResponse("legal_page.html", context, status_code=status_code, headers={"Cache-Control": "no-store"})
 
 
 @qr_app.get("/waitlist", response_class=HTMLResponse)
@@ -557,10 +557,15 @@ async def alpha_solana_payment_verify(request: Request):
         record = record_alpha_solana_subscription(user, reference, signature)
     except SafeScanError as exc:
         if exc.status_code >= 500:
-            logging.getLogger("safescan.errors").error(
-                "Solana verification failed request_id=%s detail=%s",
-                request_id_for(request), str(exc)[:500],
-            )
+            logging.getLogger("safescan.errors").error(json.dumps({
+                "event": "solana_verification_failed",
+                "request_id": request_id_for(request),
+                "method": request.method,
+                "route": "/pay/alpha/solana/verify",
+                "exception_type": type(exc).__name__,
+                "status_code": exc.status_code,
+                "code": exc.code,
+            }))
         entry = ERRORS.get(exc.code or "") if exc.status_code < 500 else ERRORS.get(exc.code or "", ERRORS["payment_unavailable"])
         public_message = entry.message if entry else str(exc)
         public_hint = entry.hint if entry else "Open the payment page and try again."

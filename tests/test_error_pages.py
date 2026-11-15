@@ -236,6 +236,7 @@ def test_waitlist_error_keeps_email_and_success_uses_redirect(error_app):
     assert "Join the waitlist" in invalid.text
     assert "not-an-email" in invalid.text
     assert "Enter a valid email address" in invalid.text
+    assert invalid.headers["Cache-Control"] == "no-store"
     with app.get_conn() as conn:
         assert conn.execute("SELECT COUNT(*) FROM waitlist_signups").fetchone()[0] == 0
 
@@ -244,6 +245,7 @@ def test_waitlist_error_keeps_email_and_success_uses_redirect(error_app):
     assert success.headers["location"] == "/waitlist?joined=1"
     joined = client.get(success.headers["location"])
     assert "You're on the list" in joined.text
+    assert joined.headers["Cache-Control"] == "no-store"
 
 
 def test_unexpected_json_fields_do_not_echo_names(error_app):
