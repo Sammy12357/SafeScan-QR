@@ -172,7 +172,7 @@
   border-top-color: rgba(16, 24, 39, 0.1);
 }
 
-:root[data-theme="light"] .footer-newsletter-form input,
+:root[data-theme="light"] .footer-newsletter-form input[type="email"],
 :root[data-theme="light"] input[type="text"],
 :root[data-theme="light"] .legal-form input,
 :root[data-theme="light"] .legal-form select,
@@ -277,7 +277,7 @@
   .site-footer { padding-top: var(--space-8); }
   .footer-newsletter { width: min(100% - 32px, 864px); min-height: auto; margin-bottom: var(--space-10); padding: var(--space-8) var(--space-6) var(--space-8); }
   .footer-newsletter-form { grid-template-columns: 1fr; margin-bottom: var(--space-8); }
-  .footer-newsletter-form button { width: 100%; }
+  .footer-newsletter-form button { grid-column: 1; grid-row: 3; width: 100%; }
   .footer-grid { grid-template-columns: 1fr; padding: var(--space-9) var(--space-7) var(--space-8) var(--space-7); gap: var(--space-8) var(--space-0); }
   .footer-divider { margin: var(--space-0) var(--space-7); }
   .footer-bottom { flex-direction: column; align-items: flex-start; padding: var(--space-6) var(--space-7); gap: var(--space-3); }

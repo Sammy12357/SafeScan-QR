@@ -183,7 +183,10 @@ async def enforce_origin(request: Request, call_next):
     origin = request.headers.get("origin")
     if request.method in ("POST", "PUT", "PATCH", "DELETE") and origin:
         google_sign_in_callback = request.url.path == "/auth/google"
-        if origin not in ALLOWED_ORIGINS and not google_sign_in_callback:
+        # Email clients may send the RFC 8058 one-click POST from their own
+        # origin. This route is authorized by its signed, one-use bearer token.
+        email_unsubscribe = request.url.path == "/waitlist/unsubscribe"
+        if origin not in ALLOWED_ORIGINS and not google_sign_in_callback and not email_unsubscribe:
             return error_response(request, 403, code="origin_not_allowed", message="Origin not allowed.")
     return await call_next(request)
 
@@ -267,7 +270,7 @@ def apply_security_headers(request: Request, response):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
     response.headers["Content-Security-Policy"] = CSP_POLICY
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers["Permissions-Policy"] = PERMISSIONS_POLICY
     if "Server" in response.headers:
         del response.headers["Server"]

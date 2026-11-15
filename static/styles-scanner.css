@@ -95,9 +95,11 @@ body.qr-camera-open { overflow: hidden; }
 .footer-newsletter h2 { margin: var(--space-0) var(--space-0) var(--space-5); color: #f8fafc; font-size: 1.45rem; line-height: 1.2; }
 .footer-newsletter p { margin: var(--space-0); color: #94a3b8; line-height: 1.6; }
 .footer-newsletter-form { display: grid; grid-template-columns: minmax(220px, 375px) 98px; justify-content: center; gap: var(--space-3); margin: var(--space-7) auto var(--space-9); }
-.footer-newsletter-form input { min-height: 44px; padding: var(--space-0) var(--space-4); border: 1px solid #334155; border-radius: 8px; background: #0b1118; color: #f8fafc; font: inherit; }
+.footer-newsletter-form input[type="email"] { min-height: 44px; padding: var(--space-0) var(--space-4); border: 1px solid #334155; border-radius: 8px; background: #0b1118; color: #f8fafc; font: inherit; }
+.footer-newsletter-form .waitlist-consent { grid-column: 1 / -1; display: flex; align-items: flex-start; gap: var(--space-3); text-align: left; color: #cbd5e1; font-size: 0.86rem; line-height: 1.4; }
+.footer-newsletter-form .waitlist-consent input[type="checkbox"], .legal-form .waitlist-consent input[type="checkbox"] { flex: 0 0 auto; width: 18px; height: 18px; min-height: 18px; margin: 2px 0 0; padding: 0; appearance: auto; background: initial; border: initial; accent-color: var(--accent); }
 .footer-newsletter-form input::placeholder { color: #64748b; }
-.footer-newsletter-form button { min-height: 44px; border: 0; border-radius: 8px; background: var(--button-bg); color: var(--button-text); font: inherit; cursor: pointer; }
+.footer-newsletter-form button { grid-column: 2; grid-row: 1; min-height: 44px; border: 0; border-radius: 8px; background: var(--button-bg); color: var(--button-text); font: inherit; cursor: pointer; }
 .footer-newsletter-note { font-size: 0.76rem; }
 .footer-divider-wide { width: min(864px, calc(100% - 48px)); margin: var(--space-0) auto !important; }
 .footer-grid { display: grid; grid-template-columns: 240px repeat(4, minmax(120px, max-content)); justify-content: space-between; column-gap: var(--space-10); width: min(864px, calc(100% - 48px)); margin: var(--space-0) auto; padding: var(--space-10) var(--space-0) var(--space-10); }
@@ -142,6 +144,7 @@ body.qr-camera-open { overflow: hidden; }
 .legal-form label { display: grid; gap: var(--space-3); color: var(--text); font-weight: 800; }
 .legal-form .form-field { display: grid; gap: var(--space-3); }
 .legal-form input, .legal-form select, .legal-form textarea { width: 100%; padding: var(--space-4) var(--space-4); border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05); color: var(--text); font: inherit; }
+.legal-form .waitlist-consent { display: flex; align-items: flex-start; gap: var(--space-3); font-weight: 500; line-height: 1.45; }
 .legal-form textarea { resize: vertical; }
 .checkbox-row { grid-template-columns: auto 1fr !important; align-items: start; }
 .checkbox-row input { width: auto; margin-top: var(--space-2); }

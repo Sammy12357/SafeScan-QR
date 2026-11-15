@@ -546,10 +546,43 @@
       "fields": [
         "email",
         "source",
-        "created_at"
+        "created_at",
+        "consent_at",
+        "consent_version",
+        "confirmed_at",
+        "last_confirmation_requested_at"
       ],
       "source": "waitlist form",
-      "purpose": "store update-email signups; confirmation and suppression are not yet implemented",
+      "purpose": "record requested product-update consent and completed email confirmation; legacy rows remain unconfirmed",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "waitlist_email_tokens": {
+      "fields": [
+        "token_hash",
+        "email",
+        "purpose",
+        "created_at",
+        "expires_at",
+        "used_at"
+      ],
+      "source": "waitlist confirmation and product-update unsubscribe links",
+      "purpose": "verify an expiring, one-use confirmation or unsubscribe token without storing its bearer value",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "Expired and used token cleanup is not yet scheduled",
+      "status": "active schema"
+    },
+    "email_suppressions": {
+      "fields": [
+        "email",
+        "suppressed_at",
+        "reason"
+      ],
+      "source": "unsubscribe links",
+      "purpose": "block future product-update emails until a fresh, explicit opt-in is confirmed",
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",

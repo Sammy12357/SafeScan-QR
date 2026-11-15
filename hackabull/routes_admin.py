@@ -224,12 +224,16 @@ async def admin_waitlist(request: Request, search: str = Query("")):
 @qr_app.get("/admin/export/waitlist")
 async def admin_export_waitlist(request: Request):
     owner = require_role_user(request, "owner")
-    rows = fetch_waitlist(limit=5000)["rows"]
+    rows = [row for row in fetch_waitlist(limit=5000)["rows"] if row.get("status") == "confirmed"]
     out = io.StringIO()
-    writer = csv.DictWriter(out, fieldnames=["email", "source", "created_at"])
+    writer = csv.DictWriter(out, fieldnames=["email", "source", "created_at", "confirmed_at", "consent_version"])
     writer.writeheader()
     for row in rows:
-        writer.writerow({key: row.get(key, "") for key in writer.fieldnames})
+        record = {}
+        for key in writer.fieldnames:
+            value = str(row.get(key) or "")
+            record[key] = "'" + value if value.startswith(("=", "+", "-", "@", "\t", "\r")) else value
+        writer.writerow(record)
     audit_log("admin.export", request=request, actor_user_id=owner.get("google_id"), target_type="waitlist")
     return Response(out.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=safescan-waitlist.csv"})
 

@@ -66,6 +66,8 @@ ADMIN_ONLY = {
     "breach_reports",
     "api_keys",
     "waitlist_signups",
+    "waitlist_email_tokens",
+    "email_suppressions",
     "alpha_subscriptions",
     "users",
     "scan_results",

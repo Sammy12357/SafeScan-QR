@@ -74,8 +74,13 @@ from .config import MOCK_MODE
 from .config import templates
 from .errors import ERRORS
 from .errors import request_id_for
-from .email_util import email_sending_configured
-from .email_util import send_email
+from .waitlist_email import confirmation_available
+from .waitlist_email import confirmation_send_failed
+from .waitlist_email import confirmation_token_valid
+from .waitlist_email import confirm_subscription
+from .waitlist_email import request_confirmation
+from .waitlist_email import send_confirmation
+from .waitlist_email import unsubscribe
 from .history import index_user_context
 from .legal import delete_user_data
 from .legal import get_user_export
@@ -94,6 +99,7 @@ from .request_helpers import hash_ip
 from .request_helpers import locale_from_request
 from .request_helpers import make_id
 from .request_helpers import request_ip
+from .security import enforce_rate_limit
 from .security import validate_strict_payload
 from .wallet import expire_alpha_subscriptions
 
@@ -262,19 +268,23 @@ async def api_go_ghost_removal(request: Request, broker: str, payload: dict = Bo
 async def privacy_policy(request: Request):
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Privacy Policy", PRIVACY_POLICY_HTML))
 
-def _waitlist_page(request: Request, *, email: str = "", error: str = "", joined: bool = False, status_code: int = 200):
+def _waitlist_page(request: Request, *, email: str = "", error: str = "", error_field: str = "email", joined: bool = False, status_code: int = 200):
     if joined:
-        body = "<h2>You're on the list</h2><p>Thanks for joining the SafeScan QR waitlist. We'll send only major product updates.</p><p><a href='/'>Return to SafeScan QR</a></p>"
+        body = "<h2>Check your email</h2><p>If this address needs confirmation, we sent a link. Product updates begin only after the address is confirmed. If you already confirmed, no action is needed.</p><p><a href='/'>Return to SafeScan QR</a></p>"
     else:
         value = escape_html(email, quote=True)
         error_markup = f"<p class='form-field-error' id='waitlist-email-error' role='alert' data-server-error-focus>{escape_html(error)}</p>" if error else ""
-        invalid = " aria-invalid='true' aria-describedby='waitlist-email-error'" if error else ""
+        invalid = " aria-invalid='true' aria-describedby='waitlist-email-error'" if error and error_field == "email" else ""
+        consent_invalid = " aria-invalid='true' aria-describedby='waitlist-email-error'" if error and error_field == "consent" else ""
         body = (
             "<h2>Join the waitlist</h2><p>Get an email when SafeScan ships major updates.</p>"
             "<form class='legal-form' action='/waitlist' method='post'>"
             "<label for='waitlist-email'>Email address</label>"
             f"<input id='waitlist-email' name='email' type='email' required value='{value}'{invalid}>"
-            f"{error_markup}<button class='primary-button' type='submit'>Join waitlist</button></form>"
+            "<input type='hidden' name='source' value='waitlist'>"
+            f"<label class='waitlist-consent'><input type='checkbox' name='consent' value='yes' required{consent_invalid}>"
+            "<span>Send me SafeScan QR product updates. I understand I must confirm by email and can unsubscribe from any update.</span></label>"
+            f"{error_markup}<button class='primary-button' type='submit'>Request updates</button></form>"
         )
     context = legal_context(request, "Waitlist", body)
     context["eyebrow"] = "SafeScan QR updates"
@@ -287,27 +297,74 @@ async def waitlist_page(request: Request, joined: bool = Query(False)):
 
 
 @qr_app.post("/waitlist", response_class=HTMLResponse)
-async def waitlist_signup(request: Request, email: str = Form("")):
+async def waitlist_signup(request: Request, email: str = Form(""), consent: str = Form(""), source: str = Form("waitlist")):
+    limited = enforce_rate_limit(request, "waitlist_signup", 12, 60 * 60)
+    if limited:
+        return limited
     normalized_email = email.strip().lower()
     if len(normalized_email) > 254 or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", normalized_email):
         return _waitlist_page(request, email=normalized_email, error=ERRORS["email_invalid"].message, status_code=400)
-    with get_conn() as conn:
-        conn.execute(
-            "INSERT OR REPLACE INTO waitlist_signups VALUES (?, ?, ?)",
-            (normalized_email, "footer", datetime.utcnow().isoformat() + "Z")
-        )
-    # Best-effort welcome email; a no-op unless SMTP_* env vars are configured.
-    if email_sending_configured():
-        await asyncio.to_thread(
-            send_email,
-            normalized_email,
-            "You're on the SafeScan QR list",
-            "<h2>You're on the list</h2>"
-            "<p>Thanks for joining the SafeScan QR newsletter. We'll send one email per major release &mdash; no spam.</p>"
-            f"<p><a href='{APP_URL}'>Open SafeScan QR</a></p>"
-            f"<p style='color:#888;font-size:12px'>Didn't sign up? Ignore this email or reply to unsubscribe.</p>",
-        )
+    if consent != "yes":
+        return _waitlist_page(request, email=normalized_email, error="Select the checkbox to request product updates.", error_field="consent", status_code=400)
+    if not confirmation_available():
+        return _waitlist_page(request, email=normalized_email, error="Email updates are unavailable right now. Please try again later.", status_code=503)
+    token = request_confirmation(normalized_email, source if source in {"footer", "waitlist"} else "waitlist")
+    if token and not await asyncio.to_thread(send_confirmation, normalized_email, token):
+        confirmation_send_failed(normalized_email, token)
+        return _waitlist_page(request, email=normalized_email, error="We could not send the confirmation email. Please try again later.", status_code=503)
     return RedirectResponse("/waitlist?joined=1", status_code=303)
+
+
+def _waitlist_action_page(request: Request, title: str, body: str, *, status_code: int = 200):
+    response = templates.TemplateResponse(
+        "legal_page.html", legal_context(request, title, body), status_code=status_code,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Robots-Tag"] = "noindex"
+    return response
+
+
+@qr_app.get("/waitlist/confirm", response_class=HTMLResponse)
+async def waitlist_confirm_page(request: Request, token: str = Query("")):
+    if not confirmation_token_valid(token):
+        return _waitlist_action_page(request, "Confirm updates", "<h2>Link unavailable</h2><p>This confirmation link is invalid or expired. You can request a new link from the waitlist form.</p>", status_code=410)
+    body = (
+        "<h2>Confirm product updates</h2>"
+        "<p>Confirm that you want SafeScan QR product updates at the address that received the email.</p>"
+        "<form class='legal-form' method='post' action='/waitlist/confirm'>"
+        f"<input type='hidden' name='token' value='{escape_html(token, quote=True)}'>"
+        "<button class='primary-button' type='submit'>Confirm updates</button></form>"
+    )
+    return _waitlist_action_page(request, "Confirm updates", body)
+
+
+@qr_app.post("/waitlist/confirm", response_class=HTMLResponse)
+async def waitlist_confirm_submit(request: Request, token: str = Form("")):
+    limited = enforce_rate_limit(request, "waitlist_confirm", 30, 60 * 60)
+    if limited:
+        return limited
+    if not confirm_subscription(token):
+        return _waitlist_action_page(request, "Confirm updates", "<h2>Link unavailable</h2><p>This confirmation link is invalid or expired. You can request a new link from the waitlist form.</p>", status_code=410)
+    return _waitlist_action_page(request, "Updates confirmed", "<h2>Updates confirmed</h2><p>You can unsubscribe from any product update.</p>")
+
+
+def _waitlist_unsubscribe_response(request: Request, token: str):
+    if not unsubscribe(token):
+        return _waitlist_action_page(request, "Unsubscribe", "<h2>Link unavailable</h2><p>This unsubscribe link is invalid or expired. Contact SafeScan QR to stop updates.</p>", status_code=410)
+    return _waitlist_action_page(request, "Unsubscribed", "<h2>Unsubscribed</h2><p>SafeScan QR product updates have been stopped for this address.</p>")
+
+
+@qr_app.get("/waitlist/unsubscribe", response_class=HTMLResponse)
+async def waitlist_unsubscribe_link(request: Request, token: str = Query("")):
+    return _waitlist_unsubscribe_response(request, token)
+
+
+@qr_app.post("/waitlist/unsubscribe", response_class=HTMLResponse)
+async def waitlist_unsubscribe_one_click(request: Request, token: str = Query("")):
+    # RFC 8058 email clients POST to the URL in List-Unsubscribe. The query
+    # carries the bearer token; the POST body does not contain user identity.
+    return _waitlist_unsubscribe_response(request, token)
 
 @qr_app.get("/legal/terms-of-use", response_class=HTMLResponse)
 async def terms_of_use(request: Request):

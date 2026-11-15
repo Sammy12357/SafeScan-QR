@@ -116,7 +116,24 @@ def init_db():
                         (id TEXT PRIMARY KEY, email TEXT NOT NULL, region TEXT,
                          opt_out_type TEXT NOT NULL, timestamp TEXT NOT NULL)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS waitlist_signups
-                        (email TEXT PRIMARY KEY, source TEXT, created_at TEXT NOT NULL)''')
+                        (email TEXT PRIMARY KEY, source TEXT, created_at TEXT NOT NULL,
+                         consent_at TEXT, consent_version TEXT, confirmed_at TEXT,
+                         last_confirmation_requested_at TEXT)''')
+    # Old rows have no recorded opt-in proof. Keep them unconfirmed rather than
+    # treating a historic email address as permission to send marketing.
+    cursor.execute("PRAGMA table_info(waitlist_signups)")
+    waitlist_columns = {row[1] for row in cursor.fetchall()}
+    for column in ("consent_at", "consent_version", "confirmed_at", "last_confirmation_requested_at"):
+        if column not in waitlist_columns:
+            cursor.execute(f"ALTER TABLE waitlist_signups ADD COLUMN {column} TEXT")
+    cursor.execute('''CREATE TABLE IF NOT EXISTS waitlist_email_tokens
+                        (token_hash TEXT PRIMARY KEY, email TEXT NOT NULL,
+                         purpose TEXT NOT NULL CHECK(purpose IN ('confirm', 'unsubscribe')),
+                         created_at TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT)''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_waitlist_email_tokens_email ON waitlist_email_tokens(email, purpose)")
+    cursor.execute('''CREATE TABLE IF NOT EXISTS email_suppressions
+                        (email TEXT PRIMARY KEY, suppressed_at TEXT NOT NULL,
+                         reason TEXT NOT NULL)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS sessions
                         (id TEXT PRIMARY KEY, google_id TEXT NOT NULL,
                          created_at TEXT NOT NULL, expires_at TEXT NOT NULL,

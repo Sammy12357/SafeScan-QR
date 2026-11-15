@@ -182,7 +182,7 @@ def test_waitlist_admin_page_requires_admin(security_app):
     register(client, "user@example.com")
     with sqlite3.connect(db_path) as conn:
         conn.execute(
-            "INSERT INTO waitlist_signups VALUES (?, ?, ?)",
+            "INSERT INTO waitlist_signups (email, source, created_at) VALUES (?, ?, ?)",
             ("lead@example.com", "footer", "2026-05-11T12:00:00Z"),
         )
 
@@ -197,7 +197,7 @@ def test_admin_can_view_waitlist_signups(security_app):
     register(client, "admin@example.com")
     with sqlite3.connect(db_path) as conn:
         conn.execute(
-            "INSERT INTO waitlist_signups VALUES (?, ?, ?)",
+            "INSERT INTO waitlist_signups (email, source, created_at) VALUES (?, ?, ?)",
             ("lead@example.com", "footer", "2026-05-11T12:00:00Z"),
         )
 
@@ -469,7 +469,7 @@ def test_waitlist_export_requires_owner(security_app):
     register(admin_client, "admin@example.com")
     with sqlite3.connect(db_path) as conn:
         conn.execute(
-            "INSERT INTO waitlist_signups VALUES (?, ?, ?)",
+            "INSERT INTO waitlist_signups (email, source, created_at) VALUES (?, ?, ?)",
             ("lead@example.com", "footer", "2026-05-11T12:00:00Z"),
         )
 
@@ -482,7 +482,7 @@ def test_waitlist_export_requires_owner(security_app):
     assert denied.status_code == 403
     assert allowed.status_code == 200
     assert allowed.headers["content-type"].startswith("text/csv")
-    assert "lead@example.com" in allowed.text
+    assert "lead@example.com" not in allowed.text  # legacy rows lack opt-in proof
 
 
 def test_admin_access_denylist_removes_contact_email_access(tmp_path, monkeypatch):
