@@ -23,6 +23,7 @@ TEMPLATES = Environment(
         ("SAFE", "safe", "not_applicable", "Content decoded", "risk-modal-caution"),
         ("CAUTION", "suspicious", "complete", "Needs review", "risk-modal-caution"),
         ("CAUTION", "suspicious", "incomplete", "Could not fully check", "risk-modal-caution"),
+        ("CAUTION", "suspicious", "not_applicable", "Needs review", "risk-modal-caution"),
         ("MALICIOUS", "high", "incomplete", "High-risk indicators", "risk-modal-dangerous"),
     ],
 )
@@ -43,6 +44,9 @@ def test_result_label_and_visual_state_follow_coverage(status, risk, coverage, e
     assert '<h2 id="riskVerdictTitle">SAFE</h2>' not in html
     if coverage != "complete":
         assert 'class="risk-modal-card risk-modal-safe"' not in html
+    if status == "CAUTION" and coverage == "not_applicable":
+        assert "Some findings need review. Confirm the source independently." in html
+        assert "This content was decoded; no website destination check applies." not in html
 
 
 def test_history_uses_bounded_legacy_labels():
