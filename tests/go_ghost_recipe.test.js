@@ -67,6 +67,8 @@ function copy(value) { return structuredClone(value); }
 function testRecipeValidation() {
   assert.equal(schema.$schema, 'https://json-schema.org/draft/2020-12/schema');
   assert.equal(schema.additionalProperties, false);
+  assert.equal(new RegExp(schema.properties.domains.items.pattern).test('127.0.0.1'), false);
+  assert.equal(new RegExp(schema.properties.domains.items.pattern).test('broker.example.test'), true);
   assert.equal(Recipe.validateRecipe(recipe), recipe);
   const badField = copy(recipe);
   badField.search[1].field = 'socialSecurityNumber';
