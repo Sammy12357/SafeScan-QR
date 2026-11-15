@@ -20,7 +20,7 @@
 .ghost-brand-picker select { width: 100%; min-height: 46px; padding: var(--space-4) var(--space-4); border: 1px solid var(--line); border-radius: 8px; background: var(--panel-strong); color: var(--text); font: inherit; }
 .ghost-scope-actions [hidden] { display: none !important; }
 .go-ghost-keyword-form { margin-top: var(--space-5); padding: var(--space-4); border: 1px solid rgba(var(--accent-rgb), 0.18); border-radius: 8px; background: rgba(var(--accent-rgb), 0.045); }
-.go-ghost-form select, .go-ghost-form textarea { width: 100%; padding: var(--space-4) var(--space-5); border-radius: 8px; border: 1px solid var(--line); background: var(--panel-strong); color: var(--text); font: inherit; }
+.go-ghost-form select, .go-ghost-form textarea { width: 100%; padding: var(--pad-control-y) var(--pad-control-x); border-radius: 8px; border: 1px solid var(--line); background: var(--panel-strong); color: var(--text); font: inherit; }
 .go-ghost-form textarea { resize: vertical; min-height: 76px; }
 .ghost-optional-fields { padding: var(--space-4); border: 1px solid var(--line); border-radius: 8px; }
 .ghost-optional-fields summary { cursor: pointer; color: var(--text); font-weight: 800; }
@@ -42,12 +42,12 @@
 .maintenance-grid a { display: grid; place-items: center; min-height: 62px; padding: var(--space-4); border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.04); color: var(--text); text-align: center; text-decoration: none; font-weight: 900; }
 .maintenance-grid a:hover { border-color: rgba(var(--accent-rgb), 0.42); background: rgba(var(--accent-rgb), 0.08); }
 .ghost-consent-modal { position: fixed; inset: var(--space-0); z-index: 1000; display: grid; place-items: center; padding: var(--space-6); background: rgba(3, 8, 15, 0.82); backdrop-filter: blur(16px); }
-.ghost-consent-card { width: min(620px, 100%); padding: var(--space-7); border: 1px solid rgba(var(--accent-rgb), 0.26); border-radius: 8px; background: var(--panel-strong); box-shadow: var(--shadow); }
+.ghost-consent-card { width: min(620px, 100%); padding: var(--pad-card); border: 1px solid rgba(var(--accent-rgb), 0.26); border-radius: 8px; background: var(--panel-strong); box-shadow: var(--shadow); }
 .ghost-consent-card h2 { margin: var(--space-3) var(--space-0) var(--space-4); font-family: var(--display-font); font-size: clamp(1.8rem, 5vw, 3.2rem); line-height: 1.04; }
 .ghost-safety-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); margin-top: var(--space-5); }
 .ghost-safety-list span { min-height: 54px; padding: var(--space-4); border: 1px solid rgba(var(--accent-rgb), 0.18); border-radius: 8px; background: rgba(var(--accent-rgb), 0.07); color: var(--text); font-weight: 900; text-align: center; }
 .ghost-scope-modal { position: fixed; inset: var(--space-0); z-index: 1001; display: grid; place-items: center; padding: var(--space-6); background: rgba(3, 8, 15, 0.82); backdrop-filter: blur(16px); }
-.ghost-scope-card { position: relative; width: min(720px, 100%); max-height: min(90vh, 780px); overflow: auto; padding: var(--space-7); border: 1px solid rgba(var(--accent-rgb), 0.26); border-radius: 8px; background: var(--panel-strong); box-shadow: var(--shadow); }
+.ghost-scope-card { position: relative; width: min(720px, 100%); max-height: min(90vh, 780px); overflow: auto; padding: var(--pad-card); border: 1px solid rgba(var(--accent-rgb), 0.26); border-radius: 8px; background: var(--panel-strong); box-shadow: var(--shadow); }
 .ghost-scope-close { position: absolute; top: 12px; right: 12px; display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid rgba(255, 110, 127, 0.54); border-radius: 8px; background: rgba(255, 110, 127, 0.12); color: var(--danger); font-family: var(--display-font); font-size: 1rem; font-weight: 900; line-height: 1; cursor: pointer; }
 .ghost-scope-close:hover, .ghost-scope-close:focus-visible { border-color: var(--danger); background: rgba(255, 110, 127, 0.22); outline: none; }
 .ghost-scope-card h2 { margin: var(--space-3) var(--space-9) var(--space-4) var(--space-0); font-family: var(--display-font); font-size: clamp(1.7rem, 4vw, 2.6rem); line-height: 1.08; }

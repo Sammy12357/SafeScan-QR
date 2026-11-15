@@ -2,7 +2,7 @@
    Part of styles.css, imported by it in cascade order. */
 /* Stacked sub-cards in the Analyze Payload column. Upload/Scan sits on top,
    the URL paste form sits directly below in its own sub-card. */
-.scanner-card-stack { display: flex; flex-direction: column; gap: var(--space-5); }
+.scanner-card-stack { display: flex; flex-direction: column; gap: var(--gap-stack); }
 .scanner-subcard {
   display: flex;
   flex-direction: column;
@@ -25,7 +25,7 @@
   width: 100%;
   min-height: 92px;
   resize: vertical;
-  padding: var(--space-4) var(--space-5);
+  padding: var(--pad-control-y) var(--pad-control-x);
   border-radius: 12px;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.05);
@@ -41,7 +41,7 @@
 .scanner-subcard-actions .primary-button,
 .scanner-subcard-actions .secondary-button {
   flex: 1 1 180px;
-  padding: var(--space-4) var(--space-5);
+  padding: var(--pad-control-y) var(--pad-control-x);
   text-align: center;
 }
 .generated-qr-wrap {
@@ -97,7 +97,7 @@
 .generate-qr-form-row input[type="url"] {
   flex: 1 1 320px;
   min-width: 0;
-  padding: var(--space-4) var(--space-5);
+  padding: var(--pad-control-y) var(--pad-control-x);
   border-radius: 12px;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.05);

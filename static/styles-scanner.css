@@ -96,7 +96,7 @@ body.qr-camera-open { overflow: hidden; }
 .legal-table th:nth-child(4), .legal-table td:nth-child(4) { width: 9%; min-width: 96px; overflow-wrap: normal; hyphens: none; }
 .legal-table th:nth-child(5), .legal-table td:nth-child(5) { width: 9%; min-width: 96px; overflow-wrap: normal; hyphens: none; }
 .legal-document { overflow-x: auto; }
-.legal-form { display: grid; gap: var(--space-5); margin-top: var(--space-6); }
+.legal-form { display: grid; gap: var(--gap-stack); margin-top: var(--space-6); }
 .legal-form label { display: grid; gap: var(--space-3); color: var(--text); font-weight: 800; }
 .legal-form input, .legal-form select, .legal-form textarea { width: 100%; padding: var(--space-4) var(--space-4); border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05); color: var(--text); font: inherit; }
 .legal-form textarea { resize: vertical; }
@@ -131,7 +131,7 @@ body.qr-camera-open { overflow: hidden; }
 .test-section h2 { margin: var(--space-3) var(--space-0) var(--space-0); font-family: var(--display-font); font-size: clamp(1.65rem, 3.6vw, 3rem); line-height: 1.05; letter-spacing: 0; }
 .test-proof-grid, .test-pricing-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-5); margin-top: var(--space-7); }
 .test-proof-card, .test-price-card, .test-social { border: 1px solid var(--line); border-radius: 8px; background: var(--panel-strong); }
-.test-proof-card, .test-price-card { padding: var(--space-7); transition: transform 0.22s ease, border-color 0.22s ease, background 0.22s ease; }
+.test-proof-card, .test-price-card { padding: var(--pad-card); transition: transform 0.22s ease, border-color 0.22s ease, background 0.22s ease; }
 .test-proof-card:hover, .test-price-card:hover { transform: translateY(-3px); border-color: rgba(var(--accent-rgb), 0.34); background: var(--panel); }
 .test-proof-card span { color: var(--accent); font-family: var(--display-font); font-weight: 900; }
 .test-proof-card h3, .test-price-card h3 { margin: var(--space-4) var(--space-0) var(--space-3); font-size: 1.3rem; }
@@ -165,10 +165,10 @@ body.qr-camera-open { overflow: hidden; }
 .go-ghost-status span { display: block; color: var(--accent); font-family: var(--display-font); font-size: 1.8rem; font-weight: 900; }
 .go-ghost-status p { margin: var(--space-3) var(--space-0) var(--space-0); color: var(--muted); }
 .go-ghost-layout { display: grid; grid-template-columns: 1fr; gap: var(--space-6); align-items: start; }
-.go-ghost-card { padding: var(--space-7); }
+.go-ghost-card { padding: var(--pad-card); }
 .go-ghost-form { display: grid; gap: var(--space-5); margin-top: var(--space-6); }
 .go-ghost-form label { display: grid; gap: var(--space-3); color: var(--text); font-weight: 800; }
-.go-ghost-form input { width: 100%; padding: var(--space-4) var(--space-5); border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05); color: var(--text); font: inherit; }
+.go-ghost-form input { width: 100%; padding: var(--pad-control-y) var(--pad-control-x); border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05); color: var(--text); font: inherit; }
 .go-ghost-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; margin-top: var(--space-5); }
 .go-ghost-device-notice { margin: var(--space-5) var(--space-0) var(--space-0); padding: var(--space-4) var(--space-4); border: 1px solid rgba(var(--accent-rgb), 0.2); border-radius: 8px; background: rgba(var(--accent-rgb), 0.06); color: var(--text); line-height: 1.45; font-weight: 800; }
 .automation-scope-card { width: 100%; max-width: 100%; overflow: hidden; }

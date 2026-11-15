@@ -215,7 +215,7 @@ body.sidenav-open .sidenav { transform: translateX(0); }
 .primary-button:hover, .secondary-button:hover, .sample-button:hover, .upload-chip:hover, .danger-button:hover { transform: translateY(-1px); }
 
 .hero-card, .story-card, .airdrop-card, .scanner-card, .result-card, .toggle-card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel-strong); }
-.hero-card, .story-card, .airdrop-card, .scanner-card, .result-card { padding: var(--space-7); }
+.hero-card, .story-card, .airdrop-card, .scanner-card, .result-card { padding: var(--pad-card); }
 .hero-card-label, .visual-label, .sample-title, .decision-label, .tier-rank, .engine-label { color: var(--accent); font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.16em; }
 .hero-card ul { padding-left: var(--space-6); color: var(--muted); line-height: 1.8; }
 .hero-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); max-width: 620px; margin-top: var(--space-8); }

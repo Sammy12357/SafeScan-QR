@@ -4,12 +4,12 @@ body { margin: var(--space-0); background: var(--bg); color: var(--text); font-f
 .profile-back { display: inline-flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-8); color: var(--muted); text-decoration: none; }
 .profile-back:hover { color: var(--text); }
 .profile-layout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-6); align-items: start; }
-.profile-card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: var(--shadow); padding: var(--space-7); }
+.profile-card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: var(--shadow); padding: var(--pad-card); }
 .profile-card h1, .profile-card h2 { margin: var(--space-0) var(--space-0) var(--space-3); }
 .profile-muted { margin: var(--space-0) var(--space-0) var(--space-6); color: var(--muted); line-height: 1.55; overflow-wrap: anywhere; }
 .profile-form { display: grid; gap: var(--space-4); margin-top: var(--space-6); }
 .profile-form label { display: grid; gap: var(--space-3); font-weight: 800; }
-.profile-form input { width: 100%; padding: var(--space-4) var(--space-5); border-radius: 8px; border: 1px solid var(--line); background: var(--panel-strong); color: var(--text); font: inherit; }
+.profile-form input { width: 100%; padding: var(--pad-control-y) var(--pad-control-x); border-radius: 8px; border: 1px solid var(--line); background: var(--panel-strong); color: var(--text); font: inherit; }
 .profile-link-list { display: grid; gap: var(--space-3); margin-top: var(--space-5); }
 .profile-link-list a { display: grid; place-items: center; min-height: 44px; padding: var(--space-0) var(--space-4); border-radius: 8px; border: 1px solid var(--line); color: var(--text); text-decoration: none; background: var(--panel-strong); font-weight: 800; }
 .profile-link-list a:hover { border-color: color-mix(in srgb, var(--accent) 42%, transparent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
