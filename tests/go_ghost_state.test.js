@@ -44,12 +44,14 @@ function testManualAndVerificationPath() {
   const verifying = Ghost.transition(reported, event('begin_recheck'));
   assert.throws(() => Ghost.transition(verifying, event('recheck_absent')), /recheck method/i);
   assert.throws(() => Ghost.transition(verifying, event('recheck_absent', {method: 'extension_recheck'})), /match the event source/i);
-  const verified = Ghost.transition(verifying, event('recheck_absent', {method: 'user_recheck'}));
-  assert.deepEqual(verified, {
-    state: 'verified_removed', source: 'manual', updatedAt: AT,
+  const recheckedAbsent = Ghost.transition(verifying, event('recheck_absent', {method: 'user_recheck'}));
+  assert.deepEqual(recheckedAbsent, {
+    state: 'client_recheck_absent', source: 'manual', updatedAt: AT,
     recheck: {method: 'user_recheck', checkedAt: AT}
   });
-  assert.equal(Ghost.transition(verified, event('reset')).state, 'not_started');
+  assert.equal(Ghost.transition(recheckedAbsent, event('reset')).state, 'not_started');
+  assert.equal(Ghost.transition(recheckedAbsent, event('begin_recheck')).state, 'verifying',
+    'a previously absent listing can be checked again later');
 
   const stillListed = Ghost.transition(verifying, event('recheck_present', {method: 'extension_recheck', source: 'extension'}));
   assert.equal(stillListed.state, 'still_listed');
@@ -75,8 +77,8 @@ function testTransitionGraph() {
       if (allowed) {
         const next = Ghost.transition({state}, action);
         assert.equal(next.state, Ghost.TRANSITIONS[type].to, `${state} -> ${type}`);
-        if (next.state === 'verified_removed') {
-          assert.equal(type, 'recheck_absent', 'only an explicit absent recheck can verify removal');
+        if (next.state === 'client_recheck_absent') {
+          assert.equal(type, 'recheck_absent', 'only an explicit absent recheck can record absence');
           assert.equal(state, 'verifying');
         }
       } else {
@@ -101,7 +103,7 @@ function testPerBrandIsolationAndCounts() {
   const before = JSON.stringify(legacy);
   let progress = Ghost.applyBrokerEvent(legacy, 'intelius', event('begin_recheck'), BROKERS);
   progress = Ghost.applyBrokerEvent(progress, 'intelius', event('recheck_absent', {method: 'user_recheck'}), BROKERS);
-  assert.equal(progress.intelius.state, 'verified_removed');
+  assert.equal(progress.intelius.state, 'client_recheck_absent');
   assert.equal(progress.ussearch.state, 'not_found');
   assert.equal(progress.truthfinder.state, 'submitted');
   assert.equal(progress.instantcheckmate, undefined);
@@ -114,16 +116,16 @@ function testPerBrandIsolationAndCounts() {
 
   assert.deepEqual(Ghost.summarize(progress, BROKERS), {
     total: 4, not_started: 1, not_found: 1,
-    user_reported_removed: 0, verified_removed: 1,
+    user_reported_removed: 0, client_recheck_absent: 1,
     in_progress: 1, failed: 0, skipped: 0
   });
   const forged = {
-    intelius: {state: 'verified_removed', source: 'manual', updatedAt: AT},
+    intelius: {state: 'client_recheck_absent', source: 'manual', updatedAt: AT},
     ussearch: {state: 'still_listed', source: 'extension', updatedAt: AT,
       recheck: {method: 'user_recheck', checkedAt: AT}}
   };
-  assert.equal(Ghost.summarize(forged, BROKERS).verified_removed, 0,
-    'a stored status without valid recheck provenance cannot count as verified');
+  assert.equal(Ghost.summarize(forged, BROKERS).client_recheck_absent, 0,
+    'a stored status without valid recheck provenance cannot count as rechecked absent');
   assert.equal(Ghost.summarize(forged, BROKERS).not_started, 4);
   const cleaned = Ghost.applyBrokerEvent(forged, 'truthfinder', event('mark_submitted'), BROKERS);
   assert.equal(cleaned.intelius.state, 'not_started');

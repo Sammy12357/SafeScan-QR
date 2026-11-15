@@ -4,6 +4,7 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync('static/app-go-ghost.js', 'utf8');
 const uiSource = fs.readFileSync('static/app-go-ghost-ui.js', 'utf8');
+const stateSource = fs.readFileSync('static/go-ghost-state.js', 'utf8');
 let uuid = 1;
 
 function element() {
@@ -50,8 +51,10 @@ function page(accountId, local, session, {
     'goGhostScopeDescription', 'goGhostScopeKeywords', 'goGhostScopeDetails',
     'goGhostScopeSearchButton', 'goGhostScopeOptOutButton', 'goGhostScopeCopyButton',
     'goGhostScopeNoMatchButton', 'goGhostScopeSubmittedButton', 'goGhostScopeRemovedButton',
-    'goGhostScopeResetButton', 'goGhostScopeFinishButton', 'openNextGhostBrokerButton',
-    'ghostProgressCount', 'ghostFirstNameInput', 'ghostMiddleNameInput', 'ghostLastNameInput',
+    'goGhostScopeResetButton', 'goGhostScopeRecheckButton', 'goGhostScopeAbsentButton',
+    'goGhostScopePresentButton', 'goGhostScopeBrandSelect', 'goGhostScopeBrandPicker',
+    'goGhostScopeFinishButton', 'openNextGhostBrokerButton',
+    'ghostProgressCount', 'ghostProgressBreakdown', 'ghostFirstNameInput', 'ghostMiddleNameInput', 'ghostLastNameInput',
     'ghostCityInput', 'ghostStateInput', 'ghostBirthYearInput', 'ghostAddressInput',
     'ghostPhoneInput', 'ghostEmailInput', 'ghostPreviousCitiesInput', 'ghostOtherNamesInput',
     'ghostProfileReviewNotice', 'ghostSavedProfileHint', 'ghostAccountNameHint',
@@ -109,6 +112,7 @@ function page(accountId, local, session, {
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'
     })[char])
   });
+  vm.runInContext(stateSource, context);
   vm.runInContext(source, context);
   vm.runInContext(uiSource, context);
   return {elements, windowEvents, opened, copied, messages, removalRequests, confirmQuestions, context,
@@ -141,6 +145,9 @@ async function main() {
   a.elements.startGoGhostButton.events.click();
   enterProfile(a, 'Alice', 'Person');
   vm.runInContext("setGhostManualStatus('fastpeoplesearch', 'removed')", a.context);
+  assert.equal(a.elements.ghostProgressCount.textContent, '0 / 18', 'reporting gone is unverified');
+  vm.runInContext("ghostApplyManualEvent('fastpeoplesearch', 'begin_recheck')", a.context);
+  vm.runInContext("ghostApplyManualEvent('fastpeoplesearch', 'recheck_absent', {method: 'user_recheck'})", a.context);
   assert.equal(a.elements.ghostProgressCount.textContent, '1 / 18');
   const aKey = 'safeScanGoGhostV2:account:account-A';
   assert.ok(local.has(aKey));
@@ -204,6 +211,9 @@ async function main() {
   await family.elements.goGhostScopeOptOutButton.events.click();
   assert.equal(family.opened.length, 1, 'self-only broker must not open for family request');
   assert.match(family.messages.at(-1), /requires the person/);
+  await family.elements.goGhostScopeSubmittedButton.events.click();
+  assert.equal(vm.runInContext("getGhostProgress().intelius", family.context), undefined,
+    'family cannot claim completion of PeopleConnect self-use workflow');
   vm.runInContext("setGhostManualStatus('fastpeoplesearch', 'submitted')", family.context);
   const familyState = JSON.parse(local.get('safeScanGoGhostV2:account:account-C'));
   assert.equal(Object.keys(familyState.subjects).length, 2);
@@ -268,10 +278,20 @@ async function main() {
     address: '123 Legacy Avenue', identifier: '555-0100'
   };
   local.set(oldKey, JSON.stringify({version: 2, activeSubjectId: oldId, subjects: {
-    [oldId]: {id: oldId, kind: 'self', profile: oldProfile, progress: {},
+    [oldId]: {id: oldId, kind: 'self', profile: oldProfile, progress: {
+      fastpeoplesearch: {removed: true, finishReason: 'No matching profile found.'},
+      whitepages: {removed: true},
+      spokeo: {state: 'client_recheck_absent', source: 'manual', updatedAt: '2026-11-15T00:00:00.000Z'},
+      unknown: {removed: true}
+    },
       consentAcceptedAt: '2026-11-10T00:00:00.000Z', familyAttestedAt: ''}
   }}));
   const older = page('account-H', local, new Map(), {accountName: 'Different Name'});
+  assert.equal(vm.runInContext("getGhostProgress().fastpeoplesearch.state", older.context), 'not_found');
+  assert.equal(vm.runInContext("getGhostProgress().whitepages.state", older.context), 'user_reported_removed');
+  assert.equal(vm.runInContext("getGhostProgress().spokeo.state", older.context), 'not_started',
+    'a stored absent flag without recheck provenance is downgraded');
+  assert.equal(vm.runInContext("getGhostProgress().unknown", older.context), undefined);
   assert.equal(older.elements.ghostFirstNameInput.value, '', 'old scoped name must not be split by guessing');
   assert.equal(older.elements.ghostLastNameInput.value, '');
   assert.equal(older.elements.ghostCityInput.value, '', 'old scoped location must not be guessed');

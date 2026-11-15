@@ -52,7 +52,7 @@ async function openNextGhostBroker() {
 
 async function finishGhostBrokerAndOpenNext(broker) {
   if (!broker) return;
-  finishGhostBroker(broker.id, "No matching profile found in search results.");
+  if (!finishGhostBroker(broker.id)) return;
   closeGoGhostScopeModal();
   showCopyToast(`${broker.name}: no matching profile recorded`);
   await openNextGhostBroker();
@@ -130,7 +130,7 @@ async function runGhostBrokerAutomation(broker, triggerButton) {
     // "submitted" is fully done; "email_required" means the request was sent
     // and only an email-link click remains, so it also counts as submitted.
     if (automation.status === "submitted" || automation.status === "email_required") {
-      setGhostProgress(broker.id, "submitted", true);
+      ghostApplyManualEvent(broker.id, "mark_submitted");
     }
     showCopyToast(automation.detail || formatGhostAutomationStatus(automation.status));
     return automation;
@@ -169,71 +169,59 @@ async function runGhostBrokerAutomation(broker, triggerButton) {
 function renderGoGhostProgress() {
   if (!ghostProgressCount) return;
   const progress = getGhostProgress();
-  const removed = goGhostBrokers.filter((broker) => {
-    const state = progress[broker.id];
-    return state?.removed && !ghostHasNoMatch(state);
-  }).length;
-  ghostProgressCount.textContent = `${removed} / ${goGhostBrokers.length}`;
+  const counts = GoGhostState.summarize(progress, goGhostBrokerIds);
+  const submitted = goGhostBrokerIds.filter((id) =>
+    GoGhostState.sanitizedEntry(progress[id]).state === "submitted").length;
+  ghostProgressCount.textContent = `${counts.client_recheck_absent} / ${counts.total}`;
+  if (ghostProgressBreakdown) ghostProgressBreakdown.textContent =
+    `${submitted} submitted · ${counts.user_reported_removed} reported gone · ${counts.not_found} not found · ${counts.in_progress - submitted} other active`;
 }
 
 function ghostManualStatusLabel(state) {
-  if (ghostHasNoMatch(state)) return "No match";
-  if (state?.removed) return "Removed";
-  if (state?.submitted) return "Submitted";
-  return "Pending";
+  const entry = GoGhostState.sanitizedEntry(state);
+  if (entry.state === "client_recheck_absent") return entry.source === "extension"
+    ? "Extension rechecked absent" : "You rechecked absent";
+  return ({
+    not_started: "Pending", scanning: "Searching", not_found: "Not found",
+    needs_review: "Review listing", found: "Listing found", submitting: "Submitting",
+    needs_human: "Needs you", submitted: "Submitted", awaiting_email: "Check email",
+    confirmed: "Email confirmed", verifying: "Rechecking",
+    user_reported_removed: "You reported gone",
+    still_listed: "Still listed", failed: "Needs retry", skipped: "Skipped"
+  })[entry.state] || "Pending";
 }
 
 function renderGoGhostAutomationScope() {
   if (!goGhostAutomationRows) return;
   const progress = getGhostProgress();
-  goGhostAutomationRows.innerHTML = goGhostBrokers.map((broker) => {
+  const groups = new Map();
+  for (const broker of goGhostBrokers) {
+    if (!groups.has(broker.group)) groups.set(broker.group, []);
+    groups.get(broker.group).push(broker);
+  }
+  goGhostAutomationRows.innerHTML = [...groups.values()].map((group) => {
+    const broker = group[0];
     const lane = ghostEffortLane(broker);
-    const state = progress[broker.id] || {};
-    const automation = GO_GHOST_BROWSER_AUTOMATION_AVAILABLE ? state.automation : null;
-    const statusLabel = GO_GHOST_BROWSER_AUTOMATION_AVAILABLE
+    const state = progress[broker.id];
+    const automation = GO_GHOST_BROWSER_AUTOMATION_AVAILABLE ? state?.automation : null;
+    const statusLabel = group.length > 1
+      ? `${group.filter((item) => GoGhostState.sanitizedEntry(progress[item.id]).state !== "not_started").length}/${group.length} tracked`
+      : GO_GHOST_BROWSER_AUTOMATION_AVAILABLE
       ? (automation ? formatGhostAutomationStatus(automation.status) : ghostManualStatusLabel(state))
       : ghostManualStatusLabel(state);
+    const name = group.length > 1 ? "PeopleConnect" : broker.name;
+    const brandSummary = group.length > 1 ? group.map((item) =>
+      `${item.name}: ${ghostManualStatusLabel(progress[item.id])}`).join(" · ") : "";
+    const brandStatuses = brandSummary ? `<small class="ghost-group-brand-status">${escapeHtml(brandSummary)}</small>` : "";
     return `
-      <button class="ghost-automation-row ghost-automation-site-row" type="button" data-ghost-scope="${broker.id}" aria-label="Open ${escapeHtml(broker.name)} opt-out details">
-        <span>${escapeHtml(broker.name)}</span>
+      <button class="ghost-automation-row ghost-automation-site-row${group.length > 1 ? " ghost-group-row" : ""}" type="button" data-ghost-scope="${broker.id}" aria-label="Open ${escapeHtml(name)} opt-out details${brandSummary ? `; ${escapeHtml(brandSummary)}` : ""}">
+        <span>${escapeHtml(name)}${group.length > 1 ? ` (${group.length} sites)` : ""}${brandStatuses}</span>
         <span><span class="ghost-effort ghost-effort-${lane.lane}">${escapeHtml(lane.label)}</span></span>
         <span>${escapeHtml(lane.you)}</span>
         <span>${escapeHtml(statusLabel)}</span>
       </button>
     `;
   }).join("");
-}
-
-function renderGoGhostBrokers() {
-  if (!goGhostBrokerList) return;
-  const profile = getGhostProfile();
-  const progress = getGhostProgress();
-  goGhostBrokerList.innerHTML = goGhostBrokers.map((broker) => {
-    const state = progress[broker.id] || {};
-    const searchUrl = goGhostBrokerSearchUrl(broker, profile);
-    const optOutUrl = goGhostBrokerOptOutUrl(broker);
-    return `
-      <article class="broker-card" data-ghost-broker="${broker.id}">
-        <div>
-          <span class="broker-priority" title="${escapeHtml(broker.priorityDescription || "")}">${escapeHtml(broker.priority)}</span>
-          <h3>${escapeHtml(broker.name)}</h3>
-        </div>
-        <div class="broker-actions">
-          <a class="secondary-button" href="${searchUrl}" target="_blank" rel="noopener noreferrer" data-ghost-search="${broker.id}">Search</a>
-          <a class="primary-button" href="${optOutUrl}" target="_blank" rel="noopener noreferrer" data-ghost-optout="${broker.id}">Opt out</a>
-          ${GO_GHOST_BROWSER_AUTOMATION_AVAILABLE && broker.automationEnabled ? `<button class="primary-button" type="button" data-ghost-auto="${broker.id}">${goGhostAutomationControllers.has(broker.id) ? "Cancel run" : "Run auto fill"}</button>` : ""}
-          <button class="secondary-button" type="button" data-ghost-copy="${broker.id}">Copy details</button>
-        </div>
-        <div class="broker-requirements">${(broker.requiredInfo || []).map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
-        ${GO_GHOST_BROWSER_AUTOMATION_AVAILABLE && state.automation ? `<div class="broker-automation-status"><strong>${escapeHtml(formatGhostAutomationStatus(state.automation.status))}</strong><span>${escapeHtml(state.automation.detail || "")}</span></div>` : ""}
-        <div class="broker-checks">
-          <label><input type="checkbox" data-ghost-site="${broker.id}" data-ghost-field="submitted" ${state.submitted ? "checked" : ""}> Submitted</label>
-          <label><input type="checkbox" data-ghost-site="${broker.id}" data-ghost-field="removed" ${state.removed ? "checked" : ""}> Removed</label>
-        </div>
-      </article>
-    `;
-  }).join("");
-  renderGoGhostProgress();
 }
 
 function closeGoGhostScopeModal() {
@@ -259,14 +247,21 @@ function renderGhostScopeKeywords(profile) {
 function openGoGhostScopeModal(siteId, focusClose = true) {
   const broker = goGhostBrokers.find((item) => item.id === siteId);
   if (!broker || !goGhostScopeModal) return;
+  const group = goGhostBrokers.filter((item) => item.group === broker.group);
   const profile = getGhostProfile();
-  const scope = goGhostAutomationScope(broker);
-  const state = getGhostProgress()[broker.id] || {};
-  const automation = GO_GHOST_BROWSER_AUTOMATION_AVAILABLE ? state.automation : null;
+  const state = GoGhostState.sanitizedEntry(getGhostProgress()[broker.id]);
+  const automation = GO_GHOST_BROWSER_AUTOMATION_AVAILABLE ? getGhostProgress()[broker.id]?.automation : null;
   const subjectOnly = ghostCurrentSubject().kind === "family" && ghostRequiresSubjectOwnAction(broker);
   activeGhostScopeBrokerId = broker.id;
-  if (goGhostScopeTitle) goGhostScopeTitle.textContent = broker.name;
+  if (goGhostScopeTitle) goGhostScopeTitle.textContent = group.length > 1 ? "PeopleConnect" : broker.name;
   if (goGhostScopePriority) goGhostScopePriority.textContent = broker.priority;
+  if (goGhostScopeBrandPicker) goGhostScopeBrandPicker.hidden = group.length === 1;
+  if (goGhostScopeBrandSelect && group.length > 1) {
+    goGhostScopeBrandSelect.innerHTML = group.map((item) =>
+      `<option value="${item.id}">${escapeHtml(item.name)} — ${escapeHtml(ghostManualStatusLabel(getGhostProgress()[item.id]))}</option>`
+    ).join("");
+    goGhostScopeBrandSelect.value = broker.id;
+  }
   if (goGhostScopeDescription) goGhostScopeDescription.textContent = subjectOnly
     ? "PeopleConnect limits this suppression tool to the person's own use. Ask the family member to complete it directly."
     : profile.state === "OUTSIDE_US"
@@ -276,6 +271,8 @@ function openGoGhostScopeModal(siteId, focusClose = true) {
       : "Find your matching listing, then open the broker opt-out page and submit the request in your browser.";
   if (goGhostScopeSearchButton) goGhostScopeSearchButton.textContent =
     profile.state === "OUTSIDE_US" ? "Broker instructions" : "Search";
+  if (goGhostScopeOptOutButton) goGhostScopeOptOutButton.textContent =
+    group.length > 1 ? "Open shared suppression center" : "Opt out";
   for (const button of [goGhostScopeSearchButton, goGhostScopeOptOutButton, goGhostScopeCopyButton, goGhostScopeFinishButton, goGhostScopeAutoFillButton]) {
     if (button) button.disabled = subjectOnly;
   }
@@ -287,8 +284,9 @@ function openGoGhostScopeModal(siteId, focusClose = true) {
       ${GO_GHOST_BROWSER_AUTOMATION_AVAILABLE ? `<div class="ghost-scope-detail"><span>Backend does</span><strong>Fills the whole form</strong></div>` : `<div class="ghost-scope-detail"><span>Search</span><strong>Find your matching listing</strong></div>`}
       <div class="ghost-scope-detail"><span>You do</span><strong>${escapeHtml(GO_GHOST_BROWSER_AUTOMATION_AVAILABLE && lane.label === "Auto" ? "Just check email" : "Submit the request")}</strong></div>
       <div class="ghost-scope-detail ghost-scope-detail-wide"><span>Needed</span><strong>${escapeHtml((broker.requiredInfo || []).join(", "))}</strong></div>
+      <div class="ghost-scope-detail ghost-scope-detail-wide"><span>${group.length > 1 ? "Selected site" : "Status"}</span><strong>${escapeHtml(group.length > 1 ? `${broker.name}: ${ghostManualStatusLabel(state)}` : ghostManualStatusLabel(state))}</strong></div>
       ${guidance && guidance.text ? `<div class="ghost-scope-detail ghost-scope-detail-wide ghost-scope-guidance ghost-scope-guidance-${guidance.tone}"><span>Next step</span><strong>${escapeHtml(guidance.text)}</strong></div>` : ""}
-      ${state.finishReason ? `<div class="ghost-scope-detail ghost-scope-detail-wide"><span>Finished as</span><strong>${escapeHtml(state.finishReason)}</strong></div>` : ""}
+      ${state.recheck ? `<div class="ghost-scope-detail ghost-scope-detail-wide"><span>Last recheck</span><strong>${escapeHtml(state.recheck.checkedAt.slice(0, 10))} · ${state.recheck.method === "user_recheck" ? "Manual" : "Extension"}</strong></div>` : ""}
       ${automation ? `<div class="ghost-scope-detail ghost-scope-detail-wide"><span>Automation status</span><strong>${escapeHtml(formatGhostAutomationStatus(automation.status))}</strong></div>` : ""}
     `;
   }
@@ -303,8 +301,31 @@ function openGoGhostScopeModal(siteId, focusClose = true) {
   if (goGhostScopeFinishButton) {
     goGhostScopeFinishButton.hidden = !(guidance && guidance.action);
   }
-  goGhostScopeSubmittedButton?.setAttribute("aria-pressed", String(state.submitted && !state.removed && !ghostHasNoMatch(state)));
-  goGhostScopeRemovedButton?.setAttribute("aria-pressed", String(state.removed && !ghostHasNoMatch(state)));
+  const can = (event) => GoGhostState.TRANSITIONS[event].from.includes(state.state);
+  if (goGhostScopeNoMatchButton) {
+    goGhostScopeNoMatchButton.hidden = !can("mark_not_found");
+    goGhostScopeNoMatchButton.disabled = subjectOnly;
+  }
+  if (goGhostScopeSubmittedButton) {
+    goGhostScopeSubmittedButton.hidden = !can("mark_submitted");
+    goGhostScopeSubmittedButton.disabled = subjectOnly;
+  }
+  if (goGhostScopeRemovedButton) {
+    goGhostScopeRemovedButton.hidden = !can("report_removed");
+    goGhostScopeRemovedButton.disabled = subjectOnly;
+  }
+  if (goGhostScopeRecheckButton) {
+    goGhostScopeRecheckButton.hidden = !can("begin_recheck");
+    goGhostScopeRecheckButton.disabled = subjectOnly;
+  }
+  if (goGhostScopeAbsentButton) {
+    goGhostScopeAbsentButton.hidden = !can("recheck_absent");
+    goGhostScopeAbsentButton.disabled = subjectOnly;
+  }
+  if (goGhostScopePresentButton) {
+    goGhostScopePresentButton.hidden = !can("recheck_present");
+    goGhostScopePresentButton.disabled = subjectOnly;
+  }
   goGhostScopeModal.classList.remove("hidden");
   if (focusClose) goGhostScopeModal.querySelector(".ghost-scope-close")?.focus();
 }
@@ -312,7 +333,7 @@ function openGoGhostScopeModal(siteId, focusClose = true) {
 async function runGhostScopeAction(action) {
   const broker = goGhostBrokers.find((item) => item.id === activeGhostScopeBrokerId);
   if (!broker) return;
-  if (["search", "optout", "finish", "copy", "auto"].includes(action) && !ghostCanAct(broker)) return;
+  if (action !== "reset" && !ghostCanAct(broker)) return;
   const profile = getGhostProfile();
   const searchUrl = goGhostBrokerSearchUrl(broker, profile);
 
@@ -337,14 +358,31 @@ async function runGhostScopeAction(action) {
     return;
   }
   if (action === "submitted" || action === "removed" || action === "reset") {
-    setGhostManualStatus(broker.id, action === "reset" ? "pending" : action);
+    if (!setGhostManualStatus(broker.id, action === "reset" ? "pending" : action)) return;
     openGoGhostScopeModal(broker.id, false);
     showCopyToast(action === "submitted" ? `${broker.name}: request submitted` :
-      action === "removed" ? `${broker.name}: removal confirmed` : `${broker.name}: status reset`);
+      action === "removed" ? `${broker.name}: reported gone; recheck to record whether it is absent` : `${broker.name}: status reset`);
     return;
   }
   if (action === "nomatch") {
     await finishGhostBrokerAndOpenNext(broker);
+    return;
+  }
+  if (action === "recheck") {
+    if (!openGhostUrl(searchUrl)) {
+      showCopyToast("Open the broker search in a new tab before recording a recheck");
+      return;
+    }
+    if (!ghostApplyManualEvent(broker.id, "begin_recheck")) return;
+    openGoGhostScopeModal(broker.id, false);
+    showCopyToast(`Check ${broker.name}'s listing, then record whether it is absent or still listed`);
+    return;
+  }
+  if (action === "absent" || action === "present") {
+    const event = action === "absent" ? "recheck_absent" : "recheck_present";
+    if (!ghostApplyManualEvent(broker.id, event, { method: "user_recheck" })) return;
+    openGoGhostScopeModal(broker.id, false);
+    showCopyToast(`${broker.name}: ${action === "absent" ? "manually rechecked absent" : "still listed"}`);
     return;
   }
   if (action === "auto") {
@@ -525,11 +563,11 @@ function lockGhostWorkspace() {
   if (ghostAccountNameHint) ghostAccountNameHint.textContent = "";
   if (ghostFamilyAttestationInput) ghostFamilyAttestationInput.checked = false;
   if (goGhostAutomationRows) goGhostAutomationRows.innerHTML = "";
-  if (goGhostBrokerList) goGhostBrokerList.innerHTML = "";
   if (ghostSubjectSelect) ghostSubjectSelect.innerHTML = "";
   if (goGhostScopeKeywords) goGhostScopeKeywords.innerHTML = "";
   if (goGhostScopeDetails) goGhostScopeDetails.innerHTML = "";
   if (ghostProgressCount) ghostProgressCount.textContent = "—";
+  if (ghostProgressBreakdown) ghostProgressBreakdown.textContent = "";
   if (goGhostWorkspace) goGhostWorkspace.hidden = true;
   goGhostScopeModal?.classList.add("hidden");
   goGhostConsentModal?.classList.add("hidden");
@@ -666,50 +704,13 @@ if (goGhostWorkspace) {
   goGhostScopeNoMatchButton?.addEventListener("click", () => runGhostScopeAction("nomatch"));
   goGhostScopeSubmittedButton?.addEventListener("click", () => runGhostScopeAction("submitted"));
   goGhostScopeRemovedButton?.addEventListener("click", () => runGhostScopeAction("removed"));
+  goGhostScopeRecheckButton?.addEventListener("click", () => runGhostScopeAction("recheck"));
+  goGhostScopeAbsentButton?.addEventListener("click", () => runGhostScopeAction("absent"));
+  goGhostScopePresentButton?.addEventListener("click", () => runGhostScopeAction("present"));
   goGhostScopeResetButton?.addEventListener("click", () => runGhostScopeAction("reset"));
   goGhostScopeCopyButton?.addEventListener("click", () => runGhostScopeAction("copy"));
-
-  goGhostBrokerList?.addEventListener("change", (event) => {
-    const checkbox = event.target.closest("[data-ghost-site][data-ghost-field]");
-    if (!checkbox) return;
-    setGhostProgress(checkbox.dataset.ghostSite, checkbox.dataset.ghostField, checkbox.checked);
-  });
-
-  goGhostBrokerList?.addEventListener("click", async (event) => {
-    const searchLink = event.target.closest("[data-ghost-search]");
-    if (searchLink) {
-      event.preventDefault();
-      const broker = goGhostBrokers.find((item) => item.id === searchLink.dataset.ghostSearch);
-      if (broker && ghostCanAct(broker)) openGhostUrl(goGhostBrokerSearchUrl(broker, getGhostProfile()));
-      return;
-    }
-    const optOutLink = event.target.closest("[data-ghost-optout]");
-    if (optOutLink) {
-      event.preventDefault();
-      const profile = getGhostProfile();
-      const broker = goGhostBrokers.find((item) => item.id === optOutLink.dataset.ghostOptout);
-      if (!broker || !ghostCanAct(broker)) return;
-      const searchUrl = goGhostBrokerSearchUrl(broker, profile);
-      showCopyToast(await openGhostOptOutWithPacket(broker, profile, searchUrl));
-      return;
-    }
-
-    const autoButton = event.target.closest("[data-ghost-auto]");
-    if (autoButton) {
-      const broker = goGhostBrokers.find((item) => item.id === autoButton.dataset.ghostAuto);
-      if (broker) await runGhostBrokerAutomation(broker, autoButton);
-      return;
-    }
-
-    const copyButton = event.target.closest("[data-ghost-copy]");
-    if (!copyButton) return;
-    const profile = getGhostProfile();
-    const broker = goGhostBrokers.find((item) => item.id === copyButton.dataset.ghostCopy);
-    if (!broker || !ghostCanAct(broker)) return;
-    const searchUrl = goGhostBrokerSearchUrl(broker, profile);
-    const copied = await copyTextToClipboard(goGhostCopyPacket(broker, profile, searchUrl)).catch(() => false);
-    showCopyToast(copied ? `${broker.name} details copied` : "Copy failed");
-  });
+  goGhostScopeBrandSelect?.addEventListener("change", () =>
+    openGoGhostScopeModal(goGhostScopeBrandSelect.value, false));
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !goGhostScopeModal?.classList.contains("hidden")) closeGoGhostScopeModal();

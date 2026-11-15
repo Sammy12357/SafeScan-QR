@@ -7,7 +7,7 @@ const GoGhostState = (() => {
   const STATES = Object.freeze([
     "not_started", "scanning", "not_found", "needs_review", "found",
     "submitting", "needs_human", "submitted", "awaiting_email",
-    "confirmed", "verifying", "user_reported_removed", "verified_removed",
+    "confirmed", "verifying", "user_reported_removed", "client_recheck_absent",
     "still_listed", "failed", "skipped"
   ]);
   const STATE_SET = new Set(STATES);
@@ -18,7 +18,7 @@ const GoGhostState = (() => {
   const RECHECK_METHODS = new Set(["user_recheck", "extension_recheck"]);
 
   // Manual actions can record work done outside SafeScan. Only recheck_absent
-  // can produce verified_removed, and only after begin_recheck.
+  // can produce client_recheck_absent, and only after begin_recheck.
   const TRANSITIONS = Object.freeze({
     start_scan: { from: ["not_started", "not_found", "failed", "skipped", "still_listed"], to: "scanning" },
     scan_not_found: { from: ["scanning"], to: "not_found" },
@@ -33,8 +33,8 @@ const GoGhostState = (() => {
     report_removed: { from: ["not_started", "submitted", "awaiting_email", "confirmed", "verifying", "still_listed", "failed", "skipped"], to: "user_reported_removed" },
     await_email: { from: ["submitted"], to: "awaiting_email" },
     confirm_email: { from: ["awaiting_email"], to: "confirmed" },
-    begin_recheck: { from: ["submitted", "awaiting_email", "confirmed", "user_reported_removed", "still_listed"], to: "verifying" },
-    recheck_absent: { from: ["verifying"], to: "verified_removed" },
+    begin_recheck: { from: ["submitted", "awaiting_email", "confirmed", "user_reported_removed", "client_recheck_absent", "still_listed"], to: "verifying" },
+    recheck_absent: { from: ["verifying"], to: "client_recheck_absent" },
     recheck_present: { from: ["verifying"], to: "still_listed" },
     mark_failed: { from: ["scanning", "needs_review", "found", "submitting", "needs_human", "submitted", "awaiting_email", "confirmed", "verifying", "still_listed"], to: "failed" },
     mark_skipped: { from: ["not_started", "not_found", "needs_review", "failed"], to: "skipped" }
@@ -132,7 +132,7 @@ const GoGhostState = (() => {
 
   function sanitizedEntry(entry) {
     if (!entry || !STATE_SET.has(entry.state)) return emptyEntry();
-    if (entry.state === "verified_removed" || entry.state === "still_listed") {
+    if (entry.state === "client_recheck_absent" || entry.state === "still_listed") {
       const method = entry.recheck?.method;
       const validSource = (entry.source === "manual" && method === "user_recheck")
         || (entry.source === "extension" && method === "extension_recheck");
@@ -149,14 +149,14 @@ const GoGhostState = (() => {
     if (entry.state === "failed" && FAILURE_CODES.has(entry.failureCode)) {
       clean.failureCode = entry.failureCode;
     }
-    if (entry.state === "verified_removed" || entry.state === "still_listed") {
+    if (entry.state === "client_recheck_absent" || entry.state === "still_listed") {
       clean.recheck = { method: entry.recheck.method, checkedAt: entry.recheck.checkedAt };
     }
     return clean;
   }
 
   // A group name is deliberately not accepted here. One PeopleConnect action
-  // cannot mark Intelius, US Search, TruthFinder and Instant Checkmate verified.
+  // cannot mark Intelius, US Search, TruthFinder and Instant Checkmate absent.
   function applyBrokerEvent(progress, brokerId, event, brokerIds) {
     const validIds = brokerIdsFrom(brokerIds);
     if (!validIds.has(brokerId)) throw new TypeError("Unknown broker ID");
@@ -173,7 +173,7 @@ const GoGhostState = (() => {
     const validIds = brokerIdsFrom(brokerIds);
     const counts = {
       total: validIds.size, not_started: 0, not_found: 0,
-      user_reported_removed: 0, verified_removed: 0,
+      user_reported_removed: 0, client_recheck_absent: 0,
       in_progress: 0, failed: 0, skipped: 0
     };
     for (const id of validIds) {
@@ -186,7 +186,7 @@ const GoGhostState = (() => {
   }
 
   return Object.freeze({ VERSION, STATES, EVENTS, TRANSITIONS, emptyEntry,
-    migrateLegacyEntry, migrateLegacyProgress, transition, applyBrokerEvent, summarize });
+    migrateLegacyEntry, migrateLegacyProgress, sanitizedEntry, transition, applyBrokerEvent, summarize });
 })();
 
 if (typeof module !== "undefined" && module.exports) module.exports = GoGhostState;

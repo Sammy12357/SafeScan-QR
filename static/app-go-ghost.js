@@ -7,7 +7,6 @@ const goGhostConsentModal = document.getElementById("goGhostConsentModal");
 const startGoGhostButton = document.getElementById("startGoGhostButton");
 const goGhostProfileForm = document.getElementById("goGhostProfileForm");
 const clearGhostDataButton = document.getElementById("clearGhostDataButton");
-const goGhostBrokerList = document.getElementById("goGhostBrokerList");
 const goGhostAutomationRows = document.getElementById("goGhostAutomationRows");
 const goGhostScopeModal = document.getElementById("goGhostScopeModal");
 const goGhostScopeTitle = document.getElementById("goGhostScopeTitle");
@@ -23,10 +22,16 @@ const goGhostScopeNoMatchButton = document.getElementById("goGhostScopeNoMatchBu
 const goGhostScopeSubmittedButton = document.getElementById("goGhostScopeSubmittedButton");
 const goGhostScopeRemovedButton = document.getElementById("goGhostScopeRemovedButton");
 const goGhostScopeResetButton = document.getElementById("goGhostScopeResetButton");
+const goGhostScopeRecheckButton = document.getElementById("goGhostScopeRecheckButton");
+const goGhostScopeAbsentButton = document.getElementById("goGhostScopeAbsentButton");
+const goGhostScopePresentButton = document.getElementById("goGhostScopePresentButton");
+const goGhostScopeBrandSelect = document.getElementById("goGhostScopeBrandSelect");
+const goGhostScopeBrandPicker = document.getElementById("goGhostScopeBrandPicker");
 const goGhostScopeCopyButton = document.getElementById("goGhostScopeCopyButton");
 const startGhostQueueButton = document.getElementById("startGhostQueueButton");
 const openNextGhostBrokerButton = document.getElementById("openNextGhostBrokerButton");
 const ghostProgressCount = document.getElementById("ghostProgressCount");
+const ghostProgressBreakdown = document.getElementById("ghostProgressBreakdown");
 const ghostFirstNameInput = document.getElementById("ghostFirstNameInput");
 const ghostMiddleNameInput = document.getElementById("ghostMiddleNameInput");
 const ghostLastNameInput = document.getElementById("ghostLastNameInput");
@@ -98,6 +103,22 @@ function loadGoGhostBrokerRegistry() {
 }
 
 const goGhostBrokers = loadGoGhostBrokerRegistry();
+const goGhostBrokerIds = goGhostBrokers.map((broker) => broker.id);
+
+function ghostNormalizeProgress(value) {
+  const progress = Object.create(null);
+  if (!value || typeof value !== "object" || Array.isArray(value)) return progress;
+  for (const id of goGhostBrokerIds) {
+    if (!Object.prototype.hasOwnProperty.call(value, id)) continue;
+    const entry = value[id];
+    // These are account/person-scoped v2 records, never the unowned browser
+    // keys. Boolean entries came from the prior version of this scoped store.
+    progress[id] = entry && typeof entry.state === "string"
+      ? GoGhostState.sanitizedEntry(entry)
+      : GoGhostState.migrateLegacyEntry(entry);
+  }
+  return progress;
+}
 
 function readJsonStorage(key, fallback, area) {
   if (!area) return fallback;
@@ -150,7 +171,7 @@ function ghostNormalizeState(value) {
       id,
       kind: subject.kind,
       profile,
-      progress: subject.progress && typeof subject.progress === "object" && !Array.isArray(subject.progress) ? subject.progress : {},
+      progress: ghostNormalizeProgress(subject.progress),
       consentAcceptedAt: typeof subject.consentAcceptedAt === "string" ? subject.consentAcceptedAt : "",
       familyAttestedAt: typeof subject.familyAttestedAt === "string" ? subject.familyAttestedAt : ""
     };
@@ -254,7 +275,7 @@ function ghostActionProfile() {
 
 function ghostSaveProgress(progress) {
   if (goGhostStoreLocked) return;
-  ghostCurrentSubject().progress = progress;
+  ghostCurrentSubject().progress = ghostNormalizeProgress(progress);
   ghostSaveState();
 }
 
@@ -298,58 +319,34 @@ function getGhostProgress() {
   return ghostCurrentSubject().progress;
 }
 
-function setGhostProgress(siteId, field, checked) {
-  const progress = getGhostProgress();
-  progress[siteId] = {
-    ...(progress[siteId] || {}),
-    [field]: checked,
-    ...(checked && (field === "submitted" || field === "removed") ? { noMatch: false, finishReason: "" } : {}),
-    updatedAt: new Date().toISOString()
-  };
-  ghostSaveProgress(progress);
-  renderGoGhostAutomationScope();
-  renderGoGhostProgress();
-}
-
-function ghostHasNoMatch(state) {
-  // Older clients saved no-match as `removed: true` with a finish reason.
-  return Boolean(state?.noMatch || state?.finishReason);
+function ghostApplyManualEvent(siteId, type, extra = {}) {
+  if (goGhostStoreLocked || !goGhostBrokerIds.includes(siteId)) return false;
+  try {
+    const next = GoGhostState.applyBrokerEvent(getGhostProgress(), siteId,
+      { type, source: "manual", at: new Date().toISOString(), ...extra }, goGhostBrokerIds);
+    ghostSaveProgress(next);
+    renderGoGhostAutomationScope();
+    renderGoGhostProgress();
+    return true;
+  } catch {
+    showCopyToast("This status change is unavailable. Reset the site status to start over.");
+    return false;
+  }
 }
 
 function setGhostManualStatus(siteId, status) {
-  if (!goGhostBrokers.some((broker) => broker.id === siteId)) return;
-  const progress = getGhostProgress();
-  progress[siteId] = {
-    ...(progress[siteId] || {}),
-    submitted: status === "submitted" || status === "removed",
-    removed: status === "removed",
-    noMatch: status === "no_match",
-    finishReason: status === "no_match" ? "No matching profile found in search results." : "",
-    automation: null,
-    updatedAt: new Date().toISOString()
-  };
-  ghostSaveProgress(progress);
-  renderGoGhostAutomationScope();
-  renderGoGhostProgress();
+  const event = { pending: "reset", submitted: "mark_submitted",
+    removed: "report_removed", no_match: "mark_not_found" }[status];
+  return event ? ghostApplyManualEvent(siteId, event) : false;
 }
 
-function finishGhostBroker(siteId, detail = "No matching profile found.") {
-  const progress = getGhostProgress();
-  progress[siteId] = {
-    ...(progress[siteId] || {}),
-    submitted: false,
-    removed: false,
-    noMatch: true,
-    finishReason: detail,
-    automation: null,
-    updatedAt: new Date().toISOString()
-  };
-  ghostSaveProgress(progress);
-  renderGoGhostAutomationScope();
-  renderGoGhostProgress();
+function finishGhostBroker(siteId) {
+  return ghostApplyManualEvent(siteId, "mark_not_found");
 }
 
 function updateGhostAutomationState(siteId, automation) {
+  // Server-side automation is fixed off. Keep its disabled path separate from
+  // the manual state machine so an old response cannot verify a removal.
   const progress = getGhostProgress();
   progress[siteId] = { ...(progress[siteId] || {}), automation, updatedAt: new Date().toISOString() };
   ghostSaveProgress(progress);
@@ -485,10 +482,17 @@ function hasGhostSearchProfile(profile) {
 
 function nextPendingGhostBroker(allowed = () => true) {
   const progress = getGhostProgress();
-  return goGhostBrokers.find((broker) => {
-    const state = progress[broker.id];
-    return allowed(broker) && !state?.submitted && !state?.removed && !ghostHasNoMatch(state);
-  }) || null;
+  const seenGroups = new Set();
+  for (const broker of goGhostBrokers) {
+    if (seenGroups.has(broker.group)) continue;
+    seenGroups.add(broker.group);
+    const group = goGhostBrokers.filter((item) => item.group === broker.group);
+    const next = group.find((item) => allowed(item) && !["not_found", "submitted", "awaiting_email", "confirmed", "verifying",
+      "user_reported_removed", "client_recheck_absent", "skipped"].includes(
+      GoGhostState.sanitizedEntry(progress[item.id]).state));
+    if (next) return next;
+  }
+  return null;
 }
 
 function scrollToGhostProfile() {
@@ -497,7 +501,8 @@ function scrollToGhostProfile() {
 }
 
 function scrollToGhostBroker(broker) {
-  const row = broker ? goGhostAutomationRows?.querySelector(`[data-ghost-scope="${broker.id}"]`) : goGhostAutomationRows;
+  const representative = broker ? goGhostBrokers.find((item) => item.group === broker.group) : null;
+  const row = representative ? goGhostAutomationRows?.querySelector(`[data-ghost-scope="${representative.id}"]`) : goGhostAutomationRows;
   row?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
@@ -554,7 +559,9 @@ async function startGhostAssistedQueue() {
 
   const progress = getGhostProgress();
   const queue = goGhostBrokers.filter(
-    (broker) => broker.automationEnabled && !progress[broker.id]?.submitted && !progress[broker.id]?.removed
+    (broker) => broker.automationEnabled && !["submitted", "awaiting_email", "confirmed",
+      "user_reported_removed", "client_recheck_absent"].includes(
+      GoGhostState.sanitizedEntry(progress[broker.id]).state)
   );
   if (!queue.length) {
     showCopyToast("All automated brokers tracked");
