@@ -143,3 +143,27 @@ def test_consent_server_failure_keeps_choice_available(browser_site):
         assert page.locator("#cookieConsentBanner").is_visible()
     finally:
         context.close()
+
+
+def test_gpc_overrides_prior_all_choice_in_browser_and_server(browser_site):
+    browser, base_url = browser_site
+    context = browser.new_context(base_url=base_url, extra_http_headers={"Sec-GPC": "1"})
+    try:
+        page = context.new_page()
+        page.add_init_script("""
+            Object.defineProperty(Navigator.prototype, 'globalPrivacyControl', {get: () => true});
+            localStorage.setItem('safeScanConsent', JSON.stringify({
+                consentType: 'all', bannerVersion: 'consent-v1', timestamp: new Date().toISOString()
+            }));
+        """)
+        page.goto("/", wait_until="domcontentloaded")
+        assert page.locator("#cookieConsentBanner").is_visible()
+        assert page.locator('[data-consent-choice="all"]').is_hidden()
+        assert page.locator('[data-consent-choice="custom"]').is_hidden()
+        assert "Global Privacy Control is on" in page.locator(".consent-copy").inner_text()
+        with page.expect_response("**/api/consent") as saved:
+            page.locator('[data-consent-choice="essential_only"]').click()
+        assert saved.value.json()["effectiveConsentType"] == "essential_only"
+        assert page.evaluate("JSON.parse(localStorage.getItem('safeScanConsent')).consentType") == "essential_only"
+    finally:
+        context.close()

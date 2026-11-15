@@ -198,13 +198,22 @@ function storedConsentIsFresh(record) {
 
 function showConsentBannerIfNeeded() {
   if (!cookieConsentBanner) return;
+  const gpcEnabled = navigator.globalPrivacyControl === true;
+  if (gpcEnabled) {
+    const acceptAll = cookieConsentBanner.querySelector('[data-consent-choice="all"]');
+    if (acceptAll) acceptAll.hidden = true;
+    const managePreferences = cookieConsentBanner.querySelector('[data-consent-choice="custom"]');
+    if (managePreferences) managePreferences.hidden = true;
+    const copy = cookieConsentBanner.querySelector(".consent-copy");
+    if (copy) copy.textContent = "Global Privacy Control is on. SafeScan will not send optional scanner performance counts. Essential storage remains available for sign-in and preferences.";
+  }
   let storedConsent = null;
   try {
     storedConsent = JSON.parse(window.localStorage.getItem("safeScanConsent"));
   } catch {
     storedConsent = null;
   }
-  if (!storedConsentIsFresh(storedConsent)) {
+  if (!storedConsentIsFresh(storedConsent) || (gpcEnabled && storedConsent?.consentType !== "essential_only")) {
     cookieConsentBanner.classList.remove("hidden");
   }
 }
@@ -237,7 +246,7 @@ cookieConsentBanner?.addEventListener("click", async (event) => {
   const otherButtons = Array.from(cookieConsentBanner.querySelectorAll("[data-consent-choice]"))
     .filter((choice) => choice !== button).map((choice) => [choice, choice.disabled]);
   otherButtons.forEach(([choice]) => { choice.disabled = true; });
-  const consentType = button.dataset.consentChoice;
+  const consentType = navigator.globalPrivacyControl === true ? "essential_only" : button.dataset.consentChoice;
   const bannerVersion = cookieConsentBanner.dataset.version || "consent-v1";
   const record = { consentType, bannerVersion, timestamp: new Date().toISOString() };
   const controller = new AbortController();
@@ -253,6 +262,7 @@ cookieConsentBanner?.addEventListener("click", async (event) => {
       if (!response.ok) throw new Error("Consent save failed");
       const parsedBody = await response.json().catch(() => ({}));
       const body = parsedBody && typeof parsedBody === "object" ? parsedBody : {};
+      record.consentType = body.effectiveConsentType === "essential_only" ? "essential_only" : consentType;
       let cached = true;
       try {
         window.localStorage.setItem("safeScanConsent", JSON.stringify(record));
