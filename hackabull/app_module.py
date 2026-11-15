@@ -83,6 +83,7 @@ from .sessions import clear_remember_me_cookie
 from .sessions import set_remember_me_cookie
 from .sessions import set_session_cookie
 from .sessions import validate_and_rotate_remember_me
+from .privacy_retention import run_retention, scrub_legacy_scan_storage
 from .wallet import cleanup_wallet_nonces
 from .wallet import expire_alpha_subscriptions
 
@@ -343,6 +344,12 @@ async def wallet_nonce_cleanup_loop():
         cleanup_wallet_nonces()
         await asyncio.sleep(15 * 60)
 
+
+async def privacy_retention_loop():
+    while True:
+        await asyncio.sleep(24 * 60 * 60)
+        await asyncio.to_thread(run_retention)
+
 @qr_app.on_event("startup")
 async def start_wallet_nonce_cleanup():
     # Loudly flag non-persistent storage at boot. The leaderboard, sessions and
@@ -358,8 +365,11 @@ async def start_wallet_nonce_cleanup():
             "hint": "Mount a Render disk at /var/data (or set DATA_DIR to a durable path) so the leaderboard and scan history survive deploys.",
         })
     cleanup_persistent_sessions()
+    scrub_legacy_scan_storage()
+    run_retention()
     expire_alpha_subscriptions()
     asyncio.create_task(wallet_nonce_cleanup_loop())
+    asyncio.create_task(privacy_retention_loop())
     asyncio.create_task(refresh_feed_loop())
 
 @qr_app.middleware("http")

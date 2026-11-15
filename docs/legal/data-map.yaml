@@ -3,11 +3,12 @@
   "_status": "Phase 0 engineering inventory, not an approved privacy-policy statement",
   "_source": "Isolated SQLite schema generated from hackabull/schema.py at Phase 1 age-gate branch; no production records read",
   "_known_gaps": [
-    "Retention periods have not been tied to deletion jobs.",
-    "URL query strings can be stored or sent to reputation providers.",
-    "Audit logs and user records store raw IP addresses.",
-    "Data-request export and deletion do not yet cover every table, including new payment consent records.",
-    "Go Ghost status tables exist in code but are disabled and are not created at startup."
+    "Account inactivity deletion is not automated; the current public two-year promise requires correction or a safe job after billing/legal-hold review.",
+    "Data-request export, correction and deletion do not yet cover every personal-data table, Stripe record or backup.",
+    "Stored scan URLs now drop query and fragment, but external Web Risk requests still receive the full URL when enabled; reported URLs, fraud metadata and historic backups require separate review.",
+    "Audit logs and user records can store raw IP addresses.",
+    "Go Ghost status tables exist in code but are disabled and are not created at startup.",
+    "Field-specific purposes, recipients, legal basis and retention are not yet mapped; the table descriptions below are an engineering inventory."
   ],
   "tables": {
     "abuse_flags": {
@@ -760,5 +761,11 @@
       "confirmed_at",
       "next_check_at"
     ]
+  },
+  "_phase4a_controls": {
+    "scan_storage": "New scan references strip query and fragment; result cache uses HMAC; startup scrubs legacy scan tables. See phase-4-privacy-operations.md.",
+    "consent_retention": "Published five-calendar-year consent retention is now enforced at startup and daily, except under explicit RETENTION_LEGAL_HOLD.",
+    "cache_retention": "Result-cache rows expire after 24 hours.",
+    "limits": "This is not a complete field-level policy or data-rights implementation; billing and backups need owner/counsel review."
   }
 }

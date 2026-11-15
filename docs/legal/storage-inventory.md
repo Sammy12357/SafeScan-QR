@@ -2,6 +2,8 @@
 
 Baseline: repository commit `a2ce01b`, reviewed 2026-11-15. This records keys the application code reads or writes; it does not establish what a particular browser, Google, CDN, or hosting provider stores. Production environment settings and browser traffic still need verification. Server-side database and upload fields belong in `data-map.yaml`.
 
+Phase 4 adds `tests/test_legal_privacy_gate.py` to catch newly written literal browser keys, the currently known dynamic key families, server cookie-name constants and a denylist of unreviewed tracker hosts. This is a source-level guard, not a complete browser traffic capture. Phase 1's pending-age/adult cookies and any later keys must be added here when its branch is integrated.
+
 ## First-party cookies
 
 | Name | Set when / purpose | Browser lifetime | Attributes and source |
@@ -45,5 +47,6 @@ No application JavaScript cookie setter was found. Provider cookies, including c
 - `safeScanConsent` is described there as lasting 12 months, but the code does not delete it at 12 months; it only re-prompts after 365 days. `safeScanConsentId` has no expiry in code.
 - The banner (`templates/footer.html`) says “optional analytics.” The identified opt-in analytics path is scanner performance counts in `static/qr-camera.js`, sent only when a fresh `all` choice exists. Other analytics tooling and third-party cookies require runtime verification.
 - Normal camera analysis uses in-memory frames; optional retained uploads use server storage (`hackabull/history.py` `persist_qr_upload`, `storage.py`) and are outside this browser-key list. Browser cache, provider cookies and browser permissions are also outside this list.
+- The result cache is a server-side SQLite table, not browser storage. Phase 4 replaces its raw URL key with an HMAC and expires rows after 24 hours. Consent proofs in SQLite are retained for the policy's stated five-year period unless a documented legal hold suspends deletion. See `docs/legal/phase-4-privacy-operations.md`.
 
 Update this inventory and the published Cookie Policy together whenever storage behavior changes. A browser test should enumerate cookies, `localStorage`, and `sessionStorage` after representative guest, sign-in, scan, Go Ghost, admin and payment flows.

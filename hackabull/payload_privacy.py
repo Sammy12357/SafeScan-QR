@@ -12,10 +12,12 @@ import hmac
 import os
 import re
 import secrets
+from urllib.parse import urlsplit, urlunsplit
 
 
 _PROCESS_FINGERPRINT_KEY = secrets.token_bytes(32)
 _REDACTED_SUFFIX = " QR payload redacted"
+_URL_IN_TEXT = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
 
 
 def is_web_url_payload(value: str, payload_type: str | None = None) -> bool:
@@ -38,12 +40,45 @@ def redacted_scan_label(payload_type: str | None = None) -> str:
     return f"[{_payload_label(payload_type)}{_REDACTED_SUFFIX}]"
 
 
+def storage_url_without_query(value: str) -> str:
+    """Keep a visible destination while discarding query, fragment and userinfo.
+
+    A query can contain auth codes, customer IDs or signed URLs. It remains in
+    memory for the current threat check and response, but never in the stored
+    scan destination. URLs with userinfo cannot be represented safely here.
+    """
+    try:
+        parsed = urlsplit(value)
+        if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+            return redacted_scan_label("URL")
+        if parsed.username is not None or parsed.password is not None:
+            return redacted_scan_label("URL")
+        return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))[:2048]
+    except ValueError:
+        return redacted_scan_label("URL")
+
+
+def minimize_url_text(value: str) -> str:
+    """Remove URL query values from short, persisted scan explanations."""
+    def replace(match):
+        original = match.group(0)
+        suffix = original[len(original.rstrip(".,;)]}")):]
+        return storage_url_without_query(original.rstrip(".,;)]}")) + suffix
+    return _URL_IN_TEXT.sub(replace, value or "")
+
+
 def _fingerprint_key() -> bytes:
     for name in ("QR_PAYLOAD_FINGERPRINT_KEY", "AIRDROP_ADMIN_SECRET"):
         candidate = os.getenv(name, "").encode("utf-8")
         if len(candidate) >= 32:
             return candidate
     return _PROCESS_FINGERPRINT_KEY
+
+
+def private_result_cache_key(raw_url: str) -> str:
+    """A keyed cache index; raw query strings never enter SQLite cache keys."""
+    digest = hmac.new(_fingerprint_key(), b"safescan-result-cache-v1\0" + raw_url.encode("utf-8"), hashlib.sha256).hexdigest()
+    return "hmac:" + digest
 
 
 def scan_storage_reference(raw_payload: str, owner: str = "", payload_type: str | None = None) -> str:
@@ -57,7 +92,7 @@ def scan_storage_reference(raw_payload: str, owner: str = "", payload_type: str 
     if is_redacted_scan_reference(raw_payload):
         return raw_payload
     if is_web_url_payload(raw_payload, payload_type):
-        return raw_payload[:2048]
+        return storage_url_without_query(raw_payload)
     message = b"safescan-private-qr-v1\0" + (owner or "").encode("utf-8") + b"\0" + raw_payload.encode("utf-8")
     fingerprint = hmac.new(_fingerprint_key(), message, hashlib.sha256).hexdigest()[:32]
     return f"[{_payload_label(payload_type)}{_REDACTED_SUFFIX}; ref {fingerprint}]"
@@ -66,8 +101,10 @@ def scan_storage_reference(raw_payload: str, owner: str = "", payload_type: str 
 def safe_legacy_scan_value(value: str, payload_type: str | None = None) -> str:
     """Hide pre-fix non-URL values in history and API serialization."""
     value = value or ""
-    if is_redacted_scan_reference(value) or is_web_url_payload(value, payload_type):
+    if is_redacted_scan_reference(value):
         return value
+    if is_web_url_payload(value, payload_type):
+        return storage_url_without_query(value)
     return redacted_scan_label(payload_type)
 
 

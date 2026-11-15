@@ -69,6 +69,9 @@ def init_db():
     conn = sqlite3.connect(database_path())
     cursor = conn.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS scan_results (url TEXT PRIMARY KEY, status TEXT, timestamp TEXT)''')
+    # Earlier result-cache rows used raw URLs, including possible auth query
+    # values. The cache is disposable, so purge these on upgrade.
+    cursor.execute("DELETE FROM scan_results WHERE url NOT LIKE 'hmac:%'")
     cursor.execute('''CREATE TABLE IF NOT EXISTS domain_age_cache (
                         domain TEXT PRIMARY KEY,
                         creation_date TEXT,
