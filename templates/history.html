@@ -17,6 +17,7 @@
     <p class="history-eyebrow">SafeScan QR</p>
     <h1>Your Scan History</h1>
     <p class="history-sub">{{ email if email else "Sign in to view saved scans" }}</p>
+    {% if email %}<p class="history-sub">Saved scores are snapshots. The destination and available checks may have changed since each scan.</p>{% endif %}
 
     {% if not email %}
       {{ empty_state(icon='lock', title='Sign in to see your scans', body='Your saved scan history is linked to your account.', action_label='Sign in', action_href='/login') }}

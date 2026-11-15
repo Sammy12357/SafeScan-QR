@@ -502,9 +502,9 @@ async def risk_engine_page(request: Request):
       <section>
         <h3>Score bands</h3>
         <ul>
-          <li><strong>0-34 SAFE:</strong> no major suspicious indicators were found and required checks completed.</li>
-          <li><strong>35-79 CAUTION:</strong> suspicious signals or incomplete checks need review.</li>
-          <li><strong>80-100 MALICIOUS:</strong> high-risk signals indicate likely phishing, malware, credential theft, or wallet drain behavior.</li>
+          <li><strong>0-34 Lower risk score:</strong> completed checks found no known threat match at scan time; a link may change later.</li>
+          <li><strong>35-79 Needs review:</strong> suspicious signals or incomplete checks need independent review.</li>
+          <li><strong>80-100 High-risk indicators:</strong> signals may indicate phishing, malware, credential theft, or wallet drain behavior.</li>
         </ul>
       </section>
       <section>

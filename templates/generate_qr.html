@@ -18,7 +18,7 @@
     <main>
       <section class="generate-qr-panel" id="generate-qr-section">
         <div class="panel-header"><div><p class="eyebrow">SafeScan Generator</p><h2>Generate a screened QR</h2></div></div>
-        <p class="generate-qr-copy">Paste a web URL. SafeScan checks it before creating the QR and rejects links it cannot clear. The logo identifies where the QR was generated; it is not a permanent safety guarantee.</p>
+        <p class="generate-qr-copy">Paste a web URL. SafeScan creates the QR only when its configured checks complete with no known threat match at that time. The logo identifies the generator; it does not endorse the destination. A destination can change later.</p>
         <div class="generate-qr-form-row">
           <input id="generateQrUrlInput" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://example.com">
           <button id="generateQrButton" type="button" class="primary-button">Generate QR</button>
