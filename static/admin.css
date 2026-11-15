@@ -1,3 +1,5 @@
+@import url("/static/styles-states.css?v=ui-states-v1");
+
 :root {
   color-scheme: dark;
   /* Admin uses the same spacing scale as the public site. */

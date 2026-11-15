@@ -1,0 +1,76 @@
+/* Shared empty, loading, error and notice components. Spacing uses the site
+   scale; colours inherit the public or admin theme without a new palette. */
+.state {
+  --state-surface: var(--panel, var(--admin-surface));
+  --state-line: var(--line, var(--admin-line));
+  --state-text: var(--text, var(--admin-text));
+  --state-muted: var(--muted, var(--admin-muted));
+  --state-accent: var(--accent, var(--admin-accent));
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: var(--space-4);
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-8);
+  border: 1px solid var(--state-line);
+  border-radius: var(--radius, 8px);
+  background: var(--state-surface);
+  color: var(--state-text);
+  text-align: center;
+}
+.state-compact { padding: var(--space-5); gap: var(--space-3); }
+.state-icon { width: 36px; height: 36px; color: var(--state-accent); }
+.state-compact .state-icon { width: 28px; height: 28px; }
+.state-title { margin: 0; font-size: clamp(1.1rem, 2vw, 1.4rem); line-height: 1.3; }
+.state-body { max-width: 52ch; margin: 0; color: var(--state-muted); line-height: 1.5; }
+.state-actions { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-2); }
+.state-actions > a, .state-actions > button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: var(--space-3) var(--space-5); }
+.state-ref { margin: var(--space-2) 0 0; color: var(--state-muted); font-size: .8rem; }
+.state-error .state-icon, .notice-danger .state-icon { color: var(--danger, var(--admin-red)); }
+.state-loading .state-icon { color: var(--state-accent); }
+.state-loading[hidden] { display: none; }
+.state-spinner, .button-spinner {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--state-line, currentColor);
+  border-top-color: var(--state-accent, currentColor);
+  border-radius: 50%;
+  animation: state-spin .8s linear infinite;
+}
+.button-spinner { width: 16px; height: 16px; margin-right: var(--space-2); border-color: currentColor; border-top-color: transparent; vertical-align: middle; }
+@keyframes state-spin { to { transform: rotate(360deg); } }
+.skeleton { display: grid; gap: var(--space-3); width: min(100%, 560px); margin-top: var(--space-3); }
+.skeleton-row { display: flex; gap: var(--space-3); align-items: center; }
+.skeleton-line { display: block; height: 14px; flex: 1; border-radius: 4px; background: var(--state-line); opacity: .65; animation: skeleton-pulse 1.5s ease-in-out infinite; }
+.skeleton-line:last-child:not(:first-child) { flex: .4; }
+@keyframes skeleton-pulse { 50% { opacity: .3; } }
+.notice {
+  --notice-color: var(--accent, var(--admin-accent));
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--notice-color);
+  border-radius: var(--radius, 8px);
+  background: var(--panel, var(--admin-surface));
+  color: var(--text, var(--admin-text));
+}
+.notice-icon { width: 20px; height: 20px; flex: none; color: var(--notice-color); }
+.notice-body { margin: 0; line-height: 1.5; }
+.notice-info { --notice-color: var(--blue, var(--admin-accent)); }
+.notice-success { --notice-color: var(--safe, var(--admin-safe)); }
+.notice-warning { --notice-color: var(--warning, var(--admin-warning)); }
+.notice-danger { --notice-color: var(--danger, var(--admin-red)); }
+.state-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.states-gallery { display: grid; gap: var(--space-5); }
+.states-gallery > h1, .states-gallery > h2, .states-gallery > p { margin: 0; }
+.states-gallery > h2 { margin-top: var(--space-8); }
+.states-gallery-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); align-items: start; gap: var(--space-5); }
+.states-gallery-notices { display: grid; gap: var(--space-3); }
+.states-gallery-controls { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.states-gallery-controls > button { min-height: 44px; padding: var(--space-3) var(--space-5); border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); cursor: pointer; }
+@media (prefers-reduced-motion: reduce) {
+  .state-spinner, .button-spinner, .skeleton-line { animation: none; }
+}
