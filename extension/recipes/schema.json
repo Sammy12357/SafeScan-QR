@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sqafe.com/schemas/go-ghost-recipe-v1.json",
+  "title": "Go Ghost locally bundled broker recipe",
+  "description": "A recipe is inert until bundled into a reviewed extension release. Profile values may only be used in form fields, never in URLs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "group", "domains", "search", "optOut"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "id": {"$ref": "#/$defs/id"},
+    "group": {"$ref": "#/$defs/id"},
+    "domains": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^(?![0-9]+(?:\\.[0-9]+){3}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$", "maxLength": 253}
+    },
+    "search": {"$ref": "#/$defs/steps"},
+    "optOut": {"$ref": "#/$defs/steps"}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{1,63}$"},
+    "selector": {"type": "string", "minLength": 1, "maxLength": 256, "not": {"pattern": "[{}]"}},
+    "fixedUrl": {"type": "string", "format": "uri", "pattern": "^https://[^/?#]+/[^?#]*$", "maxLength": 2048},
+    "steps": {
+      "type": "array", "minItems": 1, "maxItems": 64,
+      "items": {"oneOf": [
+        {"type": "object", "additionalProperties": false, "required": ["op", "url"], "properties": {"op": {"const": "goto"}, "url": {"$ref": "#/$defs/fixedUrl"}}},
+        {"type": "object", "additionalProperties": false, "required": ["op", "selector", "field"], "properties": {"op": {"const": "fill"}, "selector": {"$ref": "#/$defs/selector"}, "field": {"enum": ["firstName", "lastName", "middleName", "city", "state", "email", "birthYear", "streetAddress", "phone"]}}},
+        {"type": "object", "additionalProperties": false, "required": ["op", "selector", "optionText"], "properties": {"op": {"const": "select"}, "selector": {"$ref": "#/$defs/selector"}, "optionText": {"type": "string", "minLength": 1, "maxLength": 120}}},
+        {"type": "object", "additionalProperties": false, "required": ["op", "selector", "meaning"], "properties": {"op": {"const": "check"}, "selector": {"$ref": "#/$defs/selector"}, "meaning": {"enum": ["terms_of_removal", "i_am_the_subject"]}}},
+        {"type": "object", "additionalProperties": false, "required": ["op", "selector"], "properties": {"op": {"const": "click"}, "selector": {"$ref": "#/$defs/selector"}}},
+        {"type": "object", "additionalProperties": false, "required": ["op", "selector"], "properties": {"op": {"const": "waitFor"}, "selector": {"$ref": "#/$defs/selector"}}},
+        {"type": "object", "additionalProperties": false, "required": ["op", "selector", "text"], "properties": {"op": {"const": "expect"}, "selector": {"$ref": "#/$defs/selector"}, "text": {"type": "string", "minLength": 1, "maxLength": 256}}},
+        {"type": "object", "additionalProperties": false, "required": ["op"], "properties": {"op": {"const": "captchaPause"}}},
+        {"type": "object", "additionalProperties": false, "required": ["op", "selector", "noResultsSelector"], "properties": {"op": {"const": "pickListing"}, "selector": {"$ref": "#/$defs/selector"}, "noResultsSelector": {"$ref": "#/$defs/selector"}}},
+        {"type": "object", "additionalProperties": false, "required": ["op", "selector", "as", "attribute"], "properties": {"op": {"const": "extract"}, "selector": {"$ref": "#/$defs/selector"}, "as": {"type": "string", "pattern": "^[a-z][a-zA-Z0-9]{0,39}$"}, "attribute": {"enum": ["text", "href"]}}}
+      ]}
+    }
+  }
+}
