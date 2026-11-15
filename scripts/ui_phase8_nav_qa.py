@@ -45,11 +45,13 @@ with tempfile.TemporaryDirectory(prefix="safescan-nav-qa-") as temp:
             assert page.evaluate("document.activeElement?.classList.contains('sidenav-toggle')")
             print("PASS explicit drawer close restores Menu focus", flush=True)
 
+            page.evaluate("history.replaceState(null, '', '/')")
             menu.click()
             scanner = page.locator("#sideNav").get_by_role("link", name="Scanner")
             scanner.focus()
             page.keyboard.press("Enter")
             page.wait_for_function("() => document.activeElement?.id === 'scannerTitle'")
+            assert page.evaluate("location.hash") == "#scanner"
             assert not page.locator("body").evaluate("element => element.classList.contains('sidenav-open')")
             print("PASS drawer scanner link closes without returning focus to Menu", flush=True)
 
