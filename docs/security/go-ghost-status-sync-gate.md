@@ -17,12 +17,14 @@ the PeopleConnect brands because those opt-outs require self-submission.
 
 Client events are claims. `recheck_absent` becomes
 `client_recheck_absent`; no client event can create an independently verified
-removal. The page's draft `go-ghost-state.js` still uses
-`verified_removed` for a client recheck and must be aligned before sync is
-enabled. `confirmed_at` likewise records a client-reported confirmation.
+removal. The page's local state core now uses `client_recheck_absent` too.
+The local UI and future sync mapping still need an end-to-end review before
+sync is enabled. `confirmed_at` likewise records a client-reported
+confirmation.
 Client timestamps are ignored; an expected server revision is required for
 each update. Device progress must not be automatically uploaded from an
-unowned or older `localStorage` entry after sign-in.
+unowned or older `localStorage` entry after sign-in. The current page erases
+unowned legacy keys; sync must never recreate or import them.
 
 Before enabling any route:
 
