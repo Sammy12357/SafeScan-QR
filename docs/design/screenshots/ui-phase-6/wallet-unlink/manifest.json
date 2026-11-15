@@ -1,0 +1,15 @@
+{
+  "before_commit": "f0ff730",
+  "after_commit": "1cd20a0",
+  "fixture": "GET /api/wallet = 503; DELETE /api/wallet = 200 success; injected provider.disconnect rejects; synthetic signed-in account; local MOCK_MODE servers and temporary SQLite",
+  "widths": [
+    375,
+    768,
+    1440
+  ],
+  "themes": [
+    "dark",
+    "light"
+  ],
+  "viewport_height": 900
+}

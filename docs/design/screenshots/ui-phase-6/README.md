@@ -54,3 +54,17 @@ python docs/design/screenshots/ui-phase-6/capture_recovery.py --before-root ../s
 ```
 
 The script asserts each UI state before saving it. It starts both servers locally with isolated environment variables, induces `/api/me` network failure or a consent 503 response where needed, and blocks only the browser’s consent storage for the successful-save case. The generated [manifest](recovery/manifest.json) records the source commits and capture matrix.
+
+## Wallet provider failure after server unlink
+
+The pair below compares the provider failure path before the authoritative unlink fix (`f0ff730`) and after it (`1cd20a0`). In both runs, the initial wallet status request returns 503, the synthetic provider's `disconnect()` rejects, and the local server DELETE fixture returns `200 {"success":true}`. Before the fix, the DELETE is never sent and the dialog reports failure. After the fix, SafeScan removes the server link first and warns separately that the wallet app may still show the site as connected.
+
+| State | Dark 375 | Dark 768 | Dark 1440 | Light 375 | Light 768 | Light 1440 |
+|---|---|---|---|---|---|---|
+| Provider disconnect rejects | [before](wallet-unlink/before/dark/375/provider_failure.jpg) / [after](wallet-unlink/after/dark/375/provider_failure.jpg) | [before](wallet-unlink/before/dark/768/provider_failure.jpg) / [after](wallet-unlink/after/dark/768/provider_failure.jpg) | [before](wallet-unlink/before/dark/1440/provider_failure.jpg) / [after](wallet-unlink/after/dark/1440/provider_failure.jpg) | [before](wallet-unlink/before/light/375/provider_failure.jpg) / [after](wallet-unlink/after/light/375/provider_failure.jpg) | [before](wallet-unlink/before/light/768/provider_failure.jpg) / [after](wallet-unlink/after/light/768/provider_failure.jpg) | [before](wallet-unlink/before/light/1440/provider_failure.jpg) / [after](wallet-unlink/after/light/1440/provider_failure.jpg) |
+
+### Local capture fixture
+
+Use detached worktrees at `f0ff730` and `1cd20a0`. For each worktree, launch `uvicorn hackabull:qr_app` on a free localhost port with `isolated_server_env()` from `scripts/ui_screenshots.py`; that helper enables `MOCK_MODE`, a temporary SQLite database, and empty provider credentials. Create one synthetic member session with `context_for()` from the same file. Block browser requests outside localhost.
+
+For each 375, 768, and 1440 CSS pixel viewport at 900 px height, and each dark/light theme: set `safescan_theme` and a fresh essential-only `safeScanConsent` in browser storage; inject `window.phantom.solana` with `isPhantom: true` and `disconnect: () => Promise.reject(new Error('Synthetic wallet provider failure'))`. Route `GET /api/wallet` to HTTP 503 and `DELETE /api/wallet` to HTTP 200 with `{"success":true}`. Open `/token`, click `#connectWalletButton`, then `.wallet-disconnect-button`. Wait for the dialog heading “Wallet disconnect failed” before, or “SafeScan link removed” after, then capture the viewport. Assert that the before flow sent no DELETE and the after flow sent exactly one. The [manifest](wallet-unlink/manifest.json) records the inputs.
