@@ -202,6 +202,8 @@ function showConsentBannerIfNeeded() {
   if (gpcEnabled) {
     const acceptAll = cookieConsentBanner.querySelector('[data-consent-choice="all"]');
     if (acceptAll) acceptAll.hidden = true;
+    const managePreferences = cookieConsentBanner.querySelector('[data-consent-choice="custom"]');
+    if (managePreferences) managePreferences.hidden = true;
     const copy = cookieConsentBanner.querySelector(".consent-copy");
     if (copy) copy.textContent = "Global Privacy Control is on. SafeScan will not send optional scanner performance counts. Essential storage remains available for sign-in and preferences.";
   }

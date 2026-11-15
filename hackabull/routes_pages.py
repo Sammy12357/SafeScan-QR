@@ -982,8 +982,10 @@ async def submit_data_request(
 
 @qr_app.post("/api/consent")
 async def log_consent(request: Request, payload: dict = Body(...)):
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Invalid consent choice.")
     consent_type = payload.get("consentType", "essential_only")
-    if consent_type not in {"all", "custom", "essential_only"}:
+    if not isinstance(consent_type, str) or consent_type not in {"all", "custom", "essential_only"}:
         raise HTTPException(status_code=400, detail="Invalid consent choice.")
     if request.headers.get("sec-gpc", "").strip() == "1":
         consent_type = "essential_only"

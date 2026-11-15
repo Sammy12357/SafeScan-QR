@@ -159,6 +159,7 @@ def test_gpc_overrides_prior_all_choice_in_browser_and_server(browser_site):
         page.goto("/", wait_until="domcontentloaded")
         assert page.locator("#cookieConsentBanner").is_visible()
         assert page.locator('[data-consent-choice="all"]').is_hidden()
+        assert page.locator('[data-consent-choice="custom"]').is_hidden()
         assert "Global Privacy Control is on" in page.locator(".consent-copy").inner_text()
         with page.expect_response("**/api/consent") as saved:
             page.locator('[data-consent-choice="essential_only"]').click()
