@@ -60,6 +60,7 @@ from .config import APP_STARTED_AT
 from .config import CLIENT_ID
 from .config import LEGAL_VERSION
 from .config import templates
+from .errors import error_response
 from .history import group_scan_history
 from .history import index_user_context
 from .history import serialize_scan_history_row
@@ -162,13 +163,10 @@ async def api_qr_codes(
     )
 
 @qr_app.get("/api/malicious-qr/image", include_in_schema=False)
-async def api_malicious_qr_image():
+async def api_malicious_qr_image(request: Request):
     """Retired: exact QR images could reveal private URL tokens."""
-    return JSONResponse(
-        {"detail": "Public threat QR images are no longer available."},
-        status_code=410,
-        headers={"Cache-Control": "no-store"},
-    )
+    detail = "Public threat QR images are no longer available."
+    return error_response(request, 410, message=detail, extra={"detail": detail})
 
 @qr_app.get("/malicious-database", response_class=HTMLResponse)
 async def malicious_database_page(request: Request):

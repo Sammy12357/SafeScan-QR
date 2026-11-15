@@ -141,7 +141,7 @@ async def go_ghost_page(request: Request):
     user = get_session_user(request)
     account_id = user.get("google_id") if user else ""
     if user and not account_id:
-        raise SafeScanError("Go Ghost account identity is unavailable.", 503)
+        raise SafeScanError("Go Ghost account identity is unavailable.", 503, code="go_ghost_identity_unavailable")
     response = templates.TemplateResponse("go_ghost.html", {
         "request": request,
         "logged_in": bool(user),
@@ -165,6 +165,7 @@ async def api_go_ghost_removal(request: Request, broker: str, payload: dict = Bo
         raise SafeScanError(
             "Assisted broker submissions are unavailable. Use Search, Opt out, and Copy details to complete the request in your browser.",
             503,
+            code="assisted_brokers_unavailable",
         )
     normalized_broker = (broker or "").strip().lower()
 

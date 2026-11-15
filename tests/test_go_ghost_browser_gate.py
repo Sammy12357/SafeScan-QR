@@ -126,7 +126,7 @@ def test_go_ghost_refuses_authenticated_user_without_owner_id(go_ghost_app, monk
     monkeypatch.setattr(routes, "get_session_user", lambda request: {
         "email": "person@example.com", "role": "user",
     })
-    response = client.get("/go-ghost")
+    response = client.get("/go-ghost", headers={"Accept": "application/json"})
     assert response.status_code == 503
     assert "Go Ghost account identity is unavailable" in response.json()["error"]
 

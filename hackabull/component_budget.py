@@ -13,8 +13,7 @@ import threading
 import time
 from collections import OrderedDict, deque
 
-from fastapi.responses import JSONResponse
-
+from .errors import error_response
 from .request_helpers import request_ip
 
 
@@ -70,9 +69,8 @@ class ComponentBudget:
             exhausted = [hits for hits, limit in budgets if len(hits) >= limit]
             if exhausted:
                 retry_after = max(1, int(max(self.WINDOW_SECONDS - (now - hits[0]) for hits in exhausted)) + 1)
-                return JSONResponse(
-                    {"error": "Too many requests", "retryAfter": retry_after},
-                    status_code=429,
+                return error_response(
+                    request, 429, code="rate_limited", message="Too many requests",
                     headers={"Retry-After": str(retry_after)},
                 )
 

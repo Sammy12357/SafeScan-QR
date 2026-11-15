@@ -52,6 +52,7 @@ import safescan_model_calibration as sm_calibration
 from .audit import SafeScanError
 from .audit import audit_log
 from .audit import now_iso
+from .errors import error_response
 from .config import RATE_LIMITS
 from .lowlevel import normalize_url
 from .request_helpers import make_id
@@ -71,10 +72,9 @@ def enforce_rate_limit(request, bucket, limit, window_seconds, user_key=None):
     if len(hits) >= limit:
         retry_after = max(1, int(window_seconds - (now - hits[0])))
         audit_log("auth.rate_limited", request=request, metadata={"bucket": bucket, "retryAfter": retry_after})
-        return JSONResponse(
-            {"error": "Too many requests", "retryAfter": retry_after},
-            status_code=429,
-            headers={"Retry-After": str(retry_after)}
+        return error_response(
+            request, 429, code="rate_limited", message="Too many requests",
+            headers={"Retry-After": str(retry_after)},
         )
     hits.append(now)
     RATE_LIMITS[key] = hits
