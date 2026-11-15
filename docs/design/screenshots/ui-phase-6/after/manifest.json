@@ -1,6 +1,6 @@
 {
-  "source_commit": "8d99c8c",
-  "captured_at": "2026-11-15T05:13:24.636539+00:00",
+  "source_commit": "ab46275",
+  "captured_at": "2026-11-15T06:21:49.620263+00:00",
   "mode": "local MOCK_MODE with throwaway SQLite",
   "entries": [
     {
@@ -74,6 +74,78 @@
       "status": 200,
       "title": "SafeScan QR",
       "file": "light/1440/home.jpg"
+    },
+    {
+      "view": "cookie_preferences",
+      "requested_path": "/",
+      "final_path": "/",
+      "audience": "guest",
+      "theme": "dark",
+      "rendered_theme": "dark",
+      "width": 375,
+      "status": 200,
+      "title": "SafeScan QR",
+      "file": "dark/375/cookie_preferences.jpg"
+    },
+    {
+      "view": "cookie_preferences",
+      "requested_path": "/",
+      "final_path": "/",
+      "audience": "guest",
+      "theme": "dark",
+      "rendered_theme": "dark",
+      "width": 768,
+      "status": 200,
+      "title": "SafeScan QR",
+      "file": "dark/768/cookie_preferences.jpg"
+    },
+    {
+      "view": "cookie_preferences",
+      "requested_path": "/",
+      "final_path": "/",
+      "audience": "guest",
+      "theme": "dark",
+      "rendered_theme": "dark",
+      "width": 1440,
+      "status": 200,
+      "title": "SafeScan QR",
+      "file": "dark/1440/cookie_preferences.jpg"
+    },
+    {
+      "view": "cookie_preferences",
+      "requested_path": "/",
+      "final_path": "/",
+      "audience": "guest",
+      "theme": "light",
+      "rendered_theme": "light",
+      "width": 375,
+      "status": 200,
+      "title": "SafeScan QR",
+      "file": "light/375/cookie_preferences.jpg"
+    },
+    {
+      "view": "cookie_preferences",
+      "requested_path": "/",
+      "final_path": "/",
+      "audience": "guest",
+      "theme": "light",
+      "rendered_theme": "light",
+      "width": 768,
+      "status": 200,
+      "title": "SafeScan QR",
+      "file": "light/768/cookie_preferences.jpg"
+    },
+    {
+      "view": "cookie_preferences",
+      "requested_path": "/",
+      "final_path": "/",
+      "audience": "guest",
+      "theme": "light",
+      "rendered_theme": "light",
+      "width": 1440,
+      "status": 200,
+      "title": "SafeScan QR",
+      "file": "light/1440/cookie_preferences.jpg"
     },
     {
       "view": "history_first_use",
@@ -292,6 +364,78 @@
       "file": "light/1440/malicious_database.jpg"
     },
     {
+      "view": "go_ghost_guest",
+      "requested_path": "/go-ghost",
+      "final_path": "/go-ghost",
+      "audience": "guest",
+      "theme": "dark",
+      "rendered_theme": "dark",
+      "width": 375,
+      "status": 200,
+      "title": "Go Ghost | SafeScan QR",
+      "file": "dark/375/go_ghost_guest.jpg"
+    },
+    {
+      "view": "go_ghost_guest",
+      "requested_path": "/go-ghost",
+      "final_path": "/go-ghost",
+      "audience": "guest",
+      "theme": "dark",
+      "rendered_theme": "dark",
+      "width": 768,
+      "status": 200,
+      "title": "Go Ghost | SafeScan QR",
+      "file": "dark/768/go_ghost_guest.jpg"
+    },
+    {
+      "view": "go_ghost_guest",
+      "requested_path": "/go-ghost",
+      "final_path": "/go-ghost",
+      "audience": "guest",
+      "theme": "dark",
+      "rendered_theme": "dark",
+      "width": 1440,
+      "status": 200,
+      "title": "Go Ghost | SafeScan QR",
+      "file": "dark/1440/go_ghost_guest.jpg"
+    },
+    {
+      "view": "go_ghost_guest",
+      "requested_path": "/go-ghost",
+      "final_path": "/go-ghost",
+      "audience": "guest",
+      "theme": "light",
+      "rendered_theme": "light",
+      "width": 375,
+      "status": 200,
+      "title": "Go Ghost | SafeScan QR",
+      "file": "light/375/go_ghost_guest.jpg"
+    },
+    {
+      "view": "go_ghost_guest",
+      "requested_path": "/go-ghost",
+      "final_path": "/go-ghost",
+      "audience": "guest",
+      "theme": "light",
+      "rendered_theme": "light",
+      "width": 768,
+      "status": 200,
+      "title": "Go Ghost | SafeScan QR",
+      "file": "light/768/go_ghost_guest.jpg"
+    },
+    {
+      "view": "go_ghost_guest",
+      "requested_path": "/go-ghost",
+      "final_path": "/go-ghost",
+      "audience": "guest",
+      "theme": "light",
+      "rendered_theme": "light",
+      "width": 1440,
+      "status": 200,
+      "title": "Go Ghost | SafeScan QR",
+      "file": "light/1440/go_ghost_guest.jpg"
+    },
+    {
       "view": "generate_qr",
       "requested_path": "/generate-qr",
       "final_path": "/generate-qr",
@@ -362,6 +506,78 @@
       "status": 200,
       "title": "QR Generator | SafeScan QR",
       "file": "light/1440/generate_qr.jpg"
+    },
+    {
+      "view": "token_guest",
+      "requested_path": "/token",
+      "final_path": "/token",
+      "audience": "guest",
+      "theme": "dark",
+      "rendered_theme": "dark",
+      "width": 375,
+      "status": 200,
+      "title": "SQR Token & Airdrop | SafeScan QR",
+      "file": "dark/375/token_guest.jpg"
+    },
+    {
+      "view": "token_guest",
+      "requested_path": "/token",
+      "final_path": "/token",
+      "audience": "guest",
+      "theme": "dark",
+      "rendered_theme": "dark",
+      "width": 768,
+      "status": 200,
+      "title": "SQR Token & Airdrop | SafeScan QR",
+      "file": "dark/768/token_guest.jpg"
+    },
+    {
+      "view": "token_guest",
+      "requested_path": "/token",
+      "final_path": "/token",
+      "audience": "guest",
+      "theme": "dark",
+      "rendered_theme": "dark",
+      "width": 1440,
+      "status": 200,
+      "title": "SQR Token & Airdrop | SafeScan QR",
+      "file": "dark/1440/token_guest.jpg"
+    },
+    {
+      "view": "token_guest",
+      "requested_path": "/token",
+      "final_path": "/token",
+      "audience": "guest",
+      "theme": "light",
+      "rendered_theme": "light",
+      "width": 375,
+      "status": 200,
+      "title": "SQR Token & Airdrop | SafeScan QR",
+      "file": "light/375/token_guest.jpg"
+    },
+    {
+      "view": "token_guest",
+      "requested_path": "/token",
+      "final_path": "/token",
+      "audience": "guest",
+      "theme": "light",
+      "rendered_theme": "light",
+      "width": 768,
+      "status": 200,
+      "title": "SQR Token & Airdrop | SafeScan QR",
+      "file": "light/768/token_guest.jpg"
+    },
+    {
+      "view": "token_guest",
+      "requested_path": "/token",
+      "final_path": "/token",
+      "audience": "guest",
+      "theme": "light",
+      "rendered_theme": "light",
+      "width": 1440,
+      "status": 200,
+      "title": "SQR Token & Airdrop | SafeScan QR",
+      "file": "light/1440/token_guest.jpg"
     },
     {
       "view": "admin_users",
