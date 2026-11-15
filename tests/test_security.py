@@ -198,7 +198,8 @@ def test_go_ghost_page_prompts_before_workflow(security_app):
     response = client.get("/go-ghost")
 
     assert response.status_code == 200
-    assert "Do you want your personal data taken off the internet?" in response.text
+    assert 'id="goGhostConsentTitle"' in response.text
+    assert 'id="startGoGhostButton"' in response.text
     assert "id=\"goGhostWorkspace\" hidden" in response.text
     assert "Never provide SSN" in response.text
     assert "broker-card" not in response.text

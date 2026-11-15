@@ -98,6 +98,30 @@ def test_production_page_keeps_manual_opt_out_controls(go_ghost_app):
     assert 'id="startGhostQueueButton"' not in response.text
     assert 'id="goGhostScopeAutoFillButton"' not in response.text
     assert "Backend does" not in response.text
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+@pytest.mark.parametrize("go_ghost_app", [True], indirect=True)
+def test_go_ghost_browser_scope_uses_session_owner_id(go_ghost_app, monkeypatch):
+    client, routes, _ = go_ghost_app
+    monkeypatch.setattr(routes, "get_session_user", lambda request: {
+        "google_id": "account-a", "email": "person@example.com", "role": "user",
+    })
+    response = client.get("/go-ghost")
+    assert response.status_code == 200
+    assert 'data-account-id="account-a"' in response.text
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+@pytest.mark.parametrize("go_ghost_app", [True], indirect=True)
+def test_go_ghost_refuses_authenticated_user_without_owner_id(go_ghost_app, monkeypatch):
+    client, routes, _ = go_ghost_app
+    monkeypatch.setattr(routes, "get_session_user", lambda request: {
+        "email": "person@example.com", "role": "user",
+    })
+    response = client.get("/go-ghost")
+    assert response.status_code == 503
+    assert "Go Ghost account identity is unavailable" in response.json()["error"]
 
 
 @pytest.mark.parametrize("go_ghost_app", [True], indirect=True)

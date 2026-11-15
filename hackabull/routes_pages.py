@@ -129,15 +129,21 @@ async def api_go_ghost_brokers():
 @qr_app.get("/go-ghost", response_class=HTMLResponse)
 async def go_ghost_page(request: Request):
     user = get_session_user(request)
-    return templates.TemplateResponse("go_ghost.html", {
+    account_id = user.get("google_id") if user else ""
+    if user and not account_id:
+        raise SafeScanError("Go Ghost account identity is unavailable.", 503)
+    response = templates.TemplateResponse("go_ghost.html", {
         "request": request,
         "logged_in": bool(user),
         "email": user["email"] if user else "",
         "go_ghost_brokers": load_brokers(),
+        "go_ghost_account_id": account_id,
         "browser_automation_available": GO_GHOST_BROWSER_AUTOMATION_AVAILABLE,
         "version": LEGAL_VERSION,
         **index_user_context(user),
     })
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 @qr_app.post("/api/go-ghost/removals/{broker}")
 async def api_go_ghost_removal(request: Request, broker: str, payload: dict = Body(...)):

@@ -5,7 +5,7 @@ const vm = require('node:vm');
 function makeElement() {
   const classes = new Set();
   return {
-    dataset: {}, hidden: false, value: '', innerHTML: '', textContent: '',
+    dataset: {}, hidden: false, value: '', checked: false, disabled: false, innerHTML: '', textContent: '',
     handlers: {},
     classList: {
       add: name => classes.add(name),
@@ -31,26 +31,37 @@ const ids = [
   'openNextGhostBrokerButton',
   'ghostProgressCount', 'ghostNameInput', 'ghostLocationInput',
   'ghostAddressInput', 'ghostPhoneInput', 'ghostEmailInput',
-  'goGhostDeviceNotice'
+  'goGhostDeviceNotice', 'goGhostLegacyNotice', 'goGhostLegacyActions', 'eraseGhostLegacyButton', 'goGhostSessionNotice',
+  'ghostSubjectSelect', 'addGhostFamilyButton', 'removeGhostSubjectButton',
+  'ghostFamilyAttestationLabel', 'ghostFamilyAttestationInput'
 ];
 const elements = Object.fromEntries(ids.map(id => [id, makeElement()]));
 elements.goGhostBrokerRegistry = makeElement();
 elements.goGhostBrokerRegistry.textContent = fs.readFileSync('data/go_ghost/brokers.json', 'utf8');
 elements.goGhostWorkspace.hidden = true;
 elements.goGhostWorkspace.dataset.browserAutomationAvailable = 'false';
+elements.goGhostWorkspace.dataset.accountId = '';
 elements.goGhostScopeModal.classList.add('hidden');
 let closeFocusCount = 0;
 elements.goGhostScopeModal.querySelector = selector => selector === '.ghost-scope-close'
   ? {focus() { closeFocusCount += 1; }} : null;
 const saved = new Map();
+const sessionSaved = new Map();
 const opened = [];
 const copied = [];
+let nextUuid = 1;
+const storage = map => ({
+  get length() { return map.size; },
+  key: index => [...map.keys()][index] ?? null,
+  getItem: key => map.get(key) ?? null,
+  setItem: (key, value) => map.set(key, value),
+  removeItem: key => map.delete(key)
+});
 const window = {
-  localStorage: {
-    getItem: key => saved.get(key) ?? null,
-    setItem: (key, value) => saved.set(key, value),
-    removeItem: key => saved.delete(key)
-  },
+  localStorage: storage(saved),
+  sessionStorage: storage(sessionSaved),
+  crypto: {randomUUID: () => `00000000-0000-4000-8000-${String(nextUuid++).padStart(12, '0')}`},
+  confirm: () => true,
   matchMedia: () => ({matches: false}),
   addEventListener() {},
   open: url => { opened.push(url); return {opener: null}; }
@@ -58,10 +69,12 @@ const window = {
 const document = {
   getElementById: id => elements[id] || null,
   body: {classList: makeElement().classList},
-  addEventListener() {}
+  addEventListener() {},
+  querySelectorAll: () => []
 };
 const context = vm.createContext({
   document, window, URL, AbortController,
+  fetch: async () => ({status: 401, ok: false}),
   isMobileDevice: () => false,
   showCopyToast: () => {},
   copyTextToClipboard: async value => { copied.push(value); return true; },
@@ -173,18 +186,20 @@ async function main() {
   assert.match(elements.goGhostAutomationRows.innerHTML, /data-ghost-scope="cyberbackgroundchecks"[\s\S]*?No match/);
   assert.equal(vm.runInContext("nextPendingGhostBroker().id", context), 'fastpeoplesearch');
 
-  vm.runInContext(`writeJsonStorage(GO_GHOST_PROGRESS_KEY, {
+  vm.runInContext(`ghostSaveProgress({
     '${lastId}': {submitted: true, removed: true, finishReason: 'No matching profile found.'}
   }); renderGoGhostAutomationScope(); renderGoGhostProgress();`, context);
   assert.equal(elements.ghostProgressCount.textContent, '0 / 18', 'legacy no-match is not a removal');
   assert.match(elements.goGhostAutomationRows.innerHTML, /data-ghost-scope="cyberbackgroundchecks"[\s\S]*?No match/);
   assert.equal(opened.some(url => url.includes('safescan_prefill')), false);
 
-  assert.equal(saved.has('safeScanGoGhostConsent'), true);
+  assert.equal(sessionSaved.has('safeScanGoGhostV2:guest'), true);
+  saved.set('safeScanGoGhostProfile', JSON.stringify({name: 'Legacy Person'}));
   elements.clearGhostDataButton.handlers.click();
-  for (const key of ['safeScanGoGhostProfile', 'safeScanGoGhostProgress', 'safeScanGoGhostConsent']) {
-    assert.equal(saved.has(key), false, `${key} should be cleared`);
-  }
+  assert.equal(saved.has('safeScanGoGhostProfile'), true, 'account clear must not erase unowned legacy data');
+  assert.equal(sessionSaved.has('safeScanGoGhostV2:guest'), false);
+  elements.eraseGhostLegacyButton.handlers.click();
+  assert.equal(saved.has('safeScanGoGhostProfile'), false);
   assert.equal(elements.goGhostWorkspace.hidden, true);
   assert.equal(elements.goGhostConsentModal.classList.contains('hidden'), false);
   assert.equal(elements.ghostNameInput.value, '');

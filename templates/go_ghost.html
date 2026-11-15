@@ -8,7 +8,7 @@
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <title>Go Ghost | SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg?v=rose-theme-v1" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=rose-theme-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=ghost-storage-v1">
 </head>
 <body>
   <div class="page-shell go-ghost-shell">
@@ -27,11 +27,14 @@
       </div>
       <div class="go-ghost-status" aria-label="Go Ghost progress">
         <span id="ghostProgressCount">0 / 0</span>
-        <p>confirmed removals</p>
+        <p>user-confirmed removals</p>
       </div>
     </header>
+    <p id="goGhostSessionNotice" class="go-ghost-copy" role="alert" hidden>Your sign-in changed. Reload this page before using Go Ghost.</p>
+    <p id="goGhostLegacyNotice" class="go-ghost-copy" role="status" hidden>Older Go Ghost details cannot be assigned safely to an account, so they are hidden. You can erase them separately from this browser.</p>
+    <div id="goGhostLegacyActions" class="go-ghost-actions" hidden><button id="eraseGhostLegacyButton" class="secondary-button" type="button">Erase older browser details</button></div>
 
-    <main class="go-ghost-layout" id="goGhostWorkspace" hidden data-browser-automation-available="{{ 'true' if browser_automation_available else 'false' }}">
+    <main class="go-ghost-layout" id="goGhostWorkspace" hidden data-browser-automation-available="{{ 'true' if browser_automation_available else 'false' }}" data-account-id="{{ go_ghost_account_id }}">
       <section class="go-ghost-card result-card-wide">
         <div class="panel-header">
           <div>
@@ -63,26 +66,37 @@
         <p class="go-ghost-copy" role="status">Assisted browser submissions are temporarily unavailable.</p>
         {% endif %}
         <p id="goGhostDeviceNotice" class="go-ghost-device-notice" role="status" aria-live="polite">Desktop layout active.</p>
+        <div class="ghost-subject-switch">
+          <label for="ghostSubjectSelect">Person to check</label>
+          <select id="ghostSubjectSelect" aria-label="Person to check"></select>
+          <button id="addGhostFamilyButton" class="secondary-button" type="button">Add family member</button>
+          <button id="removeGhostSubjectButton" class="secondary-button" type="button">Remove this person</button>
+        </div>
+        <p class="go-ghost-copy">Signed-in profiles stay on this browser. Guest details are kept in this tab's session. Each person has separate progress.</p>
 
         <form id="goGhostProfileForm" class="go-ghost-form go-ghost-keyword-form">
           <label>Full name
-            <input id="ghostNameInput" type="text" autocomplete="name">
+            <input id="ghostNameInput" type="text" autocomplete="name" maxlength="160">
           </label>
           <label>City and state
-            <input id="ghostLocationInput" type="text" autocomplete="address-level2">
+            <input id="ghostLocationInput" type="text" autocomplete="address-level2" maxlength="140">
           </label>
           <label>Street address
-            <input id="ghostAddressInput" type="text" autocomplete="street-address">
+            <input id="ghostAddressInput" type="text" autocomplete="street-address" maxlength="220">
           </label>
           <label>Phone number
-            <input id="ghostPhoneInput" type="tel" autocomplete="tel">
+            <input id="ghostPhoneInput" type="tel" autocomplete="tel" maxlength="80">
           </label>
           <label>Email
-            <input id="ghostEmailInput" type="email" autocomplete="email">
+            <input id="ghostEmailInput" type="email" autocomplete="email" maxlength="180">
+          </label>
+          <label id="ghostFamilyAttestationLabel" class="ghost-family-attestation" hidden>
+            <input id="ghostFamilyAttestationInput" type="checkbox">
+            <span>I confirm I am authorized to help this family member request removal. A broker may require the person to verify directly.</span>
           </label>
           <div class="go-ghost-actions">
             <button class="primary-button" type="submit">{{ 'Update automation scope' if browser_automation_available else 'Update search details' }}</button>
-            <button class="secondary-button" id="clearGhostDataButton" type="button">Clear info</button>
+            <button class="secondary-button" id="clearGhostDataButton" type="button">{{ 'Clear this account’s Go Ghost info' if logged_in else 'Clear guest Go Ghost info' }}</button>
           </div>
         </form>
 
@@ -113,11 +127,11 @@
   <div id="goGhostConsentModal" class="ghost-consent-modal" role="dialog" aria-modal="true" aria-labelledby="goGhostConsentTitle">
     <div class="ghost-consent-card">
       <p class="eyebrow">Confirm intent</p>
-      <h2 id="goGhostConsentTitle">Do you want your personal data taken off the internet?</h2>
+      <h2 id="goGhostConsentTitle">Ready to check people-search listings?</h2>
       {% if browser_automation_available %}
       <p>Go Ghost helps you find broker profiles and submit removals. You will still confirm each request yourself, because many brokers require email verification or CAPTCHA.</p>
       {% else %}
-      <p>Go Ghost helps you find broker profiles and open their opt-out pages. You complete each request in your browser, including any email verification or CAPTCHA.</p>
+      <p>Go Ghost helps you find broker profiles and open their opt-out pages. You complete each request in your browser, including any email verification or CAPTCHA. Family requests may need separate proof of authority.</p>
       {% endif %}
       <div class="ghost-safety-list">
         <span>Use minimum info only</span>
@@ -161,8 +175,8 @@
   <script id="goGhostBrokerRegistry" type="application/json">{{ go_ghost_brokers | tojson }}</script>
   <script src="/static/app-core.js?v=ghost-assist-v1"></script>
   <script src="/static/app-widgets.js?v=ghost-assist-v1"></script>
-  <script src="/static/app-go-ghost.js?v=ghost-registry-v1"></script>
-  <script src="/static/app-go-ghost-ui.js?v=ghost-privacy-v1"></script>
+  <script src="/static/app-go-ghost.js?v=ghost-storage-v1"></script>
+  <script src="/static/app-go-ghost-ui.js?v=ghost-storage-v1"></script>
   <script src="/static/app-generate-qr.js?v=ghost-assist-v1"></script>
 </body>
 </html>
