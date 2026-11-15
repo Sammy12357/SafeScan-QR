@@ -49,6 +49,7 @@ const GoGhostRecipe = (() => {
   function validDomain(domain) {
     return typeof domain === "string" && domain.length <= 253
       && /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/.test(domain)
+      && !/^[0-9]+(?:\.[0-9]+){3}$/.test(domain)
       && domain.split(".").every((part) => part.length <= 63);
   }
 

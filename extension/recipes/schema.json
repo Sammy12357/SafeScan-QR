@@ -15,7 +15,7 @@
       "minItems": 1,
       "maxItems": 8,
       "uniqueItems": true,
-      "items": {"type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$", "maxLength": 253}
+      "items": {"type": "string", "pattern": "^(?![0-9]+(?:\\.[0-9]+){3}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$", "maxLength": 253}
     },
     "search": {"$ref": "#/$defs/steps"},
     "optOut": {"$ref": "#/$defs/steps"}

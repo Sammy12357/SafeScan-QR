@@ -86,6 +86,10 @@ function testRecipeValidation() {
   const foreignUrl = copy(recipe);
   foreignUrl.search[0].url = 'https://broker.example.test.evil.test/search';
   assert.throws(() => Recipe.validateRecipe(foreignUrl), {code: 'off_domain'});
+  const ipHost = copy(recipe);
+  ipHost.domains = ['127.0.0.1'];
+  ipHost.search[0].url = 'https://127.0.0.1/search';
+  assert.throws(() => Recipe.validateRecipe(ipHost), {code: 'invalid_recipe'});
   const insecure = copy(recipe);
   insecure.search[0].url = 'http://broker.example.test/search';
   assert.throws(() => Recipe.validateRecipe(insecure), {code: 'off_domain'});
@@ -168,6 +172,29 @@ async function testInterpreter() {
 
   driver = new FixtureDriver();
   driver.click = () => { driver.url = 'https://broker.example.test/results?first=Jane'; };
+  await assert.rejects(Interpreter.runSteps(recipe, 'search', driver, profile), {code: 'off_domain'});
+
+  const mutable = copy(recipe);
+  driver = new FixtureDriver();
+  driver.lockToHosts = function(domains) {
+    this.domains = domains;
+    this.locked = true;
+    mutable.domains.push('foreign.example.test');
+    mutable.search[0].url = 'https://foreign.example.test/search';
+    mutable.search[1].field = 'email';
+  };
+  const snapshotted = await Interpreter.runSteps(mutable, 'search', driver, profile, {year: 2026});
+  assert.equal(snapshotted.status, 'completed');
+  assert.equal(driver.url, 'https://broker.example.test/results');
+  assert.deepEqual(driver.values[0], ['#first', 'Jane']);
+
+  driver = new FixtureDriver();
+  driver.lockToHosts = function(domains) {
+    this.domains = domains;
+    this.locked = true;
+    domains.push('foreign.example.test');
+  };
+  driver.click = () => { driver.url = 'https://foreign.example.test/results'; };
   await assert.rejects(Interpreter.runSteps(recipe, 'search', driver, profile), {code: 'off_domain'});
 
   driver = new FixtureDriver();

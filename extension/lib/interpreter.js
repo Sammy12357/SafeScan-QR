@@ -39,17 +39,33 @@ const GoGhostInterpreter = (() => {
     Recipe.validateRecipe(recipe);
     if (!["search", "optOut"].includes(phase) || !driver || typeof driver !== "object"
         || !profile || typeof profile !== "object") throw new RecipeError("invalid_recipe");
+    // Revalidate a private copy before the first await. Neither the caller nor
+    // a driver callback may change a checked step or expand the host allowlist.
+    const lockedRecipe = {
+      schemaVersion: recipe.schemaVersion,
+      id: recipe.id,
+      group: recipe.group,
+      domains: [...recipe.domains],
+      search: recipe.search.map((step) => ({...step})),
+      optOut: recipe.optOut.map((step) => ({...step}))
+    };
+    Recipe.validateRecipe(lockedRecipe);
+    Object.freeze(lockedRecipe.domains);
+    for (const step of [...lockedRecipe.search, ...lockedRecipe.optOut]) Object.freeze(step);
+    Object.freeze(lockedRecipe.search);
+    Object.freeze(lockedRecipe.optOut);
+    Object.freeze(lockedRecipe);
     // A real driver must block off-host navigation before any request is sent.
     // The post-step URL check alone is insufficient to protect profile data.
-    await callDriver(driver, "lockToHosts", [...recipe.domains]);
+    await callDriver(driver, "lockToHosts", [...lockedRecipe.domains]);
     const extracted = Object.create(null);
     let selectedListing = null;
-    for (let index = 0; index < recipe[phase].length; index += 1) {
-      const step = recipe[phase][index];
-      if (step.op !== "goto") await assertHost(driver, recipe.domains);
+    for (let index = 0; index < lockedRecipe[phase].length; index += 1) {
+      const step = lockedRecipe[phase][index];
+      if (step.op !== "goto") await assertHost(driver, lockedRecipe.domains);
       switch (step.op) {
         case "goto": {
-          const target = Recipe.checkedUrl(step.url, recipe.domains, true);
+          const target = Recipe.checkedUrl(step.url, lockedRecipe.domains, true);
           await callDriver(driver, "navigate", target);
           break;
         }
@@ -108,7 +124,7 @@ const GoGhostInterpreter = (() => {
           }
           for (const candidate of candidates) {
             if (!candidate || typeof candidate !== "object") throw new RecipeError("layout_changed");
-            if (candidate.url) Recipe.checkedUrl(candidate.url, recipe.domains);
+            if (candidate.url) Recipe.checkedUrl(candidate.url, lockedRecipe.domains);
           }
           const choice = Match.selectBest(profile, candidates, {year: options.year});
           if (choice.status !== "matched") return {status: "needs_review", reason: choice.reason};
@@ -119,12 +135,12 @@ const GoGhostInterpreter = (() => {
           const element = await exactlyOne(driver, step.selector);
           const value = await callDriver(driver, "read", element, step.attribute);
           if (typeof value !== "string" || value.length > 2048) throw new RecipeError("unexpected_result");
-          if (step.attribute === "href") Recipe.checkedUrl(value, recipe.domains);
+          if (step.attribute === "href") Recipe.checkedUrl(value, lockedRecipe.domains);
           extracted[step.as] = value;
           break;
         }
       }
-      await assertHost(driver, recipe.domains);
+      await assertHost(driver, lockedRecipe.domains);
     }
     return {status: "completed", selectedListing, extracted};
   }
