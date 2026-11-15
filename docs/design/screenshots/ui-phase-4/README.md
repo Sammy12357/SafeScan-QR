@@ -1,6 +1,6 @@
 # Phase 4 error-page screenshots
 
-Playwright Chromium captures from the baseline `83eed0a` and this branch, with the same local server configuration. The old 404 is a raw JSON response. The new 404 and signed-out 403/401 use the public page shell. Each capture is a full page at the stated viewport width.
+Playwright Chromium captures from the baseline `83eed0a` and this branch after rebasing onto the shared UI tokens. The after views use locally rendered templates with a fixed sample request ID; no account or production data is used. The old 404 is a raw JSON response. The new 404 and signed-out 403/401 use the public page shell. Each capture is a full page at the stated viewport width.
 
 | Width | Theme | 404 before | 404 after | Access page after |
 | --- | --- | --- | --- | --- |

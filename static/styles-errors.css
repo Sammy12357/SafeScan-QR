@@ -3,12 +3,12 @@
   display: grid;
   place-items: center;
   min-height: min(62vh, 620px);
-  padding: var(--space-8, 32px) 0 var(--space-10, 48px);
+  padding: var(--space-8) var(--space-0) var(--space-10);
 }
 
 .error-card {
   width: min(100%, 780px);
-  padding: clamp(24px, 5vw, 48px);
+  padding: var(--space-10);
   border: 1px solid var(--line);
   border-radius: var(--radius-inner);
   background: var(--panel);
@@ -16,7 +16,7 @@
 }
 
 .error-eyebrow {
-  margin: 0 0 var(--space-5, 16px);
+  margin: var(--space-0) var(--space-0) var(--space-5);
   color: var(--accent);
   font-family: var(--display-font);
   font-size: 0.8rem;
@@ -27,7 +27,7 @@
 
 .error-card h1 {
   max-width: 18ch;
-  margin: 0;
+  margin: var(--space-0);
   font-family: var(--display-font);
   font-size: clamp(2rem, 5vw, 3.75rem);
   line-height: 1.12;
@@ -35,7 +35,7 @@
 
 .error-description {
   max-width: 60ch;
-  margin: var(--space-6, 20px) 0 0;
+  margin: var(--space-6) var(--space-0) var(--space-0);
   color: var(--muted);
   font-size: clamp(1rem, 2vw, 1.15rem);
   line-height: 1.6;
@@ -44,8 +44,8 @@
 .error-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-4, 12px);
-  margin-top: var(--space-8, 32px);
+  gap: var(--space-4);
+  margin-top: var(--space-8);
 }
 
 .error-actions a,
@@ -59,15 +59,20 @@
 .error-actions button:disabled { opacity: 0.6; cursor: wait; }
 
 .error-reference {
-  margin: var(--space-8, 32px) 0 0;
+  margin: var(--space-8) var(--space-0) var(--space-0);
   color: var(--muted);
   font-size: 0.82rem;
 }
 
 .error-reference code { color: var(--text); }
 
+@media (max-width: 900px) {
+  .error-card { padding: var(--space-8); }
+}
+
 @media (max-width: 580px) {
   .error-main { min-height: 55vh; }
+  .error-card { padding: var(--space-7); }
   .error-actions { flex-direction: column; }
   .error-actions a, .error-actions button { width: 100%; }
 }
