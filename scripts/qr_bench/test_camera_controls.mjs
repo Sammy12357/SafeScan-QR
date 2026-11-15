@@ -26,6 +26,8 @@ class FakeElement extends Emitter {
     super();
     this.hidden = false;
     this.disabled = false;
+    this.inert = false;
+    this.isConnected = true;
     this.dataset = {};
     this.attributes = {};
     this.textContent = "";
@@ -38,13 +40,19 @@ class FakeElement extends Emitter {
     };
   }
   setAttribute(name, value) { this.attributes[name] = value; }
+  focus() { document.activeElement = this; }
   getContext() { return {
     setTransform() {}, clearRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, stroke() {},
     drawImage() {}, putImageData() {},
     getImageData: (_x, _y, width, height) => ({ width, height, data: new Uint8ClampedArray(width * height * 4) }),
   }; }
   getBoundingClientRect() { return { left: 0, top: 0, width: 640, height: 480 }; }
-  remove() { document.currentModal = null; }
+  getClientRects() { return [this.getBoundingClientRect()]; }
+  remove() {
+    this.isConnected = false;
+    document.body.children = document.body.children.filter((element) => element !== this);
+    document.currentModal = null;
+  }
 }
 
 const elements = Object.fromEntries([
@@ -64,10 +72,18 @@ video.requestVideoFrameCallback = (callback) => setTimeout(callback, 0);
 video.cancelVideoFrameCallback = (handle) => clearTimeout(handle);
 const modal = new FakeElement();
 modal.querySelector = (selector) => elements[selector];
+modal.querySelectorAll = () => Object.values(elements).filter((element) => !element.hidden && !element.disabled);
 const body = new FakeElement();
-body.appendChild = (item) => { document.currentModal = item; };
+const launcher = new FakeElement();
+body.children = [launcher];
+body.appendChild = (item) => {
+  item.isConnected = true;
+  body.children.push(item);
+  document.currentModal = item;
+};
 const document = new Emitter();
 document.body = body;
+document.activeElement = launcher;
 document.hidden = false;
 document.currentModal = null;
 document.querySelector = () => document.currentModal;
@@ -183,6 +199,8 @@ async function eventually(test, label, attempts = 50) {
 
 const results = [];
 window.SafeScanQrCamera.open({ onResult: (payload) => results.push(payload) });
+assert.equal(document.activeElement, elements[".qr-camera-close"], "dialog focuses Back on open");
+assert.equal(launcher.inert, true, "background is inert while scanning");
 await eventually(() => !elements[".qr-camera-capture"].disabled, "camera preview");
 assert.equal(cameraCalls[0].video.width.ideal, 1920);
 assert.equal(cameraCalls[1].video.width.ideal, 1280);
@@ -223,6 +241,8 @@ await eventually(() => results.length === 1, "deliberate capture result");
 assert.equal(results[0], "https://example.com");
 assert.equal(captureRequests, 6, "burst must inspect all six frames before accepting one code");
 assert.equal(tracks.at(-1).readyState, "ended", "closing scanner stops camera");
+assert.equal(document.activeElement, launcher, "closing scanner restores the launcher focus");
+assert.equal(launcher.inert, false, "closing scanner restores background interaction");
 
 scenario = "ambiguous";
 const ambiguousResults = [];
