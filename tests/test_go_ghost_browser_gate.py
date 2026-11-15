@@ -71,6 +71,7 @@ def test_production_page_keeps_manual_opt_out_controls(go_ghost_app):
     assert response.status_code == 200
     assert 'data-browser-automation-available="false"' in response.text
     assert "Assisted browser submissions are temporarily unavailable." in response.text
+    assert "Broker search links may include your name and city/state" in response.text
     assert "Search next broker" in response.text
     assert 'id="goGhostScopeSearchButton"' in response.text
     assert 'id="goGhostScopeOptOutButton"' in response.text
@@ -78,6 +79,13 @@ def test_production_page_keeps_manual_opt_out_controls(go_ghost_app):
     assert 'id="startGhostQueueButton"' not in response.text
     assert 'id="goGhostScopeAutoFillButton"' not in response.text
     assert "Backend does" not in response.text
+
+
+@pytest.mark.parametrize("go_ghost_app", [True], indirect=True)
+def test_retired_legacy_go_ghost_page_is_not_public(go_ghost_app):
+    client, _, _ = go_ghost_app
+    assert client.get("/static/go-ghost.html").status_code == 404
+    assert client.get("/go-ghost").status_code == 200
 
 
 def test_manual_browser_ui_has_no_automation_button_or_personal_details_in_url():

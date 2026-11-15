@@ -1,5 +1,5 @@
-{# "Go Ghost" page: guides the user through opting out of data-broker /
-   people-search sites. Driven by static/go-ghost.js. #}
+{# "Go Ghost" page: guides manual opt-outs from data-broker and people-search
+   sites. Driven by static/app-go-ghost.js and static/app-go-ghost-ui.js. #}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -53,12 +53,13 @@
             <p class="eyebrow">Broker opt-outs</p>
             <h2>Search and opt-out kit</h2>
           </div>
-          <span class="privacy-local-badge">Local only</span>
+          <span class="privacy-local-badge">Saved on device</span>
         </div>
         {% if browser_automation_available %}
         <p class="go-ghost-copy">Go Ghost can prepare searches and submissions for supported opt-outs using the minimum local details you choose. Email confirmation, CAPTCHA, and exact profile matching still need user-approved checkpoints.</p>
         {% else %}
         <p class="go-ghost-copy">Add only the details you need. Use Search to find your listing, Opt out to open the broker form, and Copy details to paste your information. You complete and submit each request in your browser.</p>
+        <p class="go-ghost-copy">Search opens a broker site or Google. Broker search links may include your name and city/state; Google fallback searches include your name and state.</p>
         <p class="go-ghost-copy" role="status">Assisted browser submissions are temporarily unavailable.</p>
         {% endif %}
         <p id="goGhostDeviceNotice" class="go-ghost-device-notice" role="status" aria-live="polite">Desktop layout active.</p>
@@ -159,8 +160,8 @@
 
   <script src="/static/app-core.js?v=ghost-assist-v1"></script>
   <script src="/static/app-widgets.js?v=ghost-assist-v1"></script>
-  <script src="/static/app-go-ghost.js?v=ghost-manual-status-v1"></script>
-  <script src="/static/app-go-ghost-ui.js?v=ghost-manual-status-v1"></script>
+  <script src="/static/app-go-ghost.js?v=ghost-privacy-v1"></script>
+  <script src="/static/app-go-ghost-ui.js?v=ghost-privacy-v1"></script>
   <script src="/static/app-generate-qr.js?v=ghost-assist-v1"></script>
 </body>
 </html>
