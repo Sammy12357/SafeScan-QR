@@ -34,6 +34,8 @@ const ids = [
   'goGhostDeviceNotice'
 ];
 const elements = Object.fromEntries(ids.map(id => [id, makeElement()]));
+elements.goGhostBrokerRegistry = makeElement();
+elements.goGhostBrokerRegistry.textContent = fs.readFileSync('data/go_ghost/brokers.json', 'utf8');
 elements.goGhostWorkspace.hidden = true;
 elements.goGhostWorkspace.dataset.browserAutomationAvailable = 'false';
 elements.goGhostScopeModal.classList.add('hidden');
@@ -106,6 +108,12 @@ async function main() {
   assert.equal(brokerUrlById.peoplelooker, 'https://www.peoplelooker.com/svc/optout/search/optouts');
   assert.equal(brokerUrlById.neighborwho, 'https://www.neighborwho.com/svc/optout/search/optouts');
   assert.equal(brokerUrls.some(([, url]) => /Private|8135550100|person%40example|person@example/i.test(url)), false);
+  const searchFor = id => vm.runInContext(`goGhostBrokerSearchUrl(goGhostBrokers.find(b => b.id === '${id}'),
+    {name: 'Example Person', location: 'Tampa, FL'})`, context);
+  assert.equal(searchFor('fastpeoplesearch'), 'https://www.fastpeoplesearch.com/name/example-person_tampa-fl');
+  assert.equal(searchFor('whitepages'), 'https://www.whitepages.com/name/example-person/tampa-fl');
+  assert.equal(new URL(searchFor('truepeoplesearch')).searchParams.get('citystatezip'), 'Tampa, FL');
+  assert.equal(searchFor('beenverified'), brokerUrlById.beenverified);
   const familyPacket = vm.runInContext(`goGhostCopyPacket(goGhostBrokers[0],
     {name: 'Family Member', address: '', location: '', email: ''}, 'https://example.test/search')`, context);
   assert.doesNotMatch(familyPacket, /I am the subject|Requester type:/i);

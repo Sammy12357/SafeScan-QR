@@ -1,6 +1,7 @@
 """The public web service must not start a third-party browser session."""
 
 import importlib
+import json
 import re
 import sqlite3
 import subprocess
@@ -106,11 +107,70 @@ def test_retired_legacy_go_ghost_page_is_not_public(go_ghost_app):
     assert client.get("/go-ghost").status_code == 200
 
 
+@pytest.mark.parametrize("go_ghost_app", [True], indirect=True)
+def test_broker_api_and_embedded_manual_directory_agree(go_ghost_app):
+    client, _, _ = go_ghost_app
+    response = client.get("/api/go-ghost/brokers")
+    assert response.status_code == 200
+    records = response.json()["brokers"]
+    assert len(records) == len({broker["id"] for broker in records}) == 18
+    assert all("automationEnabled" not in broker for broker in records)
+    assert all(broker["lastVerified"] is None for broker in records)
+
+    page = client.get("/go-ghost").text
+    embedded = re.search(
+        r'<script id="goGhostBrokerRegistry" type="application/json">(.*?)</script>',
+        page,
+        re.DOTALL,
+    )
+    assert embedded is not None
+    assert json.loads(embedded.group(1)) == records
+
+    by_id = {broker["id"]: broker for broker in records}
+    assert by_id["peoplelooker"]["sourceCheckedAt"] == "2026-11-14"
+    assert "sourceCheckedAt" not in by_id["radaris"]
+    assert {by_id[brand]["group"] for brand in ("intelius", "ussearch", "instantcheckmate", "truthfinder")} == {"peopleconnect"}
+    assert len({by_id[brand]["group"] for brand in ("beenverified", "peoplelooker", "neighborwho")}) == 3
+
+    from removals.engine import BROKER_CONFIGS
+
+    assert all(config.optout_url == by_id[broker_id]["removalUrl"] for broker_id, config in BROKER_CONFIGS.items())
+
+
+def test_public_broker_registry_rejects_profile_fields_and_offsite_links(tmp_path, monkeypatch):
+    from removals import registry
+
+    original_records = json.loads(registry.REGISTRY_PATH.read_text(encoding="utf-8"))
+    sample = tmp_path / "brokers.json"
+    monkeypatch.setattr(registry, "REGISTRY_PATH", sample)
+    try:
+        for change in ("profile", "userinfo", "search_fields", "offsite_search"):
+            records = json.loads(json.dumps(original_records))
+            if change == "profile":
+                records[0]["email"] = "person@example.test"
+            elif change == "userinfo":
+                records[0]["removalUrl"] = "https://person:secret@www.fastpeoplesearch.com/optout"
+            elif change == "search_fields":
+                records[0]["search"]["profile"] = {"name": "Example Person"}
+            else:
+                records[0]["search"]["baseUrl"] = "https://other.example/name/"
+            sample.write_text(json.dumps(records), encoding="utf-8")
+            registry.load_brokers.cache_clear()
+            with pytest.raises(ValueError):
+                registry.load_brokers()
+    finally:
+        registry.load_brokers.cache_clear()
+
+
 def test_manual_browser_ui_has_no_automation_button_or_personal_details_in_url():
     script = r"""
 const fs = require('fs');
 const vm = require('vm');
-const elements = {goGhostBrokerList: {innerHTML: ''}, goGhostAutomationRows: {innerHTML: ''}};
+const elements = {
+  goGhostBrokerList: {innerHTML: ''},
+  goGhostAutomationRows: {innerHTML: ''},
+  goGhostBrokerRegistry: {textContent: fs.readFileSync('data/go_ghost/brokers.json', 'utf8')}
+};
 const context = vm.createContext({
   document: {getElementById: id => elements[id] || null}, window: {}, URL,
   readJsonStorage: (_key, fallback) => fallback, escapeHtml: value => String(value)

@@ -1,10 +1,7 @@
-"""Static-source checks for the Go Ghost multi-broker automation wiring.
-
-These assert the frontend and backend agree on the eight automation-enabled
-brokers and the assisted-queue flow, without needing a browser or Playwright.
-"""
+"""Static checks for the fixed-off Go Ghost browser runner and manual UI."""
 
 from pathlib import Path
+import json
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,10 +15,12 @@ SERVER = "\n".join(
     p.read_text(encoding="utf-8") for p in sorted((ROOT / "hackabull").glob("*.py"))
 )
 ENGINE = (ROOT / "removals" / "engine.py").read_text(encoding="utf-8")
+BROKERS = json.loads((ROOT / "data" / "go_ghost" / "brokers.json").read_text(encoding="utf-8"))
 
 
-def test_frontend_enables_eight_brokers_for_automation():
-    assert APP_JS.count("automationEnabled: true") == 8
+def test_manual_registry_does_not_advertise_backend_automation():
+    assert len(BROKERS) == 18
+    assert all("automationEnabled" not in broker and "automationNote" not in broker for broker in BROKERS)
 
 
 def test_assisted_queue_runs_backend_autofill_sequentially():

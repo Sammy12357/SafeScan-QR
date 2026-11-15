@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
+from .registry import broker_metadata
+
 
 @dataclass(frozen=True)
 class RemovalProfile:
@@ -41,79 +43,32 @@ class BrokerConfig:
     email_verification: bool = True
 
 
+def _broker_config(broker_id: str, *, requester_type: bool = False, authorization: bool = False,
+                   record_based: bool = False) -> BrokerConfig:
+    metadata = broker_metadata(broker_id)
+    if metadata is None:
+        raise ValueError(f"Missing Go Ghost broker metadata: {broker_id}")
+    return BrokerConfig(
+        id=broker_id,
+        name=metadata["name"],
+        optout_url=metadata["removalUrl"],
+        requester_type=requester_type,
+        authorization=authorization,
+        record_based=record_based,
+    )
+
+
+# This disabled server runner keeps only automation-specific flags. Public
+# names and opt-out URLs come from the same manual broker registry as the page.
 BROKER_CONFIGS: dict[str, BrokerConfig] = {
-    "fastpeoplesearch": BrokerConfig(
-        id="fastpeoplesearch",
-        name="FastPeopleSearch",
-        optout_url="https://www.fastpeoplesearch.com/optout",
-        requester_type=True,
-        authorization=True,
-        record_based=False,
-        email_verification=True,
-    ),
-    "thatsthem": BrokerConfig(
-        id="thatsthem",
-        name="Thatsthem",
-        optout_url="https://thatsthem.com/optout",
-        requester_type=False,
-        authorization=True,
-        record_based=False,
-        email_verification=True,
-    ),
-    "truepeoplesearch": BrokerConfig(
-        id="truepeoplesearch",
-        name="TruePeopleSearch",
-        optout_url="https://www.truepeoplesearch.com/removal",
-        requester_type=False,
-        authorization=True,
-        record_based=True,
-        email_verification=True,
-    ),
-    "spokeo": BrokerConfig(
-        id="spokeo",
-        name="Spokeo",
-        optout_url="https://www.spokeo.com/optout",
-        requester_type=False,
-        authorization=False,
-        record_based=True,
-        email_verification=True,
-    ),
-    "nuwber": BrokerConfig(
-        id="nuwber",
-        name="Nuwber",
-        optout_url="https://nuwber.com/removal/link",
-        requester_type=False,
-        authorization=False,
-        record_based=True,
-        email_verification=True,
-    ),
-    "beenverified": BrokerConfig(
-        id="beenverified",
-        name="BeenVerified",
-        optout_url="https://www.beenverified.com/app/optout/search/",
-        requester_type=False,
-        authorization=False,
-        record_based=True,
-        email_verification=True,
-    ),
-    "whitepages": BrokerConfig(
-        id="whitepages",
-        name="Whitepages",
-        optout_url="https://www.whitepages.com/suppression-requests",
-        requester_type=False,
-        authorization=False,
-        record_based=True,
-        email_verification=True,
-    ),
-    "radaris": BrokerConfig(
-        id="radaris",
-        name="Radaris",
-        optout_url="https://radaris.com/control/privacy",
-        requester_type=False,
-        authorization=False,
-        record_based=True,
-        email_verification=True,
-    ),
+    "fastpeoplesearch": _broker_config("fastpeoplesearch", requester_type=True, authorization=True),
+    "thatsthem": _broker_config("thatsthem", authorization=True),
+    "truepeoplesearch": _broker_config("truepeoplesearch", authorization=True, record_based=True),
+    "spokeo": _broker_config("spokeo", record_based=True),
+    "nuwber": _broker_config("nuwber", record_based=True),
+    "beenverified": _broker_config("beenverified", record_based=True),
+    "whitepages": _broker_config("whitepages", record_based=True),
+    "radaris": _broker_config("radaris", record_based=True),
 }
 
 

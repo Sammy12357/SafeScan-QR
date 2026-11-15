@@ -46,6 +46,7 @@ from storage import backend_status as storage_backend_status
 from storage import download_file as storage_download_file
 from storage import object_key as storage_object_key
 from storage import upload_bytes as storage_upload_bytes
+from removals.registry import load_brokers
 
 from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party
 import safescan_model_calibration as sm_calibration
@@ -120,6 +121,11 @@ async def read_test_site(request: Request):
         **index_user_context(user)
     })
 
+@qr_app.get("/api/go-ghost/brokers")
+async def api_go_ghost_brokers():
+    return JSONResponse({"brokers": load_brokers()}, headers={"Cache-Control": "public, max-age=300"})
+
+
 @qr_app.get("/go-ghost", response_class=HTMLResponse)
 async def go_ghost_page(request: Request):
     user = get_session_user(request)
@@ -127,6 +133,7 @@ async def go_ghost_page(request: Request):
         "request": request,
         "logged_in": bool(user),
         "email": user["email"] if user else "",
+        "go_ghost_brokers": load_brokers(),
         "browser_automation_available": GO_GHOST_BROWSER_AUTOMATION_AVAILABLE,
         "version": LEGAL_VERSION,
         **index_user_context(user),

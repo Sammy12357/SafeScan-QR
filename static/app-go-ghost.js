@@ -39,196 +39,43 @@ const GO_GHOST_CONSENT_KEY = "safeScanGoGhostConsent";
 let activeGhostScopeBrokerId = "";
 const goGhostAutomationControllers = new Map();
 
-const goGhostBrokers = [
-  {
-    id: "fastpeoplesearch",
-    name: "FastPeopleSearch",
-    priority: "High traffic",
-    priorityDescription: "One of the most visible people-search sites, so it is a good place to remove first.",
-    removalUrl: "https://www.fastpeoplesearch.com/optout",
-    requiredInfo: ["Full name", "Street address", "City/state", "Email confirmation"],
-    automationEnabled: true,
-    automationNote: "Backend assisted: fill the opt-out form and pause for CAPTCHA or email confirmation.",
-    searchUrl: ({ name, location }) => `https://www.fastpeoplesearch.com/name/${ghostPathSlug(name)}${location ? `_${ghostPathSlug(location)}` : ""}`
-  },
-  {
-    id: "whitepages",
-    name: "Whitepages",
-    priority: "High traffic",
-    priorityDescription: "One of the most visible people-search sites, so it is a good place to remove first.",
-    removalUrl: "https://www.whitepages.com/suppression-requests",
-    requiredInfo: ["Full name", "City/state", "Matching profile", "Email confirmation"],
-    automationEnabled: true,
-    automationNote: "Backend assisted: opens the suppression form and fills your details. Whitepages needs you to pick your matching listing and confirm by email.",
-    searchUrl: ({ name, location }) => `https://www.whitepages.com/name/${ghostPathSlug(name)}${location ? `/${ghostPathSlug(location)}` : ""}`
-  },
-  {
-    id: "spokeo",
-    name: "Spokeo",
-    priority: "High traffic",
-    priorityDescription: "One of the most visible people-search sites, so it is a good place to remove first.",
-    removalUrl: "https://www.spokeo.com/optout",
-    requiredInfo: ["Profile URL", "Email confirmation"],
-    automationEnabled: true,
-    automationNote: "Backend assisted: opens Spokeo opt-out and fills your email. Spokeo removes by listing URL, so use Search to find your profile, paste its URL, then verify by email.",
-    searchUrl: ({ name, location }) => `https://www.spokeo.com/${ghostPathSlug(name)}${location ? `/${ghostPathSlug(location)}` : ""}`
-  },
-  {
-    id: "beenverified",
-    name: "BeenVerified",
-    priority: "High traffic",
-    priorityDescription: "One of the most visible people-search sites, so it is a good place to remove first.",
-    removalUrl: "https://www.beenverified.com/svc/optout/search/optouts",
-    requiredInfo: ["Full name", "State/city", "Matching record", "Email confirmation"],
-    automationEnabled: true,
-    automationNote: "Backend assisted: opens the opt-out search and fills your name. BeenVerified needs you to choose your matching record and confirm by email.",
-    searchUrl: () => "https://www.beenverified.com/svc/optout/search/optouts"
-  },
-  {
-    id: "truepeoplesearch",
-    name: "TruePeopleSearch",
-    priority: "High traffic",
-    priorityDescription: "One of the most visible people-search sites, so it is a good place to remove first.",
-    removalUrl: "https://www.truepeoplesearch.com/removal",
-    requiredInfo: ["Full name", "City/state", "Matching profile", "Email confirmation"],
-    automationEnabled: true,
-    automationNote: "Backend assisted: opens the removal flow and fills your details. TruePeopleSearch needs you to confirm the matching record and clear a CAPTCHA.",
-    searchUrl: ({ name, location }) => `https://www.truepeoplesearch.com/results?name=${encodeURIComponent(name || "")}&citystatezip=${encodeURIComponent(location || "")}`
-  },
-  {
-    id: "thatsthem",
-    name: "Thatsthem",
-    priority: "Address match",
-    priorityDescription: "This site often finds records through address or phone details.",
-    removalUrl: "https://thatsthem.com/optout",
-    requiredInfo: ["Full name", "Street address or phone", "Email confirmation"],
-    automationEnabled: true,
-    automationNote: "Backend assisted: fills the opt-out form with your name, email, and address, then pauses for any CAPTCHA or email confirmation.",
-    searchUrl: ({ name, location }) => `https://thatsthem.com/name/${ghostPathSlug(name)}${location ? `/${ghostPathSlug(location)}` : ""}`
-  },
-  {
-    id: "nuwber",
-    name: "Nuwber",
-    priority: "Profile link",
-    priorityDescription: "This opt-out usually needs the exact profile URL before removal can be submitted.",
-    removalUrl: "https://nuwber.com/removal/link",
-    requiredInfo: ["Profile URL", "Email confirmation"],
-    automationEnabled: true,
-    automationNote: "Backend assisted: opens the removal form and fills your email. Nuwber removes by profile URL, so use Search to find your listing, paste its URL, then verify by email.",
-    searchUrl: ({ name, location }) => `https://nuwber.com/search?name=${encodeURIComponent(name || "")}&location=${encodeURIComponent(location || "")}`
-  },
-  {
-    id: "radaris",
-    name: "Radaris",
-    priority: "Duplicate check",
-    priorityDescription: "This site can show multiple records for one person, so check for duplicates before marking it removed.",
-    removalUrl: "https://radaris.com/control/privacy",
-    requiredInfo: ["Profile URL", "Matching record", "Email confirmation"],
-    automationEnabled: true,
-    automationNote: "Backend assisted: opens the Radaris privacy control and fills your email. Radaris removes by listing, so use Search to find your record, confirm the exact profile, then verify by email.",
-    searchUrl: ({ name, location }) => ghostBrokerGoogleSearch({ name, location }, "Radaris", "radaris.com")
-  },
-  {
-    id: "peoplefinders",
-    name: "PeopleFinders",
-    priority: "Second wave",
-    priorityDescription: "A high-volume data broker that often needs name plus location to find matching records.",
-    removalUrl: "https://www.peoplefinders.com/opt-out",
-    requiredInfo: ["Full name", "City/state", "Email confirmation"],
-    automationNote: "Open the broker opt-out page and confirm the matching record.",
-    searchUrl: (profile) => ghostBrokerGoogleSearch(profile, "PeopleFinders", "peoplefinders.com")
-  },
-  {
-    id: "intelius",
-    name: "Intelius",
-    priority: "Second wave",
-    priorityDescription: "A people-search broker that can require enough detail to distinguish similar names.",
-    removalUrl: "https://suppression.peopleconnect.us/",
-    requiredInfo: ["Full name", "City/state", "Email confirmation"],
-    automationNote: "Open the broker opt-out page and complete any confirmation steps.",
-    searchUrl: () => "https://suppression.peopleconnect.us/"
-  },
-  {
-    id: "ussearch",
-    name: "US Search",
-    priority: "Second wave",
-    priorityDescription: "A people-search broker that often needs name plus location to narrow matches.",
-    removalUrl: "https://suppression.peopleconnect.us/",
-    requiredInfo: ["Full name", "City/state", "Email confirmation"],
-    automationNote: "Open the broker opt-out page and complete any confirmation steps.",
-    searchUrl: () => "https://suppression.peopleconnect.us/"
-  },
-  {
-    id: "instantcheckmate",
-    name: "Instant Checkmate",
-    priority: "Second wave",
-    priorityDescription: "A background-check broker whose removal flow can use identity-matching details.",
-    removalUrl: "https://suppression.peopleconnect.us/",
-    requiredInfo: ["Full name", "City/state", "Email confirmation"],
-    automationNote: "Open the broker opt-out page and complete any confirmation steps.",
-    searchUrl: () => "https://suppression.peopleconnect.us/"
-  },
-  {
-    id: "truthfinder",
-    name: "TruthFinder",
-    priority: "Second wave",
-    priorityDescription: "A background-check broker where similar names may require careful record matching.",
-    removalUrl: "https://suppression.peopleconnect.us/",
-    requiredInfo: ["Full name", "City/state", "Email confirmation"],
-    automationNote: "Open the broker opt-out page and complete any confirmation steps.",
-    searchUrl: () => "https://suppression.peopleconnect.us/"
-  },
-  {
-    id: "peoplelooker",
-    name: "PeopleLooker",
-    priority: "Second wave",
-    priorityDescription: "A people-search broker with an opt-out submission flow similar to related sites.",
-    removalUrl: "https://www.peoplelooker.com/svc/optout/search/optouts",
-    requiredInfo: ["Full name", "City/state", "Email confirmation"],
-    automationNote: "Open the broker opt-out page and complete any confirmation steps.",
-    searchUrl: () => "https://www.peoplelooker.com/svc/optout/search/optouts"
-  },
-  {
-    id: "neighborwho",
-    name: "NeighborWho",
-    priority: "Second wave",
-    priorityDescription: "An address-heavy broker where street address and city/state help identify the right record.",
-    removalUrl: "https://www.neighborwho.com/svc/optout/search/optouts",
-    requiredInfo: ["Full name", "Street address", "City/state", "Email confirmation"],
-    automationNote: "Open the broker opt-out page and confirm the matching address record.",
-    searchUrl: () => "https://www.neighborwho.com/svc/optout/search/optouts"
-  },
-  {
-    id: "clustrmaps",
-    name: "ClustrMaps",
-    priority: "Second wave",
-    priorityDescription: "An address and profile broker where multiple entries can exist for one person.",
-    removalUrl: "https://clustrmaps.com/bl/opt-out",
-    requiredInfo: ["Full name", "Street address", "Email confirmation"],
-    automationNote: "Open the broker opt-out page and confirm the matching profile.",
-    searchUrl: (profile) => ghostBrokerGoogleSearch(profile, "ClustrMaps", "clustrmaps.com")
-  },
-  {
-    id: "familytreenow",
-    name: "FamilyTreeNow",
-    priority: "Second wave",
-    priorityDescription: "A genealogy-style people-search site that commonly starts removal from a record search.",
-    removalUrl: "https://www.familytreenow.com/optout",
-    requiredInfo: ["Full name", "City/state", "Matching profile"],
-    automationNote: "Assisted: search for the matching record, then complete the opt-out flow.",
-    searchUrl: (profile) => ghostBrokerGoogleSearch(profile, "FamilyTreeNow", "familytreenow.com")
-  },
-  {
-    id: "cyberbackgroundchecks",
-    name: "CyberBackgroundChecks",
-    priority: "Second wave",
-    priorityDescription: "A profile-specific background-check site where exact record matching matters.",
-    removalUrl: "https://www.cyberbackgroundchecks.com/removal",
-    requiredInfo: ["Full name", "Street address", "Matching profile", "Email confirmation"],
-    automationNote: "Open the broker opt-out page and verify the exact profile before submission.",
-    searchUrl: (profile) => ghostBrokerGoogleSearch(profile, "CyberBackgroundChecks", "cyberbackgroundchecks.com")
+function ghostSearchFromRegistry(broker, profile) {
+  const search = broker.search;
+  if (search.kind === "path") {
+    const name = ghostPathSlug(profile.name);
+    const location = ghostPathSlug(profile.location);
+    return `${search.baseUrl}${name}${location ? `${search.locationSeparator}${location}` : ""}`;
   }
-];
+  if (search.kind === "query") {
+    const url = new URL(search.baseUrl);
+    url.searchParams.set(search.nameParam, profile.name || "");
+    url.searchParams.set(search.locationParam, profile.location || "");
+    return url.toString();
+  }
+  if (search.kind === "google") {
+    return ghostBrokerGoogleSearch(profile, broker.name, search.domain);
+  }
+  return search.url;
+}
+
+function loadGoGhostBrokerRegistry() {
+  // The server embeds its validated registry in the Go Ghost page. Other pages
+  // load this shared script without a broker directory or a network request.
+  const node = document.getElementById("goGhostBrokerRegistry");
+  if (!node) return [];
+  try {
+    const records = JSON.parse(node.textContent);
+    if (!Array.isArray(records)) return [];
+    return records.map((broker) => ({
+      ...broker,
+      searchUrl: (profile) => ghostSearchFromRegistry(broker, profile)
+    }));
+  } catch {
+    return [];
+  }
+}
+
+const goGhostBrokers = loadGoGhostBrokerRegistry();
 
 function readJsonStorage(key, fallback) {
   try {
