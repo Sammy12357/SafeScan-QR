@@ -268,10 +268,10 @@ def delete_user_data(email, user_id):
         if not unique_email_owner(conn, email, user_id):
             return False
         review_reasons = _erasure_review_reasons(conn, email, user_id)
-        # A request can still remove ordinary scan history while payment or
-        # audit records wait for review. Keep the account and its sessions so
-        # an active subscriber can reach the cancellation portal.
-        if review_reasons and set(review_reasons) & {"documented legal hold", "fraud evidence", "abuse evidence"}:
+        # A pending review must leave every account row intact. Returning from
+        # this connection context commits prior writes, so decide before any
+        # deletion, including scans and Go Ghost progress.
+        if review_reasons:
             return False
         for sql in (
             "DELETE FROM scans WHERE user_id = ? OR ((user_id IS NULL OR user_id = '') AND lower(email) = lower(?))",
@@ -283,11 +283,8 @@ def delete_user_data(email, user_id):
             if _go_ghost_status_table_exists(conn, table):
                 conn.execute(_GO_GHOST_STATUS_SQL[table][1], (user_id,))
         conn.execute("DELETE FROM go_ghost_removal_jobs WHERE user_id = ?", (user_id,))
-        if review_reasons:
-            return False
-        # This path is reachable only when none of the review-only rows above
-        # exist. Remove token/session material first so a deleted user cannot
-        # continue to authenticate while their account is being removed.
+        # Remove token/session material before the account so a deleted user
+        # cannot continue to authenticate.
         for sql in (
             "DELETE FROM sessions WHERE google_id = ?",
             "DELETE FROM persistent_sessions WHERE user_id = ?",
