@@ -71,6 +71,15 @@
 .states-gallery-notices { display: grid; gap: var(--space-3); }
 .states-gallery-controls { display: flex; flex-wrap: wrap; gap: var(--space-3); }
 .states-gallery-controls > button { min-height: 44px; padding: var(--space-3) var(--space-5); border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); cursor: pointer; }
+.scan-progress-intro { display: flex; align-items: center; gap: var(--space-3); color: var(--text); }
+.scan-progress-steps { display: grid; gap: var(--space-2); margin: var(--space-4) var(--space-0); padding: var(--space-0); list-style: none; }
+.scan-progress-steps li { color: var(--muted); }
+.scan-progress-steps li::before { display: inline-block; min-width: 5ch; margin-right: var(--space-2); color: var(--muted); font-size: .8rem; font-weight: 700; text-transform: uppercase; content: 'Next'; }
+.scan-progress-steps li.is-complete::before { color: var(--safe); content: 'Done'; }
+.scan-progress-steps li.is-current { color: var(--text); font-weight: 700; }
+.scan-progress-steps li.is-current::before { color: var(--accent); content: 'Now'; }
+.scan-progress-hint { margin: var(--space-0); color: var(--muted); font-size: .9rem; }
+.scan-progress-host { margin-top: var(--space-5); }
 @media (prefers-reduced-motion: reduce) {
   .state-spinner, .button-spinner, .skeleton-line { animation: none; }
 }

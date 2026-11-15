@@ -32,7 +32,8 @@
     errEl.classList.add("hidden");
   };
 
-  generateBtn.addEventListener("click", async () => {
+  generateBtn.addEventListener("click", () => {
+    if (generateBtn.disabled) return;
     clearError();
     clearImage();
     const raw = urlInputField.value.trim();
@@ -54,40 +55,46 @@
       return;
     }
 
-    generateBtn.disabled = true;
-    generateBtn.textContent = "Generating...";
-    try {
-      const res = await fetch("/api/qr/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: normalized })
-      });
-      if (!res.ok) {
-        let detail = "Could not generate QR.";
-        try {
-          const body = await res.json();
-          detail = body.detail || body.error || detail;
-        } catch (_err) {
-          /* non-JSON 4xx body */
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15000);
+    UIStates.busy(generateBtn, async () => {
+      try {
+        const res = await fetch("/api/qr/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({ url: normalized })
+        });
+        if (!res.ok) {
+          let detail = "Could not generate QR.";
+          try {
+            const body = await res.json();
+            detail = body.detail || body.error || detail;
+          } catch (_err) {
+            /* non-JSON 4xx body */
+          }
+          showError(detail);
+          return;
         }
-        showError(detail);
-        return;
+        if (res.headers.get("X-SafeScan-Verdict")?.toLowerCase() !== "safe" || !res.headers.get("Content-Type")?.toLowerCase().startsWith("image/png")) {
+          showError("SafeScan could not confirm a low-risk result for this URL. No QR was made available.");
+          return;
+        }
+        const blob = await res.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        currentObjectUrl = objectUrl;
+        img.src = objectUrl;
+        dl.href = objectUrl;
+        wrap.classList.remove("hidden");
+      } catch (err) {
+        showError(err?.name === "AbortError"
+          ? "The check is taking longer than expected. No QR was made available. Try again."
+          : navigator.onLine === false
+            ? "You're offline. Reconnect and try again."
+            : "We couldn't connect. Check your connection and try again.");
+      } finally {
+        window.clearTimeout(timeout);
       }
-      if (res.headers.get("X-SafeScan-Verdict")?.toLowerCase() !== "safe" || !res.headers.get("Content-Type")?.toLowerCase().startsWith("image/png")) {
-        showError("SafeScan could not confirm a low-risk result for this URL. No QR was made available.");
-        return;
-      }
-      const blob = await res.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      currentObjectUrl = objectUrl;
-      img.src = objectUrl;
-      dl.href = objectUrl;
-      wrap.classList.remove("hidden");
-    } catch (err) {
-      showError("Network error while generating QR.");
-    } finally {
-      generateBtn.disabled = false;
-      generateBtn.textContent = "Generate QR";
-    }
+    }, { label: "Checking URL…" });
   });
 })();

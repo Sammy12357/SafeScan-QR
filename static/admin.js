@@ -22,12 +22,21 @@ if (themeToggle) {
 
 const feed = document.querySelector(".activity-feed");
 if (feed) {
+  let actorLookupWarningShown = false;
+  const showActorLookupWarning = () => {
+    if (actorLookupWarningShown || !window.UIStates) return;
+    actorLookupWarningShown = true;
+    const host = document.createElement("div");
+    feed.prepend(host);
+    UIStates.notice(host, { type: "warning", message: "Some actor names couldn't be expanded. Refresh later to retry." });
+  };
   const resolveActorEmail = async (actorLabel) => {
     const rawActor = actorLabel.textContent.trim();
     if (!rawActor || rawActor === "system" || rawActor.includes("@")) return;
 
     const cacheKey = `safescan:actor-email:${rawActor}`;
-    const cachedEmail = window.sessionStorage.getItem(cacheKey);
+    let cachedEmail = null;
+    try { cachedEmail = window.sessionStorage.getItem(cacheKey); } catch { /* Storage is optional. */ }
     if (cachedEmail) {
       actorLabel.textContent = cachedEmail;
       return;
@@ -37,17 +46,17 @@ if (feed) {
       const response = await fetch(`/admin/users?search=${encodeURIComponent(rawActor)}`, {
         credentials: "same-origin",
       });
-      if (!response.ok) return;
+      if (!response.ok) throw new Error("Actor lookup unavailable");
 
       const html = await response.text();
       const doc = new DOMParser().parseFromString(html, "text/html");
       const email = doc.querySelector(".admin-table tbody tr td:nth-child(2)")?.textContent?.trim();
       if (email && email.includes("@")) {
-        window.sessionStorage.setItem(cacheKey, email);
+        try { window.sessionStorage.setItem(cacheKey, email); } catch { /* Storage is optional. */ }
         actorLabel.textContent = email;
       }
     } catch {
-      // Leave the original actor ID in place if the admin lookup is unavailable.
+      showActorLookupWarning();
     }
   };
 
@@ -62,12 +71,12 @@ if (feed) {
 
 document.querySelectorAll("form").forEach((form) => {
   form.addEventListener("submit", (event) => {
-    const explicitConfirm = form.querySelector("button[data-confirm]");
+    const explicitConfirm = event.submitter?.matches("button[data-confirm]") ? event.submitter : null;
     if (explicitConfirm && !window.confirm(explicitConfirm.dataset.confirm || "Confirm this admin action?")) {
       event.preventDefault();
       return;
     }
-    const dangerous = form.querySelector("button[name='status'][value='disqualified'], button[name='outcome'][value='disqualified']");
+    const dangerous = event.submitter?.matches("button[name='status'][value='disqualified'], button[name='outcome'][value='disqualified']");
     if (dangerous && !window.confirm("Confirm this admin action?")) {
       event.preventDefault();
     }

@@ -14,9 +14,13 @@
   var statReports = document.getElementById("mqStatReports");
   var statUpdated = document.getElementById("mqStatUpdated");
   if (!grid) return;
+  stateEl.className = "mq-state-host";
 
   var LIMIT = parseInt(grid.getAttribute("data-limit"), 10) || 20;
   var state = { page: 1, totalPages: 1, total: 0, query: "", loading: false };
+  var activeController = null;
+  var activeOperation = null;
+  var requestSeq = 0;
 
   function esc(s) {
     var d = document.createElement("div");
@@ -46,11 +50,13 @@
       '</div>' +
     '</div>';
   }
-  function showState(message, isError) {
+  function showState(options, kind) {
     grid.style.display = "none";
+    grid.hidden = true;
     stateEl.style.display = "";
-    stateEl.className = "mq-state" + (isError ? " error" : "");
-    stateEl.textContent = message;
+    stateEl.hidden = false;
+    if (kind === "error") UIStates.error(stateEl, options);
+    else UIStates.empty(stateEl, options);
   }
   function renderStats(stats) {
     if (!stats || !statsEl) return;
@@ -72,13 +78,26 @@
 
     if (!entries.length) {
       if (state.query) {
-        showState("No confirmed domains match your search.", false);
+        showState({
+          kind: "no-results",
+          title: "No results for “" + state.query + "”",
+          body: "Try another search or clear the filters.",
+          actionLabel: "Clear search",
+          action: function () { searchEl.value = ""; state.query = ""; load(1); }
+        }, "empty");
       } else {
-        showState("No public domain indicators are available yet.", false);
+        showState({
+          title: "No confirmed domains yet",
+          body: "Admin-confirmed domains will appear here. You can still check a QR code before opening it.",
+          actionLabel: "Scan a QR code",
+          actionHref: "/#scanner"
+        }, "empty");
       }
     } else {
       stateEl.style.display = "none";
+      stateEl.hidden = true;
       grid.style.display = "";
+      grid.hidden = false;
       grid.innerHTML = entries.map(cardHtml).join("");
     }
 
@@ -87,19 +106,66 @@
     nextBtn.disabled = state.loading || state.page >= state.totalPages;
   }
   function load(page) {
-    if (state.loading) return;
+    if (activeController) activeController.abort();
+    if (activeOperation) activeOperation.cancel();
+    var seq = ++requestSeq;
+    var controller = new AbortController();
+    var timedOut = false;
+    var hasRows = grid.children.length > 0 && !grid.hidden;
+    activeController = controller;
     state.loading = true;
     prevBtn.disabled = true;
     nextBtn.disabled = true;
+    grid.setAttribute("aria-busy", "true");
+    stateEl.style.display = "";
+    stateEl.hidden = false;
+    stateEl.replaceChildren();
+    activeOperation = UIStates.loading(stateEl, {
+      label: hasRows ? "Updating threat database" : "Loading threat database",
+      skeletonRows: hasRows ? 0 : 3,
+      compact: hasRows,
+      timeoutTitle: hasRows ? "Threat database didn't update" : "Threat database didn't load",
+      timeoutBody: hasRows
+        ? "These are previous results and may not match your search. Try again to update them."
+        : "Check your connection and try again.",
+      retry: function () { load(page); },
+      onTimeout: function () {
+        if (seq !== requestSeq) return;
+        timedOut = true;
+        controller.abort();
+        state.loading = false;
+        grid.removeAttribute("aria-busy");
+        prevBtn.disabled = state.page <= 1;
+        nextBtn.disabled = state.page >= state.totalPages;
+      }
+    });
     var url = "/api/malicious-qr?page=" + encodeURIComponent(page) +
       "&limit=" + encodeURIComponent(LIMIT) +
       "&q=" + encodeURIComponent(state.query);
-    fetch(url, { credentials: "same-origin", headers: { "Accept": "application/json" } })
-      .then(function (r) { if (!r.ok) throw new Error("bad status"); return r.json(); })
-      .then(function (data) { state.loading = false; render(data); })
-      .catch(function () {
+    UIStates.fetchJson(url, { credentials: "same-origin", signal: controller.signal })
+      .then(function (data) {
+        if (seq !== requestSeq || timedOut) return;
+        if (!data || !Array.isArray(data.entries)) throw new Error("Unexpected threat database response");
+        activeOperation.finish();
         state.loading = false;
-        showState("Could not load the threat database. Please try again.", true);
+        grid.removeAttribute("aria-busy");
+        render(data);
+      })
+      .catch(function () {
+        if (seq !== requestSeq || timedOut) return;
+        activeOperation.finish();
+        state.loading = false;
+        grid.removeAttribute("aria-busy");
+        stateEl.style.display = "";
+        stateEl.hidden = false;
+        UIStates.error(stateEl, {
+          title: hasRows ? "Threat database didn't update" : "Threat database didn't load",
+          body: hasRows
+            ? "These are previous results and may not match your search. Try again to update them."
+            : "Check your connection and try again.",
+          retry: function () { load(page); },
+          focus: true
+        });
         prevBtn.disabled = state.page <= 1;
         nextBtn.disabled = state.page >= state.totalPages;
       });
@@ -117,6 +183,5 @@
     }, 300);
   });
 
-  showState("Loading the threat database…", false);
   load(1);
 })();

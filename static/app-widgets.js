@@ -109,7 +109,8 @@ function closeRiskModal() {
   document.getElementById("scanner")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-blockReportButton?.addEventListener("click", async () => {
+blockReportButton?.addEventListener("click", () => {
+  if (blockReportButton.disabled) return;
   const payload = blockReportButton.dataset.reportUrl?.trim() || "";
   let parsed;
   try {
@@ -122,23 +123,31 @@ blockReportButton?.addEventListener("click", async () => {
     return;
   }
 
-  blockReportButton.disabled = true;
-  if (reportStatus) reportStatus.textContent = "Submitting report...";
-  try {
-    const response = await fetch("/api/report", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: payload, reason: "other" })
-    });
-    if (!response.ok) throw new Error(`Report request failed: ${response.status}`);
-    const result = await response.json();
-    if (!result.id || result.status !== "pending") throw new Error("Report was not confirmed");
-    if (reportStatus) reportStatus.textContent = "Report submitted for review. This does not block the link on your device.";
-  } catch (_err) {
-    if (reportStatus) reportStatus.textContent = "We could not confirm this report was received. Please try again.";
-  } finally {
-    blockReportButton.disabled = false;
-  }
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 15000);
+  if (reportStatus) reportStatus.textContent = "Submitting report…";
+  UIStates.busy(blockReportButton, async () => {
+    try {
+      const response = await fetch("/api/report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({ url: payload, reason: "other" })
+      });
+      if (!response.ok) throw new Error(`Report request failed: ${response.status}`);
+      const result = await response.json();
+      if (!result.id || result.status !== "pending") throw new Error("Report was not confirmed");
+      if (reportStatus) reportStatus.textContent = "Report submitted for review. This does not block the link on your device.";
+    } catch (error) {
+      if (reportStatus) reportStatus.textContent = error?.name === "AbortError"
+        ? "We couldn't confirm the report after 15 seconds. Check whether it was received before submitting again."
+        : navigator.onLine === false
+          ? "You're offline. Reconnect and submit the report again."
+          : "We couldn't confirm this report was received. Check your connection and try again.";
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }, { label: "Submitting…" });
 });
 
 const cautionOpenConsent = document.getElementById("cautionOpenConsent");

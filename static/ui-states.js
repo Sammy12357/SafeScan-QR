@@ -6,6 +6,7 @@
   var ICONS = { scan: true, search: true, lock: true, warning: true, check: true, info: true };
   var busyTasks = new WeakMap();
   var activeLoads = new WeakMap();
+  var navigationCleanups = new Set();
 
   function element(tag, className, textValue) {
     var node = document.createElement(tag);
@@ -177,6 +178,7 @@
     var oldNodes = Array.from(button.childNodes);
     var wasDisabled = button.disabled;
     var oldBusy = button.getAttribute('aria-busy');
+    var hadFocus = document.activeElement === button;
     var spinner = element('span', 'button-spinner');
     spinner.setAttribute('aria-hidden', 'true');
     button.replaceChildren(spinner, document.createTextNode(options.label || 'Working…'));
@@ -193,11 +195,69 @@
       button.disabled = wasDisabled;
       if (oldBusy === null) button.removeAttribute('aria-busy');
       else button.setAttribute('aria-busy', oldBusy);
+      if (hadFocus && button.isConnected && document.activeElement === document.body) button.focus();
       busyTasks.delete(button);
     });
     busyTasks.set(button, pending);
     return pending;
   }
+
+  function navigationBusy(button, form) {
+    if (!button || button.disabled || button.getAttribute('aria-busy') === 'true') return;
+    var originalNodes = Array.from(button.childNodes);
+    var originalBusy = button.getAttribute('aria-busy');
+    var hidden = null;
+    // Disabled submitters are omitted from native form data. Preserve the
+    // clicked action's name/value before disabling it (admin forms use these).
+    if (button.name && form) {
+      hidden = element('input');
+      hidden.type = 'hidden';
+      hidden.name = button.name;
+      hidden.value = button.value;
+      form.appendChild(hidden);
+    }
+    var spinner = element('span', 'button-spinner');
+    spinner.setAttribute('aria-hidden', 'true');
+    button.replaceChildren(spinner, document.createTextNode('Working…'));
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    var stillTimer = global.setTimeout(function () { button.lastChild.textContent = 'Still working…'; }, 10000);
+    var longHost = null;
+    var longTimer = global.setTimeout(function () {
+      if (!form || !form.isConnected) return;
+      longHost = element('div');
+      form.insertAdjacentElement('afterend', longHost);
+      notice(longHost, { type: 'warning', message: 'This is taking longer than expected. Check whether the action completed before trying again.' });
+      var actions = element('div', 'state-actions');
+      var reload = actionNode('Refresh page', null, function () { global.location.reload(); }, true);
+      actions.appendChild(reload);
+      longHost.appendChild(actions);
+    }, 60000);
+    var cleanup = function () {
+      global.clearTimeout(stillTimer);
+      global.clearTimeout(longTimer);
+      button.replaceChildren(...originalNodes);
+      button.disabled = false;
+      if (originalBusy === null) button.removeAttribute('aria-busy');
+      else button.setAttribute('aria-busy', originalBusy);
+      if (hidden) hidden.remove();
+      if (longHost) longHost.remove();
+      navigationCleanups.delete(cleanup);
+    };
+    navigationCleanups.add(cleanup);
+  }
+
+  // Form submit listeners on the form run before this delegated bubble
+  // listener. A JS form that prevents native navigation is left alone.
+  document.addEventListener('submit', function (event) {
+    var form = event.target;
+    if (event.defaultPrevented || !form || form.tagName !== 'FORM' || form.dataset.uiNoBusy === 'true') return;
+    if (form.target && form.target !== '_self') return;
+    var submitter = event.submitter;
+    if (!submitter || submitter.tagName !== 'BUTTON') return;
+    navigationBusy(submitter, form);
+  });
+  global.addEventListener('pageshow', function () { navigationCleanups.forEach(function (cleanup) { cleanup(); }); });
 
   function fetchJson(url, options) {
     options = options || {};

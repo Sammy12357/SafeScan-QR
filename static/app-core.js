@@ -53,12 +53,10 @@ const riskModalCloseButton = document.getElementById("riskModalCloseButton");
 const reportStatus = document.getElementById("reportStatus");
 const analysisLoadingState = document.getElementById("analysisLoadingState");
 const cookieConsentBanner = document.getElementById("cookieConsentBanner");
-const loadingSteps = [
-  "Tracing redirects...",
-  "Checking domain age...",
-  "Running reputation scan...",
-  "Consulting AI analyst..."
-];
+let scanSubmitting = false;
+let scanProgressTimer = 0;
+let scanSubmitter = null;
+let scanSubmitterNodes = null;
 let copyToastTimer = 0;
 let riskModalScrollGuard = 0;
 
@@ -515,6 +513,32 @@ async function connectWallet() {
 dom.connectWalletButton?.addEventListener("click", connectWallet);
 dom.topConnectWalletButton?.addEventListener("click", connectWallet);
 
+function showWalletFeedback(type, message, retry) {
+  const modalCard = document.querySelector(".wallet-modal-card");
+  const anchor = modalCard || document.querySelector(".wallet-panel") || dom.connectWalletButton || dom.disconnectWalletButton;
+  if (!anchor || !window.UIStates) return;
+  let host = document.getElementById("walletFeedback");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "walletFeedback";
+    if (modalCard) modalCard.appendChild(host);
+    else anchor.insertAdjacentElement("afterend", host);
+  } else if (modalCard && !modalCard.contains(host)) {
+    modalCard.appendChild(host);
+  }
+  if (type === "error") {
+    UIStates.error(host, {
+      title: "Wallet didn't disconnect",
+      body: message,
+      retry,
+      compact: true,
+      focus: true
+    });
+  } else {
+    UIStates.notice(host, { type, message });
+  }
+}
+
 async function disconnectWalletConnection(wallet = null, options = {}) {
   const { closeModal = false, notify = true } = options;
   const profile = getCurrentProfile();
@@ -538,16 +562,17 @@ async function disconnectWalletConnection(wallet = null, options = {}) {
       renderWalletState(updatedProfile);
     }
     if (closeModal) removeWalletModal();
-    if (notify) window.alert("Wallet disconnected.");
+    if (notify) showWalletFeedback("success", "Wallet disconnected.");
   } catch (error) {
-    window.alert(error.message || "Wallet disconnect failed.");
+    console.error("Wallet disconnect failed", error);
+    showWalletFeedback("error", "Check your connection and try again.", () => disconnectWalletConnection(wallet, options));
   }
 }
 
 dom.disconnectWalletButton?.addEventListener("click", () => disconnectWalletConnection());
 
 dom.demoWalletButton?.addEventListener("click", () => {
-  window.alert("Demo wallets cannot be used for airdrop verification. Connect a real wallet and approve the signature request.");
+  showWalletFeedback("warning", "Demo wallets cannot verify airdrop eligibility. Connect a real wallet and approve the signature request.");
 });
 
 dom.copyTokenAddressButton?.addEventListener("click", async () => {
@@ -575,26 +600,101 @@ dom.topCopyReferralButton?.addEventListener("click", async () => {
   }
 });
 
-dom.qrForm?.addEventListener("submit", () => {
-  if (analysisLoadingState) {
-    let index = 0;
-    analysisLoadingState.textContent = loadingSteps[index];
-    analysisLoadingState.classList.remove("hidden");
-    window.setInterval(() => {
-      index = Math.min(index + 1, loadingSteps.length - 1);
-      analysisLoadingState.textContent = loadingSteps[index];
-    }, 900);
+function showAnalysisProgress(label, form = null) {
+  if (!analysisLoadingState) return;
+  if (form && analysisLoadingState.parentElement !== form) form.appendChild(analysisLoadingState);
+  analysisLoadingState.classList.add("scan-status");
+  analysisLoadingState.classList.remove("scan-progress-host", "hidden");
+  analysisLoadingState.setAttribute("role", "status");
+  const intro = document.createElement("div");
+  intro.className = "scan-progress-intro";
+  const spinner = document.createElement("span");
+  spinner.className = "state-spinner";
+  spinner.setAttribute("aria-hidden", "true");
+  const title = document.createElement("strong");
+  title.textContent = label;
+  intro.append(spinner, title);
+  const list = document.createElement("ol");
+  list.className = "scan-progress-steps";
+  list.setAttribute("aria-hidden", "true");
+  ["Submit payload", "Check for risk", "Review result"].forEach((step, index) => {
+    const item = document.createElement("li");
+    item.textContent = step;
+    if (index === 0) item.className = "is-complete";
+    if (index === 1) item.className = "is-current";
+    list.appendChild(item);
+  });
+  const hint = document.createElement("p");
+  hint.className = "scan-progress-hint";
+  hint.textContent = "This usually takes a few seconds.";
+  analysisLoadingState.replaceChildren(intro, list, hint);
+  window.clearTimeout(scanProgressTimer);
+  scanProgressTimer = window.setTimeout(() => {
+    hint.textContent = "Still working. Keep this page open while we finish checking.";
+  }, 10000);
+}
+
+function showCameraError(message) {
+  if (!analysisLoadingState || !window.UIStates) return;
+  analysisLoadingState.classList.remove("scan-status", "hidden");
+  analysisLoadingState.classList.add("scan-progress-host");
+  UIStates.error(analysisLoadingState, {
+    title: "Camera scan stopped",
+    body: message || "Try again or upload a QR photo instead.",
+    retry: openCameraScanner,
+    focus: true
+  });
+}
+
+function startScanSubmission(event, label) {
+  if (scanSubmitting) {
+    event.preventDefault();
+    return;
   }
+  // Give the progress panel one paint before native form navigation begins.
+  // These two scanner forms do not use submitter name/value fields.
+  event.preventDefault();
+  scanSubmitting = true;
+  const form = event.currentTarget;
+  showAnalysisProgress(label, form);
+  if (scanCameraButton) scanCameraButton.disabled = true;
+  if (event.submitter && event.submitter.tagName === "BUTTON") {
+    scanSubmitter = event.submitter;
+    scanSubmitterNodes = Array.from(scanSubmitter.childNodes);
+    const spinner = document.createElement("span");
+    spinner.className = "button-spinner";
+    spinner.setAttribute("aria-hidden", "true");
+    scanSubmitter.replaceChildren(spinner, document.createTextNode("Checking…"));
+    scanSubmitter.disabled = true;
+    scanSubmitter.setAttribute("aria-busy", "true");
+  }
+  window.setTimeout(() => {
+    if (form.isConnected) HTMLFormElement.prototype.submit.call(form);
+  }, 120);
+}
+
+dom.qrForm?.addEventListener("submit", (event) => startScanSubmission(event, "Checking this QR image"));
+document.getElementById("urlForm")?.addEventListener("submit", (event) => startScanSubmission(event, "Checking this QR payload"));
+window.addEventListener("pagehide", () => window.clearTimeout(scanProgressTimer));
+window.addEventListener("pageshow", (event) => {
+  if (!event.persisted) return;
+  scanSubmitting = false;
+  if (scanCameraButton) scanCameraButton.disabled = false;
+  if (scanSubmitter && scanSubmitterNodes) {
+    scanSubmitter.replaceChildren(...scanSubmitterNodes);
+    scanSubmitter.disabled = false;
+    scanSubmitter.removeAttribute("aria-busy");
+  }
+  scanSubmitter = null;
+  scanSubmitterNodes = null;
+  analysisLoadingState?.classList.add("hidden");
 });
 
 const qrImageInput = document.getElementById("qrImageInput");
 qrImageInput?.addEventListener("change", () => {
   if (qrImageInput.files && qrImageInput.files.length > 0) {
     const form = qrImageInput.form;
-    if (analysisLoadingState) {
-      analysisLoadingState.textContent = "Preparing file scan...";
-      analysisLoadingState.classList.remove("hidden");
-    }
+    showAnalysisProgress("Preparing your QR image", form);
     if (form) {
       window.setTimeout(() => {
         form.requestSubmit ? form.requestSubmit() : form.submit();
@@ -610,7 +710,7 @@ qrImageInput?.addEventListener("change", () => {
 const scanCameraButton = document.getElementById("scanCameraButton");
 function openCameraScanner() {
   if (!window.SafeScanQrCamera || typeof window.SafeScanQrCamera.open !== "function") {
-    window.alert("Camera scanner is still loading. Please try again in a moment.");
+    showCameraError("The camera is still getting ready. Wait a moment, then try again.");
     return;
   }
   window.SafeScanQrCamera.open({
@@ -618,16 +718,10 @@ function openCameraScanner() {
       const urlInput = document.getElementById("urlInput");
       const form = document.getElementById("urlForm");
       if (urlInput) urlInput.value = value;
-      if (analysisLoadingState) {
-        analysisLoadingState.textContent = "QR detected - analysing...";
-        analysisLoadingState.classList.remove("hidden");
-      }
+      showAnalysisProgress("Checking this QR payload", form);
       if (form) {
         form.requestSubmit ? form.requestSubmit() : form.submit();
       }
-    },
-    onError: (message) => {
-      if (message) window.alert(message);
     },
     onServerFallback: (blob) => {
       const input = document.getElementById("qrImageInput");
@@ -638,10 +732,7 @@ function openCameraScanner() {
       transfer.items.add(new File([blob], "safescan-camera-frame.jpg", { type: "image/jpeg" }));
       input.files = transfer.files;
       source.value = "camera_frame";
-      if (analysisLoadingState) {
-        analysisLoadingState.textContent = "Sending the selected photo to SafeScan…";
-        analysisLoadingState.classList.remove("hidden");
-      }
+      showAnalysisProgress("Checking this QR photo", form);
       form.requestSubmit ? form.requestSubmit() : form.submit();
       return true;
     }
