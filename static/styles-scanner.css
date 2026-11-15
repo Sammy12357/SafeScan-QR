@@ -32,7 +32,48 @@ body.qr-camera-open { overflow: hidden; }
 .qr-camera-server-offer p { margin: var(--space-0) var(--space-0) var(--space-3); color: var(--muted); font-size: 0.84rem; line-height: 1.45; }
 .qr-camera-server-send { min-height: 44px; padding: var(--space-0) var(--space-4); border: 1px solid var(--accent); border-radius: 8px; background: rgba(var(--accent-rgb), 0.12); color: var(--text); font: inherit; font-weight: 700; cursor: pointer; }
 .qr-camera-server-send:disabled { opacity: 0.55; cursor: wait; }
-@media (max-width: 520px) { .qr-camera-stage { aspect-ratio: 3 / 4; } .qr-camera-capture, .qr-camera-retry { width: 100%; } }
+@media (max-width: 520px), (max-height: 520px) {
+  .qr-camera-modal { padding: var(--space-0); overflow: hidden; }
+  .qr-camera-card {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    width: min(520px, 100%);
+    height: 100vh;
+    height: 100dvh;
+    max-height: none;
+    min-height: 0;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    border-radius: 0;
+    overflow-y: auto;
+  }
+  .qr-camera-header { flex: none; padding: var(--space-3) var(--space-5); }
+  .qr-camera-stage { flex: 1 1 auto; min-height: 0; aspect-ratio: auto; }
+  .qr-camera-frame { width: min(64%, 280px, 38dvh); }
+  .qr-camera-status {
+    flex: 0 1 auto;
+    max-height: 5.5em;
+    padding: var(--space-3) var(--space-4);
+    overflow-y: auto;
+  }
+  .qr-camera-controls { flex: none; padding: var(--space-2) var(--space-4) var(--space-0); }
+  .qr-camera-actions {
+    position: sticky;
+    bottom: var(--space-0);
+    z-index: 1;
+    flex: none;
+    padding: var(--space-3) var(--space-4) var(--space-4);
+    background: var(--panel-strong);
+  }
+  .qr-camera-server-offer {
+    flex: 0 1 auto;
+    max-height: min(35dvh, 220px);
+    margin: var(--space-0) var(--space-4) var(--space-4);
+    overflow-y: auto;
+  }
+}
+@media (max-width: 520px) { .qr-camera-capture, .qr-camera-retry { width: 100%; } }
 .wallet-spinner { width: 34px; height: 34px; border: 3px solid rgba(255, 255, 255, 0.13); border-top-color: var(--accent); border-radius: 50%; animation: walletSpin 0.8s linear infinite; }
 .wallet-status a { color: var(--accent); text-decoration: none; font-weight: 800; }
 @keyframes walletSpin { to { transform: rotate(360deg); } }
