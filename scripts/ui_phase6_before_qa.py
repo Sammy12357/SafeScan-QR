@@ -23,6 +23,8 @@ parser.add_argument('--app-root', type=Path, required=True)
 parser.add_argument('--output', type=Path, default=Path(__file__).resolve().parents[1] / 'docs/design/screenshots/ui-phase-6-hardening/before')
 args = parser.parse_args()
 app_root = args.app_root.resolve()
+if not app_root.is_dir() or not (app_root / 'scripts/ui_screenshots.py').is_file():
+    parser.error('--app-root must point to a local SafeScan checkout')
 harness = runpy.run_path(str(app_root / 'scripts/ui_screenshots.py'))
 
 
@@ -59,8 +61,11 @@ with tempfile.TemporaryDirectory(prefix='safescan-phase6-before-') as temp:
     port = harness['free_port']()
     url = f'http://127.0.0.1:{port}'
     env = harness['isolated_server_env'](temp, url)
+    # This developer-only harness accepts a local checkout path for cwd. The
+    # executable and argv are fixed, shell=False, and port is a local integer;
+    # no data from the checkout is interpolated into a shell command.
     proc = subprocess.Popen(
-        [sys.executable, '-m', 'uvicorn', 'hackabull:qr_app', '--host', '127.0.0.1', '--port', str(port), '--no-access-log'],
+        [sys.executable, '-m', 'uvicorn', 'hackabull:qr_app', '--host', '127.0.0.1', '--port', str(port), '--no-access-log'],  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
         cwd=app_root, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
     )
     try:
