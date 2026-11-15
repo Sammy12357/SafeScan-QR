@@ -33,9 +33,35 @@ const ghostAddressInput = document.getElementById("ghostAddressInput");
 const ghostPhoneInput = document.getElementById("ghostPhoneInput");
 const ghostEmailInput = document.getElementById("ghostEmailInput");
 const goGhostDeviceNotice = document.getElementById("goGhostDeviceNotice");
+const goGhostSessionNotice = document.getElementById("goGhostSessionNotice");
+const goGhostLegacyNotice = document.getElementById("goGhostLegacyNotice");
+const goGhostLegacyActions = document.getElementById("goGhostLegacyActions");
+const eraseGhostLegacyButton = document.getElementById("eraseGhostLegacyButton");
+const ghostSubjectSelect = document.getElementById("ghostSubjectSelect");
+const addGhostFamilyButton = document.getElementById("addGhostFamilyButton");
+const removeGhostSubjectButton = document.getElementById("removeGhostSubjectButton");
+const ghostFamilyAttestationLabel = document.getElementById("ghostFamilyAttestationLabel");
+const ghostFamilyAttestationInput = document.getElementById("ghostFamilyAttestationInput");
 const GO_GHOST_PROFILE_KEY = "safeScanGoGhostProfile";
 const GO_GHOST_PROGRESS_KEY = "safeScanGoGhostProgress";
 const GO_GHOST_CONSENT_KEY = "safeScanGoGhostConsent";
+const GO_GHOST_LEGACY_KEYS = [GO_GHOST_PROFILE_KEY, GO_GHOST_PROGRESS_KEY, GO_GHOST_CONSENT_KEY];
+// The old keys have no owner. Never read or import their contents into v2.
+// Change this one value to "erase" only after the migration choice is settled.
+const GO_GHOST_LEGACY_POLICY = "quarantine";
+const goGhostAccountId = goGhostWorkspace?.dataset.accountId || "";
+const GO_GHOST_STORE_KEY = goGhostAccountId
+  ? `safeScanGoGhostV2:account:${encodeURIComponent(goGhostAccountId)}`
+  : "safeScanGoGhostV2:guest";
+function ghostStorageForScope() {
+  if (!goGhostWorkspace) return null;
+  try { return goGhostAccountId ? window.localStorage : window.sessionStorage; }
+  catch { return null; }
+}
+const goGhostStorageArea = ghostStorageForScope();
+const goGhostFamilyAttestedThisVisit = new Set();
+let goGhostStoreLocked = false;
+let goGhostState = null;
 let activeGhostScopeBrokerId = "";
 const goGhostAutomationControllers = new Map();
 
@@ -77,16 +103,119 @@ function loadGoGhostBrokerRegistry() {
 
 const goGhostBrokers = loadGoGhostBrokerRegistry();
 
-function readJsonStorage(key, fallback) {
+function readJsonStorage(key, fallback, area) {
+  if (!area) return fallback;
   try {
-    return JSON.parse(window.localStorage.getItem(key)) ?? fallback;
+    return JSON.parse(area.getItem(key)) ?? fallback;
   } catch {
     return fallback;
   }
 }
 
-function writeJsonStorage(key, value) {
-  window.localStorage.setItem(key, JSON.stringify(value));
+function writeJsonStorage(key, value, area) {
+  if (!area) throw new Error("Browser storage is unavailable.");
+  area.setItem(key, JSON.stringify(value));
+}
+
+function ghostEmptyProfile() {
+  return { name: "", location: "", address: "", phone: "", email: "", identifier: "" };
+}
+
+function ghostNewSubject(kind) {
+  let id = window.crypto?.randomUUID?.();
+  if (!id && window.crypto?.getRandomValues) {
+    const bytes = window.crypto.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 15) | 64;
+    bytes[8] = (bytes[8] & 63) | 128;
+    const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    id = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+  if (!id) throw new Error("A secure browser is required to create a Go Ghost profile.");
+  return { id, kind, profile: ghostEmptyProfile(), progress: {}, consentAcceptedAt: "", familyAttestedAt: "" };
+}
+
+function ghostNormalizeState(value) {
+  const state = { version: 2, activeSubjectId: "", subjects: {} };
+  if (!value || value.version !== 2 || typeof value.subjects !== "object" || Array.isArray(value.subjects)) return state;
+  for (const [id, subject] of Object.entries(value.subjects).slice(0, 20)) {
+    if (!/^[0-9a-f-]{36}$/i.test(id) || !subject || !["self", "family"].includes(subject.kind)) continue;
+    const source = subject.profile && typeof subject.profile === "object" ? subject.profile : {};
+    const profile = ghostEmptyProfile();
+    for (const field of Object.keys(profile)) {
+      profile[field] = cleanGhostText(typeof source[field] === "string" ? source[field] : "").slice(0, 220);
+    }
+    state.subjects[id] = {
+      id,
+      kind: subject.kind,
+      profile,
+      progress: subject.progress && typeof subject.progress === "object" && !Array.isArray(subject.progress) ? subject.progress : {},
+      consentAcceptedAt: typeof subject.consentAcceptedAt === "string" ? subject.consentAcceptedAt : "",
+      familyAttestedAt: typeof subject.familyAttestedAt === "string" ? subject.familyAttestedAt : ""
+    };
+  }
+  state.activeSubjectId = Object.hasOwn(state.subjects, value.activeSubjectId)
+    ? value.activeSubjectId : Object.keys(state.subjects)[0] || "";
+  return state;
+}
+
+function ghostCurrentState() {
+  if (goGhostStoreLocked) return { version: 2, activeSubjectId: "", subjects: {} };
+  if (!goGhostState) goGhostState = ghostNormalizeState(readJsonStorage(GO_GHOST_STORE_KEY, null, goGhostStorageArea));
+  return goGhostState;
+}
+
+function ghostCurrentSubject() {
+  const state = ghostCurrentState();
+  if (!state.activeSubjectId) {
+    const subject = ghostNewSubject("self");
+    state.subjects[subject.id] = subject;
+    state.activeSubjectId = subject.id;
+  }
+  return state.subjects[state.activeSubjectId];
+}
+
+function ghostSaveState() {
+  if (goGhostStoreLocked || !goGhostStorageArea) return false;
+  try {
+    writeJsonStorage(GO_GHOST_STORE_KEY, ghostCurrentState(), goGhostStorageArea);
+    return true;
+  } catch {
+    if (goGhostDeviceNotice) goGhostDeviceNotice.textContent = "Browser storage is unavailable. Details will be lost when this page closes.";
+    return false;
+  }
+}
+
+function ghostSaveProfile(profile) {
+  if (goGhostStoreLocked) return;
+  const next = ghostEmptyProfile();
+  for (const field of Object.keys(next)) next[field] = cleanGhostText(profile[field]).slice(0, 220);
+  ghostCurrentSubject().profile = next;
+  ghostSaveState();
+}
+
+function ghostSaveProgress(progress) {
+  if (goGhostStoreLocked) return;
+  ghostCurrentSubject().progress = progress;
+  ghostSaveState();
+}
+
+function ghostApplyLegacyPolicy(policy = GO_GHOST_LEGACY_POLICY) {
+  let found = false;
+  let eraseFailed = false;
+  for (const key of GO_GHOST_LEGACY_KEYS) {
+    try {
+      if (window.localStorage.getItem(key) === null) continue;
+      found = true;
+      if (policy === "erase") {
+        window.localStorage.removeItem(key);
+        if (window.localStorage.getItem(key) !== null) eraseFailed = true;
+      }
+    } catch { if (policy === "erase") eraseFailed = true; }
+  }
+  const showNotice = policy === "erase" ? eraseFailed : found;
+  if (goGhostLegacyNotice) goGhostLegacyNotice.hidden = !showNotice;
+  if (goGhostLegacyActions) goGhostLegacyActions.hidden = !showNotice;
+  return policy === "erase" ? !eraseFailed : found;
 }
 
 function cleanGhostText(value) {
@@ -103,7 +232,8 @@ function ghostPathSlug(value) {
 }
 
 function getGhostProfile() {
-  const profile = readJsonStorage(GO_GHOST_PROFILE_KEY, { name: "", location: "", address: "", phone: "", email: "", identifier: "" });
+  if (goGhostStoreLocked || !goGhostWorkspace) return ghostEmptyProfile();
+  const profile = ghostCurrentSubject().profile;
   const currentProfile = {
     ...profile,
     name: ghostNameInput ? cleanGhostText(ghostNameInput.value) : cleanGhostText(profile.name),
@@ -119,7 +249,8 @@ function getGhostProfile() {
 }
 
 function getGhostProgress() {
-  return readJsonStorage(GO_GHOST_PROGRESS_KEY, {});
+  if (goGhostStoreLocked || !goGhostWorkspace) return {};
+  return ghostCurrentSubject().progress;
 }
 
 function setGhostProgress(siteId, field, checked) {
@@ -130,7 +261,7 @@ function setGhostProgress(siteId, field, checked) {
     ...(checked && (field === "submitted" || field === "removed") ? { noMatch: false, finishReason: "" } : {}),
     updatedAt: new Date().toISOString()
   };
-  writeJsonStorage(GO_GHOST_PROGRESS_KEY, progress);
+  ghostSaveProgress(progress);
   renderGoGhostAutomationScope();
   renderGoGhostProgress();
 }
@@ -152,7 +283,7 @@ function setGhostManualStatus(siteId, status) {
     automation: null,
     updatedAt: new Date().toISOString()
   };
-  writeJsonStorage(GO_GHOST_PROGRESS_KEY, progress);
+  ghostSaveProgress(progress);
   renderGoGhostAutomationScope();
   renderGoGhostProgress();
 }
@@ -168,7 +299,7 @@ function finishGhostBroker(siteId, detail = "No matching profile found.") {
     automation: null,
     updatedAt: new Date().toISOString()
   };
-  writeJsonStorage(GO_GHOST_PROGRESS_KEY, progress);
+  ghostSaveProgress(progress);
   renderGoGhostAutomationScope();
   renderGoGhostProgress();
 }
@@ -176,7 +307,7 @@ function finishGhostBroker(siteId, detail = "No matching profile found.") {
 function updateGhostAutomationState(siteId, automation) {
   const progress = getGhostProgress();
   progress[siteId] = { ...(progress[siteId] || {}), automation, updatedAt: new Date().toISOString() };
-  writeJsonStorage(GO_GHOST_PROGRESS_KEY, progress);
+  ghostSaveProgress(progress);
   renderGoGhostAutomationScope();
   renderGoGhostProgress();
 }
@@ -325,11 +456,11 @@ function hasGhostSearchProfile(profile) {
   return Boolean((profile.name || "").trim());
 }
 
-function nextPendingGhostBroker() {
+function nextPendingGhostBroker(allowed = () => true) {
   const progress = getGhostProgress();
   return goGhostBrokers.find((broker) => {
     const state = progress[broker.id];
-    return !state?.submitted && !state?.removed && !ghostHasNoMatch(state);
+    return allowed(broker) && !state?.submitted && !state?.removed && !ghostHasNoMatch(state);
   }) || null;
 }
 
@@ -377,6 +508,11 @@ const GHOST_MANUAL_STATUSES = ["captcha_required", "email_required", "needs_prof
 // through the rest so all 8 trackers are attempted in a single pass.
 async function startGhostAssistedQueue() {
   if (!GO_GHOST_BROWSER_AUTOMATION_AVAILABLE) return;
+  if (ghostCurrentSubject().kind === "family") {
+    showCopyToast("Assisted submissions are unavailable for family requests");
+    return;
+  }
+  if (!ghostCanAct()) return;
   const profile = getGhostProfile();
   if (!hasGhostSearchProfile(profile)) {
     scrollToGhostProfile();

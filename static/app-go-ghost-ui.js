@@ -1,16 +1,41 @@
 // app-go-ghost-ui.js — Go Ghost run/queue automation, rendering, scope modal, event wiring.
 // Split from app.js; the app-*.js files share one global scope and MUST
 // load in this order: app-core.js -> app-widgets.js -> app-go-ghost.js -> app-go-ghost-ui.js -> app-generate-qr.js.
+function ghostRequiresSubjectOwnAction(broker) {
+  return broker?.group === "peopleconnect";
+}
+
+function ghostCanAct(broker = null) {
+  if (goGhostStoreLocked) return false;
+  const subject = ghostCurrentSubject();
+  if (!subject.consentAcceptedAt) {
+    showCopyToast("Confirm this person's Go Ghost setup first");
+    return false;
+  }
+  if (subject.kind === "family" && !goGhostFamilyAttestedThisVisit.has(subject.id)) {
+    showCopyToast("Confirm your authority to help this family member first");
+    ghostFamilyAttestationInput?.focus();
+    return false;
+  }
+  if (subject.kind === "family" && ghostRequiresSubjectOwnAction(broker)) {
+    showCopyToast("This broker requires the person to use its suppression tool themselves");
+    return false;
+  }
+  return true;
+}
+
 async function openNextGhostBroker() {
+  if (!ghostCanAct()) return;
   const profile = getGhostProfile();
   if (!hasGhostSearchProfile(profile)) {
     scrollToGhostProfile();
     showCopyToast("Add a name first");
     return;
   }
-  const broker = nextPendingGhostBroker();
+  const family = ghostCurrentSubject().kind === "family";
+  const broker = nextPendingGhostBroker((item) => !family || !ghostRequiresSubjectOwnAction(item));
   if (!broker) {
-    showCopyToast("All brokers tracked");
+    showCopyToast(family ? "Remaining brokers may require the person to complete them directly" : "All brokers tracked");
     return;
   }
   const searchUrl = goGhostBrokerSearchUrl(broker, profile);
@@ -30,6 +55,11 @@ async function finishGhostBrokerAndOpenNext(broker) {
 
 async function runGhostBrokerAutomation(broker, triggerButton) {
   if (!GO_GHOST_BROWSER_AUTOMATION_AVAILABLE) return null;
+  if (ghostCurrentSubject().kind === "family") {
+    showCopyToast("Assisted submissions are unavailable for family requests");
+    return null;
+  }
+  if (!ghostCanAct(broker)) return null;
   const activeController = goGhostAutomationControllers.get(broker.id);
   if (activeController) {
     activeController.abort();
@@ -79,6 +109,7 @@ async function runGhostBrokerAutomation(broker, triggerButton) {
         email: profile.email
       })
     });
+    if (goGhostStoreLocked) return null;
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(body.error || "Automation failed");
@@ -99,6 +130,7 @@ async function runGhostBrokerAutomation(broker, triggerButton) {
     showCopyToast(automation.detail || formatGhostAutomationStatus(automation.status));
     return automation;
   } catch (error) {
+    if (goGhostStoreLocked) return null;
     if (error?.name === "AbortError") {
       const cancelled = {
         status: "cancelled",
@@ -182,7 +214,7 @@ function renderGoGhostBrokers() {
           <h3>${escapeHtml(broker.name)}</h3>
         </div>
         <div class="broker-actions">
-          <a class="secondary-button" href="${searchUrl}" target="_blank" rel="noopener noreferrer">Search</a>
+          <a class="secondary-button" href="${searchUrl}" target="_blank" rel="noopener noreferrer" data-ghost-search="${broker.id}">Search</a>
           <a class="primary-button" href="${optOutUrl}" target="_blank" rel="noopener noreferrer" data-ghost-optout="${broker.id}">Opt out</a>
           ${GO_GHOST_BROWSER_AUTOMATION_AVAILABLE && broker.automationEnabled ? `<button class="primary-button" type="button" data-ghost-auto="${broker.id}">${goGhostAutomationControllers.has(broker.id) ? "Cancel run" : "Run auto fill"}</button>` : ""}
           <button class="secondary-button" type="button" data-ghost-copy="${broker.id}">Copy details</button>
@@ -228,12 +260,18 @@ function openGoGhostScopeModal(siteId, focusClose = true) {
   const scope = goGhostAutomationScope(broker);
   const state = getGhostProgress()[broker.id] || {};
   const automation = GO_GHOST_BROWSER_AUTOMATION_AVAILABLE ? state.automation : null;
+  const subjectOnly = ghostCurrentSubject().kind === "family" && ghostRequiresSubjectOwnAction(broker);
   activeGhostScopeBrokerId = broker.id;
   if (goGhostScopeTitle) goGhostScopeTitle.textContent = broker.name;
   if (goGhostScopePriority) goGhostScopePriority.textContent = broker.priority;
-  if (goGhostScopeDescription) goGhostScopeDescription.textContent = GO_GHOST_BROWSER_AUTOMATION_AVAILABLE
-    ? (broker.automationNote || broker.priorityDescription || "")
-    : "Find your matching listing, then open the broker opt-out page and submit the request in your browser.";
+  if (goGhostScopeDescription) goGhostScopeDescription.textContent = subjectOnly
+    ? "PeopleConnect limits this suppression tool to the person's own use. Ask the family member to complete it directly."
+    : GO_GHOST_BROWSER_AUTOMATION_AVAILABLE
+      ? (broker.automationNote || broker.priorityDescription || "")
+      : "Find your matching listing, then open the broker opt-out page and submit the request in your browser.";
+  for (const button of [goGhostScopeSearchButton, goGhostScopeOptOutButton, goGhostScopeCopyButton, goGhostScopeFinishButton, goGhostScopeAutoFillButton]) {
+    if (button) button.disabled = subjectOnly;
+  }
   renderGhostScopeKeywords(profile);
   const lane = ghostEffortLane(broker);
   const guidance = automation ? ghostStatusGuidance(automation.status) : null;
@@ -267,6 +305,7 @@ function openGoGhostScopeModal(siteId, focusClose = true) {
 async function runGhostScopeAction(action) {
   const broker = goGhostBrokers.find((item) => item.id === activeGhostScopeBrokerId);
   if (!broker) return;
+  if (["search", "optout", "finish", "copy", "auto"].includes(action) && !ghostCanAct(broker)) return;
   const profile = getGhostProfile();
   const searchUrl = goGhostBrokerSearchUrl(broker, profile);
 
@@ -307,17 +346,45 @@ async function runGhostScopeAction(action) {
   }
 }
 
+function renderGhostSubjects() {
+  if (!ghostSubjectSelect || goGhostStoreLocked) return;
+  const state = ghostCurrentState();
+  ghostSubjectSelect.innerHTML = Object.values(state.subjects).map((subject, index) => {
+    const label = subject.kind === "self" ? "My information" : `Family member ${index + 1}`;
+    const name = subject.profile.name ? ` — ${subject.profile.name}` : "";
+    return `<option value="${subject.id}">${escapeHtml(label + name)}</option>`;
+  }).join("");
+  ghostSubjectSelect.value = state.activeSubjectId;
+  const subject = ghostCurrentSubject();
+  if (removeGhostSubjectButton) removeGhostSubjectButton.disabled = subject.kind !== "family";
+  if (ghostFamilyAttestationLabel) ghostFamilyAttestationLabel.hidden = subject.kind !== "family";
+  if (ghostFamilyAttestationInput) ghostFamilyAttestationInput.checked = goGhostFamilyAttestedThisVisit.has(subject.id);
+}
+
 function hydrateGoGhostProfile() {
-  const profile = readJsonStorage(GO_GHOST_PROFILE_KEY, {});
+  const profile = goGhostStoreLocked ? ghostEmptyProfile() : ghostCurrentSubject().profile;
   if (ghostNameInput) ghostNameInput.value = profile.name || "";
   if (ghostLocationInput) ghostLocationInput.value = profile.location || "";
   if (ghostAddressInput) ghostAddressInput.value = profile.address || "";
   if (ghostPhoneInput) ghostPhoneInput.value = profile.phone || profile.identifier || "";
   if (ghostEmailInput) ghostEmailInput.value = profile.email || "";
+  renderGhostSubjects();
 }
 
-function startGoGhost() {
-  writeJsonStorage(GO_GHOST_CONSENT_KEY, { acceptedAt: new Date().toISOString() });
+function saveGhostFormProfile() {
+  if (goGhostStoreLocked) return;
+  const subject = ghostCurrentSubject();
+  const next = getGhostFormProfile();
+  if (subject.kind === "family" && Object.keys(next).some((field) => next[field] !== (subject.profile[field] || ""))) {
+    goGhostFamilyAttestedThisVisit.delete(subject.id);
+    subject.familyAttestedAt = "";
+    if (ghostFamilyAttestationInput) ghostFamilyAttestationInput.checked = false;
+  }
+  ghostSaveProfile(next);
+  renderGhostSubjects();
+}
+
+function showGoGhostWorkspace() {
   goGhostConsentModal?.classList.add("hidden");
   if (goGhostWorkspace) goGhostWorkspace.hidden = false;
   hydrateGoGhostProfile();
@@ -325,21 +392,144 @@ function startGoGhost() {
   renderGoGhostProgress();
 }
 
+function startGoGhost() {
+  if (goGhostStoreLocked) return;
+  ghostCurrentSubject().consentAcceptedAt = new Date().toISOString();
+  ghostSaveState();
+  showGoGhostWorkspace();
+}
+
+function selectGhostSubject(id) {
+  const state = ghostCurrentState();
+  if (!Object.hasOwn(state.subjects, id) || goGhostStoreLocked) return;
+  state.activeSubjectId = id;
+  ghostSaveState();
+  hydrateGoGhostProfile();
+  renderGoGhostAutomationScope();
+  renderGoGhostProgress();
+  goGhostScopeModal?.classList.add("hidden");
+  if (ghostCurrentSubject().consentAcceptedAt) showGoGhostWorkspace();
+  else {
+    if (goGhostWorkspace) goGhostWorkspace.hidden = true;
+    goGhostConsentModal?.classList.remove("hidden");
+  }
+}
+
+function addGhostFamilySubject() {
+  if (goGhostStoreLocked) return;
+  const state = ghostCurrentState();
+  if (Object.keys(state.subjects).length >= 20) {
+    showCopyToast("Go Ghost supports up to 20 people on this device");
+    return;
+  }
+  let subject;
+  try { subject = ghostNewSubject("family"); }
+  catch { showCopyToast("A secure browser is required to add a family member"); return; }
+  state.subjects[subject.id] = subject;
+  state.activeSubjectId = subject.id;
+  ghostSaveState();
+  selectGhostSubject(subject.id);
+  startGoGhostButton?.focus();
+}
+
+function removeGhostSubject() {
+  const state = ghostCurrentState();
+  if (goGhostStoreLocked || ghostCurrentSubject().kind !== "family") return;
+  if (!window.confirm("Remove this person's Go Ghost details and progress from this browser?")) return;
+  goGhostFamilyAttestedThisVisit.delete(state.activeSubjectId);
+  delete state.subjects[state.activeSubjectId];
+  state.activeSubjectId = Object.keys(state.subjects)[0];
+  ghostSaveState();
+  selectGhostSubject(state.activeSubjectId);
+}
+
+function lockGhostWorkspace() {
+  if (goGhostStoreLocked) return;
+  goGhostStoreLocked = true;
+  ghostQueueStopRequested = true;
+  for (const controller of goGhostAutomationControllers.values()) controller.abort();
+  goGhostAutomationControllers.clear();
+  goGhostFamilyAttestedThisVisit.clear();
+  goGhostState = null;
+  for (const input of [ghostNameInput, ghostLocationInput, ghostAddressInput, ghostPhoneInput, ghostEmailInput]) {
+    if (input) input.value = "";
+  }
+  if (ghostFamilyAttestationInput) ghostFamilyAttestationInput.checked = false;
+  if (goGhostAutomationRows) goGhostAutomationRows.innerHTML = "";
+  if (goGhostBrokerList) goGhostBrokerList.innerHTML = "";
+  if (ghostSubjectSelect) ghostSubjectSelect.innerHTML = "";
+  if (goGhostScopeKeywords) goGhostScopeKeywords.innerHTML = "";
+  if (goGhostScopeDetails) goGhostScopeDetails.innerHTML = "";
+  if (ghostProgressCount) ghostProgressCount.textContent = "—";
+  if (goGhostWorkspace) goGhostWorkspace.hidden = true;
+  goGhostScopeModal?.classList.add("hidden");
+  goGhostConsentModal?.classList.add("hidden");
+  if (goGhostSessionNotice) goGhostSessionNotice.hidden = false;
+}
+
+let goGhostCheckSerial = 0;
+let goGhostVisibleBeforeCheck = false;
+async function checkGhostAccount() {
+  if (goGhostStoreLocked) return;
+  const serial = ++goGhostCheckSerial;
+  // Hide personal details before waiting for the server to confirm this tab's owner.
+  if (goGhostWorkspace && !goGhostWorkspace.hidden) goGhostVisibleBeforeCheck = true;
+  if (goGhostWorkspace) goGhostWorkspace.hidden = true;
+  goGhostScopeModal?.classList.add("hidden");
+  try {
+    const response = await fetch("/api/me", { credentials: "same-origin", cache: "no-store" });
+    if (goGhostStoreLocked || serial !== goGhostCheckSerial) return;
+    if (!goGhostAccountId && response.status === 401) {
+      if (goGhostVisibleBeforeCheck && goGhostWorkspace) goGhostWorkspace.hidden = false;
+      goGhostVisibleBeforeCheck = false;
+      return;
+    }
+    if (!response.ok) return lockGhostWorkspace();
+    const body = await response.json();
+    if (goGhostStoreLocked || serial !== goGhostCheckSerial) return;
+    if (body?.user?.id !== goGhostAccountId) return lockGhostWorkspace();
+    if (goGhostVisibleBeforeCheck && goGhostWorkspace) goGhostWorkspace.hidden = false;
+    goGhostVisibleBeforeCheck = false;
+  } catch {
+    if (serial === goGhostCheckSerial) lockGhostWorkspace();
+  }
+}
+
 if (goGhostWorkspace) {
   applyGoGhostDeviceFormatting();
   window.addEventListener("resize", applyGoGhostDeviceFormatting);
+  ghostApplyLegacyPolicy();
+  // Guest details must not reappear after a sign-in on this tab.
+  if (goGhostAccountId) {
+    try { window.sessionStorage.removeItem("safeScanGoGhostV2:guest"); } catch { /* Storage unavailable. */ }
+  }
 
-  const hasConsent = Boolean(readJsonStorage(GO_GHOST_CONSENT_KEY, null));
-  if (hasConsent) startGoGhost();
+  const hasConsent = Boolean(ghostCurrentSubject().consentAcceptedAt);
+  if (hasConsent) showGoGhostWorkspace();
   else goGhostConsentModal?.classList.remove("hidden");
 
   startGoGhostButton?.addEventListener("click", startGoGhost);
+  ghostSubjectSelect?.addEventListener("change", () => selectGhostSubject(ghostSubjectSelect.value));
+  addGhostFamilyButton?.addEventListener("click", addGhostFamilySubject);
+  removeGhostSubjectButton?.addEventListener("click", removeGhostSubject);
+  ghostFamilyAttestationInput?.addEventListener("change", () => {
+    const subject = ghostCurrentSubject();
+    if (subject.kind !== "family") return;
+    if (ghostFamilyAttestationInput.checked) {
+      goGhostFamilyAttestedThisVisit.add(subject.id);
+      subject.familyAttestedAt = new Date().toISOString();
+    } else {
+      goGhostFamilyAttestedThisVisit.delete(subject.id);
+      subject.familyAttestedAt = "";
+    }
+    ghostSaveState();
+  });
   startGhostQueueButton?.addEventListener("click", startGhostAssistedQueue);
   openNextGhostBrokerButton?.addEventListener("click", openNextGhostBroker);
 
   goGhostProfileForm?.addEventListener("submit", (event) => {
     event.preventDefault();
-    writeJsonStorage(GO_GHOST_PROFILE_KEY, getGhostFormProfile());
+    saveGhostFormProfile();
     renderGoGhostAutomationScope();
     renderGoGhostProgress();
     showCopyToast(GO_GHOST_BROWSER_AUTOMATION_AVAILABLE ? "Automation scope updated" : "Search details updated");
@@ -347,16 +537,17 @@ if (goGhostWorkspace) {
 
   [ghostNameInput, ghostLocationInput, ghostAddressInput, ghostPhoneInput, ghostEmailInput].forEach((input) => {
     input?.addEventListener("input", () => {
-      writeJsonStorage(GO_GHOST_PROFILE_KEY, getGhostFormProfile());
+      saveGhostFormProfile();
       renderGoGhostAutomationScope();
       renderGoGhostProgress();
     });
   });
 
   clearGhostDataButton?.addEventListener("click", () => {
-    window.localStorage.removeItem(GO_GHOST_PROFILE_KEY);
-    window.localStorage.removeItem(GO_GHOST_PROGRESS_KEY);
-    window.localStorage.removeItem(GO_GHOST_CONSENT_KEY);
+    if (goGhostStoreLocked) return;
+    try { goGhostStorageArea.removeItem(GO_GHOST_STORE_KEY); } catch { /* Storage unavailable. */ }
+    goGhostState = null;
+    goGhostFamilyAttestedThisVisit.clear();
     hydrateGoGhostProfile();
     renderGoGhostAutomationScope();
     renderGoGhostProgress();
@@ -365,6 +556,25 @@ if (goGhostWorkspace) {
     goGhostConsentModal?.classList.remove("hidden");
     startGoGhostButton?.focus();
     showCopyToast("Go Ghost data cleared");
+  });
+
+  eraseGhostLegacyButton?.addEventListener("click", () => {
+    if (!window.confirm("Erase older Go Ghost details from this browser? Their owner cannot be identified, and this cannot be undone.")) return;
+    const erased = ghostApplyLegacyPolicy("erase");
+    showCopyToast(erased ? "Older browser details erased" : "Could not erase older browser details");
+  });
+
+  window.addEventListener("focus", checkGhostAccount);
+  window.addEventListener("pageshow", checkGhostAccount);
+  window.addEventListener("pagehide", lockGhostWorkspace);
+  window.addEventListener("storage", (event) => {
+    if (event.key === GO_GHOST_STORE_KEY) lockGhostWorkspace();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") checkGhostAccount();
+  });
+  document.querySelectorAll(".sign-out-form").forEach((form) => {
+    form.addEventListener("submit", lockGhostWorkspace);
   });
 
   goGhostAutomationRows?.addEventListener("click", (event) => {
@@ -394,12 +604,19 @@ if (goGhostWorkspace) {
   });
 
   goGhostBrokerList?.addEventListener("click", async (event) => {
+    const searchLink = event.target.closest("[data-ghost-search]");
+    if (searchLink) {
+      event.preventDefault();
+      const broker = goGhostBrokers.find((item) => item.id === searchLink.dataset.ghostSearch);
+      if (broker && ghostCanAct(broker)) openGhostUrl(goGhostBrokerSearchUrl(broker, getGhostProfile()));
+      return;
+    }
     const optOutLink = event.target.closest("[data-ghost-optout]");
     if (optOutLink) {
       event.preventDefault();
       const profile = getGhostProfile();
       const broker = goGhostBrokers.find((item) => item.id === optOutLink.dataset.ghostOptout);
-      if (!broker) return;
+      if (!broker || !ghostCanAct(broker)) return;
       const searchUrl = goGhostBrokerSearchUrl(broker, profile);
       showCopyToast(await openGhostOptOutWithPacket(broker, profile, searchUrl));
       return;
@@ -416,7 +633,7 @@ if (goGhostWorkspace) {
     if (!copyButton) return;
     const profile = getGhostProfile();
     const broker = goGhostBrokers.find((item) => item.id === copyButton.dataset.ghostCopy);
-    if (!broker) return;
+    if (!broker || !ghostCanAct(broker)) return;
     const searchUrl = goGhostBrokerSearchUrl(broker, profile);
     const copied = await copyTextToClipboard(goGhostCopyPacket(broker, profile, searchUrl)).catch(() => false);
     showCopyToast(copied ? `${broker.name} details copied` : "Copy failed");
