@@ -11,6 +11,22 @@ The before and after captures use the isolated mock server, synthetic accounts, 
 | Light 768 | [Before](screenshots/ui-phase-8/before/light/768/home.jpg) / [After](screenshots/ui-phase-8/after/light/768/home.jpg) | [Before](screenshots/ui-phase-8/before/light/768/admin_users.jpg) / [After](screenshots/ui-phase-8/after/light/768/admin_users.jpg) | [Before](screenshots/ui-phase-8/before/light/768/states.jpg) / [After](screenshots/ui-phase-8/after/light/768/states.jpg) |
 | Light 1440 | [Before](screenshots/ui-phase-8/before/light/1440/home.jpg) / [After](screenshots/ui-phase-8/after/light/1440/home.jpg) | [Before](screenshots/ui-phase-8/before/light/1440/admin_users.jpg) / [After](screenshots/ui-phase-8/after/light/1440/admin_users.jpg) | [Before](screenshots/ui-phase-8/before/light/1440/states.jpg) / [After](screenshots/ui-phase-8/after/light/1440/states.jpg) |
 
+## Error page comparisons
+
+The 404 and 500 pages were rendered with a fixed synthetic request reference.
+The paired captures use each branch's templates and CSS; they contain no
+request details or personal data. Both pages kept identical dimensions before
+and after the Phase 8 stylesheet cache update.
+
+| Theme and width | 404 | 500 |
+| --- | --- | --- |
+| Dark 375 | [Before](screenshots/ui-phase-8/before/dark/375/error_404.jpg) / [After](screenshots/ui-phase-8/after/dark/375/error_404.jpg) | [Before](screenshots/ui-phase-8/before/dark/375/error_500.jpg) / [After](screenshots/ui-phase-8/after/dark/375/error_500.jpg) |
+| Dark 768 | [Before](screenshots/ui-phase-8/before/dark/768/error_404.jpg) / [After](screenshots/ui-phase-8/after/dark/768/error_404.jpg) | [Before](screenshots/ui-phase-8/before/dark/768/error_500.jpg) / [After](screenshots/ui-phase-8/after/dark/768/error_500.jpg) |
+| Dark 1440 | [Before](screenshots/ui-phase-8/before/dark/1440/error_404.jpg) / [After](screenshots/ui-phase-8/after/dark/1440/error_404.jpg) | [Before](screenshots/ui-phase-8/before/dark/1440/error_500.jpg) / [After](screenshots/ui-phase-8/after/dark/1440/error_500.jpg) |
+| Light 375 | [Before](screenshots/ui-phase-8/before/light/375/error_404.jpg) / [After](screenshots/ui-phase-8/after/light/375/error_404.jpg) | [Before](screenshots/ui-phase-8/before/light/375/error_500.jpg) / [After](screenshots/ui-phase-8/after/light/375/error_500.jpg) |
+| Light 768 | [Before](screenshots/ui-phase-8/before/light/768/error_404.jpg) / [After](screenshots/ui-phase-8/after/light/768/error_404.jpg) | [Before](screenshots/ui-phase-8/before/light/768/error_500.jpg) / [After](screenshots/ui-phase-8/after/light/768/error_500.jpg) |
+| Light 1440 | [Before](screenshots/ui-phase-8/before/light/1440/error_404.jpg) / [After](screenshots/ui-phase-8/after/light/1440/error_404.jpg) | [Before](screenshots/ui-phase-8/before/light/1440/error_500.jpg) / [After](screenshots/ui-phase-8/after/light/1440/error_500.jpg) |
+
 ## Browser checks
 
 - Axe WCAG 2, 2.1, and 2.2 A/AA found no violations on home, state gallery, or admin users across all six width/theme combinations. Both camera implementations also had no axe violations while the dialog was open.
