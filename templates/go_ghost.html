@@ -8,7 +8,7 @@
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <title>Go Ghost | SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg?v=rose-theme-v1" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=ghost-state-ui-v3">
+  <link rel="stylesheet" href="/static/styles.css?v=ghost-drop-card-v2">
 </head>
 <body>
   <div class="page-shell go-ghost-shell">
@@ -133,6 +133,15 @@
           </div>
         </form>
 
+        <section id="ghostCaliforniaDropCard" class="ghost-drop-card" aria-labelledby="ghostDropTitle" hidden>
+          <p class="eyebrow">California residents</p>
+          <h3 id="ghostDropTitle">One request to registered data brokers</h3>
+          <p>California's free DROP service lets an eligible resident submit a deletion request to registered data brokers. The state verifies residency and shows each broker's response.</p>
+          <p id="ghostDropFamilyNote" hidden>For a family member, follow DROP's rules for helping another resident submit their own request.</p>
+          <p>Enter details on California's site. SafeScan does not send your saved Go Ghost profile or collect your DROP ID.</p>
+          <a class="secondary-button" href="https://privacy.ca.gov/drop/" target="_blank" rel="noopener noreferrer">Open California DROP</a>
+        </section>
+
         {% if browser_automation_available %}
         <div class="ghost-automation-stack">
           <span>Headless submit jobs</span>
@@ -215,7 +224,7 @@
   <script src="/static/app-widgets.js?v=ghost-assist-v1"></script>
   <script src="/static/go-ghost-state.js?v=ghost-state-ui-v3"></script>
   <script src="/static/app-go-ghost.js?v=ghost-state-ui-v3"></script>
-  <script src="/static/app-go-ghost-ui.js?v=ghost-state-ui-v3"></script>
+  <script src="/static/app-go-ghost-ui.js?v=ghost-drop-card-v1"></script>
   <script src="/static/app-generate-qr.js?v=ghost-assist-v1"></script>
 </body>
 </html>

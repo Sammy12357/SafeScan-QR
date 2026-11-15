@@ -35,6 +35,7 @@ const ids = [
   'ghostCityInput', 'ghostStateInput', 'ghostBirthYearInput', 'ghostAddressInput',
   'ghostPhoneInput', 'ghostEmailInput', 'ghostPreviousCitiesInput', 'ghostOtherNamesInput',
   'ghostProfileReviewNotice', 'ghostSavedProfileHint', 'ghostAccountNameHint',
+  'ghostCaliforniaDropCard', 'ghostDropFamilyNote',
   'goGhostDeviceNotice', 'goGhostLegacyNotice', 'goGhostLegacyActions', 'eraseGhostLegacyButton', 'goGhostSessionNotice',
   'ghostSubjectSelect', 'addGhostFamilyButton', 'removeGhostSubjectButton',
   'ghostFamilyAttestationLabel', 'ghostFamilyAttestationInput'
@@ -43,6 +44,8 @@ const elements = Object.fromEntries(ids.map(id => [id, makeElement()]));
 elements.goGhostBrokerRegistry = makeElement();
 elements.goGhostBrokerRegistry.textContent = fs.readFileSync('data/go_ghost/brokers.json', 'utf8');
 elements.goGhostWorkspace.hidden = true;
+elements.ghostCaliforniaDropCard.hidden = true;
+elements.ghostDropFamilyNote.hidden = true;
 elements.goGhostWorkspace.dataset.browserAutomationAvailable = 'false';
 elements.goGhostWorkspace.dataset.accountId = '';
 elements.goGhostScopeModal.classList.add('hidden');
@@ -95,6 +98,7 @@ async function main() {
   assert.equal(vm.runInContext('GO_GHOST_BROWSER_AUTOMATION_AVAILABLE', context), false);
   assert.equal(elements.goGhostWorkspace.hidden, true, 'consent should gate the workspace');
   assert.equal(elements.goGhostAutomationRows.innerHTML, '', 'rows should wait for consent');
+  assert.equal(elements.ghostCaliforniaDropCard.hidden, true);
 
   elements.startGoGhostButton.handlers.click();
   assert.equal(elements.goGhostWorkspace.hidden, false);
@@ -121,6 +125,14 @@ async function main() {
   elements.ghostLastNameInput.handlers.input();
   elements.ghostCityInput.handlers.input();
   elements.ghostStateInput.handlers.change();
+  assert.equal(elements.ghostCaliforniaDropCard.hidden, true, 'DROP is for California residents');
+  elements.ghostStateInput.value = 'CA';
+  elements.ghostStateInput.handlers.change();
+  assert.equal(elements.ghostCaliforniaDropCard.hidden, false, 'California residents see the official DROP route');
+  assert.equal(elements.ghostDropFamilyNote.hidden, true, 'self profile does not show family directions');
+  elements.ghostStateInput.value = 'FL';
+  elements.ghostStateInput.handlers.change();
+  assert.equal(elements.ghostCaliforniaDropCard.hidden, true, 'switching states hides DROP guidance');
   elements.ghostAddressInput.handlers.input();
   elements.ghostPhoneInput.handlers.input();
   elements.ghostEmailInput.handlers.input();
@@ -229,6 +241,7 @@ async function main() {
 
   assert.equal(sessionSaved.has('safeScanGoGhostV2:guest'), true);
   elements.clearGhostDataButton.handlers.click();
+  assert.equal(elements.ghostCaliforniaDropCard.hidden, true, 'clearing the profile hides DROP guidance');
   assert.equal(sessionSaved.has('safeScanGoGhostV2:guest'), false);
   assert.equal(saved.has('safeScanGoGhostProfile'), false);
   assert.equal(elements.goGhostWorkspace.hidden, true);

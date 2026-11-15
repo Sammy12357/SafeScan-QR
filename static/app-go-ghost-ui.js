@@ -1,6 +1,20 @@
 // app-go-ghost-ui.js — Go Ghost run/queue automation, rendering, scope modal, event wiring.
 // Split from app.js; the app-*.js files share one global scope and MUST
 // load in this order: app-core.js -> app-widgets.js -> app-go-ghost.js -> app-go-ghost-ui.js -> app-generate-qr.js.
+const ghostCaliforniaDropCard = document.getElementById("ghostCaliforniaDropCard");
+const ghostDropFamilyNote = document.getElementById("ghostDropFamilyNote");
+
+function renderGhostCaliforniaDropCard() {
+  if (!ghostCaliforniaDropCard) return;
+  if (goGhostStoreLocked) {
+    ghostCaliforniaDropCard.hidden = true;
+    if (ghostDropFamilyNote) ghostDropFamilyNote.hidden = true;
+    return;
+  }
+  ghostCaliforniaDropCard.hidden = ghostStateInput?.value !== "CA";
+  if (ghostDropFamilyNote) ghostDropFamilyNote.hidden = ghostCurrentSubject().kind !== "family";
+}
+
 function ghostRequiresSubjectOwnAction(broker) {
   return broker?.group === "peopleconnect";
 }
@@ -454,6 +468,7 @@ function hydrateGoGhostProfile() {
   }
   renderGhostSubjects();
   ghostRefreshReviewNotice();
+  renderGhostCaliforniaDropCard();
 }
 
 function saveGhostFormProfile(review = false) {
@@ -482,6 +497,7 @@ function saveGhostFormProfile(review = false) {
   ghostSaveProfile(next);
   renderGhostSubjects();
   ghostRefreshReviewNotice();
+  renderGhostCaliforniaDropCard();
   if (ghostSavedProfileHint && review) ghostSavedProfileHint.hidden = true;
   return true;
 }
@@ -546,6 +562,7 @@ function removeGhostSubject() {
 }
 
 function lockGhostWorkspace() {
+  if (ghostCaliforniaDropCard) ghostCaliforniaDropCard.hidden = true;
   if (goGhostStoreLocked) return;
   goGhostStoreLocked = true;
   ghostQueueStopRequested = true;
