@@ -94,6 +94,7 @@ from .fraud import run_fraud_checks
 from .history import index_user_context
 from .payload_privacy import scan_storage_reference
 from .history import save_scan_history
+from .homograph import host_forms
 from .pipeline import analyze_full_pipeline
 from .qr_decode import QR_DECODE_SEMAPHORE
 from .qr_decode import QRDecodeAmbiguityError
@@ -244,6 +245,7 @@ async def scan_qr(
         "status": analysis["status"], "url_found": analysis["normalized"], "source": analysis["source"],
         "raw_payload": url_qr,
         "payload_type": analysis.get("payload_type", payload_type),
+        "host_forms": host_forms(analysis["normalized"]) if payload_type == "URL" else None,
         "score": analysis["score"],
         "threat_class": analysis["threat_class"],
         "action_description": analysis.get("action_description"),

@@ -1,0 +1,17 @@
+[
+  {"payload": "https://аpple.com/", "check": "Brand Impersonation", "severity": "high"},
+  {"payload": "https://аррӏе.com/", "check": "Brand Impersonation", "severity": "high"},
+  {"payload": "https://xn--pple-43d.com/", "check": "Brand Impersonation", "severity": "high"},
+  {"payload": "https://paypaI.com/", "check": "Brand Impersonation", "severity": "high"},
+  {"payload": "https://vvellsfargo.com/", "check": "Brand Impersonation", "severity": "high"},
+  {"payload": "https://rnicrosoft.com/", "check": "Brand Impersonation", "severity": "high"},
+  {"payload": "https://paypal.com.evil.net/login", "check": "Brand Impersonation", "severity": "high"},
+  {"payload": "https://paypal-login.example.net/", "check": "Brand Impersonation", "severity": "high"},
+  {"payload": "https://аpple-login.example.net/", "check": "Brand Impersonation", "severity": "high"},
+  {"payload": "https://apple.cοm/", "check": "Brand Impersonation", "severity": "high"},
+  {"payload": "https://example.com/file\u202e/moc.lapyap", "check": "Hidden Direction Control", "severity": "high"},
+  {"payload": "https://example.com/%E2%80%AEevil", "check": "Hidden Direction Control", "severity": "high"},
+  {"payload": "https://eхample.net/", "check": "Mixed Script Host", "severity": "medium"},
+  {"payload": "https://münchen.de/", "check": null, "severity": null},
+  {"payload": "https://例え.jp/", "check": null, "severity": null}
+]

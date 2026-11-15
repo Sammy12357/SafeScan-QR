@@ -12,3 +12,8 @@ symbols. The pinned zxing-cpp Python binding exposes their decoded text and
 position but not the sequence index or size. The server therefore refuses
 the combined image as ambiguous, but cannot reliably identify an isolated
 fragment. The browser WASM reader has sequence metadata and rejects it.
+
+`url_threat_payloads.json` is a decoded-text corpus for the URL risk engine.
+It includes brand lookalikes, invisible text controls, and legitimate
+internationalized domains. `tests/test_homograph_detection.py` checks every
+case without making network requests; it does not measure image decoding.

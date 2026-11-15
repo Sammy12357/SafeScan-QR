@@ -55,6 +55,8 @@ from .config import MOCK_MODE
 from .config import OPENAI_API_KEY
 from .heuristics import check_crypto_pattern_signals
 from .heuristics import check_domain_intelligence
+from .homograph import check_url_deception_signals
+from .idna_hosts import canonical_ascii_host
 from .qr_image import blend_ml_score
 from .qr_image import classify_qr_with_ml
 from .qr_image import ml_signal_from_result
@@ -137,9 +139,12 @@ async def analyze_full_pipeline(target_url, qr_image=None):
 
     prechecked_redirect = None
     is_official = is_first_party(normalized)
-    fast_path_ok = is_official and safety_screen(normalized)[0]
+    # A popular or official hostname must not bypass local checks on the QR's
+    # exact bytes (including invisible path controls and look-alike casing).
+    initial_deception = check_url_deception_signals(normalized)
+    fast_path_ok = not initial_deception and is_official and safety_screen(normalized)[0]
     if not fast_path_ok:
-        fast_path_ok, _ = should_short_circuit(normalized)
+        fast_path_ok = not initial_deception and should_short_circuit(normalized)[0]
     if fast_path_ok:
         google_signal, phish_signal, fast_redirect = await asyncio.gather(
             asyncio.to_thread(google_reputation_signal, normalized),
@@ -219,8 +224,9 @@ async def analyze_full_pipeline(target_url, qr_image=None):
 
     # Check each distinct hop, including the original QR URL. Limit lookups
     # for unusually long chains; skipped hops make verification incomplete.
-    hop_urls = list(dict.fromkeys([normalized, *(item["url"] for item in chain)]))
-    skipped_hops = len(hop_urls) > 6
+    all_hop_urls = list(dict.fromkeys([normalized, *(item["url"] for item in chain)]))
+    hop_urls = all_hop_urls
+    skipped_hops = len(all_hop_urls) > 6
     if skipped_hops:
         hop_urls = hop_urls[:3] + hop_urls[-3:]
     reputation_slots = asyncio.Semaphore(3)
@@ -267,6 +273,16 @@ async def analyze_full_pipeline(target_url, qr_image=None):
 
     signals = []
     signals.extend(domain_result if isinstance(domain_result, list) else [domain_result])
+    # The domain-age and typosquat checks focus on the landing page. Preserve
+    # deceptive-host findings on the original QR URL and intermediate hops,
+    # even when the chain ends at an otherwise clean destination.
+    for checked_url in all_hop_urls:
+        if checked_url == final_url:
+            continue
+        for finding in check_url_deception_signals(checked_url):
+            hop_finding = dict(finding)
+            hop_finding["checkedUrl"] = checked_url
+            signals.append(hop_finding)
     domain_age = next((item.get("domainAge") for item in signals if item.get("domainAge")), None)
     signals.append(redirect_result["signal"])
     if google_signal:
@@ -322,7 +338,16 @@ def check_reputation_signals(target_url):
     return [google_reputation_signal(target_url), phishtank_signal(target_url)]
 
 def is_url_like(value):
-    return bool(re.match(r"^https?://", value, re.IGNORECASE) or re.match(r"^[a-z0-9.-]+\.[a-z]{2,}(/|$)", value, re.IGNORECASE))
+    if re.match(r"^https?://", value, re.IGNORECASE) or re.match(r"^[a-z0-9.-]+\.[a-z]{2,}(/|$)", value, re.IGNORECASE):
+        return True
+    if not any(ord(char) > 127 for char in value) or re.search(r"\s|@|:", value):
+        return False
+    host = re.split(r"[/?#]", value, 1)[0]
+    try:
+        ascii_host = canonical_ascii_host(host)
+    except (UnicodeError, ValueError):
+        return False
+    return "." in ascii_host and all(ascii_host.split("."))
 
 
 def decimal_text(value, places=9):

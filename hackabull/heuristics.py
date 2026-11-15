@@ -55,6 +55,7 @@ from .config import HIGH_RISK_TWO_LABEL_TLDS
 from .config import MALICIOUS_CONTRACT_BLOCKLIST
 from .config import PROTECTED_BRANDS
 from .domain_age import lookup_domain_age_result
+from .homograph import check_url_deception_signals
 from .lowlevel import normalize_url
 from .scoring import signal
 
@@ -156,7 +157,9 @@ def check_domain_intelligence(target_url):
     elif single_label_tld in HIGH_RISK_TLDS:
         tld_signal = signal("TLD Risk", f"High-risk TLD {single_label_tld}", "low", f"The domain uses {single_label_tld}, which appears often in disposable phishing campaigns.", False)
 
-    extra_signals = [s for s in (tld_signal, check_typosquat_signal(hostname), check_dga_signal(hostname)) if s]
+    deception_signals = check_url_deception_signals(normalized)
+    typo_signal = None if any(item["check"] == "Brand Impersonation" for item in deception_signals) else check_typosquat_signal(hostname)
+    extra_signals = deception_signals + [s for s in (tld_signal, typo_signal, check_dga_signal(hostname)) if s]
 
     if not DOMAIN_AGE_CHECK_ENABLED:
         return extra_signals

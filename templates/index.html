@@ -171,6 +171,14 @@
             <pre class="mono decoded-payload">{{ raw_payload | default(url_found, true) }}</pre>
           </div>
 
+          {% if payload_type == 'URL' and host_forms and host_forms.unicode != host_forms.ascii %}
+          <div class="decoded-box" id="hostIdentityBox">
+            <p class="engine-label">Destination hostname</p>
+            <pre class="mono decoded-payload">Unicode: {{ host_forms.unicode }}
+ASCII (punycode): {{ host_forms.ascii }}</pre>
+          </div>
+          {% endif %}
+
           <div class="confidence-panel">
             <div class="confidence-header">
               <div>
