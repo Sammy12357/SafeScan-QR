@@ -22,6 +22,8 @@ URL, including redirects and GET form submissions. It must return plain text fro
 current URL after each step, but that check cannot undo a request already made.
 The driver must select an exact, unique visible option for `select` and must
 never guess a form control when a selector is missing.
+It must also reject private or loopback IP results after DNS resolution; a
+public-looking hostname can otherwise resolve to a private address.
 No live driver exists yet. Future work must satisfy
 [`go-ghost-on-device-release-gate.md`](../docs/security/go-ghost-on-device-release-gate.md)
 before adding a broker recipe or installing an extension.
