@@ -94,4 +94,5 @@ def test_both_upload_routes_bound_read_size_before_decoding(scan_app, monkeypatc
 
     home, mobile = asyncio.run(run_requests())
     assert home.status_code == 200 and "too large" in home.text.lower()
-    assert mobile.status_code == 400 and "too large" in mobile.text.lower()
+    assert mobile.status_code == 413 and mobile.json()["code"] == "upload_too_large"
+    assert "too large" in mobile.json()["error"].lower()
