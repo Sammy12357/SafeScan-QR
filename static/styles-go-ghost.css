@@ -32,6 +32,12 @@
 .ghost-family-attestation { display: flex !important; gap: 12px !important; align-items: flex-start; font-weight: 600 !important; }
 .ghost-family-attestation[hidden] { display: none !important; }
 .ghost-family-attestation input { width: 18px; height: 18px; flex: none; margin-top: 3px; }
+.go-ghost-actions[hidden] { display: none !important; }
+.ghost-drop-card { margin-top: 18px; padding: 18px; border: 1px solid rgba(var(--accent-rgb), 0.3); border-radius: 8px; background: rgba(var(--accent-rgb), 0.06); }
+.ghost-drop-card[hidden], .ghost-drop-card [hidden] { display: none !important; }
+.ghost-drop-card h3 { margin: 6px 0 10px; color: var(--text); font-family: var(--display-font); font-size: clamp(1.2rem, 3vw, 1.6rem); }
+.ghost-drop-card p:not(.eyebrow) { color: var(--muted); line-height: 1.5; }
+.ghost-drop-card .secondary-button { display: inline-flex; margin-top: 6px; }
 .maintenance-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
 .maintenance-grid a { display: grid; place-items: center; min-height: 62px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.04); color: var(--text); text-align: center; text-decoration: none; font-weight: 900; }
 .maintenance-grid a:hover { border-color: rgba(var(--accent-rgb), 0.42); background: rgba(var(--accent-rgb), 0.08); }
