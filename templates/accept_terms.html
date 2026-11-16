@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="/static/theme-init.js?v=rose-theme-v1"></script>
+  <title>Review updated terms | SafeScan QR</title>
+  <link rel="stylesheet" href="/static/styles.css?v=ui-a11y-v2">
+</head>
+<body>
+  <div class="page-shell legal-shell">
+    <section class="legal-document age-gate">
+      <p class="eyebrow">SafeScan QR</p>
+      <h1>Review updated documents</h1>
+      {% if expired %}
+      <p>This sign-in step has expired. Please sign in again.</p>
+      <a class="secondary-button" href="/login">Sign in</a>
+      {% else %}
+      <p>Review the current Terms and Privacy Policy before continuing to your account.</p>
+      {% if error %}<p role="alert" class="form-field-error">{{ error }}</p>{% endif %}
+      <form class="legal-form" action="/auth/accept-terms" method="post">
+        <input type="hidden" name="terms_version" value="{{ agreement_versions.terms }}">
+        <input type="hidden" name="privacy_version" value="{{ agreement_versions.privacy }}">
+        <label class="checkbox-row">
+          <input type="checkbox" name="legal_consent" value="yes" required>
+          <span>I agree to the <a href="/legal/terms-of-use" target="_blank" rel="noopener noreferrer">Terms of Use ({{ agreement_versions.terms }})</a> and <a href="/legal/privacy-policy" target="_blank" rel="noopener noreferrer">Privacy Policy ({{ agreement_versions.privacy }})</a>.</span>
+        </label>
+        <button class="primary-button" type="submit">Agree and continue</button>
+      </form>
+      {% endif %}
+    </section>
+  </div>
+</body>
+</html>

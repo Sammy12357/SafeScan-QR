@@ -34,6 +34,14 @@ The entries below retain the original Phase 0 baseline for context. Their “cur
 
 **ATTORNEY REVIEW NEEDED.** The published `/accessibility` page states a WCAG 2.2 AA target, identifies the remaining heading/landmark issues plus unverified screen reader, hardware, third-party handoff, and mobile-app coverage, and gives a contact path for barriers. It does not claim full conformance. Counsel and the business owner should review this statement and how feedback is handled before treating it as an approved legal disclosure.
 
+## Phase 2 document and acceptance review — November 15, 2026
+
+**ATTORNEY REVIEW NEEDED before treating the new text as approved.** Engineering prepared `v1.1` Terms and Privacy snapshots under `hackabull/legal_published/`. The Terms age sentence now follows the server's 16+ account and 18+ protected-feature checks; its change clause now describes explicit reacceptance. The Privacy snapshot adds the document/version/timestamp/IP-hash acceptance record and the age-check outcome. The `v1.0` files are snapshots of the repository's previous HTML constants captured on November 15, 2026; their May 2026 label came from the existing code and was not independently verified against every past production deployment. The old Privacy constant interpolated `ADMIN_EMAIL`; the archive captured the repository's default email value.
+
+The new code records `terms_acceptances` before creating a login session, requires an unchecked checkbox for new OAuth accounts, and asks existing eligible users to reaccept current document versions on their next explicit sign-in. The pending OAuth identity is held for at most ten minutes in SQLite; the ticket is stored as a hash, while provider subject, email, display name, and picture remain until that record is purged. Agreement records are included in account export and current deletion code. Counsel must decide if any proof should be retained after deletion, and whether the policy's retention wording and rights process are accurate.
+
+The Terms still carry a Florida governing-law clause, AAA arbitration, class waiver, liability cap, and no verified contracting entity or legal notice address. These provisions have **not** been approved or validated. Sam must provide the real entity and contact details and counsel must review the full Terms, Privacy Policy, international claims, and version effective dates. A recorded click is evidence of an action, not a determination that any clause is enforceable. The mobile app must ship the matching checkbox and reacceptance challenge before this backend flow is released.
+
 **ATTORNEY REVIEW NEEDED.** Internal briefing, not legal advice or approved public policy. Prepared 2026-11-15 from code baseline `a2ce01b` and the supplied `SAFESCAN_LEGAL_RISK_PLAN.md`. It records questions and evidence for qualified counsel and the business owner. No legal text was published or approved by creating this packet.
 
 ## Public documents and review queue

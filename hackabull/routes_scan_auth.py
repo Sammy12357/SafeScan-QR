@@ -64,6 +64,12 @@ from .age_gate import PENDING_SECONDS
 from .age_gate import begin_sign_in
 from .age_gate import eligible_account
 from .age_gate import record_account_eligibility
+from .legal_agreements import PENDING_SECONDS as TERMS_PENDING_SECONDS
+from .legal_agreements import TERMS_COOKIE
+from .legal_agreements import begin_terms_sign_in
+from .legal_agreements import current_versions
+from .legal_agreements import identity_has_current_acceptance
+from .legal_agreements import record_acceptance
 from .app_module import qr_app
 from .audit import SafeScanError
 from .audit import audit_log
@@ -277,10 +283,14 @@ async def scan_qr(
     result_response.headers["Pragma"] = "no-cache"
     return result_response
 
-def finish_verified_sign_in(identity, request, *, client_kind):
-    """Create an account and session only after a verified age decision."""
+def finish_verified_sign_in(identity, request, *, client_kind, accepted_versions=None):
+    """Issue a session only after age and current document acceptance."""
     subject = identity["subject"]
     email = identity["email"]
+    if accepted_versions is None and not identity_has_current_acceptance(subject):
+        raise HTTPException(status_code=403, detail="Review and agree to the current Terms and Privacy Policy.")
+    if accepted_versions is not None and accepted_versions != current_versions():
+        raise HTTPException(status_code=409, detail="The agreement changed. Review the current documents.")
     try:
         eligible_account(identity["provider"], subject, email)
     except ValueError as exc:
@@ -291,6 +301,8 @@ def finish_verified_sign_in(identity, request, *, client_kind):
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     record_account_eligibility(user_id)
+    if accepted_versions is not None:
+        record_acceptance(user_id, request, accepted_versions)
     user = require_user_from_google_id(user_id)
     if user["status"] != "active":
         raise HTTPException(status_code=401, detail="Authentication required.")
@@ -361,6 +373,14 @@ async def auth_google(
         response = RedirectResponse("/auth/confirm-age", status_code=303)
         response.set_cookie(PENDING_COOKIE, ticket, max_age=PENDING_SECONDS, httponly=True,
                             secure=True, samesite="lax", path="/")
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    if not identity_has_current_acceptance(google_id):
+        terms_ticket = begin_terms_sign_in(identity, client_kind="web", return_to=return_to,
+                                           remember=wants_remember_me(remember_me))
+        response = RedirectResponse("/auth/accept-terms", status_code=303)
+        response.set_cookie(TERMS_COOKIE, terms_ticket, max_age=TERMS_PENDING_SECONDS,
+                            httponly=True, secure=True, samesite="lax", path="/")
         response.headers["Cache-Control"] = "no-store"
         return response
     google_id, user, session_id = finish_verified_sign_in(identity, request, client_kind="web")
@@ -454,7 +474,16 @@ async def auth_verify(request: Request, payload: dict = Body(...)):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if ticket:
         return JSONResponse({"ageConfirmationRequired": True, "ageTicket": ticket,
-                             "minimumAge": ACCOUNT_MIN_AGE, "expiresInSeconds": PENDING_SECONDS},
+                             "minimumAge": ACCOUNT_MIN_AGE, "expiresInSeconds": PENDING_SECONDS,
+                             "termsVersion": current_versions()["terms"],
+                             "privacyVersion": current_versions()["privacy"]},
+                            status_code=202, headers={"Cache-Control": "no-store"})
+    if not identity_has_current_acceptance(google_id):
+        terms_ticket = begin_terms_sign_in(identity, client_kind="mobile", remember=False)
+        return JSONResponse({"termsAcceptanceRequired": True, "termsTicket": terms_ticket,
+                             "termsVersion": current_versions()["terms"],
+                             "privacyVersion": current_versions()["privacy"],
+                             "expiresInSeconds": TERMS_PENDING_SECONDS},
                             status_code=202, headers={"Cache-Control": "no-store"})
     google_id, user, session_id = finish_verified_sign_in(identity, request, client_kind="mobile")
     return mobile_sign_in_body(google_id, user, session_id)

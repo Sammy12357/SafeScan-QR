@@ -414,6 +414,26 @@
       "retention": "10-minute expiry; expired rows removed lazily; backup retention unverified",
       "status": "active schema"
     },
+    "pending_terms_signins": {
+      "fields": [
+        "ticket_hash",
+        "provider",
+        "subject",
+        "email",
+        "display_name",
+        "picture",
+        "client_kind",
+        "return_to",
+        "remember_me",
+        "expires_at"
+      ],
+      "source": "verified OAuth identity waiting for updated document acceptance",
+      "purpose": "bind a short-lived terms acceptance step to one verified identity; ticket is stored only as a hash",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage",
+      "retention": "Expires after 10 minutes; expired rows are removed when another challenge is issued",
+      "status": "active schema"
+    },
     "persistent_sessions": {
       "fields": [
         "id",
@@ -564,6 +584,21 @@
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",
+      "status": "active schema"
+    },
+    "terms_acceptances": {
+      "fields": [
+        "user_id",
+        "document",
+        "version",
+        "accepted_at",
+        "ip_hash"
+      ],
+      "source": "explicit agreement checkbox during account creation or document update",
+      "purpose": "record which published Terms and Privacy Policy versions were accepted",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage",
+      "retention": "Until account deletion; counsel must confirm whether proof needs a longer lawful retention period",
       "status": "active schema"
     },
     "upload_artifacts": {

@@ -112,6 +112,17 @@ def init_db():
     cursor.execute('''CREATE TABLE IF NOT EXISTS age_confirmations
                         (email TEXT PRIMARY KEY, threshold INTEGER NOT NULL,
                          locale TEXT, confirmed_at TEXT NOT NULL)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS terms_acceptances
+                        (user_id TEXT NOT NULL, document TEXT NOT NULL,
+                         version TEXT NOT NULL, accepted_at TEXT NOT NULL,
+                         ip_hash TEXT NOT NULL,
+                         PRIMARY KEY (user_id, document, version))''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS pending_terms_signins
+                        (ticket_hash TEXT PRIMARY KEY, provider TEXT NOT NULL,
+                         subject TEXT NOT NULL, email TEXT NOT NULL,
+                         display_name TEXT, picture TEXT, client_kind TEXT NOT NULL,
+                         return_to TEXT, remember_me INTEGER NOT NULL,
+                         expires_at TEXT NOT NULL)''')
     # `age_confirmations` is a legacy, email-keyed self-report and must not
     # grant account access. New eligibility is bound to the resolved account.
     cursor.execute('''CREATE TABLE IF NOT EXISTS age_eligibility

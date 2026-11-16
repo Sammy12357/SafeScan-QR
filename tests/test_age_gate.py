@@ -54,6 +54,17 @@ def year_at_least(age):
     return str(datetime.now(timezone.utc).year - age - 1)
 
 
+def accepted_web_age(**extra):
+    return {"birth_year": year_at_least(20), "birthday_this_year": "yes",
+            "legal_consent": "yes", "terms_version": "v1.1", "privacy_version": "v1.1", **extra}
+
+
+def accepted_mobile_age(ticket, **extra):
+    return {"ageTicket": ticket, "birthYear": year_at_least(20),
+            "birthdayThisYear": "yes", "legalConsent": True,
+            "termsVersion": "v1.1", "privacyVersion": "v1.1", **extra}
+
+
 def test_web_google_requires_one_time_age_decision_before_account_or_session(age_app):
     app, _, db_path = age_app
     client = TestClient(app.qr_app, base_url="https://testserver")
@@ -70,10 +81,8 @@ def test_web_google_requires_one_time_age_decision_before_account_or_session(age
     assert "email\"" not in form.text
     assert 'name="threshold"' not in form.text
     assert "What year were you born?" in form.text
-    completed = client.post("/auth/confirm-age", data={
-        "birth_year": year_at_least(20), "birthday_this_year": "yes",
-        "email": "attacker@example.com", "threshold": "0", "locale": "en-US",
-    }, follow_redirects=False)
+    completed = client.post("/auth/confirm-age", data=accepted_web_age(
+        email="attacker@example.com", threshold="0", locale="en-US"), follow_redirects=False)
     assert completed.status_code == 303
     assert completed.headers["location"] == "/profile"
     assert len(rows(db_path, "users")) == 1
@@ -142,13 +151,11 @@ def test_mobile_google_and_auth0_require_ticket_and_reject_replay(age_app, monke
     invalid = client.post("/auth/confirm-age/mobile", json={
         "ageTicket": ticket, "birthYear": "not-a-year", "birthdayThisYear": "yes"})
     assert invalid.status_code == 400
-    complete = client.post("/auth/confirm-age/mobile", json={
-        "ageTicket": ticket, "birthYear": year_at_least(20), "birthdayThisYear": "yes"})
+    complete = client.post("/auth/confirm-age/mobile", json=accepted_mobile_age(ticket))
     assert complete.status_code == 200
     assert complete.json()["session"]
     assert complete.json()["user"]["email"] == "person@example.com"
-    assert client.post("/auth/confirm-age/mobile", json={
-        "ageTicket": ticket, "birthYear": year_at_least(20), "birthdayThisYear": "yes"}).status_code == 410
+    assert client.post("/auth/confirm-age/mobile", json=accepted_mobile_age(ticket)).status_code == 410
     assert client.post("/auth/verify", json={"token": "google-token"}).status_code == 200
 
     monkeypatch.setattr(routes, "_decode_jwt_unverified", lambda token: ({}, {"iss": app.AUTH0_ISSUER}, []))
@@ -158,9 +165,7 @@ def test_mobile_google_and_auth0_require_ticket_and_reject_replay(age_app, monke
     auth0 = client.post("/auth/verify", json={"token": "auth0-token"})
     assert auth0.status_code == 202
     assert rows(db_path, "users")[0][0] == "google-1"
-    confirmed = client.post("/auth/confirm-age/mobile", json={
-        "ageTicket": auth0.json()["ageTicket"], "birthYear": year_at_least(20),
-        "birthdayThisYear": "yes"})
+    confirmed = client.post("/auth/confirm-age/mobile", json=accepted_mobile_age(auth0.json()["ageTicket"]))
     assert confirmed.status_code == 200
     assert confirmed.json()["user"]["id"] == "auth0:github|different-person"
 
@@ -180,8 +185,7 @@ def test_existing_sessions_and_legacy_email_confirmation_do_not_bypass_gate(age_
     assert len(rows(db_path, "users")) == 1
     assert start_google(client).status_code == 303
     assert len(rows(db_path, "users")) == 1
-    done = client.post("/auth/confirm-age", data={
-        "birth_year": year_at_least(20), "birthday_this_year": "yes"}, follow_redirects=False)
+    done = client.post("/auth/confirm-age", data=accepted_web_age(), follow_redirects=False)
     assert done.status_code == 303
     assert client.get("/api/me").status_code == 200
 
@@ -215,8 +219,7 @@ def test_adult_gate_covers_guest_payment_and_account_wallet(age_app):
 
     signed = TestClient(app.qr_app, base_url="https://testserver")
     assert start_google(signed).status_code == 303
-    assert signed.post("/auth/confirm-age", data={
-        "birth_year": year_at_least(20), "birthday_this_year": "yes"},
+    assert signed.post("/auth/confirm-age", data=accepted_web_age(),
         follow_redirects=False).status_code == 303
     assert signed.get("/api/wallet").status_code == 403
     assert signed.get("/token", follow_redirects=False).status_code == 303
@@ -233,9 +236,7 @@ def test_mobile_adult_ticket_is_account_bound_one_time_and_requires_18(age_app):
     app, _, db_path = age_app
     client = TestClient(app.qr_app, base_url="https://testserver")
     first = client.post("/auth/verify", json={"token": "verified-id-token"})
-    session = client.post("/auth/confirm-age/mobile", json={
-        "ageTicket": first.json()["ageTicket"], "birthYear": year_at_least(20),
-        "birthdayThisYear": "yes"}).json()["session"]
+    session = client.post("/auth/confirm-age/mobile", json=accepted_mobile_age(first.json()["ageTicket"])).json()["session"]
     headers = {"Authorization": f"Bearer {session}"}
     blocked = client.get("/api/wallet", headers=headers)
     assert blocked.status_code == 403
@@ -273,3 +274,113 @@ def test_mobile_adult_ticket_is_account_bound_one_time_and_requires_18(age_app):
     assert adult.json() == {"adultConfirmed": True}
     assert client.get("/api/wallet", headers=headers).status_code == 200
     assert len(rows(db_path, "age_eligibility")) == 2
+
+
+def test_account_requires_explicit_current_agreement_before_session(age_app):
+    app, _, db_path = age_app
+    client = TestClient(app.qr_app, base_url="https://testserver")
+    assert start_google(client).headers["location"] == "/auth/confirm-age"
+    form = client.get("/auth/confirm-age")
+    assert 'name="legal_consent"' in form.text
+    assert 'name="legal_consent" value="yes" required' in form.text
+    assert "/legal/terms-of-use" in form.text and "/legal/privacy-policy" in form.text
+    missing = client.post("/auth/confirm-age", data={
+        "birth_year": year_at_least(20), "birthday_this_year": "yes",
+        "terms_version": "v1.1", "privacy_version": "v1.1",
+    })
+    assert missing.status_code == 400
+    assert rows(db_path, "users") == []
+    assert rows(db_path, "sessions") == []
+    stale = client.post("/auth/confirm-age", data=accepted_web_age(privacy_version="v1.0"))
+    assert stale.status_code == 400
+    assert rows(db_path, "users") == []
+    accepted = client.post("/auth/confirm-age", data=accepted_web_age(), follow_redirects=False)
+    assert accepted.status_code == 303
+    proof = rows(db_path, "terms_acceptances")
+    assert {(row[1], row[2]) for row in proof} == {("terms", "v1.1"), ("privacy", "v1.1")}
+    assert all(len(row[4]) == 64 for row in proof)
+    exported = app.get_user_export("person@example.com", "google-1")
+    assert len(exported["termsAcceptances"]) == 2
+
+
+def test_existing_web_user_reaccepts_updated_documents_with_one_time_ticket(age_app):
+    app, _, db_path = age_app
+    first = TestClient(app.qr_app, base_url="https://testserver")
+    start_google(first)
+    assert first.post("/auth/confirm-age", data=accepted_web_age(), follow_redirects=False).status_code == 303
+    with app.get_conn() as conn:
+        conn.execute("DELETE FROM terms_acceptances WHERE user_id = ? AND document = 'privacy'", ("google-1",))
+    second = TestClient(app.qr_app, base_url="https://testserver")
+    sessions_before = len(rows(db_path, "sessions"))
+    pending = start_google(second)
+    assert pending.status_code == 303
+    assert pending.headers["location"] == "/auth/accept-terms"
+    assert "__Host-safescan_pending_terms" in second.cookies
+    assert len(rows(db_path, "sessions")) == sessions_before
+    assert second.get("/api/me").status_code == 401
+    page = second.get("/auth/accept-terms")
+    assert page.status_code == 200
+    assert 'name="legal_consent" value="yes" required' in page.text
+    assert second.post("/auth/accept-terms", data={
+        "terms_version": "v1.1", "privacy_version": "v1.1"
+    }).status_code == 400
+    completed = second.post("/auth/accept-terms", data={
+        "terms_version": "v1.1", "privacy_version": "v1.1", "legal_consent": "yes"
+    }, follow_redirects=False)
+    assert completed.status_code == 303
+    assert second.get("/api/me").status_code == 200
+    assert len(rows(db_path, "sessions")) == sessions_before + 1
+    assert second.post("/auth/accept-terms", data={
+        "terms_version": "v1.1", "privacy_version": "v1.1", "legal_consent": "yes"
+    }).status_code == 410
+
+
+def test_existing_mobile_user_gets_terms_challenge_without_session(age_app):
+    app, _, db_path = age_app
+    client = TestClient(app.qr_app, base_url="https://testserver")
+    first = client.post("/auth/verify", json={"token": "verified-id-token"})
+    assert client.post("/auth/confirm-age/mobile", json=accepted_mobile_age(first.json()["ageTicket"])).status_code == 200
+    with app.get_conn() as conn:
+        conn.execute("DELETE FROM terms_acceptances WHERE user_id = ? AND document = 'terms'", ("google-1",))
+    pending = client.post("/auth/verify", json={"token": "verified-id-token"})
+    assert pending.status_code == 202
+    body = pending.json()
+    assert body["termsAcceptanceRequired"] is True
+    assert body["termsVersion"] == body["privacyVersion"] == "v1.1"
+    assert "session" not in body
+    ticket = body["termsTicket"]
+    refused = client.post("/auth/accept-terms/mobile", json={
+        "termsTicket": ticket, "legalConsent": False,
+        "termsVersion": "v1.1", "privacyVersion": "v1.1",
+    })
+    assert refused.status_code == 400
+    stale = client.post("/auth/accept-terms/mobile", json={
+        "termsTicket": ticket, "legalConsent": True,
+        "termsVersion": "v1.1", "privacyVersion": "v1.0",
+    })
+    assert stale.status_code == 400
+    accepted = client.post("/auth/accept-terms/mobile", json={
+        "termsTicket": ticket, "legalConsent": True,
+        "termsVersion": "v1.1", "privacyVersion": "v1.1",
+    })
+    assert accepted.status_code == 200
+    assert accepted.json()["session"]
+    assert client.post("/auth/accept-terms/mobile", json={
+        "termsTicket": ticket, "legalConsent": True,
+        "termsVersion": "v1.1", "privacyVersion": "v1.1",
+    }).status_code == 410
+    assert len(rows(db_path, "terms_acceptances")) == 2
+
+
+def test_document_archive_is_versioned_and_rejects_unknown_versions(age_app):
+    app, _, _ = age_app
+    client = TestClient(app.qr_app, base_url="https://testserver")
+    old = client.get("/legal/documents/terms/v1.0")
+    current = client.get("/legal/terms-of-use")
+    assert old.status_code == current.status_code == 200
+    assert "Archived source snapshot" in old.text
+    assert "at least 13 globally" in old.text
+    assert "age 16 or older" in current.text
+    assert "Version v1.1" in current.text
+    assert client.get("/legal/documents/terms/v9.9").status_code == 404
+    assert client.get("/legal/documents/unknown/v1.0").status_code == 404

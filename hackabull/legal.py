@@ -131,6 +131,10 @@ def get_user_export(email, user_id):
         age_eligibility = [dict(row) for row in conn.execute(
             "SELECT * FROM age_eligibility WHERE user_id = ?", (user_id,)
         )]
+        terms_acceptances = [dict(row) for row in conn.execute(
+            "SELECT * FROM terms_acceptances WHERE user_id = ? ORDER BY accepted_at, document",
+            (user_id,),
+        )]
         opt_outs = [dict(row) for row in conn.execute("SELECT * FROM privacy_opt_outs WHERE email = ?", (email,))]
         ghost_subjects = _go_ghost_status_export(conn, "go_ghost_subjects", user_id)
         ghost_consents = _go_ghost_status_export(conn, "go_ghost_consents", user_id)
@@ -147,6 +151,7 @@ def get_user_export(email, user_id):
     return {"email": email, "scans": scans, "scanEvents": events,
             "dataRequests": requests_, "ageConfirmations": age,
             "ageEligibility": age_eligibility,
+            "termsAcceptances": terms_acceptances,
             "privacyOptOuts": opt_outs,
             "goGhostSubjects": ghost_subjects, "goGhostConsents": ghost_consents,
             "goGhostRequests": ghost_requests, "goGhostLegacyJobs": ghost_legacy_jobs,
@@ -186,7 +191,9 @@ def delete_user_data(email, user_id):
         conn.execute("DELETE FROM users WHERE google_id = ?", (user_id,))
         conn.execute("DELETE FROM age_confirmations WHERE email = ?", (email,))
         conn.execute("DELETE FROM age_eligibility WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM terms_acceptances WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM pending_age_signins WHERE lower(email) = lower(?)", (email,))
+        conn.execute("DELETE FROM pending_terms_signins WHERE lower(email) = lower(?)", (email,))
         conn.execute("DELETE FROM adult_age_challenges WHERE user_id = ?", (user_id,))
     return True
 
