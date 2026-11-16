@@ -1,2 +1,7 @@
 # Preserve Unicode's pinned upstream data byte-for-byte, including its spacing.
 hackabull/data/confusables-18.0.0.txt -whitespace
+# Retained upstream license texts must remain byte-for-byte faithful.
+third_party_licenses/** -whitespace
+# The upstream AST Unparser license begins with an RST heading `=======`,
+# which Git otherwise mistakes for a merge conflict marker in --check.
+third_party_licenses/runtime/astunparse-1.6.3/LICENSE -diff

@@ -10,7 +10,7 @@
   <script src="/static/ui-states.js?v=ui-loading-v1"></script>
   <title>SafeScan QR</title>
   <link rel="icon" href="/static/safescan-logo.svg?v=rose-theme-v1" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=legal-a11y-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=legal-phase3-v1">
 </head>
 <body class="{{ 'test-site-page' if test_site else '' }}">
   <div class="page-shell">
@@ -20,7 +20,7 @@
       <div class="hero-copy">
         <div class="hero-kicker">
         <p class="eyebrow">{{ "Premium security build" if test_site else "Hackabull Demo" }}</p>
-          <div class="powered-by-solana"><span>Powered By</span><svg viewBox="0 0 398 312"><defs><linearGradient id="solanaGradientTop" x1="360" y1="28" x2="62" y2="301" gradientUnits="userSpaceOnUse"><stop stop-color="#14F195"/><stop offset="0.5" stop-color="#55A6F8"/><stop offset="1" stop-color="#9945FF"/></linearGradient></defs><path fill="url(#solanaGradientTop)" d="M64.6 3.8C67 1.4 70.4 0 73.8 0h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1L64.6 3.8Z"/><path fill="url(#solanaGradientTop)" d="M333.1 120.1c-2.4-2.4-5.7-3.8-9.2-3.8H6.5c-5.8 0-8.7 7-4.6 11.1l62.7 62.7c2.4 2.4 5.7 3.8 9.2 3.8h317.4c5.8 0 8.7-7 4.6-11.1l-62.7-62.7Z"/><path fill="url(#solanaGradientTop)" d="M64.6 237.9c2.4-2.4 5.7-3.8 9.2-3.8h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1l62.7-62.7Z"/></svg></div>
+          <p class="wallet-platform-note">For Solana wallet links</p>
         </div>
         <h1>SafeScan QR</h1>
         <p class="hero-problem">{{ "Check QR links before they open." if test_site else "Can you distinguish a malicious QR?" }}</p>
@@ -55,8 +55,8 @@
           <div class="scan-beam"></div>
         </div>
         <div class="model-caption">
-          <p class="model-caption-label">Solana Mobile 3D scan model</p>
-          <p>Cyber security inspired software, Solana Mobile branding, QR inspection, and threat shielding in one scene.</p>
+          <p class="model-caption-label">SafeScan QR preview</p>
+          <p>A visual preview of QR inspection. Check results appear after a scan.</p>
         </div>
       </div>
     </header>
@@ -289,7 +289,7 @@ ASCII (punycode): {{ host_forms.ascii }}</pre>
     </main>
     {% include "footer.html" %}
   </div>
-  <script type="module" src="/static/safescan-3d.js?v=rose-theme-v1"></script>
+  <script type="module" src="/static/safescan-3d.js?v=brand-audit-v1"></script>
   {% if scanner_v3 %}<script src="/static/qr-camera.js?v=legal-gpc-v1" defer></script>
   {% else %}<script src="/static/qr-camera-phase3.js?v=ui-a11y-v1" defer></script>{% endif %}
   <script src="/static/app-core.js?v=legal-a11y-v1"></script>

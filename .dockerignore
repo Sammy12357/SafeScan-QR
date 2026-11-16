@@ -12,4 +12,7 @@ __pycache__
 .DS_Store
 tests/
 *.md
+# The reviewed license texts are copied into the runtime image.
+!THIRD_PARTY_NOTICES.md
+!third_party_licenses/**
 node_modules/

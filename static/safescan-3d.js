@@ -3,8 +3,8 @@
 //
 // Lazily loads three.js and renders the animated SafeScan model in the homepage
 // showcase. Designed to degrade gracefully: if WebGL is unavailable, the tab is
-// hidden, or the device is low-powered, it calls activateFallback() to swap in a
-// static image (safescan-3d-fallback.png) and stops the render loop to save CPU.
+// hidden, or the device is low-powered, it calls activateFallback() to show the
+// CSS and SafeScan QR fallback and stops the render loop to save CPU.
 // =============================================================================
 const canvas = document.getElementById("safeScanModel");
 const showcase = document.querySelector(".spline-showcase");
@@ -86,28 +86,7 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim() && !showc
   let rigStart = null;
   let isHovering = false;
 
-  function drawSolanaBars(ctx, x, y, width, height) {
-    const colors = ["#8f5bff", "#58a6ff", "#1ff1a5"];
-    const gap = height * 0.18;
-    const barHeight = (height - gap * 2) / 3;
-    colors.forEach((color, index) => {
-      const top = y + index * (barHeight + gap);
-      const skew = barHeight * 0.42;
-      const gradient = ctx.createLinearGradient(x, top, x + width, top + barHeight);
-      gradient.addColorStop(0, color);
-      gradient.addColorStop(1, index === 0 ? "#48f1b7" : "#9d6cff");
-      ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.moveTo(x + skew, top);
-      ctx.lineTo(x + width, top);
-      ctx.lineTo(x + width - skew, top + barHeight);
-      ctx.lineTo(x, top + barHeight);
-      ctx.closePath();
-      ctx.fill();
-    });
-  }
-
-  function createSolanaMobileScreenTexture() {
+  function createPhoneScreenTexture() {
     const textureCanvas = document.createElement("canvas");
     textureCanvas.width = 640;
     textureCanvas.height = 1120;
@@ -122,7 +101,7 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim() && !showc
     return texture;
   }
 
-  function createSolanaBackTexture() {
+  function createPhoneBackTexture() {
     const textureCanvas = document.createElement("canvas");
     textureCanvas.width = 640;
     textureCanvas.height = 1120;
@@ -142,34 +121,13 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim() && !showc
     ctx.fillStyle = edgeGlow;
     ctx.fillRect(0, 0, 640, 1120);
 
-    ctx.save();
-    ctx.translate(270, 840);
-    ctx.globalAlpha = 0.78;
-    ctx.fillStyle = "#020405";
-    [
-      [0, 0, 100],
-      [-8, 24, 92],
-      [0, 48, 100]
-    ].forEach(([x, y, width]) => {
-      const height = 12;
-      const skew = 9;
-      ctx.beginPath();
-      ctx.moveTo(x + skew, y);
-      ctx.lineTo(x + width, y);
-      ctx.lineTo(x + width - skew, y + height);
-      ctx.lineTo(x, y + height);
-      ctx.closePath();
-      ctx.fill();
-    });
-    ctx.restore();
-
     const texture = new THREE.CanvasTexture(textureCanvas);
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.anisotropy = 8;
     return texture;
   }
 
-  function createSeedVaultTexture() {
+  function createSafeScanBadgeTexture() {
     const textureCanvas = document.createElement("canvas");
     textureCanvas.width = 768;
     textureCanvas.height = 448;
@@ -204,8 +162,8 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim() && !showc
     ctx.fillRect(0, 0, textureCanvas.width, textureCanvas.height);
 
     ctx.fillStyle = "rgba(2, 4, 5, 0.9)";
-    ctx.font = "700 55px Arial, sans-serif";
-    fillSpacedText("SEED VAULT", 124, 92, 1.15);
+    ctx.font = "700 47px Arial, sans-serif";
+    fillSpacedText("SAFESCAN QR", 90, 92, 1.1);
 
     ctx.strokeStyle = "rgba(2, 4, 5, 0.9)";
     ctx.lineWidth = 10;
@@ -315,11 +273,11 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim() && !showc
       opacity: 0.78,
       clearcoat: 1
     }),
-    sagaScreen: new THREE.MeshBasicMaterial({
-      map: createSolanaMobileScreenTexture()
+    phoneScreen: new THREE.MeshBasicMaterial({
+      map: createPhoneScreenTexture()
     }),
-    sagaBack: new THREE.MeshBasicMaterial({
-      map: createSolanaBackTexture()
+    phoneBack: new THREE.MeshBasicMaterial({
+      map: createPhoneBackTexture()
     }),
     qrLight: new THREE.MeshStandardMaterial({
       color: 0xfff8fa,
@@ -348,12 +306,6 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim() && !showc
     scanGlass: new THREE.MeshBasicMaterial({ color: 0xff668e, transparent: true, opacity: 0 })
   };
 
-  const logoBarMaterials = [
-    new THREE.MeshStandardMaterial({ color: 0x8f5bff, emissive: 0x7d45ff, emissiveIntensity: 0.22, roughness: 0.18 }),
-    new THREE.MeshStandardMaterial({ color: 0x58a6ff, emissive: 0x3c8dff, emissiveIntensity: 0.18, roughness: 0.18 }),
-    new THREE.MeshStandardMaterial({ color: 0x1ff1a5, emissive: 0x14d98f, emissiveIntensity: 0.24, roughness: 0.18 })
-  ];
-
   const phone = new THREE.Group();
   phone.rotation.set(-0.08, -0.28, -0.025);
   phone.position.set(-0.36, 0.58, 0.08);
@@ -369,7 +321,7 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim() && !showc
   bevel.position.z = -0.04;
   phone.add(bevel);
 
-  const backGlass = roundedFace(1.58, 3.2, 0.22, materials.sagaBack);
+  const backGlass = roundedFace(1.58, 3.2, 0.22, materials.phoneBack);
   backGlass.position.z = -0.126;
   backGlass.rotation.y = Math.PI;
   phone.add(backGlass);
@@ -476,7 +428,7 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim() && !showc
   const moduleFace = new THREE.Mesh(
     new THREE.PlaneGeometry(0.92, 0.54),
     new THREE.MeshBasicMaterial({
-      map: createSeedVaultTexture(),
+      map: createSafeScanBadgeTexture(),
       transparent: true,
       alphaTest: 0.08,
       opacity: 0.78,
@@ -486,7 +438,7 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim() && !showc
   moduleFace.position.z = 0.004;
   moduleGroup.add(moduleFace);
 
-  const screen = roundedFace(1.68, 3.34, 0.23, materials.sagaScreen);
+  const screen = roundedFace(1.68, 3.34, 0.23, materials.phoneScreen);
   screen.position.z = 0.103;
   phone.add(screen);
 

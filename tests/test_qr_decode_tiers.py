@@ -128,34 +128,23 @@ def test_zbar_single_hit_fails_closed_if_second_code_check_times_out(decoder, mo
 
 
 def test_same_payload_on_two_pdf_pages_is_refused(decoder):
-    fitz = pytest.importorskip("fitz")
-    qr = qrcode.make("https://same.example/").convert("RGB")
-    png = io.BytesIO()
-    qr.save(png, format="PNG")
-    document = fitz.open()
-    try:
-        for _ in range(2):
-            page = document.new_page(width=300, height=300)
-            page.insert_image(fitz.Rect(20, 20, 280, 280), stream=png.getvalue())
-        contents = document.tobytes()
-    finally:
-        document.close()
+    qr = qrcode.make("https://same.example/").convert("RGB").resize((260, 260))
+    page = Image.new("RGB", (300, 300), "white")
+    page.paste(qr, (20, 20))
+    document = io.BytesIO()
+    page.save(document, format="PDF", save_all=True, append_images=[page], resolution=72)
+    contents = document.getvalue()
     with pytest.raises(decoder.QRDecodeAmbiguityError, match="Multiple QR codes"):
         decoder.decode_qr_upload(contents, "two-pages.pdf", "application/pdf")
 
 
 def test_pdf_worker_returns_the_selected_rendered_page(decoder):
-    fitz = pytest.importorskip("fitz")
-    qr = qrcode.make("https://page.example/").convert("RGB")
-    png = io.BytesIO()
-    qr.save(png, format="PNG")
-    document = fitz.open()
-    try:
-        page = document.new_page(width=300, height=300)
-        page.insert_image(fitz.Rect(20, 20, 280, 280), stream=png.getvalue())
-        contents = document.tobytes()
-    finally:
-        document.close()
+    qr = qrcode.make("https://page.example/").convert("RGB").resize((260, 260))
+    page = Image.new("RGB", (300, 300), "white")
+    page.paste(qr, (20, 20))
+    document = io.BytesIO()
+    page.save(document, format="PDF", resolution=72)
+    contents = document.getvalue()
     payload, preview = decoder.decode_qr_upload(contents, "one-page.pdf", "application/pdf")
     try:
         assert payload == "https://page.example/"
@@ -164,6 +153,22 @@ def test_pdf_worker_returns_the_selected_rendered_page(decoder):
     finally:
         if preview is not None:
             preview.close()
+
+
+def test_pdf_page_cap_is_checked_before_rendering(decoder):
+    page = Image.new("RGB", (32, 32), "white")
+    document = io.BytesIO()
+    page.save(document, format="PDF", save_all=True, append_images=[page] * decoder.MAX_QR_PDF_PAGES, resolution=72)
+    with pytest.raises(decoder.QRDecodeAmbiguityError, match="more than"):
+        decoder.decode_qr_upload(document.getvalue(), "too-many.pdf", "application/pdf")
+
+
+def test_pdf_40_megapixel_cap_is_checked_before_rendering(decoder):
+    page = Image.new("RGB", (300, 300), "white")
+    document = io.BytesIO()
+    page.save(document, format="PDF", resolution=3)
+    with pytest.raises(decoder.QRDecodeSafetyError, match="40 megapixel"):
+        decoder.decode_qr_upload(document.getvalue(), "oversized.pdf", "application/pdf")
 
 
 def test_repeated_read_of_one_physical_code_is_not_ambiguous(decoder):

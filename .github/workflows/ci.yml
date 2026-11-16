@@ -41,6 +41,13 @@ jobs:
       PYTHONPATH: ${{ github.workspace }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify Docker license notice bundle
+        run: |
+          bundle_dir="$RUNNER_TEMP/safescan-license-bundle"
+          mkdir -p "$bundle_dir"
+          docker build --target license-notices --output "type=local,dest=$bundle_dir" .
+          cmp THIRD_PARTY_NOTICES.md "$bundle_dir/THIRD_PARTY_NOTICES.md"
+          diff -qr third_party_licenses "$bundle_dir/third_party_licenses"
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
@@ -54,6 +61,8 @@ jobs:
           python -m pip install --only-binary=:all: --require-hashes -r requirements-dev.lock
       - name: Check dependency locks
         run: python scripts/check_dependency_locks.py
+      - name: Check runtime licenses
+        run: python scripts/check_runtime_licenses.py
       - name: Check installed runtime imports
         run: |
           python -m pip check
