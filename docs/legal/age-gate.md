@@ -1,6 +1,6 @@
 # Age gate implementation notes
 
-This is an engineering control, not proof of age. It uses a neutral birth-year question and whether the birthday has already occurred this calendar year. The server computes age and retains neither answer. The current account minimum is **16 globally** until a reviewed jurisdiction policy exists; browser language and client-supplied locale do not set the threshold. Adult-only payment, wallet, rewards, token and Go Ghost paths require a separate **18+ attestation**.
+This is an engineering control, not proof of age. The web form asks for birth year. It asks whether the birthday has already occurred this calendar year only for the cutoff birth year, when that answer could change eligibility. Without JavaScript the web form shows both questions. The server makes the decision and retains neither answer; when the birthday answer is omitted outside the cutoff year, it uses the younger possible age. The current account minimum is **16 globally** until a reviewed jurisdiction policy exists; browser language and client-supplied locale do not set the threshold. Adult-only payment, wallet, rewards, token and Go Ghost paths require a separate **18+ attestation**.
 
 ## Account sign-in
 
@@ -24,3 +24,4 @@ The web adult form uses the same server-owned challenge and records an account a
 - Confirm that production `PRIVACY_HASH_SALT` is set to a stable, private random value before rollout; the development fallback is not suitable for a production privacy hash.
 - This control gates account and listed adult features. Guest QR analysis remains public. Self-reported answers can be false; this implementation does not verify an identity document or calculate jurisdiction from an IP address.
 - Phase 2 can require explicit Terms/Privacy acceptance before `finish_verified_sign_in`; the pending identity stays server-side until all prerequisites are met.
+- The published Terms and Privacy text in `hackabull/admin_data.py` still describes a 13+ global / 16+ EU rule. That conflicts with the implemented 16+ global account rule. Correct it through the versioned legal-document workflow and counsel review; do not treat the age-form copy change as a Terms or Privacy update.

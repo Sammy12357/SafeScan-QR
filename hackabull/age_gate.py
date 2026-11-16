@@ -42,8 +42,8 @@ def _identity_digest(provider, subject):
     return hmac.new(salt, f"age:{canonical}".encode("utf-8"), hashlib.sha256).hexdigest()
 
 
-def age_from_year(birth_year, birthday_this_year, *, today=None):
-    """Calculate age without retaining a birth date or the answer."""
+def age_from_year(birth_year, birthday_this_year, *, today=None, minimum_age=None):
+    """Calculate age, or a conservative age when the birthday cannot change eligibility."""
     year_text = str(birth_year).strip()
     if not year_text.isascii() or not year_text.isdecimal() or len(year_text) != 4:
         raise ValueError("Enter a four-digit birth year.")
@@ -51,6 +51,12 @@ def age_from_year(birth_year, birthday_this_year, *, today=None):
     today = today or _now().date()
     if year < 1900 or year > today.year:
         raise ValueError("Enter a valid birth year.")
+    if birthday_this_year in ("", None) and minimum_age in (ACCOUNT_MIN_AGE, ADULT_MIN_AGE):
+        if year == today.year - minimum_age:
+            raise ValueError("Choose whether your birthday has occurred this year.")
+        # Off the cutoff year, the answer cannot change eligibility. Use the
+        # younger possible age so an omitted answer can never grant access.
+        return today.year - year - 1
     if birthday_this_year not in ("yes", "no"):
         raise ValueError("Choose whether your birthday has occurred this year.")
     # The answer is only used in this calculation and is not persisted.

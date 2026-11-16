@@ -6,8 +6,9 @@
   {% include '_seo_head.html' %}
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <script src="/static/ui-states.js?v=ui-loading-v1"></script>
+  <script defer src="/static/age-check.js?v=age-check-ux-v1"></script>
   <title>Age check | Sqafe</title>
-  <link rel="stylesheet" href="/static/styles.css?v=legal-a11y-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=age-check-ux-v1">
 </head>
 <body>
   <div class="page-shell legal-shell">
@@ -21,17 +22,22 @@
       <p>This part of SafeScan is unavailable to people below its minimum age. No birth year or birthday answer was saved.</p>
       <a class="secondary-button" href="/">Return home</a>
       {% else %}
-      <p>We ask everyone the same questions before using this part of SafeScan. We keep only the age-check outcome, not your birth year or birthday answer.</p>
+      {% if mode == 'adult' %}
+      <p>This feature requires you to be at least 18. We remember the outcome for your account, or for 24 hours if you are a guest. We do not keep your birth year or birthday answer.</p>
+      {% else %}
+      <p>Accounts require you to be at least 16. Once confirmed, you will not need to repeat this check for the same account. We do not keep your birth year or birthday answer.</p>
+      {% endif %}
       {% if error %}<p role="alert" class="form-field-error">{{ error }}</p>{% endif %}
       <form class="legal-form" action="{{ '/auth/confirm-adult' if mode == 'adult' else '/auth/confirm-age' }}" method="post">
         <label for="birthYear">What year were you born?</label>
         <input id="birthYear" name="birth_year" type="text" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="bday-year" required>
-        <label for="birthdayThisYear">Have you already had your birthday this calendar year?</label>
-        <select id="birthdayThisYear" name="birthday_this_year" required>
-          <option value="">Choose one</option>
-          <option value="yes">Yes</option>
-          <option value="no">No</option>
-        </select>
+        <fieldset class="age-birthday-choice" data-minimum-age="{{ threshold }}" data-current-year="{{ current_year }}">
+          <legend>Have you had your birthday this year?</legend>
+          <div class="age-choice-options">
+            <label><input type="radio" name="birthday_this_year" value="yes" required> Yes</label>
+            <label><input type="radio" name="birthday_this_year" value="no"> No</label>
+          </div>
+        </fieldset>
         {% if mode == 'adult' %}
         <label class="checkbox-row">
           <input type="checkbox" name="adult_attestation" value="yes" required>

@@ -146,6 +146,11 @@ body.qr-camera-open { overflow: hidden; }
 .legal-form label { display: grid; gap: var(--space-3); color: var(--text); font-weight: 800; }
 .legal-form .form-field { display: grid; gap: var(--space-3); }
 .legal-form input, .legal-form select, .legal-form textarea { width: 100%; padding: var(--space-4) var(--space-4); border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05); color: var(--text); font: inherit; }
+.age-birthday-choice { border: 0; margin: var(--space-0); padding: var(--space-0); min-width: 0; }
+.age-birthday-choice legend { color: var(--text); font-weight: 800; padding: var(--space-0); }
+.age-choice-options { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-3); }
+.legal-form .age-choice-options label { display: inline-flex; align-items: center; gap: var(--space-3); min-width: 100px; padding: var(--space-4); border: 1px solid var(--line); border-radius: 8px; color: var(--text); font-weight: 600; cursor: pointer; }
+:root .legal-form .age-choice-options input[type="radio"] { appearance: auto; flex: 0 0 auto; width: 18px; height: 18px; min-height: 18px; margin: var(--space-0); padding: var(--space-0); border: initial; background: initial; accent-color: var(--accent); }
 .legal-form .waitlist-consent { display: flex; align-items: flex-start; gap: var(--space-3); font-weight: 500; line-height: 1.45; }
 .legal-form textarea { resize: vertical; }
 .checkbox-row { grid-template-columns: auto 1fr !important; align-items: start; }
