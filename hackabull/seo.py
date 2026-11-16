@@ -39,6 +39,29 @@ SEO_PAGE_COPY = {
 }
 SITEMAP_PATHS = tuple(SEO_PAGE_COPY)
 
+# Describe only the public site identity and organization. Product ratings,
+# prices, legal identity, and social profiles need independent verification.
+HOME_STRUCTURED_DATA = {
+    "@context": "https://schema.org",
+    "@graph": [
+        {
+            "@type": "WebSite",
+            "@id": f"{CANONICAL_ORIGIN}/#website",
+            "url": f"{CANONICAL_ORIGIN}/",
+            "name": "Sqafe",
+            "alternateName": "SafeScan QR",
+            "publisher": {"@id": f"{CANONICAL_ORIGIN}/#organization"},
+        },
+        {
+            "@type": "Organization",
+            "@id": f"{CANONICAL_ORIGIN}/#organization",
+            "url": f"{CANONICAL_ORIGIN}/",
+            "name": "Sqafe",
+            "logo": f"{CANONICAL_ORIGIN}/static/safescan-logo.svg",
+        },
+    ],
+}
+
 # Public HTML routes may move to the canonical host. Keep auth, account,
 # checkout, and API routes on their requested host so existing sessions and
 # mobile clients are not redirected across cookie origins.
@@ -74,7 +97,7 @@ def canonical_url(path: str) -> str:
     return CANONICAL_ORIGIN + path
 
 
-def metadata_for_request(request) -> dict[str, str] | None:
+def metadata_for_request(request) -> dict[str, object] | None:
     """Return reviewed metadata only for a canonical, public GET document.
 
     Scan POST results, duplicate home routes, noncanonical hosts, and all
@@ -85,11 +108,14 @@ def metadata_for_request(request) -> dict[str, str] | None:
     if request.method != "GET" or should_noindex_html(host, path, 200):
         return None
     copy = SEO_PAGE_COPY[path]
-    return {
+    metadata = {
         **copy,
         "url": canonical_url(path),
         "image_url": canonical_url(OG_IMAGE_PATH),
     }
+    if path == "/":
+        metadata["structured_data"] = HOME_STRUCTURED_DATA
+    return metadata
 
 
 def canonical_redirect_url(host: str, path: str, query: str) -> str | None:

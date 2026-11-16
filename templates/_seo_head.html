@@ -19,6 +19,9 @@
   <meta name="twitter:title" content="{{ seo_page.title }}">
   <meta name="twitter:description" content="{{ seo_page.description }}">
   <meta name="twitter:image" content="{{ seo_page.image_url }}">
+  {% if seo_page.structured_data is defined %}
+  <script type="application/ld+json">{{ seo_page.structured_data | tojson }}</script>
+  {% endif %}
 {% else %}
   {% if seo_fallback_title is defined %}<title>{{ seo_fallback_title }}</title>{% endif %}
   <meta name="robots" content="noindex, follow">
