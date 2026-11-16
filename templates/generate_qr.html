@@ -11,7 +11,7 @@
   <title>QR Generator | Sqafe</title>
   <meta name="description" content="Generate a QR code after SafeScan checks the destination URL for known risk signals.">
   <link rel="icon" href="/static/safescan-logo.svg?v=sqafe-brand-v1" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=legal-a11y-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=ascii-qr-v1">
 </head>
 <body class="test-site-page">
   <div class="page-shell">
@@ -19,9 +19,22 @@
     <main>
       <section class="generate-qr-panel" id="generate-qr-section">
         <div class="panel-header"><div><p class="eyebrow">SafeScan Generator</p><h2>Generate a screened QR</h2></div></div>
-        <p class="generate-qr-copy">Paste a web URL. SafeScan creates the QR only when its configured checks complete with no known threat match at that time. The logo identifies the generator; it does not endorse the destination. A destination can change later.</p>
+        <p class="generate-qr-copy">Paste a web URL. SafeScan creates the QR only when its configured checks complete with no known threat match at that time. The generator mark identifies the tool; it does not endorse the destination. A destination can change later.</p>
+        <fieldset class="generate-qr-format">
+          <legend>Choose an output</legend>
+          <div class="generate-qr-format-options">
+            <label class="generate-qr-format-option">
+              <input type="radio" name="generateQrFormat" value="png" checked>
+              <span><strong>PNG image</strong><small>Branded QR file</small></span>
+            </label>
+            <label class="generate-qr-format-option">
+              <input type="radio" name="generateQrFormat" value="ascii">
+              <span><strong>Text QR</strong><small>Moving text preview</small></span>
+            </label>
+          </div>
+        </fieldset>
         <div class="generate-qr-form-row">
-          <input id="generateQrUrlInput" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://example.com">
+          <input id="generateQrUrlInput" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Destination URL" placeholder="https://example.com">
           <button id="generateQrButton" type="button" class="primary-button">Generate QR</button>
         </div>
         <p id="generateQrError" class="generated-qr-error hidden" role="alert"></p>
@@ -29,6 +42,23 @@
           <img id="generatedQrImage" class="generated-qr-image" alt="Generated QR code">
           <p id="generatedQrStatus" class="generated-qr-status">Checked when generated. The destination may change, so recheck before opening.</p>
           <a id="generatedQrDownload" class="secondary-button" download="safescan-qr.png" href="#">Download PNG</a>
+        </div>
+        <div id="generatedAsciiWrap" class="generated-qr-wrap generated-ascii-wrap hidden" aria-live="polite">
+          <div class="generated-ascii-heading">
+            <p>Text QR preview</p>
+            <button id="generatedAsciiMotionToggle" class="secondary-button" type="button">Pause motion</button>
+          </div>
+          <div class="generated-ascii-paper">
+            <pre id="generatedAsciiArt" aria-hidden="true"></pre>
+          </div>
+          <p id="generatedAsciiSizeNotice" class="generated-ascii-size-notice hidden" role="status">This text QR is too wide to show fully on this screen. Use a shorter URL, display the downloaded text on a larger screen, or choose PNG.</p>
+          <p class="generated-ascii-destination">QR for <span id="generatedAsciiDestination"></span></p>
+          <p class="generated-qr-status">Checked when generated. Pause the motion if your camera has trouble scanning. Keep spacing and a fixed-width font when sharing the text; the destination can change later.</p>
+          <div class="generated-ascii-actions">
+            <button id="generatedAsciiCopy" class="secondary-button" type="button">Copy text</button>
+            <a id="generatedAsciiDownload" class="secondary-button" download="sqafe-text-qr.txt" href="#">Download .txt</a>
+          </div>
+          <p id="generatedAsciiActionStatus" class="generated-ascii-action-status" role="status" aria-live="polite"></p>
         </div>
       </section>
     </main>
@@ -38,6 +68,6 @@
   <script src="/static/app-widgets.js?v=legal-gpc-v1"></script>
   <script src="/static/app-go-ghost.js?v=ghost-inline-errors-v1"></script>
   <script src="/static/app-go-ghost-ui.js?v=legal-a11y-v1"></script>
-  <script src="/static/app-generate-qr.js?v=ui-loading-v1"></script>
+  <script src="/static/app-generate-qr.js?v=ascii-qr-v1"></script>
 </body>
 </html>

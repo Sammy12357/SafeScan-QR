@@ -17,6 +17,22 @@ Node 20.9+ is required. `npm ci` is only for the benchmark tool; the site stays 
 
 For the real-photo corpus, run `python scripts/qr_bench/fetch_boofcv.py` and then use `--corpus boofcv` with both benchmark scripts. The downloader gets the [BoofCV QR image dataset](https://boofcv.org/index.php?title=Performance:QrCode) from its official page into ignored `.cache/qr_corpus/boofcv/`. The downloaded V3 archive used for this baseline has SHA-256 `a136c676448e9bafbe5c2fe9487728b0da3c823aeace6bc74d1c7fb2f86fe7be`. Its `detection` images have coordinate labels, not payload text, so the BoofCV read rate means “at least one valid QR payload decoded,” while synthetic results compare exact payloads.
 
+## Text QR preview corpus
+
+The separate `tests/qr_corpus/text_qr/` corpus contains four browser-rendered
+mobile screenshots, one for each moving Text QR mask. It leaves the original
+24-image synthetic baseline intact. Run:
+
+```bash
+python scripts/qr_bench/bench_server.py --corpus tests/qr_corpus/text_qr
+```
+
+On the local November 2026 run, both the full server decoder and native ZXing
+read all 4/4 frames exactly. The full server path measured p50 386.8 ms and p95
+478.4 ms; native ZXing measured p50 1.0 ms and p95 1.7 ms. These are local
+timings for small screenshots, not a device-camera performance claim. The
+original synthetic corpus remained at 19/24 exact on the full server path.
+
 ## Phase 0 baseline
 
 Recorded on the checked-in 24-image synthetic corpus with the current `zxing-cpp==3.0.0` server and current 720px jsQR fallback. The first 18 images are the core scenario set; the six additions cover curvature, screen moiré, stylized QR, two-code ambiguity, overlap, and Micro QR.
