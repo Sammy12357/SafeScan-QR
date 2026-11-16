@@ -453,14 +453,14 @@ async def contact_page(request: Request):
     body = f"""
     <section class="contact-hero">
       <h2>Contact Sqafe (SafeScan QR)</h2>
-      <p>For community updates, support, security reports, partnerships, or privacy questions, use the best channel below.</p>
+      <p>For support, security reports, partnerships, or privacy questions, use the best channel below.</p>
     </section>
 
     <div class="contact-grid">
-      <a class="contact-card contact-card-primary" href="https://discord.gg/hqHBQ22z" target="_blank" rel="noopener noreferrer">
-        <span class="contact-label">Community</span>
-        <strong>Join the Discord</strong>
-        <p>Ask questions, follow release updates, and connect with the SafeScan QR community.</p>
+      <a class="contact-card contact-card-primary" href="https://github.com/Sammy12357/SafeScan-QR" target="_blank" rel="noopener noreferrer">
+        <span class="contact-label">Project</span>
+        <strong>View the public repository</strong>
+        <p>Follow public development and read the SafeScan QR source.</p>
       </a>
       <a class="contact-card" href="{ADMIN_EMAIL_GMAIL_COMPOSE_URL}" target="_blank" rel="noopener noreferrer">
         <span class="contact-label">Email</span>
@@ -472,16 +472,25 @@ async def contact_page(request: Request):
         <strong>Report a vulnerability</strong>
         <p>Send affected routes, reproduction steps, and potential impact so we can investigate quickly.</p>
       </a>
-      <a class="contact-card" href="https://github.com/Sammy12357/SafeScan-QR" target="_blank" rel="noopener noreferrer">
-        <span class="contact-label">Code</span>
-        <strong>GitHub</strong>
-        <p>View the project repository and track public development.</p>
-      </a>
     </div>
 
     <p class="contact-note">For privacy rights requests, use the <a href="/legal/data-request">Data Request portal</a>. For sale/sharing opt-outs, use <a href="/legal/do-not-sell">Do Not Sell or Share</a>.</p>
     """
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Contact", body))
+
+
+@qr_app.get("/about", response_class=HTMLResponse)
+async def about_page(request: Request):
+    user = get_session_user(request)
+    return templates.TemplateResponse("about.html", {
+        "request": request,
+        "logged_in": bool(user),
+        "email": user["email"] if user else "",
+        "test_site_path": False,
+        "active_nav": "about",
+        "google_client_id": CLIENT_ID,
+        **index_user_context(user),
+    })
 
 @qr_app.get("/product/install", response_class=HTMLResponse)
 async def product_install(request: Request):

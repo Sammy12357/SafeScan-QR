@@ -18,8 +18,15 @@ SEO_PAGE_COPY = {
     "/": {
         "title": "Check a QR Code Before Opening It | Sqafe",
         "description": (
-            "Scan a QR code or paste its contents to review the destination and "
-            "available risk signals before deciding whether to open it."
+            "Sqafe helps you inspect a QR code's decoded content and available "
+            "risk signals before deciding whether to open a destination."
+        ),
+    },
+    "/about": {
+        "title": "About Sqafe | QR Code Inspection",
+        "description": (
+            "Learn what Sqafe and its SafeScan QR scanner do, how a scan result "
+            "works, and where to find the project and contact details."
         ),
     },
     "/learn": {
@@ -63,7 +70,6 @@ HOME_STRUCTURED_DATA = {
             "@id": f"{CANONICAL_ORIGIN}/#website",
             "url": f"{CANONICAL_ORIGIN}/",
             "name": "Sqafe",
-            "alternateName": "SafeScan QR",
             "publisher": {"@id": f"{CANONICAL_ORIGIN}/#organization"},
         },
         {
@@ -71,6 +77,7 @@ HOME_STRUCTURED_DATA = {
             "@id": f"{CANONICAL_ORIGIN}/#organization",
             "url": f"{CANONICAL_ORIGIN}/",
             "name": "Sqafe",
+            "description": "Sqafe publishes a QR code scanner and QR safety guidance.",
             "logo": f"{CANONICAL_ORIGIN}/static/safescan-logo.svg",
         },
     ],

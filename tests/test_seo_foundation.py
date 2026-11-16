@@ -44,6 +44,7 @@ def test_robots_and_sitemap_are_canonical_and_parseable(seo_client):
     locations = [node.text for node in root.findall("s:url/s:loc", namespace)]
     assert locations == [
         "https://sqafe.com/",
+        "https://sqafe.com/about",
         "https://sqafe.com/learn",
         "https://sqafe.com/learn/after-scanning-suspicious-qr",
         "https://sqafe.com/learn/parking-meter-qr-scams",
@@ -73,6 +74,7 @@ def test_public_pages_redirect_to_one_host_and_path_shape(seo_client):
         ("https://www.sqafe.com/learn", "https://sqafe.com/learn"),
         ("https://sqafe.com/Learn/", "https://sqafe.com/learn"),
         ("https://sqafe.com/contact/", "https://sqafe.com/contact"),
+        ("https://safescan-qr.onrender.com/About/", "https://sqafe.com/about"),
         (
             "https://safescan-qr.onrender.com/Learn/Parking-Meter-QR-Scams/?from=sign",
             "https://sqafe.com/learn/parking-meter-qr-scams?from=sign",

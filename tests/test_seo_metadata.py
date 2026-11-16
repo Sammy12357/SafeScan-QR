@@ -71,7 +71,11 @@ def test_reviewed_pages_have_unique_canonical_and_share_metadata(seo_client):
     expected = {
         "/": (
             "Check a QR Code Before Opening It | Sqafe",
-            "Scan a QR code or paste its contents to review the destination and available risk signals before deciding whether to open it.",
+            "Sqafe helps you inspect a QR code's decoded content and available risk signals before deciding whether to open a destination.",
+        ),
+        "/about": (
+            "About Sqafe | QR Code Inspection",
+            "Learn what Sqafe and its SafeScan QR scanner do, how a scan result works, and where to find the project and contact details.",
         ),
         "/learn": (
             "QR Code Safety and Quishing Guide | Sqafe",
@@ -113,6 +117,22 @@ def test_reviewed_pages_have_unique_canonical_and_share_metadata(seo_client):
             assert response.text.count("<h1>QR code safety center</h1>") == 1
     assert len({title for title, _ in expected.values()}) == len(expected)
     assert len({description for _, description in expected.values()}) == len(expected)
+
+
+def test_home_and_about_explain_the_brand_and_scanner_relationship(seo_client):
+    home = seo_client.get("/").text
+    about = seo_client.get("/about").text
+    assert "<h1>Sqafe</h1>" in home
+    assert "Sqafe is a QR code inspection site." in home
+    assert 'aria-label="Sqafe home"' in home
+    assert '<span class="footer-brand-name">Sqafe</span>' in home
+    assert 'href="/about"' in home
+    assert about.count("<h1>") == 1
+    assert "<h1>About Sqafe</h1>" in about
+    assert "SafeScan QR is the scanner used here." in about
+    assert 'href="/#scanner"' in about
+    assert 'href="/learn"' in about
+    assert 'href="/contact"' in about
 
 
 def test_withheld_and_private_pages_are_noindex_without_share_metadata(seo_client):
