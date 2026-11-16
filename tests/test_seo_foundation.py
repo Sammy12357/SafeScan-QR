@@ -2,6 +2,7 @@
 
 import importlib
 import sys
+from pathlib import Path
 from xml.etree import ElementTree
 
 import pytest
@@ -51,6 +52,18 @@ def test_robots_and_sitemap_are_canonical_and_parseable(seo_client):
     assert root.findall("s:url/s:lastmod", namespace) == []
     assert all("?" not in location and "onrender.com" not in location for location in locations)
     assert seo_client.head("/sitemap.xml").status_code == 200
+
+
+def test_bing_ownership_file_is_served_unchanged_at_site_root(seo_client):
+    downloaded_file = Path(__file__).resolve().parents[1] / "static" / "BingSiteAuth.xml"
+    expected_bytes = downloaded_file.read_bytes()
+    response = seo_client.get("/BingSiteAuth.xml", follow_redirects=False)
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/xml")
+    assert response.headers["content-length"] == str(len(expected_bytes))
+    assert "location" not in response.headers
+    assert response.content == expected_bytes
+    assert seo_client.head("/BingSiteAuth.xml").status_code == 200
 
 
 def test_public_pages_redirect_to_one_host_and_path_shape(seo_client):

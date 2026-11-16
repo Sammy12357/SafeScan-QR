@@ -19,13 +19,14 @@ import time
 import csv
 from decimal import Decimal, InvalidOperation
 from html import escape as escape_html
+from pathlib import Path
 from urllib.parse import quote, urlencode, urljoin, urlparse, parse_qsl
 from datetime import datetime, timedelta, timezone
 from xml.etree import ElementTree
 
 from fastapi import FastAPI, UploadFile, File, Request, Form, Header, Query, Body, HTTPException
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -131,6 +132,17 @@ async def sitemap_xml():
     # lastmod is omitted until each page has an independently verified update
     # date; deployment time is not the content modification time.
     return Response(body, media_type="application/xml", headers={"Cache-Control": "public, max-age=300"})
+
+
+@qr_app.api_route("/BingSiteAuth.xml", methods=["GET", "HEAD"], include_in_schema=False)
+async def bing_site_auth_xml():
+    """Serve Bing's downloaded ownership file at the exact public root URL."""
+    verification_file = Path(__file__).resolve().parent.parent / "static" / "BingSiteAuth.xml"
+    return FileResponse(
+        verification_file,
+        media_type="application/xml",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
 
 
 @qr_app.get("/health", include_in_schema=False)
