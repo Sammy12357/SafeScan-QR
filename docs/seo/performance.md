@@ -13,8 +13,11 @@ Three runs per form factor used Lighthouse 13.6.0, headless Chrome 157, simulate
 | Local before | 66 | 11.17 s | 331 ms | 0.035 | 90 | 2.01 s | 38 ms | 0.020 |
 | Local after | 82 | 4.54 s | 36 ms | 0.035 | 99 | 0.87 s | 0 ms | 0.020 |
 | Earlier live baseline, different environment | 61 | 4.5 s | 1,090 ms | 0 | 51 | 2.4 s | 1,655 ms | 0.004 |
+| Live after release, one run per device | 98 | 2.26 s | 93 ms | 0 | 100 | 0.50 s | 0 ms | 0.020 |
 
-The local baseline varied substantially, especially mobile LCP (4.56–11.26 s) and desktop score (73–91). These are lab measurements with three runs, not field Core Web Vitals. The earlier live baseline includes production hosting and network conditions, so its difference from local results is **not** a measured production gain. A live rerun after release is needed. Mobile LCP remains above Google's 2.5 s good threshold in the local candidate.
+The local baseline varied substantially, especially mobile LCP (4.56–11.26 s) and desktop score (73–91). These are lab measurements with three runs, not field Core Web Vitals. The earlier live baseline includes production hosting and network conditions, so its difference from local results is **not** a measured production gain. The local candidate's mobile LCP remained above Google's 2.5 s good threshold.
+
+The live rerun was taken on 2026-11-16 at 01:26 UTC using Lighthouse 13.6.0, headless Chrome 157, and simulated throttling. Mobile emulated a 412 × 823 Moto G Power (2022) at 150 ms RTT, 1,638 Kbps, and 4× CPU slowdown; desktop used 1350 × 940 at 40 ms RTT, 10,240 Kbps, and 1× CPU. Each row is a **single lab run**, and the earlier live baseline used different conditions. These results confirm that the released page omits `safescan-3d.js` and Three.js from initial requests, but do **not** establish a causal speed gain or field Core Web Vitals improvement. Desktop CLS rose from 0.004 in the earlier run to 0.020 in this run; Lighthouse attributed its shift to the cookie consent banner, and the observed value remained below the 0.1 good threshold.
 
 The old page requested both `safescan-3d.js` and the 1.27 MB Three.js module during initial navigation in all six local baseline reports. Neither was requested during initial navigation in the candidate reports. The 3D scene still loads after intent; this moves its CPU cost to that interaction, so real-device responsiveness during activation should be checked before release.
 
