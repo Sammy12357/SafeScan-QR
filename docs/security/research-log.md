@@ -10,6 +10,8 @@
 
 The web flow adds a one-use, browser-bound state cookie and server record, PKCE, nonce validation, exact client audience verification, verified email, and a 10-minute transaction expiry. The legacy direct Google endpoint is closed when website Auth0 is enabled. `tests/test_auth0_web_login.py` covers callback forgery, replay, audience, nonce, signature, account continuity, age eligibility, and logout. Live user login remains to be verified after Auth0/Render configuration.
 
+Live guest-browser validation exposed two integration requirements before cutover: the original form submission did not navigate across the site's `form-action 'self'` policy, and Google's OAuth client rejected Auth0's `/login/callback` as an unregistered redirect. The website now starts login through a normal navigation link and permits only the configured Auth0 origin as an additional form-action target while the feature is enabled, so the logout POST can clear the provider session. A local Playwright click reached the Auth0 authorization URL after this change. The exact Auth0 callback must also be registered in the existing Google OAuth client before enabling the Render flag again.
+
 ## 2026-11-15 — QR lookalike-domain detection
 
 | Primary source | Finding | SafeScan decision |

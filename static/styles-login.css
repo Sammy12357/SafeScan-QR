@@ -90,7 +90,7 @@ body {
   display: flex; align-items: center; justify-content: center; gap: var(--space-3);
   width: 100%; padding: var(--space-4);
   background: var(--panel); border: 1px solid var(--line);
-  border-radius: 10px; color: var(--text);
+  border-radius: 10px; color: var(--text); text-decoration: none;
   font-family: var(--body-font); font-size: 0.9rem;
   cursor: pointer; transition: border-color 0.15s, background 0.15s;
   position: relative; overflow: hidden;

@@ -59,7 +59,8 @@ def test_auth0_start_uses_code_pkce_google_and_browser_cookie(auth0_web_app):
     client = TestClient(app.qr_app, base_url="https://testserver")
     page = client.get("/login")
     assert page.status_code == 200
-    assert 'action="/auth/auth0/start"' in page.text
+    assert 'href="/auth/auth0/start?next=' in page.text
+    assert "form-action 'self' https://safe-scan-qr.us.auth0.com" in page.headers["Content-Security-Policy"]
     assert "accounts.google.com/gsi/client" not in page.text
     assert 'action="/auth/login"' not in page.text
     response, params = _start(client)
@@ -152,7 +153,7 @@ def test_auth0_web_without_credentials_stays_closed(auth0_web_app, monkeypatch):
     client = TestClient(app.qr_app, base_url="https://testserver")
     page = client.get("/login")
     assert "Sign-in is temporarily unavailable" in page.text
-    assert 'action="/auth/auth0/start"' not in page.text
+    assert 'href="/auth/auth0/start?next=' not in page.text
     assert client.get("/auth/auth0/start").status_code == 503
     assert client.post("/auth/google", data={"credential": "token"}).status_code == 404
 
