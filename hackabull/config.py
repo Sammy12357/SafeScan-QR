@@ -125,7 +125,7 @@ OWNER_EMAILS = (
     {email.strip().lower() for email in os.getenv("OWNER_EMAILS", "").split(",") if email.strip()}
     or {ADMIN_EMAIL.strip().lower()}
 ) - ADMIN_ACCESS_DENYLIST
-APP_URL = os.getenv("APP_URL", "https://safescan-qr.onrender.com").rstrip("/")
+APP_URL = os.getenv("APP_URL", "https://sqafe.com").rstrip("/")
 APP_ORIGIN = "{uri.scheme}://{uri.netloc}".format(uri=urlparse(APP_URL)) if urlparse(APP_URL).scheme and urlparse(APP_URL).netloc else APP_URL
 ALLOWED_ORIGINS = sorted({
     APP_ORIGIN,

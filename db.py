@@ -129,6 +129,7 @@ def _is_production_runtime() -> bool:
         bool(os.getenv("RENDER"))
         or environment in ("prod", "production")
         or app_url.startswith("https://safescan-qr.onrender.com")
+        or app_url.startswith("https://sqafe.com")
     )
 
 

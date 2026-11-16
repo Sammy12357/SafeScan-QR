@@ -78,6 +78,11 @@ from .token_flags import token_features_enabled
 from .provider_policy import reputation_configuration
 from .phish_feed import refresh_feed_loop
 from .security import enforce_rate_limit
+from .seo import CANONICAL_ORIGIN
+from .seo import SITEMAP_PATHS
+from .seo import canonical_redirect_url
+from .seo import canonical_url
+from .seo import should_noindex_html
 from .sessions import cleanup_persistent_sessions
 from .sessions import clear_remember_me_cookie
 from .sessions import set_remember_me_cookie
@@ -99,6 +104,33 @@ qr_app = FastAPI(
     redoc_url=None if _PRODUCTION_RUNTIME else "/redoc",
 )
 app = qr_app
+
+
+@qr_app.api_route("/robots.txt", methods=["GET", "HEAD"], include_in_schema=False)
+async def robots_txt():
+    # Private HTML pages must remain crawlable for their noindex response
+    # header to be seen. Only non-page endpoints are excluded here.
+    body = (
+        "User-agent: *\n"
+        "Allow: /\n"
+        "Disallow: /api/\n"
+        "Disallow: /webhooks/\n"
+        "Disallow: /metrics\n"
+        "Disallow: /search_qr_api\n"
+        f"Sitemap: {CANONICAL_ORIGIN}/sitemap.xml\n"
+    )
+    return Response(body, media_type="text/plain; charset=utf-8", headers={"Cache-Control": "public, max-age=300"})
+
+
+@qr_app.api_route("/sitemap.xml", methods=["GET", "HEAD"], include_in_schema=False)
+async def sitemap_xml():
+    root = ElementTree.Element("urlset", {"xmlns": "http://www.sitemaps.org/schemas/sitemap/0.9"})
+    for path in SITEMAP_PATHS:
+        ElementTree.SubElement(ElementTree.SubElement(root, "url"), "loc").text = canonical_url(path)
+    body = ElementTree.tostring(root, encoding="utf-8", xml_declaration=True)
+    # lastmod is omitted until each page has an independently verified update
+    # date; deployment time is not the content modification time.
+    return Response(body, media_type="application/xml", headers={"Cache-Control": "public, max-age=300"})
 
 
 @qr_app.get("/health", include_in_schema=False)
@@ -294,7 +326,17 @@ def apply_security_headers(request: Request, response):
 
 @qr_app.middleware("http")
 async def security_headers(request: Request, call_next):
+    if request.method in ("GET", "HEAD"):
+        destination = canonical_redirect_url(
+            request.url.hostname or "", request.url.path, request.url.query
+        )
+        if destination:
+            return apply_security_headers(request, RedirectResponse(destination, status_code=301))
     response = await call_next(request)
+    if response.headers.get("content-type", "").startswith("text/html") and should_noindex_html(
+        request.url.hostname or "", request.url.path, response.status_code
+    ):
+        response.headers["X-Robots-Tag"] = "noindex, follow"
     return apply_security_headers(request, response)
 
 
