@@ -85,6 +85,7 @@ from .qr_detect import describe_qr_action
 from .qr_detect import detect_payload
 from .qr_detect import pipeline_response_to_template_analysis
 from .qr_image import qr_ascii_from_payload
+from .qr_image import qr_plain_png_from_payload
 from .qr_image import render_safescan_logo
 from .redirects import trace_redirect_chain
 from .referrals import get_scan_count
@@ -260,6 +261,55 @@ async def api_qr_generate(request: Request, payload: dict = Body(...)):
         },
     )
     return response
+
+
+@qr_app.post("/api/qr/generate-plain")
+async def api_qr_generate_plain(request: Request, payload: dict = Body(...)):
+    """Generate an unbranded QR without performing or claiming a safety check."""
+    from qrcode.exceptions import DataOverflowError
+
+    user = get_session_user(request)
+    user_key = user.get("google_id") if user else None
+    # Share the screened generator's quota so switching modes cannot bypass it.
+    limit = 20 if user else 5
+    rate_limit = enforce_rate_limit(request, "qr_generate", limit, 60 * 60, user_key=user_key)
+    if rate_limit:
+        return rate_limit
+
+    validate_strict_payload(payload, {"url", "format", "animation"})
+    output_format = payload.get("format", "png")
+    animation = payload.get("animation", False)
+    if output_format not in ("png", "ascii"):
+        raise SafeScanError(code="invalid_request", field="format")
+    if type(animation) is not bool or (animation and output_format != "ascii"):
+        raise SafeScanError(code="invalid_request", field="animation")
+    target_url = validate_public_url(payload.get("url"))
+
+    headers = {
+        "X-SafeScan-Mode": "plain",
+        "X-SafeScan-Verification": "not_checked",
+        "Cache-Control": "no-store",
+    }
+    try:
+        if output_format == "ascii":
+            if animation:
+                frames = [
+                    qr_ascii_from_payload(target_url, mask_pattern=mask, include_attribution=False)
+                    for mask in (0, 1, 2, 3)
+                ]
+                return JSONResponse({"text": frames[0], "frames": frames}, headers=headers)
+            return Response(
+                content=qr_ascii_from_payload(target_url, include_attribution=False),
+                media_type="text/plain; charset=utf-8",
+                headers=headers,
+            )
+        return Response(
+            content=qr_plain_png_from_payload(target_url),
+            media_type="image/png",
+            headers={**headers, "Content-Disposition": 'inline; filename="plain-qr.png"'},
+        )
+    except DataOverflowError:
+        raise SafeScanError(code="qr_generation_too_long", field="url") from None
 
 
 def _render_branded_qr_png(target_url):

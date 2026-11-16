@@ -1,16 +1,20 @@
-// Generate a QR only after the server completes its safety checks. The text
-// preview swaps whole, independently scannable QR frames; exported text stays
-// fixed so it can be printed or copied without changing underneath the user.
+// Screened QR codes require a complete safety check. Plain QR codes are an
+// explicit unchecked choice with no SafeScan mark. The text preview swaps
+// whole, independently scannable frames; exported text stays fixed.
 (() => {
   const generateBtn = document.getElementById("generateQrButton");
   const urlInputField = document.getElementById("generateQrUrlInput");
+  const modeInputs = [...document.querySelectorAll('input[name="generateQrMode"]')];
+  const plainWarning = document.getElementById("generateQrPlainWarning");
   const formatInputs = [...document.querySelectorAll('input[name="generateQrFormat"]')];
   const wrap = document.getElementById("generatedQrWrap");
   const img = document.getElementById("generatedQrImage");
+  const pngStatus = document.getElementById("generatedQrStatus");
   const dl = document.getElementById("generatedQrDownload");
   const textWrap = document.getElementById("generatedAsciiWrap");
   const paper = document.querySelector(".generated-ascii-paper");
   const art = document.getElementById("generatedAsciiArt");
+  const asciiStatus = document.getElementById("generatedAsciiStatus");
   const sizeNotice = document.getElementById("generatedAsciiSizeNotice");
   const destination = document.getElementById("generatedAsciiDestination");
   const motionToggle = document.getElementById("generatedAsciiMotionToggle");
@@ -18,7 +22,7 @@
   const textDownload = document.getElementById("generatedAsciiDownload");
   const actionStatus = document.getElementById("generatedAsciiActionStatus");
   const errEl = document.getElementById("generateQrError");
-  if (!generateBtn || !urlInputField || !wrap || !img || !dl || !textWrap || !paper || !art || !sizeNotice || !destination || !motionToggle || !copyButton || !textDownload || !actionStatus || !errEl) return;
+  if (!generateBtn || !urlInputField || modeInputs.length !== 2 || !plainWarning || !wrap || !img || !pngStatus || !dl || !textWrap || !paper || !art || !asciiStatus || !sizeNotice || !destination || !motionToggle || !copyButton || !textDownload || !actionStatus || !errEl) return;
 
   const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
   let currentImageUrl = null;
@@ -63,6 +67,8 @@
     stopAnimation();
     wrap.classList.add("hidden");
     textWrap.classList.add("hidden");
+    wrap.removeAttribute("data-verification");
+    textWrap.removeAttribute("data-verification");
     img.removeAttribute("src");
     dl.removeAttribute("href");
     textDownload.removeAttribute("href");
@@ -97,8 +103,20 @@
     clearError();
     clearResult();
   };
+  const plainModeSelected = () => modeInputs.find((radio) => radio.checked)?.value === "plain";
+  const updateModePresentation = () => {
+    const plain = plainModeSelected();
+    plainWarning.classList.toggle("hidden", !plain);
+    if (plain) generateBtn.setAttribute("aria-describedby", "generateQrPlainWarning");
+    else generateBtn.removeAttribute("aria-describedby");
+    if (!generateBtn.disabled) generateBtn.textContent = plain ? "Generate plain QR" : "Generate screened QR";
+  };
 
   urlInputField.addEventListener("input", cancelCurrent);
+  for (const radio of modeInputs) radio.addEventListener("change", () => {
+    cancelCurrent();
+    updateModePresentation();
+  });
   for (const radio of formatInputs) radio.addEventListener("change", cancelCurrent);
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) stopAnimation();
@@ -155,6 +173,7 @@
       return;
     }
 
+    const plain = plainModeSelected();
     const outputFormat = formatInputs.find((radio) => radio.checked)?.value === "ascii" ? "ascii" : "png";
     const version = requestVersion;
     const controller = new AbortController();
@@ -165,7 +184,7 @@
         const payload = outputFormat === "ascii"
           ? { url: normalized, format: "ascii", animation: true }
           : { url: normalized };
-        const res = await fetch("/api/qr/generate", {
+        const res = await fetch(plain ? "/api/qr/generate-plain" : "/api/qr/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           signal: controller.signal,
@@ -177,6 +196,9 @@
           try {
             const body = await res.json();
             detail = body.detail || body.error || detail;
+            if (!plain && body.code === "scan_incomplete") {
+              detail = "Screened checks could not finish. No screened QR was made. Choose Plain QR above only if you want a code without safety checks.";
+            }
           } catch (_err) {
             /* non-JSON error body */
           }
@@ -184,12 +206,18 @@
           showError(detail);
           return;
         }
-        const verified = res.headers.get("X-SafeScan-Verdict")?.toLowerCase() === "safe"
-          && res.headers.get("X-SafeScan-Verification")?.toLowerCase() === "complete";
+        const verification = res.headers.get("X-SafeScan-Verification")?.toLowerCase();
+        const screenedResponse = res.headers.get("X-SafeScan-Verdict")?.toLowerCase() === "safe"
+          && verification === "complete";
+        const plainResponse = res.headers.get("X-SafeScan-Mode")?.toLowerCase() === "plain"
+          && verification === "not_checked"
+          && res.headers.get("X-SafeScan-Verdict") === null;
         const contentType = res.headers.get("Content-Type")?.toLowerCase() || "";
-        if (!verified || (outputFormat === "png" && !contentType.startsWith("image/png"))
+        if (!(plain ? plainResponse : screenedResponse) || (outputFormat === "png" && !contentType.startsWith("image/png"))
           || (outputFormat === "ascii" && !contentType.startsWith("application/json"))) {
-          showError("SafeScan could not confirm a low-risk result for this URL. No QR was made available.");
+          showError(plain
+            ? "The plain QR response was not marked as unchecked. No QR was made available."
+            : "SafeScan could not confirm a low-risk result for this URL. No QR was made available.");
           return;
         }
         if (outputFormat === "png") {
@@ -197,7 +225,13 @@
           if (version !== requestVersion) return;
           currentImageUrl = URL.createObjectURL(blob);
           img.src = currentImageUrl;
+          img.alt = plain ? "Plain QR code for a link that was not safety checked" : "Screened QR code";
+          pngStatus.textContent = plain
+            ? "Not safety checked. Verify the destination independently before sharing or opening this QR."
+            : "Checked when generated. The destination may change, so recheck before opening.";
+          dl.download = plain ? "plain-qr.png" : "safescan-qr.png";
           dl.href = currentImageUrl;
+          wrap.setAttribute("data-verification", plain ? "not_checked" : "complete");
           wrap.classList.remove("hidden");
           return;
         }
@@ -205,7 +239,8 @@
         if (version !== requestVersion) return;
         if (typeof body?.text !== "string" || !body.text || !Array.isArray(body.frames)
           || body.frames.length < 1 || body.frames.length > 8
-          || body.frames[0] !== body.text || body.frames.some((frame) => typeof frame !== "string" || !frame)) {
+          || body.frames[0] !== body.text || body.frames.some((frame) => typeof frame !== "string" || !frame)
+          || (plain && body.frames.some((frame) => frame.includes("Generated by Sqafe")))) {
           showError("The text QR response was incomplete. No QR was made available.");
           return;
         }
@@ -214,8 +249,13 @@
         frameIndex = 0;
         art.textContent = currentText;
         destination.textContent = normalized;
+        asciiStatus.textContent = plain
+          ? "Not safety checked. Verify the destination independently before sharing or opening this QR. Pause the motion if a camera has trouble scanning, and keep spacing and a fixed-width font when sharing the text."
+          : "Checked when generated. Pause the motion if your camera has trouble scanning. Keep spacing and a fixed-width font when sharing the text; the destination can change later.";
         currentTextUrl = URL.createObjectURL(new Blob([currentText], { type: "text/plain;charset=utf-8" }));
+        textDownload.download = plain ? "plain-qr.txt" : "sqafe-text-qr.txt";
         textDownload.href = currentTextUrl;
+        textWrap.setAttribute("data-verification", plain ? "not_checked" : "complete");
         textWrap.classList.remove("hidden");
         fitTextPreview();
         motionPaused = Boolean(reducedMotion?.matches);
@@ -224,7 +264,7 @@
       } catch (err) {
         if (version !== requestVersion) return;
         showError(err?.name === "AbortError"
-          ? "The check is taking longer than expected. No QR was made available. Try again."
+          ? (plain ? "QR generation is taking longer than expected. No QR was made available. Try again." : "The check is taking longer than expected. No QR was made available. Try again.")
           : navigator.onLine === false
             ? "You're offline. Reconnect and try again."
             : "We couldn't connect. Check your connection and try again.");
@@ -232,7 +272,8 @@
         window.clearTimeout(timeout);
         if (activeController === controller) activeController = null;
       }
-    }, { label: "Checking URL…" });
+    }, { label: plain ? "Generating QR…" : "Checking URL…" }).finally(updateModePresentation);
   });
+  updateModePresentation();
   updateMotionButton();
 })();
