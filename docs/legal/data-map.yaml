@@ -79,6 +79,23 @@
       "retention": "until account deletion; automated retention job not yet verified",
       "status": "active schema"
     },
+    "auth0_web_flows": {
+      "fields": [
+        "cookie_hash",
+        "state_hash",
+        "nonce",
+        "code_verifier",
+        "return_to",
+        "remember_me",
+        "expires_at"
+      ],
+      "source": "website sign-in initiated by a browser using Auth0",
+      "purpose": "bind a one-use Auth0 callback to the initiating browser and prevent login forgery",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
+      "retention": "10-minute expiry; expired rows removed at the next sign-in; backup retention unverified",
+      "status": "active schema when website Auth0 sign-in is enabled"
+    },
     "alpha_solana_payment_references": {
       "fields": [
         "id",

@@ -123,6 +123,11 @@ def init_db():
                          display_name TEXT, picture TEXT, client_kind TEXT NOT NULL,
                          return_to TEXT NOT NULL, remember_me INTEGER NOT NULL,
                          expires_at TEXT NOT NULL)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS auth0_web_flows
+                        (cookie_hash TEXT PRIMARY KEY, state_hash TEXT NOT NULL,
+                         nonce TEXT NOT NULL, code_verifier TEXT NOT NULL,
+                         return_to TEXT NOT NULL, remember_me INTEGER NOT NULL,
+                         expires_at INTEGER NOT NULL)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS age_denials
                         (identity_hash TEXT PRIMARY KEY, expires_at TEXT NOT NULL)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS adult_age_challenges

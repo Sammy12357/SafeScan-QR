@@ -1,5 +1,15 @@
 # Security research log
 
+## 2026-11-16 — Website Auth0 Google sign-in
+
+| Primary source | Finding | Sqafe decision |
+| --- | --- | --- |
+| [Auth0 Python web-app guide](https://developer.auth0.com/resources/guides/web-app/flask/basic-authentication) | A server-rendered website uses a separate Regular Web Application, confidential client secret, callback URL, and authorization-code exchange. | Use a separate web client ID and secret; keep the Native app audience allowlist isolated. Store the secret only in Render. |
+| [Auth0 connection selection guidance](https://support.auth0.com/center/s/article/Authenticating-users-through-a-specific-Connection-database-social-etc) | An authorization request can select `google-oauth2` explicitly. | Request only Google and reject every returned subject that does not begin with `google-oauth2|`. Reuse the verified Google suffix as the existing Sqafe account key; do not merge by email. |
+| [Auth0 development-key warning](https://support.auth0.com/center/s/article/Warning-Occurs-About-Development-Keys-When-Tenant-Is-In-Production) | Default social test credentials are unsuitable for production. | The tenant's Google connection displays a dedicated Google client ID; confirm the connection's production ownership and runtime login before enabling the website flag. |
+
+The web flow adds a one-use, browser-bound state cookie and server record, PKCE, nonce validation, exact client audience verification, verified email, and a 10-minute transaction expiry. The legacy direct Google endpoint is closed when website Auth0 is enabled. `tests/test_auth0_web_login.py` covers callback forgery, replay, audience, nonce, signature, account continuity, age eligibility, and logout. Live user login remains to be verified after Auth0/Render configuration.
+
 ## 2026-11-15 — QR lookalike-domain detection
 
 | Primary source | Finding | SafeScan decision |
