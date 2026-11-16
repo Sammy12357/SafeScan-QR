@@ -47,6 +47,20 @@ class HeadIndex(HTMLParser):
         return [item.get("href") for item in self.links if item.get("rel") == rel]
 
 
+class SourceIndex(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.ids = set()
+        self.source_refs = set()
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if attrs.get("id"):
+            self.ids.add(attrs["id"])
+        if tag == "a" and attrs.get("href", "").startswith("#source-"):
+            self.source_refs.add(attrs["href"][1:])
+
+
 def parse_head(html):
     result = HeadIndex()
     result.feed(html)
@@ -62,6 +76,14 @@ def test_reviewed_pages_have_unique_canonical_and_share_metadata(seo_client):
         "/learn": (
             "QR Code Safety and Quishing Guide | Sqafe",
             "Learn how QR phishing works, what a QR code can contain, and how to inspect links, payment requests, and wallet prompts before opening them.",
+        ),
+        "/learn/after-scanning-suspicious-qr": (
+            "Scanned a Suspicious QR Code? What to Do Next | Sqafe",
+            "A practical response guide for a suspicious QR scan: what to do if you only opened a page, entered account or payment details, or installed an app.",
+        ),
+        "/learn/parking-meter-qr-scams": (
+            "Parking Meter QR Scams: Check the Code Before You Pay | Sqafe",
+            "Learn how fake QR stickers on parking meters redirect drivers, how to verify the official payment method, and what to do if you entered card details.",
         ),
         "/contact": (
             "Contact Sqafe | Support and Security Reports",
@@ -131,3 +153,31 @@ def test_every_page_template_has_a_noindex_fallback():
         if "<head>" not in source:
             continue
         assert "{% include '_seo_head.html' %}" in source or '<meta name="robots" content="noindex">' in source, path
+
+
+def test_guides_have_practical_content_sources_and_hub_links(seo_client):
+    hub = seo_client.get("/learn").text
+    for path in (
+        "/learn/after-scanning-suspicious-qr",
+        "/learn/parking-meter-qr-scams",
+    ):
+        assert f'href="{path}"' in hub
+        response = seo_client.get(path)
+        assert response.status_code == 200
+        assert response.text.count("<h1>") == 1
+        assert 'href="https://www.ic3.gov/PSA/2022/PSA220118"' in response.text
+        assert 'href="https://consumer.ftc.gov/' in response.text
+        assert 'href="/#scanner"' in response.text
+        assert "cannot" in response.text.lower()
+        sources = SourceIndex()
+        sources.feed(response.text)
+        assert sources.source_refs
+        assert sources.source_refs <= sources.ids
+    after = seo_client.get("/learn/after-scanning-suspicious-qr").text
+    assert "You entered a password or verification code" in after
+    assert "You entered card or bank details" in after
+    assert "You sent cryptocurrency" in after
+    assert "You installed an app or gave device access" in after
+    parking = seo_client.get("/learn/parking-meter-qr-scams").text
+    assert "Find the operator without using the QR link" in parking
+    assert "Read the destination before opening it" in parking

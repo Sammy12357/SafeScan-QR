@@ -11,6 +11,8 @@ The starting phrase set came from [Google autocomplete](https://suggestqueries.g
 | --- | --- | --- | --- |
 | `/` | QR code safety checker (tool) | is this QR code safe; scan QR code safely; Sqafe; check a QR link | Indexable; scanner is the main tool. |
 | `/learn` | QR code safety guide (informational) | what is quishing; QR phishing; how to inspect a QR code; malicious QR signs | Indexable; existing guide covers these topics. |
+| `/learn/after-scanning-suspicious-qr` | what to do after scanning a suspicious QR code (response) | QR code scan recovery; entered details after scanning QR; suspicious QR link opened | Indexable response guide, distinct from the pre-scan advice on `/learn`. |
+| `/learn/parking-meter-qr-scams` | parking meter QR code scam checks (scenario) | fake QR sticker on parking meter; verify parking QR payment; parking QR scam recovery | Indexable parking-specific checklist, distinct from `/learn`'s brief public-code warning. |
 | `/contact` | Sqafe contact (navigational) | Sqafe support; report a security issue; privacy contact | Indexable; contact options are visible on the page. |
 
 ## Candidate pages after content and claim review
@@ -22,6 +24,5 @@ The starting phrase set came from [Google autocomplete](https://suggestqueries.g
 | `/malicious-database` | QR threat domain list | Resolve listing and dispute language; render useful public data without relying entirely on JavaScript. |
 | `/plans` | Sqafe scanner plans | Confirm checkout availability and align visible pricing with terms. |
 | Proposed guide: checking a QR code from a screenshot | check a QR code from an image | Publish original, step-by-step guidance that does not duplicate `/learn`. |
-| Proposed guide: parking QR code scams | parking QR code scam signs | Publish original, sourced guidance with context-specific examples. |
 
 The first three content opportunities to test in Search Console are “QR code safety checker”, “QR code safety guide”, and “how to check a QR code from a screenshot”. The third is a **candidate**, not a performance prediction. We cannot responsibly estimate a three-to-six-month ranking outcome without a verified baseline and competitive data.

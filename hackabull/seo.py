@@ -29,6 +29,20 @@ SEO_PAGE_COPY = {
             "inspect links, payment requests, and wallet prompts before opening them."
         ),
     },
+    "/learn/after-scanning-suspicious-qr": {
+        "title": "Scanned a Suspicious QR Code? What to Do Next | Sqafe",
+        "description": (
+            "A practical response guide for a suspicious QR scan: what to do if "
+            "you only opened a page, entered account or payment details, or installed an app."
+        ),
+    },
+    "/learn/parking-meter-qr-scams": {
+        "title": "Parking Meter QR Scams: Check the Code Before You Pay | Sqafe",
+        "description": (
+            "Learn how fake QR stickers on parking meters redirect drivers, how to "
+            "verify the official payment method, and what to do if you entered card details."
+        ),
+    },
     "/contact": {
         "title": "Contact Sqafe | Support and Security Reports",
         "description": (
@@ -60,6 +74,13 @@ HOME_STRUCTURED_DATA = {
             "logo": f"{CANONICAL_ORIGIN}/static/safescan-logo.svg",
         },
     ],
+}
+
+# These labels mirror the visible Home / Learn / article navigation on the
+# two guide pages. Add a path only when its breadcrumb trail is visible.
+GUIDE_BREADCRUMB_LABELS = {
+    "/learn/after-scanning-suspicious-qr": "After a suspicious scan",
+    "/learn/parking-meter-qr-scams": "Parking meter QR scams",
 }
 
 # Public HTML routes may move to the canonical host. Keep auth, account,
@@ -97,6 +118,21 @@ def canonical_url(path: str) -> str:
     return CANONICAL_ORIGIN + path
 
 
+def _guide_breadcrumb_schema(path: str) -> dict[str, object] | None:
+    label = GUIDE_BREADCRUMB_LABELS.get(path)
+    if label is None:
+        return None
+    return {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            {"@type": "ListItem", "position": 1, "name": "Home", "item": canonical_url("/")},
+            {"@type": "ListItem", "position": 2, "name": "Learn", "item": canonical_url("/learn")},
+            {"@type": "ListItem", "position": 3, "name": label, "item": canonical_url(path)},
+        ],
+    }
+
+
 def metadata_for_request(request) -> dict[str, object] | None:
     """Return reviewed metadata only for a canonical, public GET document.
 
@@ -108,13 +144,16 @@ def metadata_for_request(request) -> dict[str, object] | None:
     if request.method != "GET" or should_noindex_html(host, path, 200):
         return None
     copy = SEO_PAGE_COPY[path]
-    metadata = {
+    metadata: dict[str, object] = {
         **copy,
         "url": canonical_url(path),
         "image_url": canonical_url(OG_IMAGE_PATH),
     }
     if path == "/":
         metadata["structured_data"] = HOME_STRUCTURED_DATA
+    breadcrumb = _guide_breadcrumb_schema(path)
+    if breadcrumb is not None:
+        metadata["structured_data"] = breadcrumb
     return metadata
 
 
