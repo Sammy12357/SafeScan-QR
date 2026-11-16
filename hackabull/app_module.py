@@ -67,6 +67,8 @@ from .age_gate import create_adult_challenge
 from .age_gate import guest_is_adult
 from .config import ACTIVE_SCANS
 from .config import ALLOWED_ORIGINS
+from .config import AUTH0_ISSUER
+from .config import AUTH0_WEB_ENABLED
 from .config import CONTENT_TYPE_LATEST
 from .config import MAX_QR_UPLOAD_BYTES
 from .config import REMEMBER_ME_COOKIE_NAME
@@ -304,7 +306,9 @@ CSP_POLICY = "; ".join([
     "frame-src https://accounts.google.com",
     "object-src 'none'",
     "frame-ancestors 'none'",
-    "form-action 'self'",
+    # Logout forms post to our own endpoint, then redirect to Auth0 to clear
+    # the provider session. Chromium checks form-action across that redirect.
+    f"form-action 'self' {AUTH0_ISSUER.rstrip('/')}" if AUTH0_WEB_ENABLED else "form-action 'self'",
     "base-uri 'self'",
     "upgrade-insecure-requests",
 ])
