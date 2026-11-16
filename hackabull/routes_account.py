@@ -307,11 +307,11 @@ async def confirm_age_page(request: Request):
     ticket = request.cookies.get(PENDING_COOKIE, "")
     if not pending_sign_in(ticket, "web"):
         return templates.TemplateResponse("confirm_age.html", {
-            "request": request, "threshold": ACCOUNT_MIN_AGE, "mode": "account",
+            "request": request, "threshold": ACCOUNT_MIN_AGE, "current_year": datetime.now(timezone.utc).year, "mode": "account",
             "expired": True, "blocked": False, "error": ""
         }, status_code=410)
     response = templates.TemplateResponse("confirm_age.html", {
-        "request": request, "threshold": ACCOUNT_MIN_AGE, "mode": "account",
+        "request": request, "threshold": ACCOUNT_MIN_AGE, "current_year": datetime.now(timezone.utc).year, "mode": "account",
         "expired": False, "blocked": False, "error": ""
     })
     response.headers["Cache-Control"] = "no-store"
@@ -327,10 +327,10 @@ async def confirm_age_submit(
     if not pending_sign_in(ticket, "web"):
         raise HTTPException(status_code=410, detail="Age confirmation expired. Sign in again.")
     try:
-        age = age_from_year(birth_year, birthday_this_year)
+        age = age_from_year(birth_year, birthday_this_year, minimum_age=ACCOUNT_MIN_AGE)
     except ValueError as exc:
         return templates.TemplateResponse("confirm_age.html", {
-            "request": request, "threshold": ACCOUNT_MIN_AGE, "mode": "account",
+            "request": request, "threshold": ACCOUNT_MIN_AGE, "current_year": datetime.now(timezone.utc).year, "mode": "account",
             "expired": False, "blocked": False, "error": str(exc)
         }, status_code=400)
     pending = consume_sign_in(ticket, "web", age)
@@ -338,7 +338,7 @@ async def confirm_age_submit(
         raise HTTPException(status_code=410, detail="Age confirmation expired. Sign in again.")
     if age < ACCOUNT_MIN_AGE:
         response = templates.TemplateResponse("confirm_age.html", {
-            "request": request, "threshold": ACCOUNT_MIN_AGE, "mode": "account",
+            "request": request, "threshold": ACCOUNT_MIN_AGE, "current_year": datetime.now(timezone.utc).year, "mode": "account",
             "expired": False, "blocked": True, "error": ""
         }, status_code=403)
         response.delete_cookie(PENDING_COOKIE, path="/", secure=True, httponly=True, samesite="lax")
@@ -383,7 +383,7 @@ async def confirm_adult_page(request: Request, next_url: str = Query("/", alias=
         return RedirectResponse(destination, status_code=303)
     ticket = create_adult_challenge(user["google_id"] if user else None, destination)
     response = templates.TemplateResponse("confirm_age.html", {
-        "request": request, "threshold": ADULT_MIN_AGE, "mode": "adult",
+        "request": request, "threshold": ADULT_MIN_AGE, "current_year": datetime.now(timezone.utc).year, "mode": "adult",
         "expired": False, "blocked": False, "error": ""
     })
     response.set_cookie(ADULT_CHALLENGE_COOKIE, ticket, max_age=PENDING_SECONDS,
@@ -399,10 +399,10 @@ async def confirm_adult_submit(request: Request, birth_year: str = Form(""),
     user_id = user["google_id"] if user else None
     ticket = request.cookies.get(ADULT_CHALLENGE_COOKIE, "")
     try:
-        age = age_from_year(birth_year, birthday_this_year)
+        age = age_from_year(birth_year, birthday_this_year, minimum_age=ADULT_MIN_AGE)
     except ValueError as exc:
         return templates.TemplateResponse("confirm_age.html", {
-            "request": request, "threshold": ADULT_MIN_AGE, "mode": "adult",
+            "request": request, "threshold": ADULT_MIN_AGE, "current_year": datetime.now(timezone.utc).year, "mode": "adult",
             "expired": False, "blocked": False, "error": str(exc)
         }, status_code=400)
     destination = consume_adult_challenge(ticket, user_id)
@@ -410,7 +410,7 @@ async def confirm_adult_submit(request: Request, birth_year: str = Form(""),
         raise HTTPException(status_code=410, detail="Age confirmation expired. Try again.")
     if age < ADULT_MIN_AGE or adult_attestation != "yes":
         response = templates.TemplateResponse("confirm_age.html", {
-            "request": request, "threshold": ADULT_MIN_AGE, "mode": "adult",
+            "request": request, "threshold": ADULT_MIN_AGE, "current_year": datetime.now(timezone.utc).year, "mode": "adult",
             "expired": False, "blocked": True, "error": ""
         }, status_code=403)
     else:

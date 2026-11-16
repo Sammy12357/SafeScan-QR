@@ -70,8 +70,17 @@ def test_web_google_requires_one_time_age_decision_before_account_or_session(age
     assert "email\"" not in form.text
     assert 'name="threshold"' not in form.text
     assert "What year were you born?" in form.text
+    assert 'data-minimum-age="16"' in form.text
+    assert f'data-current-year="{datetime.now(timezone.utc).year}"' in form.text
+    assert '<select id="birthdayThisYear"' not in form.text
+    assert 'type="radio" name="birthday_this_year" value="yes" required' in form.text
+    cutoff_year = str(datetime.now(timezone.utc).year - 16)
+    missing_boundary_answer = client.post("/auth/confirm-age", data={"birth_year": cutoff_year})
+    assert missing_boundary_answer.status_code == 400
+    assert "Choose whether your birthday" in missing_boundary_answer.text
+    assert rows(db_path, "users") == []
     completed = client.post("/auth/confirm-age", data={
-        "birth_year": year_at_least(20), "birthday_this_year": "yes",
+        "birth_year": year_at_least(20),
         "email": "attacker@example.com", "threshold": "0", "locale": "en-US",
     }, follow_redirects=False)
     assert completed.status_code == 303
@@ -114,6 +123,13 @@ def test_neutral_year_check_handles_birthday_boundary_without_storing_date(age_a
     assert age_gate.age_from_year("2010", "yes", today=date(2026, 11, 15)) == 16
     assert age_gate.age_from_year("2008", "no", today=date(2026, 11, 15)) == 17
     assert age_gate.age_from_year("2008", "yes", today=date(2026, 11, 15)) == 18
+    assert age_gate.age_from_year("2009", "", today=date(2026, 11, 15), minimum_age=16) == 16
+    assert age_gate.age_from_year("2011", "", today=date(2026, 11, 15), minimum_age=16) == 14
+    assert age_gate.age_from_year("2007", "", today=date(2026, 11, 15), minimum_age=18) == 18
+    with pytest.raises(ValueError):
+        age_gate.age_from_year("2010", "", today=date(2026, 11, 15), minimum_age=16)
+    with pytest.raises(ValueError):
+        age_gate.age_from_year("2008", "", today=date(2026, 11, 15), minimum_age=18)
     with pytest.raises(ValueError):
         age_gate.age_from_year("2010", "unknown", today=date(2026, 11, 15))
     assert "birth_year" not in {row[1] for row in sqlite3.connect(db_path).execute("PRAGMA table_info(age_eligibility)")}
@@ -198,7 +214,13 @@ def test_adult_gate_covers_guest_payment_and_account_wallet(age_app):
     blocked = guest.get("/pay/alpha", follow_redirects=False)
     assert blocked.status_code == 303
     assert blocked.headers["location"].startswith("/auth/confirm-adult")
-    assert guest.get(blocked.headers["location"]).status_code == 200
+    adult_form = guest.get(blocked.headers["location"])
+    assert adult_form.status_code == 200
+    assert 'data-minimum-age="18"' in adult_form.text
+    missing_adult_boundary_answer = guest.post("/auth/confirm-adult", data={
+        "birth_year": str(datetime.now(timezone.utc).year - 18), "adult_attestation": "yes"})
+    assert missing_adult_boundary_answer.status_code == 400
+    assert "Choose whether your birthday" in missing_adult_boundary_answer.text
     younger = guest.post("/auth/confirm-adult", data={
         "birth_year": str(datetime.now(timezone.utc).year - 17),
         "birthday_this_year": "yes", "adult_attestation": "yes"})
@@ -206,7 +228,7 @@ def test_adult_gate_covers_guest_payment_and_account_wallet(age_app):
     assert guest.get("/pay/alpha", follow_redirects=False).status_code == 303
     assert guest.get("/auth/confirm-adult?next=/pay/alpha").status_code == 200
     adult = guest.post("/auth/confirm-adult", data={
-        "birth_year": year_at_least(20), "birthday_this_year": "yes",
+        "birth_year": year_at_least(20),
         "adult_attestation": "yes"}, follow_redirects=False)
     assert adult.status_code == 303
     assert adult.headers["location"] == "/pay/alpha"
