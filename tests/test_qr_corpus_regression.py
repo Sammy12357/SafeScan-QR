@@ -8,6 +8,7 @@ from PIL import Image
 import pytest
 
 CORPUS = Path(__file__).parent / "qr_corpus" / "synthetic"
+TEXT_QR_CORPUS = Path(__file__).parent / "qr_corpus" / "text_qr"
 # Current zxing-cpp 3.1.1 floor on the 22 single-code synthetic images.
 # The first 18 are the plan's core scenarios; the two multi-code scenes are
 # checked separately for refusal. The 17/18 server target remains unmet:
@@ -77,3 +78,12 @@ def test_synthetic_multi_code_cases_refuse_ambiguous_uploads(qr_decode_module):
         path = CORPUS / filename
         with pytest.raises(qr_decode_module.QRDecodeAmbiguityError, match="Multiple different QR payloads"):
             qr_decode_module.decode_qr_upload(path.read_bytes(), filename, "image/png")
+
+
+def test_mobile_text_qr_mask_frames_remain_decodable(qr_decode_module):
+    """Each browser-rendered text QR frame must still scan at phone width."""
+    expected = {"https://sqafe.com/"}
+    for mask in range(4):
+        path = TEXT_QR_CORPUS / f"25_text_qr__mask{mask}.png"
+        with Image.open(path) as image:
+            assert _decoded_payloads(image, qr_decode_module) == expected
