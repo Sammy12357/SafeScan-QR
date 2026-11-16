@@ -1,4 +1,4 @@
-{# Public, admin-confirmed domain indicators. No personal scan URLs or QR images. #}
+{# Public, administrator-reviewed QR URL observations. No personal scan URLs or QR images. #}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -6,26 +6,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <script src="/static/ui-states.js?v=ui-loading-v1"></script>
-  <title>Malicious QR Database | SafeScan QR</title>
-  <meta name="description" content="Browse domains associated with admin-confirmed malicious QR reports. Personal scan URLs are never published.">
+  <title>QR URL Observations | SafeScan QR</title>
+  <meta name="description" content="Browse administrator-reviewed QR URL observations by domain. A listing does not describe every page or the business behind a domain.">
   <link rel="icon" href="/static/safescan-logo.svg?v=rose-theme-v1" type="image/svg+xml">
   <link rel="stylesheet" href="/static/styles.css?v=legal-a11y-v1">
-  <link rel="stylesheet" href="/static/styles-malicious-database.css?v=ui-spacing-v2">
+  <link rel="stylesheet" href="/static/styles-malicious-database.css?v=listing-disputes-v1">
 </head>
 <body>
-  <div class="mq-shell">
+  <main class="mq-shell">
     <a class="mq-back" href="/">&#8592; Back to Scanner</a>
-    <p class="mq-eyebrow">SafeScan QR &middot; Threat Intelligence</p>
-    <h1>Malicious QR Database</h1>
-    <p class="mq-sub">Domains associated with QR URLs confirmed malicious by a SafeScan administrator. Only the broad domain is shown; private scan URLs are never published.</p>
+    <p class="mq-eyebrow">SafeScan QR &middot; Reviewed observations</p>
+    <h1>QR URL Observations</h1>
+    <p class="mq-sub">A SafeScan administrator recorded a QR URL involving each listed domain. We show the broad domain and date, not private scan URLs. A listing does not describe every page or the business behind a domain.</p>
     <div class="mq-warning">
       <span aria-hidden="true">&#9888;</span>
-      <span><strong>Use caution.</strong> A confirmed malicious QR URL was reported on each listed domain. Other pages on the same domain may be unrelated. Check the exact QR destination before opening it.</span>
+      <span><strong>Check the exact QR destination.</strong> The observation may concern only one URL. Other pages on the domain may be unrelated. <a href="/malicious-database/policy">How listings and corrections work</a>.</span>
     </div>
 
     <div id="mqStats" class="mq-stats mq-initially-hidden" aria-live="polite">
-      <div class="mq-stat-card"><div id="mqStatTotal" class="mq-stat-value">—</div><div class="mq-stat-label">Confirmed domains</div></div>
-      <div class="mq-stat-card"><div id="mqStatReports" class="mq-stat-value">—</div><div class="mq-stat-label">Confirmed URLs</div></div>
+      <div class="mq-stat-card"><div id="mqStatTotal" class="mq-stat-value">—</div><div class="mq-stat-label">Listed domains</div></div>
+      <div class="mq-stat-card"><div id="mqStatReports" class="mq-stat-value">—</div><div class="mq-stat-label">Administrator URL records</div></div>
       <div class="mq-stat-card"><div id="mqStatUpdated" class="mq-stat-value">—</div><div class="mq-stat-label">Last updated</div></div>
     </div>
 
@@ -42,7 +42,7 @@
       <span id="mqPageInfo" class="mq-pageinfo">—</span>
       <button id="mqNext" type="button" disabled>Next &#8594;</button>
     </div>
-  </div>
+  </main>
 
   {% include "footer.html" %}
   <script src="/static/app-core.js?v=legal-a11y-v1"></script>
@@ -50,6 +50,6 @@
   <script src="/static/app-go-ghost.js?v=ghost-inline-errors-v1"></script>
   <script src="/static/app-go-ghost-ui.js?v=legal-a11y-v1"></script>
   <script src="/static/app-generate-qr.js?v=ui-loading-v1"></script>
-  <script src="/static/malicious-database.js?v=ui-loading-v1" defer></script>
+  <script src="/static/malicious-database.js?v=listing-disputes-v1" defer></script>
 </body>
 </html>

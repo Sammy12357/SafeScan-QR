@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="/static/theme-init.js?v=rose-theme-v1"></script>
+  <script src="/static/server-error-focus.js?v=form-error-focus-v1" defer></script>
+  <title>Dispute a QR URL observation | SafeScan QR</title>
+  <meta name="robots" content="noindex,nofollow">
+  <link rel="icon" href="/static/safescan-logo.svg?v=rose-theme-v1" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css?v=legal-a11y-v1">
+  <link rel="stylesheet" href="/static/styles-malicious-database.css?v=listing-disputes-v1">
+</head>
+<body>
+  <main class="mq-shell">
+    <a class="mq-back" href="/malicious-database">&#8592; Back to QR URL observations</a>
+    <p class="mq-eyebrow">Listing review</p>
+    <h1>Dispute this listing</h1>
+    <p class="mq-sub">{{ domain }} is listed because SafeScan recorded a reviewed QR URL involving this domain. The entry does not describe every page or the business behind it.</p>
+    {% if submitted %}
+    <div class="mq-warning" role="status"><span aria-hidden="true">&#10003;</span><span>Your dispute is in the administrator review queue. The public entry now says “Under review.” We aim to begin reviewing disputes within two business days.</span></div>
+    {% else %}
+    <p class="mq-copy">Tell us what is inaccurate and how it can be checked. Do not include passwords, access tokens, or private account details. Your claim and contact address are visible only to SafeScan staff reviewing the dispute.</p>
+    {% if error %}<p class="mq-form-error" role="alert" data-server-error-focus>{{ error }}</p>{% endif %}
+    <form class="mq-form" action="/malicious-database/dispute/{{ listing_id }}" method="post">
+      <label for="dispute-email">Contact email
+        <input id="dispute-email" name="contact_email" type="email" maxlength="254" autocomplete="email" required value="{{ contact_email }}">
+      </label>
+      <label for="dispute-claim">What should be corrected?
+        <textarea id="dispute-claim" name="claim" minlength="20" maxlength="2000" required>{{ claim }}</textarea>
+      </label>
+      <div class="mq-honeypot" aria-hidden="true"><label for="dispute-website">Website
+        <input id="dispute-website" name="website" type="text" tabindex="-1" autocomplete="off">
+      </label></div>
+      <button type="submit">Submit dispute</button>
+    </form>
+    {% endif %}
+    <p class="mq-copy"><a href="/malicious-database/policy">How SafeScan reviews and corrects listings</a></p>
+  </main>
+  {% include "footer.html" %}
+  <script src="/static/app-core.js?v=legal-a11y-v1"></script>
+  <script src="/static/app-widgets.js?v=legal-a11y-v1"></script>
+</body>
+</html>

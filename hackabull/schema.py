@@ -189,6 +189,18 @@ def init_db():
     cursor.execute('''CREATE TABLE IF NOT EXISTS url_blocklist
                         (id TEXT PRIMARY KEY, url TEXT NOT NULL UNIQUE, reason TEXT,
                          added_by TEXT, created_at TEXT NOT NULL, removed_at TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS listing_evidence
+                        (id TEXT PRIMARY KEY, block_id TEXT NOT NULL, source TEXT NOT NULL,
+                         source_ref TEXT,
+                         observation TEXT NOT NULL, observed_at TEXT NOT NULL,
+                         recorded_at TEXT NOT NULL, recorded_by TEXT NOT NULL,
+                         FOREIGN KEY(block_id) REFERENCES url_blocklist(id))''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS listing_disputes
+                        (id TEXT PRIMARY KEY, domain TEXT NOT NULL, contact_email TEXT NOT NULL,
+                         claim TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'under_review'
+                           CHECK(status IN ('under_review', 'retained', 'removed')),
+                         created_at TEXT NOT NULL, first_reviewed_at TEXT,
+                         decided_at TEXT, decided_by TEXT, decision_reason TEXT)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS ip_registry
                         (id TEXT PRIMARY KEY, ip_address TEXT NOT NULL, user_id TEXT NOT NULL,
                          event_type TEXT NOT NULL, created_at TEXT NOT NULL)''')
@@ -280,6 +292,9 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_upload_artifacts_user_id ON upload_artifacts(user_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_reports_status ON url_reports(status)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_blocklist_url ON url_blocklist(url)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_listing_evidence_block ON listing_evidence(block_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_listing_disputes_domain_status ON listing_disputes(domain, status)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_listing_disputes_status_created ON listing_disputes(status, created_at)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_ip_registry_ip ON ip_registry(ip_address)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_ip_registry_user ON ip_registry(user_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_fraud_user ON fraud_flags(user_id)")

@@ -24,6 +24,12 @@
 
 **Maintenance rule:** Every new quantitative safety, privacy, payment, token, removal, or compliance claim needs an owner, evidence, and review status before it is published. Recheck this baseline against production configuration and traffic; source line numbers refer to the code baseline above.
 
+## Phase 5 proposed listing copy and evidence
+
+**ATTORNEY REVIEW NEEDED.** This draft would call the public feed “QR URL Observations,” show broad domain, source category and recorded date, and avoid conclusions about every URL or the business behind a domain. `hackabull/malicious_db.py` publishes only administrator blocklist records and labels older rows as administrator records; new report/scan additions require a source and written observation in `listing_evidence`. `hackabull/routes_account.py` accepts private disputes, and `hackabull/routes_admin.py` records staff review reasons and delists all active URL records for a removed domain entry. A user report alone cannot publish a listing.
+
+**Owner:** security lead and counsel. **Decision:** approve the exact public wording, an independent evidence standard, whether legacy rows without captured source records may remain visible, retention of reporter contact and evidence, and staffing for the stated two-business-day review target. The app records the first staff review but does not enforce that target or verify that an email was delivered. See `listing-disputes.md`.
+
 ## Phase 2 proposed copy and evidence
 
 These entries describe code prepared after the Phase 0 baseline. **ATTORNEY REVIEW NEEDED** before treating the wording as approved legal or marketing copy.

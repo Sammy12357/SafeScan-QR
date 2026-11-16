@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import argparse
 import ast
+import hashlib
 import json
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -31,8 +33,13 @@ from ui_screenshots import (
 
 THEMES = ("dark", "light")
 WIDTHS = (375, 1440)
+LISTING_DOMAIN = "example.com"
+LISTING_ID = hashlib.sha256(LISTING_DOMAIN.encode("ascii")).hexdigest()[:16]
 EXTRA_PUBLIC_VIEWS = (
     View("accessibility", "/accessibility"),
+    View("listing_policy", "/malicious-database/policy"),
+    View("listing_dispute", f"/malicious-database/dispute/{LISTING_ID}",
+         route_template="/malicious-database/dispute/{listing_id}"),
     View("not_found", "/__accessibility_missing_page__"),
     View("waitlist", "/waitlist"),
     View("waitlist_joined", "/waitlist?joined=1"),
@@ -67,7 +74,7 @@ EXPECTED_STATUSES = {
 
 def check_public_route_inventory() -> None:
     """Keep the page list current when a new public GET HTML route is added."""
-    audited_paths = {view.path.split("?", 1)[0] for view in PUBLIC_VIEWS}
+    audited_paths = {view.route_template or view.path.split("?", 1)[0] for view in PUBLIC_VIEWS}
     route_paths = set()
     for path in (ROOT / "hackabull").glob("routes*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -189,6 +196,17 @@ def audit(base_url: str, axe_path: Path, views: tuple[View, ...]) -> dict:
             "outbound_attempts": outbound_attempts}
 
 
+def seed_listing_for_audit(db_path: Path) -> None:
+    """Exercise the real dispute form using a local synthetic URL record."""
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """INSERT INTO url_blocklist (id, url, reason, added_by, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            ("a11y-listing", f"https://{LISTING_DOMAIN}/qr", "Synthetic audit record",
+             "audit@example.test", "2026-11-15T12:00:00Z"),
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--view", action="append", help="Run only these named views (for development)")
@@ -214,6 +232,7 @@ def main():
         )
         try:
             wait_for_server(base_url, server)
+            seed_listing_for_audit(Path(temporary) / "ui-shots.db")
             report = audit(base_url, axe_path, selected)
         except Exception:
             server.terminate()
