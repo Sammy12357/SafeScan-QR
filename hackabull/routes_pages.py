@@ -452,7 +452,7 @@ async def accessibility_page(request: Request):
 async def contact_page(request: Request):
     body = f"""
     <section class="contact-hero">
-      <h2>Contact SafeScan QR</h2>
+      <h2>Contact Sqafe (SafeScan QR)</h2>
       <p>For community updates, support, security reports, partnerships, or privacy questions, use the best channel below.</p>
     </section>
 

@@ -178,7 +178,7 @@ body.qr-camera-open { overflow: hidden; }
 .test-site-page .hero-metrics div { padding: var(--space-4) var(--space-4); }
 .test-section { margin-top: var(--space-6); padding: var(--space-8); border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: var(--shadow); overflow: hidden; }
 .test-section-header { max-width: 780px; }
-.test-section h2 { margin: var(--space-3) var(--space-0) var(--space-0); font-family: var(--display-font); font-size: clamp(1.65rem, 3.6vw, 3rem); line-height: 1.05; letter-spacing: 0; }
+.test-section h1, .test-section h2 { margin: var(--space-3) var(--space-0) var(--space-0); font-family: var(--display-font); font-size: clamp(1.65rem, 3.6vw, 3rem); line-height: 1.05; letter-spacing: 0; }
 .test-proof-grid, .test-pricing-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-5); margin-top: var(--space-7); }
 .test-proof-card, .test-price-card, .test-social { border: 1px solid var(--line); border-radius: 8px; background: var(--panel-strong); }
 .test-proof-card, .test-price-card { padding: var(--pad-card); transition: transform 0.22s ease, border-color 0.22s ease, background 0.22s ease; }

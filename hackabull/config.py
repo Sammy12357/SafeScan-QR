@@ -49,6 +49,7 @@ from storage import upload_bytes as storage_upload_bytes
 
 from safescan_allowlist import should_short_circuit, registrable_domain as allowlist_registrable_domain, is_first_party
 import safescan_model_calibration as sm_calibration
+from .seo import metadata_for_request
 from .token_flags import token_distribution_enabled, token_features_enabled
 
 # =============================================================================
@@ -293,6 +294,7 @@ MALICIOUS_CONTRACT_BLOCKLIST = {
 }
 
 templates = Jinja2Templates(directory="templates")
+templates.env.globals["seo_metadata"] = metadata_for_request
 templates.env.globals["token_features_enabled"] = token_features_enabled
 templates.env.globals["token_distribution_enabled"] = token_distribution_enabled
 SCANNER_V3 = os.getenv("SCANNER_V3", "false").lower() in ("1", "true", "yes", "on")
