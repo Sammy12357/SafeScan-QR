@@ -246,6 +246,36 @@ async def learn_page(request: Request):
         **index_user_context(user),
     })
 
+
+@qr_app.get("/learn/after-scanning-suspicious-qr", response_class=HTMLResponse)
+async def learn_after_scanning_page(request: Request):
+    """Practical steps for a suspicious QR scan, grouped by what the visitor did."""
+    user = get_session_user(request)
+    return templates.TemplateResponse("learn_after_scanning.html", {
+        "request": request,
+        "logged_in": bool(user),
+        "email": user["email"] if user else "",
+        "test_site_path": False,
+        "active_nav": "learn",
+        "google_client_id": CLIENT_ID,
+        **index_user_context(user),
+    })
+
+
+@qr_app.get("/learn/parking-meter-qr-scams", response_class=HTMLResponse)
+async def learn_parking_meter_page(request: Request):
+    """Parking meter QR tampering checks and payment response steps."""
+    user = get_session_user(request)
+    return templates.TemplateResponse("learn_parking_meter.html", {
+        "request": request,
+        "logged_in": bool(user),
+        "email": user["email"] if user else "",
+        "test_site_path": False,
+        "active_nav": "learn",
+        "google_client_id": CLIENT_ID,
+        **index_user_context(user),
+    })
+
 @qr_app.get("/token", response_class=HTMLResponse)
 async def token_page(request: Request):
     """Standalone SQR token & airdrop tab."""

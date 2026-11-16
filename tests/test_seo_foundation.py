@@ -41,7 +41,13 @@ def test_robots_and_sitemap_are_canonical_and_parseable(seo_client):
     root = ElementTree.fromstring(sitemap.content)
     assert root.tag == "{http://www.sitemaps.org/schemas/sitemap/0.9}urlset"
     locations = [node.text for node in root.findall("s:url/s:loc", namespace)]
-    assert locations == ["https://sqafe.com/", "https://sqafe.com/learn", "https://sqafe.com/contact"]
+    assert locations == [
+        "https://sqafe.com/",
+        "https://sqafe.com/learn",
+        "https://sqafe.com/learn/after-scanning-suspicious-qr",
+        "https://sqafe.com/learn/parking-meter-qr-scams",
+        "https://sqafe.com/contact",
+    ]
     assert root.findall("s:url/s:lastmod", namespace) == []
     assert all("?" not in location and "onrender.com" not in location for location in locations)
     assert seo_client.head("/sitemap.xml").status_code == 200
@@ -54,6 +60,10 @@ def test_public_pages_redirect_to_one_host_and_path_shape(seo_client):
         ("https://www.sqafe.com/learn", "https://sqafe.com/learn"),
         ("https://sqafe.com/Learn/", "https://sqafe.com/learn"),
         ("https://sqafe.com/contact/", "https://sqafe.com/contact"),
+        (
+            "https://safescan-qr.onrender.com/Learn/Parking-Meter-QR-Scams/?from=sign",
+            "https://sqafe.com/learn/parking-meter-qr-scams?from=sign",
+        ),
         ("https://safescan-qr.onrender.com/?ref=abc123", "https://sqafe.com/?ref=abc123"),
         ("https://safescan-qr.onrender.com/plans", "https://sqafe.com/plans"),
     )
@@ -78,7 +88,10 @@ def test_render_api_and_private_pages_remain_on_requested_host(seo_client):
 
 
 def test_only_reviewed_public_html_is_indexable(seo_client):
-    for path in ("/", "/learn", "/contact"):
+    for path in (
+        "/", "/learn", "/learn/after-scanning-suspicious-qr",
+        "/learn/parking-meter-qr-scams", "/contact",
+    ):
         response = seo_client.get(path)
         assert response.status_code == 200, path
         assert "noindex" not in response.headers.get("X-Robots-Tag", "")

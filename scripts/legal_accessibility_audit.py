@@ -33,6 +33,8 @@ THEMES = ("dark", "light")
 WIDTHS = (375, 1440)
 EXTRA_PUBLIC_VIEWS = (
     View("accessibility", "/accessibility"),
+    View("learn_after_scanning", "/learn/after-scanning-suspicious-qr"),
+    View("learn_parking_meter", "/learn/parking-meter-qr-scams"),
     View("not_found", "/__accessibility_missing_page__"),
     View("waitlist", "/waitlist"),
     View("waitlist_joined", "/waitlist?joined=1"),

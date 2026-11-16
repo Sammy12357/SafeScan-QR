@@ -1,0 +1,80 @@
+.guide-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  margin-bottom: var(--space-6);
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.guide-article {
+  max-width: 900px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.guide-article > h1 {
+  max-width: 760px;
+}
+
+.guide-article .guide-intro {
+  max-width: 760px;
+  color: var(--text);
+  font-size: clamp(1.06rem, 2vw, 1.22rem);
+}
+
+.guide-article p,
+.guide-article li {
+  max-width: 760px;
+  color: var(--muted);
+  line-height: 1.68;
+}
+
+.test-section.guide-article h2 {
+  max-width: 760px;
+  margin-top: var(--space-8);
+  font-size: clamp(1.3rem, 2.4vw, 1.75rem);
+  line-height: 1.25;
+}
+
+.guide-article a {
+  color: var(--accent);
+  text-underline-offset: 0.2em;
+}
+
+.guide-citation {
+  font-size: 0.78em;
+  white-space: nowrap;
+}
+
+.guide-citation + .guide-citation {
+  margin-left: var(--space-1);
+}
+
+.guide-sources {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+.guide-sources ol {
+  padding-left: var(--space-7);
+}
+
+.guide-sources li + li {
+  margin-top: var(--space-3);
+}
+
+.guide-related {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-6);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 640px) {
+  .guide-article {
+    padding: var(--space-6);
+  }
+}
