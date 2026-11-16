@@ -1,0 +1,55 @@
+<!-- Source snapshot; runtime placeholders remain unexpanded. -->
+<h2>1. What We Collect</h2>
+<p>SafeScan QR collects only what is needed to authenticate users, analyze QR payloads, prevent abuse, and operate the optional SQR airdrop program.</p>
+<ul>
+  <li>Google OAuth data: name, email, profile picture, Google ID, and login timestamp.</li>
+  <li>Optional Solana wallet address supplied by the user for airdrop eligibility.</li>
+  <li>QR scan payloads such as URLs analyzed for risk. Logged-in scans may be associated with the user's email for scan counts and fraud prevention.</li>
+  <li>Referral link usage and referral counts.</li>
+  <li>IP address hash, approximate region, browser type, device type, and session signals for fraud prevention and analytics.</li>
+  <li>Cookies and local storage values for authentication state, consent state, referral state, wallet state, and local report queues.</li>
+</ul>
+<p>Live camera preview frames are checked in your browser. If the local reader fails, SafeScan sends a captured photo to its server only after you choose “Send photo to SafeScan.” The server processes that photo in memory to read the QR code and does not store the image. The decoded payload follows the scan-history rules described here; signed-in scans may be saved.</p>
+<p>If you accept optional analytics, the upgraded scanner sends aggregate performance counts, such as decoder type, elapsed time, outcome, and guidance category. These counts do not include QR text, photos, or device identifiers.</p>
+<h2>2. Why We Collect It and Legal Basis</h2>
+<ul>
+  <li>Authentication: contractual necessity.</li>
+  <li>Scan history and QR security delivery: legitimate interest in providing and improving security analysis.</li>
+  <li>Airdrop eligibility, scan tiers, referrals, and wallet address: contractual necessity for the tier program.</li>
+  <li>Analytics and abuse prevention: legitimate interest.</li>
+  <li>Marketing emails: explicit consent only.</li>
+</ul>
+<h2>3. How Long We Keep It</h2>
+<ul>
+  <li>Signed-in user scan history and leaderboard counters: retained as long-term account records unless deletion is requested or the account is removed.</li>
+  <li>Account data: until deletion is requested or after 2 years of inactivity.</li>
+  <li>Wallet address: until the user disconnects it or deletes the account.</li>
+  <li>Consent records: retained for 5 years to document legal compliance.</li>
+</ul>
+<h2>4. Who We Share It With</h2>
+<p>We do not sell personal data and do not use advertising networks. We may share limited data with service providers only as needed:</p>
+<ul>
+  <li>Google for OAuth authentication and, when configured, Google Web Risk checks of web URLs.</li>
+  <li>PhishTank supplies a phishing feed that SafeScan checks locally; individual scanned URLs are not sent to PhishTank.</li>
+  <li>Anthropic or OpenAI for AI analysis. URL payloads and risk signals may be sent, but direct personal identifiers are excluded.</li>
+  <li>Solana RPC providers for wallet interactions involving public blockchain data.</li>
+  <li>Render.com for hosting infrastructure.</li>
+</ul>
+<h2>5. Cookies and Tracking</h2>
+<p>SafeScan uses essential cookies/local storage for auth, consent, referral, wallet, and report state. Analytics is optional and should only run after consent where required.</p>
+<h2>6. Your Rights</h2>
+<p>EU/EEA users may exercise GDPR rights of access, erasure, rectification, restriction, portability, and objection. California users may exercise CCPA/CPRA rights to know, delete, correct, opt out of sale/sharing, limit sensitive personal information, and non-discrimination. Brazilian users may exercise LGPD rights including revoking consent and requesting information about public and private entities with whom data is shared. Canadian users are protected under PIPEDA principles: knowledge and consent, limited use, accuracy, safeguards, access, and the right to challenge compliance.</p>
+<p>Use the <a href="/legal/data-request">Data Request portal</a> to submit requests.</p>
+<h2>7. Children's Privacy</h2>
+<p>SafeScan is not directed to children under 13. EU users under 16 require parental consent under GDPR Article 8. If we discover an underage user, we will delete associated data promptly.</p>
+<h2>8. International Data Transfers</h2>
+<p>Data is hosted in the United States. For EU users, transfers are intended to be covered by Standard Contractual Clauses or other appropriate safeguards where required.</p>
+<h2>9. Security Measures</h2>
+<ul>
+  <li>TLS encryption in transit.</li>
+  <li>Wallet addresses should be hashed or encrypted at rest as the product matures.</li>
+  <li>OAuth tokens are not intentionally stored; SafeScan keeps only account/session references.</li>
+  <li>Security incidents are tracked for GDPR Article 33 72-hour supervisory authority review and Article 34 user notice if high risk.</li>
+</ul>
+<h2>10. Contact</h2>
+<p>Privacy requests: <a href="mailto:{ADMIN_EMAIL}">{ADMIN_EMAIL}</a>. A formal Data Protection Officer is not required at current scale but will be appointed upon reaching 5,000 EU users or when legally required.</p>

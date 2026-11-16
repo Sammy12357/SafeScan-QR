@@ -76,7 +76,15 @@ python scripts/scrub_legacy_private_qr.py --database /var/data/qr_cache.db --ml-
 
 The helper creates and verifies SQLite backups before changing records. It replaces old non-URL scan values with keyed references, retains scan counts, and vacuums/checkpoints SQLite. Because the old ML cache strips URL schemes from its keys, the helper purges the **entire disposable ML prediction cache**, including web predictions; future scans recompute them. It deliberately does **not** delete upload objects or `upload_artifacts` rows. Use its `upload_artifacts_manual_cleanup` count to inventory local `DATA_DIR/uploads/<object_key>` files and S3/R2 objects, then back up and remove those under an approved retention plan. Account for backup and object-store version retention too. The normal history and scan APIs redact legacy non-URL records on read, but the underlying historical copies remain until this cleanup is completed. `QR_UPLOAD_RETENTION_DAYS` is not currently an automatic deletion job.
 
-## Auth0 mobile sign-in
+## Website Auth0 sign-in
+
+The website uses a separate **Regular Web Application** in the same Auth0 tenant as the Native prototype. Set its Allowed Callback URL to `https://sqafe.com/auth/auth0/callback`, Allowed Logout URL to `https://sqafe.com/`, and Allowed Web Origin to `https://sqafe.com`. Enable only the tenant's `google-oauth2` connection for this application; leave its database connection off. The website sends the browser to Auth0 with Authorization Code Flow, PKCE, state, and nonce. The backend exchanges the code and verifies the signed ID token before creating a Sqafe session. No Auth0 access or ID token is stored.
+
+Configure Render with `AUTH0_DOMAIN=safe-scan-qr.us.auth0.com`, `AUTH0_WEB_CLIENT_ID` (the new web application), and `AUTH0_WEB_CLIENT_SECRET` (its confidential client secret). Keep the secret in Render, never in Git or a URL. Set `AUTH0_WEB_ENABLED=true` only when all settings are in place; the flag defaults to false. When enabled, the site displays the Auth0 Google button and closes the old direct `/auth/google` endpoint. Missing web credentials produce an unavailable sign-in page, not a fallback to another identity provider. A rollback can set `AUTH0_WEB_ENABLED=false` and redeploy to restore direct Google sign-in.
+
+The existing web Google account remains the same account because only a verified Auth0 `google-oauth2|...` subject is accepted and its Google identifier is used as the account key. Email alone never links identities. Test both an existing account and a new account through the age gate before completing the cutover. The Auth0 website client ID is **not** part of `AUTH0_CLIENT_IDS`: that list is for Native app ID tokens submitted to `/auth/verify`.
+
+## Native app Auth0 sign-in
 
 The mobile app uses Auth0 Universal Login and sends the resulting Auth0 ID token to:
 

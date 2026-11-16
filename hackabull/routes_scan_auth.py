@@ -75,8 +75,18 @@ from .auth import require_user
 from .auth import require_user_from_google_id
 from .auth0 import _decode_jwt_unverified
 from .auth0 import verify_auth0_id_token
+from .auth0_web import FLOW_COOKIE
+from .auth0_web import FLOW_SECONDS
+from .auth0_web import begin_web_flow
+from .auth0_web import callback_uri as auth0_web_callback_uri
+from .auth0_web import consume_web_flow
+from .auth0_web import exchange_web_code
+from .auth0_web import web_identity_from_token
 from .config import APP_URL
 from .config import AUTH0_ISSUER
+from .config import AUTH0_WEB_CLIENT_ID
+from .config import AUTH0_WEB_CLIENT_SECRET
+from .config import AUTH0_WEB_ENABLED
 from .config import CLIENT_ID
 from .config import LEGAL_VERSION
 from .config import LOCAL_AUTH_ENABLED
@@ -313,6 +323,88 @@ def mobile_sign_in_body(user_id, user, session_id):
     }
 
 
+def auth0_web_ready():
+    return bool(AUTH0_WEB_CLIENT_ID and AUTH0_WEB_CLIENT_SECRET)
+
+
+def auth0_login_error(message="Sign-in could not be completed. Please try again."):
+    response = RedirectResponse(f"/login?{urlencode({'error': message})}", status_code=303)
+    response.delete_cookie(FLOW_COOKIE, path="/", secure=True, httponly=True, samesite="lax")
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+@qr_app.get("/auth/auth0/start")
+async def auth0_web_start(request: Request, next_url: str = Query("/", alias="next")):
+    if not AUTH0_WEB_ENABLED:
+        raise HTTPException(status_code=404, detail="Not found.")
+    if not auth0_web_ready():
+        raise HTTPException(status_code=503, detail="Sign-in is temporarily unavailable.")
+    rate_limited = enforce_rate_limit(request, "auth0_web_start", 20, 15 * 60)
+    if rate_limited:
+        return rate_limited
+    return_to = safe_next_url(request, next_url)
+    if get_session_user(request):
+        return RedirectResponse(return_to, status_code=303)
+    cookie, state, nonce, challenge = begin_web_flow(return_to, True)
+    params = {
+        "response_type": "code",
+        "client_id": AUTH0_WEB_CLIENT_ID,
+        "redirect_uri": auth0_web_callback_uri(),
+        "scope": "openid profile email",
+        "connection": "google-oauth2",
+        "state": state,
+        "nonce": nonce,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+    }
+    response = RedirectResponse(f"{AUTH0_ISSUER}authorize?{urlencode(params)}", status_code=302)
+    response.set_cookie(FLOW_COOKIE, cookie, max_age=FLOW_SECONDS, httponly=True,
+                        secure=True, samesite="lax", path="/")
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+@qr_app.get("/auth/auth0/callback")
+async def auth0_web_callback(request: Request, code: str = Query(""), state: str = Query(""), error: str = Query("")):
+    if not AUTH0_WEB_ENABLED or not auth0_web_ready():
+        raise HTTPException(status_code=404, detail="Not found.")
+    rate_limited = enforce_rate_limit(request, "auth0_web_callback", 20, 15 * 60)
+    if rate_limited:
+        return rate_limited
+    flow = consume_web_flow(request.cookies.get(FLOW_COOKIE, ""), state)
+    if not flow:
+        audit_log("auth.failed", request=request, metadata={"provider": "auth0_web", "stage": "state"})
+        return auth0_login_error()
+    if error or not code or len(code) > 4096:
+        return auth0_login_error()
+    try:
+        token = await run_in_threadpool(exchange_web_code, code, flow["code_verifier"])
+        identity = await run_in_threadpool(web_identity_from_token, token, flow["nonce"])
+        ticket = begin_sign_in("google_auth0_web", identity["subject"], identity["email"],
+                               identity["display_name"], identity["picture"], client_kind="web",
+                               return_to=flow["return_to"], remember=bool(flow["remember_me"]))
+        if ticket:
+            response = RedirectResponse("/auth/confirm-age", status_code=303)
+            response.set_cookie(PENDING_COOKIE, ticket, max_age=PENDING_SECONDS, httponly=True,
+                                secure=True, samesite="lax", path="/")
+        else:
+            user_id, _, session_id = finish_verified_sign_in(identity, request, client_kind="web")
+            response = response_after_login(user_id, request, flow["return_to"])
+            set_session_cookie(response, session_id)
+            if flow["remember_me"]:
+                issue_remember_me_cookie(response, user_id, request)
+    except (requests.RequestException, ValueError, KeyError, TypeError, InvalidSignature, HTTPException):
+        audit_log("auth.failed", request=request, metadata={"provider": "auth0_web", "stage": "callback"})
+        return auth0_login_error()
+    response.delete_cookie(FLOW_COOKIE, path="/", secure=True, httponly=True, samesite="lax")
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
 @qr_app.post("/auth/google", response_class=HTMLResponse)
 @qr_app.get("/auth/google", response_class=HTMLResponse)
 async def auth_google(
@@ -324,6 +416,8 @@ async def auth_google(
     state: str = Form("", alias="state"),
     state_query: str = Query("", alias="state"),
 ):
+    if AUTH0_WEB_ENABLED:
+        raise HTTPException(status_code=404, detail="Not found.")
     return_to = safe_next_url(request, next_url or next_query or state or state_query)
     if not credential:
         return templates.TemplateResponse("index.html", {
@@ -468,9 +562,13 @@ async def _do_logout(request: Request):
     if user:
         revoke_all_remember_me(user.get("google_id"))
     audit_log("user.logout", request=request, actor_user_id=user.get("google_id") if user else None)
-    response = RedirectResponse("/", status_code=303)
+    logout_url = "/"
+    if AUTH0_WEB_ENABLED and auth0_web_ready():
+        logout_url = f"{AUTH0_ISSUER}v2/logout?{urlencode({'client_id': AUTH0_WEB_CLIENT_ID, 'returnTo': APP_URL + '/'})}"
+    response = RedirectResponse(logout_url, status_code=303)
     clear_session_cookie(response)
     clear_remember_me_cookie(response)
+    response.headers["Cache-Control"] = "no-store"
     return response
 
 @qr_app.post("/auth/logout")
@@ -576,6 +674,8 @@ def _auth_form_context(request, *, error="", error_field="", tab="login", next_u
         "next_url": safe_next_url(request, next_url),
         "form_email": email,
         "local_auth_enabled": LOCAL_AUTH_ENABLED,
+        "auth0_web_enabled": AUTH0_WEB_ENABLED,
+        "auth0_web_ready": auth0_web_ready(),
         "google_client_id": CLIENT_ID or "",
         "auth_google_url": f"{APP_URL}/auth/google",
     }

@@ -111,6 +111,11 @@ CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID") or os.getenv("googe_client_id")
 AUTH0_DOMAIN = (os.getenv("AUTH0_DOMAIN") or "safe-scan-qr.us.auth0.com").strip().rstrip("/")
 AUTH0_AUDIENCES = {audience.strip() for audience in (os.getenv("AUTH0_CLIENT_IDS") or os.getenv("AUTH0_CLIENT_ID") or "MPettOuBPUwtgifGOlt6NpJR4rl8BuL7").split(",") if audience.strip()}
 AUTH0_ISSUER = f"https://{AUTH0_DOMAIN}/"
+# The website uses a separate confidential Auth0 application. Keep its
+# credentials separate from the Native application's token audience.
+AUTH0_WEB_ENABLED = os.getenv("AUTH0_WEB_ENABLED", "false").lower() in ("1", "true", "yes", "on")
+AUTH0_WEB_CLIENT_ID = os.getenv("AUTH0_WEB_CLIENT_ID", "").strip()
+AUTH0_WEB_CLIENT_SECRET = os.getenv("AUTH0_WEB_CLIENT_SECRET", "").strip()
 _AUTH0_JWKS_CACHE = {"keys": None, "fetched_at": 0.0}
 _AUTH0_JWKS_TTL_SECONDS = 60 * 60
 AIRDROP_ADMIN_SECRET = os.getenv("AIRDROP_ADMIN_SECRET")
@@ -158,8 +163,8 @@ AIRDROP_TOKEN_ALLOCATIONS = {
     "Referrer": AIRDROP_BASE_ALLOCATION * 2,
     "Guardian": AIRDROP_BASE_ALLOCATION * 5,
 }
-LEGAL_VERSION = "v1.0"
-LEGAL_LAST_UPDATED = "May 2026"
+LEGAL_VERSION = "v1.1"
+LEGAL_LAST_UPDATED = "November 16, 2026"
 CONSENT_BANNER_VERSION = "consent-v1"
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")

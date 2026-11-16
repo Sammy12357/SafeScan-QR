@@ -591,7 +591,7 @@ PRIVACY_POLICY_HTML = f"""
 <h2>1. What We Collect</h2>
 <p>SafeScan QR collects only what is needed to authenticate users, analyze QR payloads, prevent abuse, and operate the optional SQR airdrop program.</p>
 <ul>
-  <li>Google OAuth data: name, email, profile picture, Google ID, and login timestamp.</li>
+  <li>For website sign-in, we store the Google account ID, name, email, profile picture, and login timestamp. When Auth0 handles sign-in, it may also receive public profile attributes Google makes available to its connection, such as language or country.</li>
   <li>Optional Solana wallet address supplied by the user for airdrop eligibility.</li>
   <li>QR scan payloads such as URLs analyzed for risk. Logged-in scans may be associated with the user's email for scan counts and fraud prevention.</li>
   <li>Referral link usage and referral counts.</li>
@@ -618,14 +618,14 @@ PRIVACY_POLICY_HTML = f"""
 <h2>4. Who We Share It With</h2>
 <p>We do not sell personal data and do not use advertising networks. We may share limited data with service providers only as needed:</p>
 <ul>
-  <li>Google for OAuth authentication and, when configured, Google Web Risk checks of web URLs.</li>
+  <li>Auth0 and Google for website sign-in. Auth0 handles the Google sign-in request and receives identity details and request metadata; SafeScan verifies the returned identity and stores its own session. Google Web Risk may check web URLs when configured.</li>
   <li>PhishTank supplies a phishing feed that SafeScan checks locally; individual scanned URLs are not sent to PhishTank.</li>
   <li>Anthropic or OpenAI for AI analysis. URL payloads and risk signals may be sent, but direct personal identifiers are excluded.</li>
   <li>Solana RPC providers for wallet interactions involving public blockchain data.</li>
   <li>Render.com for hosting infrastructure.</li>
 </ul>
 <h2>5. Cookies and Tracking</h2>
-<p>SafeScan uses essential cookies/local storage for auth, consent, referral, wallet, and report state. Analytics is optional and should only run after consent where required.</p>
+<p>SafeScan uses essential cookies/local storage for auth, consent, referral, wallet, and report state. Auth0 website sign-in sets a short-lived, essential, first-party flow cookie that is removed after the callback. Auth0 and Google may set their own cookies during sign-in; their cookie behavior is governed by their services. Analytics is optional and should only run after consent where required.</p>
 <h2>6. Your Rights</h2>
 <p>EU/EEA users may exercise GDPR rights of access, erasure, rectification, restriction, portability, and objection. California users may exercise CCPA/CPRA rights to know, delete, correct, opt out of sale/sharing, limit sensitive personal information, and non-discrimination. Brazilian users may exercise LGPD rights including revoking consent and requesting information about public and private entities with whom data is shared. Canadian users are protected under PIPEDA principles: knowledge and consent, limited use, accuracy, safeguards, access, and the right to challenge compliance.</p>
 <p>Use the <a href="/legal/data-request">Data Request portal</a> to submit requests.</p>
@@ -677,6 +677,7 @@ COOKIE_POLICY_HTML = """
   <thead><tr><th>Cookie Name</th><th>Provider</th><th>Purpose</th><th>Type</th><th>Duration</th></tr></thead>
   <tbody>
     <tr><td>session token</td><td>SafeScan</td><td>Authentication session reference</td><td>Essential</td><td>Session</td></tr>
+    <tr><td>__Host-safescan_auth0_web</td><td>SafeScan</td><td>Bind an Auth0 sign-in callback to the browser that started it</td><td>Essential</td><td>Up to 10 minutes</td></tr>
     <tr><td>consent-id</td><td>SafeScan</td><td>Stores consent record ID</td><td>Essential</td><td>12 months</td></tr>
     <tr><td>phishproofAirdropProfile</td><td>SafeScan local storage</td><td>Stores local demo profile and wallet state</td><td>Functional</td><td>Until cleared</td></tr>
     <tr><td>safeScanConsent</td><td>SafeScan local storage</td><td>Stores local consent choice so the banner does not reappear unnecessarily</td><td>Essential</td><td>12 months</td></tr>

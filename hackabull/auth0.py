@@ -86,7 +86,7 @@ def _rsa_public_key_from_jwk(jwk):
     e = int.from_bytes(_b64url_decode(jwk["e"]), "big")
     return RSAPublicNumbers(e, n).public_key()
 
-def verify_auth0_id_token(token):
+def verify_auth0_id_token(token, *, expected_audiences=None, expected_nonce=None):
     """Validate an Auth0-signed RS256 idToken via tenant JWKS. Returns claims."""
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.asymmetric import padding
@@ -114,8 +114,11 @@ def verify_auth0_id_token(token):
         raise ValueError("JWT issuer mismatch.")
     audience = payload.get("aud")
     audiences = audience if isinstance(audience, list) else [audience]
-    if AUTH0_AUDIENCES and not any(aud in AUTH0_AUDIENCES for aud in audiences if aud):
+    allowed = AUTH0_AUDIENCES if expected_audiences is None else expected_audiences
+    if allowed and not any(aud in allowed for aud in audiences if aud):
         raise ValueError("JWT audience mismatch.")
+    if expected_nonce is not None and not hmac.compare_digest(str(payload.get("nonce", "")), expected_nonce):
+        raise ValueError("JWT nonce mismatch.")
     now = int(time.time())
     if int(payload.get("exp", 0)) < now:
         raise ValueError("JWT expired.")
