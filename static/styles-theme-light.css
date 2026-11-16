@@ -92,6 +92,34 @@
   background: #f2f3f5;
 }
 
+:root[data-theme="light"] .spline-showcase.webgl-fallback::before,
+:root[data-theme="light"] .spline-showcase.webgl-fallback::after {
+  opacity: 0 !important;
+}
+
+:root[data-theme="light"] .spline-showcase.webgl-fallback .device-orbit {
+  opacity: 1 !important;
+}
+
+:root[data-theme="light"] .spline-showcase.webgl-fallback .screen-grid {
+  background: #000307;
+  padding: var(--space-3);
+}
+
+:root[data-theme="light"] .spline-showcase.webgl-fallback .phone-model {
+  width: min(70%, 180px);
+}
+
+:root[data-theme="light"] .spline-showcase.webgl-fallback .fallback-qr-grid {
+  gap: var(--space-2);
+}
+
+:root[data-theme="light"] .spline-showcase.webgl-fallback .device-orbit::before,
+:root[data-theme="light"] .spline-showcase.webgl-fallback .scan-beam,
+:root[data-theme="light"] .spline-showcase.webgl-fallback .screen-verdict {
+  display: none;
+}
+
 :root[data-theme="light"] .screen-grid,
 :root[data-theme="light"] .qr-frame,
 :root[data-theme="light"] .qr-camera-stage {
