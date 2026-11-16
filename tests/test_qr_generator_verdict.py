@@ -1,6 +1,7 @@
 """Branded QR generation must fail closed when a scan is risky or incomplete."""
 
 import asyncio
+import base64
 import importlib
 import io
 import json
@@ -511,3 +512,176 @@ def test_ascii_art_qr_limits_render_work_and_does_not_audit_failed_generation(
         }))
     assert caught.value.code == "qr_generation_too_long"
     assert events == []
+
+
+def _assert_ascii_motion_bundle_decodes(response, url, *, checked):
+    body = json.loads(response.body)
+    assert set(body) == {
+        "still_png_base64", "animated_png_base64", "frame_count", "frame_duration_ms",
+    }
+    assert body["frame_count"] == 4
+    assert body["frame_duration_ms"] == 350
+    still_bytes = base64.b64decode(body["still_png_base64"], validate=True)
+    animated_bytes = base64.b64decode(body["animated_png_base64"], validate=True)
+    assert still_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+    assert animated_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+
+    still = Image.open(io.BytesIO(still_bytes)).convert("RGB")
+    animated = Image.open(io.BytesIO(animated_bytes))
+    assert animated.n_frames == 4
+    assert still.height == still.width + (52 if checked else 0)
+    decoder = importlib.import_module("hackabull.qr_decode")
+    frame_bytes = []
+    finder_bytes = []
+    for index in range(animated.n_frames):
+        animated.seek(index)
+        frame = animated.convert("RGB")
+        frame_bytes.append(frame.tobytes())
+        finder_bytes.append(frame.crop((4 * 26, 4 * 26, 11 * 26, 11 * 26)).tobytes())
+        for candidate in (
+            frame,
+            frame.resize((320, round(frame.height * 320 / frame.width)), Image.Resampling.LANCZOS),
+        ):
+            decoded = {barcode.data.decode("utf-8") for barcode in decoder.decode_qr_image(candidate)}
+            assert decoded == {url}
+    assert still.tobytes() == frame_bytes[0]
+    assert len(set(frame_bytes)) == 4  # The ASCII glyphs really move.
+    assert len(set(finder_bytes)) == 1  # Finder pattern stays fixed.
+
+
+@pytest.mark.parametrize("plain", [False, True])
+def test_ascii_motion_api_screens_once_or_stays_unchecked(generator_api, monkeypatch, plain):
+    url = "https://a.co/"
+    scans = []
+    audits = []
+
+    async def analyze(target):
+        scans.append(target)
+        if plain:
+            pytest.fail("Plain ASCII motion QR ran a safety scan")
+        return {"overallRisk": "safe", "confidenceScore": 8, "verificationStatus": "complete"}
+
+    monkeypatch.setattr(generator_api, "analyze_full_pipeline", analyze)
+    monkeypatch.setattr(generator_api, "audit_log", lambda *args, **kwargs: audits.append((args, kwargs)))
+    route = generator_api.api_qr_generate_plain if plain else generator_api.api_qr_generate
+    response = asyncio.run(route(object(), {"url": url, "format": "ascii_motion"}))
+    assert response.media_type == "application/json"
+    assert response.headers["Cache-Control"] == "no-store"
+    _assert_ascii_motion_bundle_decodes(response, url, checked=not plain)
+    if plain:
+        assert scans == []
+        assert audits == []
+        assert response.headers["X-SafeScan-Mode"] == "plain"
+        assert response.headers["X-SafeScan-Verification"] == "not_checked"
+        assert "X-SafeScan-Verdict" not in response.headers
+    else:
+        assert scans == [url]
+        assert response.headers["X-SafeScan-Verdict"] == "safe"
+        assert response.headers["X-SafeScan-Verification"] == "complete"
+        assert len(audits) == 1
+        assert audits[0][1]["metadata"]["format"] == "ascii_motion"
+        assert audits[0][1]["metadata"]["animation"] is True
+
+
+def test_ascii_motion_custom_gradient_and_long_url_decode(generator_api):
+    url = "https://sqafe.com/generate-qr?test=" + "long" * 45
+    response = asyncio.run(generator_api.api_qr_generate_plain(object(), {
+        "url": url, "format": "ascii_motion",
+        "gradient_start": "#093D3A", "gradient_end": "#4A245F",
+    }))
+    _assert_ascii_motion_bundle_decodes(response, url, checked=False)
+
+
+@pytest.mark.parametrize("plain", [False, True])
+@pytest.mark.parametrize("field,value", [
+    ("gradient_start", "red"),
+    ("gradient_end", None),
+    ("gradient_start", "#FFFFFF"),
+    ("gradient_end", "#FFFF00"),
+])
+def test_ascii_motion_rejects_malformed_or_light_colors_before_scanning(
+    generator_api, monkeypatch, plain, field, value,
+):
+    async def analyze(_url):
+        pytest.fail("Invalid gradient reached safety scan")
+
+    monkeypatch.setattr(generator_api, "analyze_full_pipeline", analyze)
+    monkeypatch.setattr(
+        generator_api, "qr_ascii_motion_pngs_from_payload",
+        lambda *_args, **_kwargs: pytest.fail("Invalid gradient rendered"),
+    )
+    route = generator_api.api_qr_generate_plain if plain else generator_api.api_qr_generate
+    with pytest.raises(generator_api.SafeScanError) as caught:
+        asyncio.run(route(object(), {
+            "url": "https://a.co/", "format": "ascii_motion", field: value,
+        }))
+    assert caught.value.code == "invalid_request"
+    assert caught.value.field == field
+    assert caught.value.status_code == 400
+
+
+def test_ascii_motion_too_large_url_and_undecodable_frame_do_not_audit(
+    generator_api, monkeypatch,
+):
+    async def analyze(_url):
+        return {"overallRisk": "safe", "confidenceScore": 8, "verificationStatus": "complete"}
+
+    audits = []
+    monkeypatch.setattr(generator_api, "analyze_full_pipeline", analyze)
+    monkeypatch.setattr(generator_api, "audit_log", lambda *args, **kwargs: audits.append((args, kwargs)))
+    with pytest.raises(generator_api.SafeScanError) as too_long:
+        asyncio.run(generator_api.api_qr_generate(object(), {
+            "url": "https://sqafe.com/" + "a" * 300, "format": "ascii_motion",
+        }))
+    assert too_long.value.code == "qr_generation_too_long"
+    assert audits == []
+
+    def failed_decode(*_args, **_kwargs):
+        raise generator_api.QRAsciiMotionDecodeError("failed")
+
+    monkeypatch.setattr(generator_api, "qr_ascii_motion_pngs_from_payload", failed_decode)
+    with pytest.raises(generator_api.SafeScanError) as unscannable:
+        asyncio.run(generator_api.api_qr_generate(object(), {
+            "url": "https://a.co/", "format": "ascii_motion",
+        }))
+    assert unscannable.value.code == "qr_generation_unscannable"
+    assert audits == []
+
+
+def test_ascii_motion_rejects_concurrent_render_and_releases_slot(generator_api, monkeypatch):
+    async def scenario():
+        started = asyncio.Event()
+        finish = asyncio.Event()
+        renders = []
+
+        async def slow_render(function, *args, **kwargs):
+            renders.append((function, args, kwargs))
+            started.set()
+            await finish.wait()
+            return b"still", b"animated"
+
+        monkeypatch.setattr(generator_api, "run_in_threadpool", slow_render)
+        first = asyncio.create_task(generator_api.api_qr_generate_plain(object(), {
+            "url": "https://a.co/", "format": "ascii_motion",
+        }))
+        await started.wait()
+        try:
+            with pytest.raises(generator_api.SafeScanError) as caught:
+                await generator_api.api_qr_generate_plain(object(), {
+                    "url": "https://b.co/", "format": "ascii_motion",
+                })
+            assert caught.value.code == "qr_generation_busy"
+            assert caught.value.status_code == 503
+            assert len(renders) == 1
+        finally:
+            finish.set()
+            await first
+
+        # A finished render returns its memory slot to subsequent requests.
+        response = await generator_api.api_qr_generate_plain(object(), {
+            "url": "https://b.co/", "format": "ascii_motion",
+        })
+        assert response.status_code == 200
+        assert len(renders) == 2
+
+    asyncio.run(scenario())

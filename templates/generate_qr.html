@@ -11,7 +11,7 @@
   <title>QR Generator | Sqafe</title>
   <meta name="description" content="Generate a screened QR after SafeScan checks a link, or choose a plain QR with no safety check.">
   <link rel="icon" href="/static/safescan-logo.svg?v=sqafe-brand-v1" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=ascii-art-qr-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=ascii-motion-qr-v1">
 </head>
 <body class="test-site-page">
   <div class="page-shell">
@@ -43,33 +43,37 @@
             </label>
             <label class="generate-qr-format-option">
               <input type="radio" name="generateQrFormat" value="ascii">
-              <span><strong>Text QR</strong><small>Moving text preview</small></span>
+              <span><strong>Text QR</strong><small>Copyable Unicode text</small></span>
             </label>
             <label class="generate-qr-format-option">
-              <input type="radio" name="generateQrFormat" value="ascii_art">
-              <span><strong>ASCII art QR</strong><small>Scannable image drawn with text</small></span>
+              <input type="radio" name="generateQrFormat" value="ascii_motion">
+              <span><strong>ASCII motion QR</strong><small>Animated character QR</small></span>
             </label>
           </div>
         </fieldset>
-        <fieldset id="generateQrArtStyles" class="generate-qr-format generate-qr-art-styles hidden">
-          <legend>Choose a drawing</legend>
-          <div class="generate-qr-art-options">
-            <label class="generate-qr-art-option">
-              <input type="radio" name="generateQrArtStyle" value="cat" checked>
-              <span><strong>Cat</strong><code aria-hidden="true"> /\_/\
-( o.o )
- &gt; ^ &lt;</code></span>
+        <fieldset id="generateQrGradientOptions" class="generate-qr-format generate-qr-gradient-options hidden">
+          <legend>Choose a gradient</legend>
+          <div class="generate-qr-gradient-presets" role="group" aria-label="Gradient presets">
+            <button class="generate-qr-gradient-preset" type="button" data-gradient-preset="ember" data-gradient-start="#2A1B36" data-gradient-end="#8A280C" aria-pressed="true">Ember</button>
+            <button class="generate-qr-gradient-preset" type="button" data-gradient-preset="aurora" data-gradient-start="#153E3E" data-gradient-end="#4B246B" aria-pressed="false">Aurora</button>
+            <button class="generate-qr-gradient-preset" type="button" data-gradient-preset="night" data-gradient-start="#10264A" data-gradient-end="#42316B" aria-pressed="false">Night</button>
+          </div>
+          <div class="generate-qr-gradient-fields">
+            <label for="generateQrGradientStart">Top color
+              <span class="generate-qr-color-control">
+                <input id="generateQrGradientStart" type="color" value="#2A1B36" aria-describedby="generateQrGradientHint">
+                <output id="generateQrGradientStartValue" for="generateQrGradientStart">#2A1B36</output>
+              </span>
             </label>
-            <label class="generate-qr-art-option">
-              <input type="radio" name="generateQrArtStyle" value="flame">
-              <span><strong>Flame</strong><code aria-hidden="true">    .
-   +*
-  *#@*
- +#@@#+
-  *##*
-   ##</code></span>
+            <label for="generateQrGradientEnd">Bottom color
+              <span class="generate-qr-color-control">
+                <input id="generateQrGradientEnd" type="color" value="#8A280C" aria-describedby="generateQrGradientHint">
+                <output id="generateQrGradientEndValue" for="generateQrGradientEnd">#8A280C</output>
+              </span>
             </label>
           </div>
+          <div id="generateQrGradientSample" class="generate-qr-gradient-sample" aria-hidden="true"></div>
+          <p id="generateQrGradientHint" class="generate-qr-gradient-hint">Choose dark colors so the QR stays readable on white. Light colors cannot be generated.</p>
         </fieldset>
         <div class="generate-qr-form-row">
           <input id="generateQrUrlInput" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Destination URL" placeholder="https://example.com">
@@ -77,9 +81,18 @@
         </div>
         <p id="generateQrError" class="generated-qr-error hidden" role="alert"></p>
         <div id="generatedQrWrap" class="generated-qr-wrap hidden" aria-live="polite">
+          <div id="generatedMotionHeading" class="generated-motion-heading hidden">
+            <p>ASCII motion QR preview</p>
+            <button id="generatedMotionToggle" class="secondary-button" type="button">Play motion</button>
+          </div>
           <img id="generatedQrImage" class="generated-qr-image" alt="Generated QR code">
           <p id="generatedQrStatus" class="generated-qr-status">Checked when generated. The destination may change, so recheck before opening.</p>
           <a id="generatedQrDownload" class="secondary-button" download="safescan-qr.png" href="#">Download PNG</a>
+          <div id="generatedMotionDownloads" class="generated-motion-downloads hidden">
+            <a id="generatedMotionStillDownload" class="secondary-button" download="sqafe-ascii-motion-qr.png" href="#">Download still PNG</a>
+            <a id="generatedMotionAnimatedDownload" class="secondary-button" download="sqafe-ascii-motion-qr-animated.png" href="#">Download animated PNG</a>
+            <p>Some apps show only the first frame. The still PNG also scans.</p>
+          </div>
         </div>
         <div id="generatedAsciiWrap" class="generated-qr-wrap generated-ascii-wrap hidden" aria-live="polite">
           <div class="generated-ascii-heading">
@@ -106,6 +119,6 @@
   <script src="/static/app-widgets.js?v=legal-gpc-v1"></script>
   <script src="/static/app-go-ghost.js?v=ghost-inline-errors-v1"></script>
   <script src="/static/app-go-ghost-ui.js?v=legal-a11y-v1"></script>
-  <script src="/static/app-generate-qr.js?v=ascii-art-qr-v1"></script>
+  <script src="/static/app-generate-qr.js?v=ascii-motion-qr-v1"></script>
 </body>
 </html>

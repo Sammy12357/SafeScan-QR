@@ -54,6 +54,16 @@ ERRORS: dict[str, Message] = {
     "scan_incomplete": Message("We couldn't finish checking this link.", "Try again in a moment. Do not open the link until the checks finish.", 503),
     "qr_generation_blocked": Message("We can't make a QR code for this link.", "Review the scan result and use a destination that SafeScan can verify.", 400),
     "qr_generation_too_long": Message("This link is too long for a QR code.", "Use a shorter web address and try again.", 400),
+    "qr_generation_unscannable": Message(
+        "We couldn't make a scannable ASCII QR with these settings.",
+        "Choose darker gradient colors or a shorter web address and try again.",
+        400,
+    ),
+    "qr_generation_busy": Message(
+        "The animated QR renderer is busy. Try again in a moment.",
+        "Wait a moment, then try again.",
+        503,
+    ),
     "report_reason_invalid": Message("Choose a reason for the report.", "Select one of the available reasons and submit again.", 400),
     "url_required": Message("Add a web address to check.", "Paste a link beginning with http or https.", 400),
     "url_invalid": Message("That link isn't a web address we can check.", "Use a full link beginning with http or https.", 400),
