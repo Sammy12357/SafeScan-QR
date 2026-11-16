@@ -52,7 +52,7 @@ if (canvas && showcase && !showcase.dataset.splineSrc?.trim()) {
   }
 }
 
-if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim() && !showcase.classList.contains("webgl-fallback")) {
+if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim()) {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
   camera.position.set(0, 0.45, 7.2);
@@ -685,6 +685,22 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim() && !showc
     target.y = 0.05;
     phoneTarget.x = 0;
     phoneTarget.y = 0;
+  });
+
+  canvas.addEventListener("keydown", (event) => {
+    const rotationStep = 0.08;
+    const delta = {
+      ArrowLeft: [-rotationStep, 0],
+      ArrowRight: [rotationStep, 0],
+      ArrowUp: [0, rotationStep],
+      ArrowDown: [0, -rotationStep],
+    }[event.key];
+    if (!delta) return;
+    event.preventDefault();
+    target.x = Math.max(-0.5, Math.min(0.25, target.x + delta[0]));
+    target.y = Math.max(-0.2, Math.min(0.3, target.y + delta[1]));
+    phoneTarget.x = target.x * 2;
+    phoneTarget.y = target.y * 2;
   });
 
   new ResizeObserver(resize).observe(showcase);
