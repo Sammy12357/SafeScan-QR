@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -39,8 +40,14 @@ EXTRA_PUBLIC_VIEWS = (
     View("waitlist_confirm_expired", "/waitlist/confirm"),
     View("waitlist_unsubscribe_expired", "/waitlist/unsubscribe"),
     View("confirm_age_expired", "/auth/confirm-age"),
+    View("accept_terms_expired", "/auth/accept-terms"),
     View("auth_google_landing", "/auth/google"),
     View("terms_history", "/legal/terms-history"),
+    View("terms_archive_v10", "/legal/documents/terms/v1.0"),
+    View("terms_archive_v11", "/legal/documents/terms/v1.1"),
+    View("privacy_archive_v10", "/legal/documents/privacy/v1.0"),
+    View("privacy_archive_v11", "/legal/documents/privacy/v1.1"),
+    View("cookie_archive_v10", "/legal/documents/cookie/v1.0"),
     View("privacy_alias", "/legal/privacy"),
     View("terms_alias", "/legal/terms"),
     View("license", "/legal/license"),
@@ -60,6 +67,7 @@ FAIL_IMPACTS = {"serious", "critical"}
 EXPECTED_STATUSES = {
     "not_found": 404,
     "confirm_age_expired": 410,
+    "accept_terms_expired": 410,
     "waitlist_confirm_expired": 410,
     "waitlist_unsubscribe_expired": 410,
 }
@@ -88,7 +96,14 @@ def check_public_route_inventory() -> None:
                 if route.startswith("/admin/") or route == "/admin" or route in {"/__states", "/legal/consent-log"}:
                     continue
                 route_paths.add(route)
-    missing = sorted(route_paths - audited_paths)
+    def is_audited(route: str) -> bool:
+        if route in audited_paths:
+            return True
+        # Concrete archive URLs exercise a parameterized FastAPI route.
+        pattern = re.sub(r"\\\{[^{}]+\\\}", r"[^/]+", re.escape(route))
+        return any(re.fullmatch(pattern, path) for path in audited_paths)
+
+    missing = sorted(route for route in route_paths if not is_audited(route))
     if missing:
         raise RuntimeError(f"Public GET HTML routes missing from accessibility audit: {', '.join(missing)}")
 
