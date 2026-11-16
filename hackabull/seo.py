@@ -8,16 +8,36 @@ from __future__ import annotations
 
 CANONICAL_ORIGIN = "https://sqafe.com"
 RENDER_HOST = "safescan-qr.onrender.com"
+OG_IMAGE_PATH = "/static/og-sqafe.png"
 
-# Reviewed public landing pages. Generator and pricing are withheld while
-# provider coverage and checkout are incomplete; the threat list awaits its
-# listing-dispute review. Risk-engine details need a separate claim audit.
-# Add pages here only when content and claims are ready.
-SITEMAP_PATHS = (
-    "/",
-    "/learn",
-    "/contact",
-)
+# This registry is the sole source for both the sitemap and indexable page
+# metadata. Add a page only after its visible content and public claims have
+# been reviewed. Generator and pricing await working production checks and
+# checkout; the threat list and risk-engine page require separate claim review.
+SEO_PAGE_COPY = {
+    "/": {
+        "title": "Check a QR Code Before Opening It | Sqafe",
+        "description": (
+            "Scan a QR code or paste its contents to review the destination and "
+            "available risk signals before deciding whether to open it."
+        ),
+    },
+    "/learn": {
+        "title": "QR Code Safety and Quishing Guide | Sqafe",
+        "description": (
+            "Learn how QR phishing works, what a QR code can contain, and how to "
+            "inspect links, payment requests, and wallet prompts before opening them."
+        ),
+    },
+    "/contact": {
+        "title": "Contact Sqafe | Support and Security Reports",
+        "description": (
+            "Find Sqafe contact options for account help, privacy questions, "
+            "partnerships, and reporting a security concern."
+        ),
+    },
+}
+SITEMAP_PATHS = tuple(SEO_PAGE_COPY)
 
 # Public HTML routes may move to the canonical host. Keep auth, account,
 # checkout, and API routes on their requested host so existing sessions and
@@ -52,6 +72,24 @@ def public_canonical_path(path: str) -> str | None:
 
 def canonical_url(path: str) -> str:
     return CANONICAL_ORIGIN + path
+
+
+def metadata_for_request(request) -> dict[str, str] | None:
+    """Return reviewed metadata only for a canonical, public GET document.
+
+    Scan POST results, duplicate home routes, noncanonical hosts, and all
+    other HTML get the noindex fallback in the shared template partial.
+    """
+    path = request.url.path
+    host = request.url.hostname or ""
+    if request.method != "GET" or should_noindex_html(host, path, 200):
+        return None
+    copy = SEO_PAGE_COPY[path]
+    return {
+        **copy,
+        "url": canonical_url(path),
+        "image_url": canonical_url(OG_IMAGE_PATH),
+    }
 
 
 def canonical_redirect_url(host: str, path: str, query: str) -> str | None:

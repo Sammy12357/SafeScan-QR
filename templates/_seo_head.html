@@ -1,0 +1,25 @@
+{# Search/share metadata only. Keep each page's existing theme, icon, and CSS
+   tags in place so this include does not change loading or visual behavior. #}
+{% set seo_page = seo_metadata(request) if request is defined else none %}
+{% if seo_page %}
+  <title>{{ seo_page.title }}</title>
+  <meta name="description" content="{{ seo_page.description }}">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="{{ seo_page.url }}">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Sqafe">
+  <meta property="og:title" content="{{ seo_page.title }}">
+  <meta property="og:description" content="{{ seo_page.description }}">
+  <meta property="og:url" content="{{ seo_page.url }}">
+  <meta property="og:image" content="{{ seo_page.image_url }}">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Sqafe — check QR links before opening them">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{{ seo_page.title }}">
+  <meta name="twitter:description" content="{{ seo_page.description }}">
+  <meta name="twitter:image" content="{{ seo_page.image_url }}">
+{% else %}
+  {% if seo_fallback_title is defined %}<title>{{ seo_fallback_title }}</title>{% endif %}
+  <meta name="robots" content="noindex, follow">
+{% endif %}

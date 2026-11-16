@@ -8,7 +8,8 @@
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <script src="/static/ui-states.js?v=ui-loading-v1"></script>
   <script src="/static/server-error-focus.js?v=form-error-focus-v1" defer></script>
-  <title>{{ title }} | SafeScan QR</title>
+  {% set seo_fallback_title = title ~ ' | SafeScan QR' %}
+  {% include '_seo_head.html' %}
   <link rel="stylesheet" href="/static/styles.css?v=legal-a11y-v1">
 </head>
 <body>
