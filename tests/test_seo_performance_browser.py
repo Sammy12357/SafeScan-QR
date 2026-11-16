@@ -70,7 +70,7 @@ def model_requests(page):
     return requests
 
 
-def test_model_is_deferred_until_pointer_intent_and_scanner_still_works(browser_site):
+def test_visible_model_starts_automatically_and_scanner_still_works(browser_site):
     browser, base_url = browser_site
     context, page = new_page(browser, base_url)
     requests = model_requests(page)
@@ -79,11 +79,8 @@ def test_model_is_deferred_until_pointer_intent_and_scanner_still_works(browser_
     page.on("console", lambda message: errors.append(message.text) if message.type == "error" else None)
     try:
         page.goto("/", wait_until="domcontentloaded")
+        assert page.locator("#urlInput").is_visible()
         page.wait_for_load_state("networkidle")
-        assert page.locator(".spline-showcase").evaluate("node => node.classList.contains('webgl-fallback')")
-        assert not THREE_ASSETS.intersection(requests)
-
-        page.locator("#modelActivation").hover()
         page.locator(".spline-showcase.webgl-ready").wait_for(timeout=20_000)
         assert THREE_ASSETS.issubset(requests)
         assert page.locator("#modelActivation").is_hidden()
@@ -101,6 +98,7 @@ def test_model_can_be_activated_with_keyboard(browser_site):
     browser, base_url = browser_site
     context, page = new_page(browser, base_url)
     try:
+        page.add_init_script("window.IntersectionObserver = class { observe() {} disconnect() {} };")
         page.goto("/", wait_until="networkidle")
         button = page.locator("#modelActivation")
         button.focus()
@@ -110,6 +108,75 @@ def test_model_can_be_activated_with_keyboard(browser_site):
         assert page.locator("#safeScanModel").evaluate("node => document.activeElement === node")
         page.keyboard.press("ArrowRight")
         assert page.locator("#safeScanModel").evaluate("node => document.activeElement === node")
+    finally:
+        context.close()
+
+
+def test_auto_start_preserves_focus_on_the_model(browser_site):
+    browser, base_url = browser_site
+    context, page = new_page(browser, base_url)
+    try:
+        page.add_init_script(
+            "window.IntersectionObserver = class {"
+            "constructor(callback) { window.modelVisible = callback; }"
+            "observe() {} disconnect() {} };"
+        )
+        page.goto("/", wait_until="networkidle")
+        page.locator("#modelActivation").focus()
+        page.evaluate("window.modelVisible([{ isIntersecting: true }])")
+        page.locator(".spline-showcase.webgl-ready").wait_for(timeout=20_000)
+        assert page.locator("#safeScanModel").evaluate("node => document.activeElement === node")
+    finally:
+        context.close()
+
+
+def test_failed_model_load_can_be_retried(browser_site):
+    browser, base_url = browser_site
+    context, page = new_page(browser, base_url)
+    blocked = False
+
+    def fail_first_model_request(route):
+        nonlocal blocked
+        if not blocked:
+            blocked = True
+            route.abort()
+        else:
+            route.continue_()
+
+    page.route("**/static/safescan-3d.js?*", fail_first_model_request)
+    try:
+        page.goto("/", wait_until="networkidle")
+        retry = page.get_by_role("button", name="Retry interactive Sqafe 3D model")
+        retry.wait_for(timeout=20_000)
+        assert retry.is_visible()
+        retry.click()
+        page.locator(".spline-showcase.webgl-ready").wait_for(timeout=20_000)
+        assert retry.is_hidden()
+    finally:
+        context.close()
+
+
+def test_failed_three_dependency_can_be_retried(browser_site):
+    browser, base_url = browser_site
+    context, page = new_page(browser, base_url)
+    blocked = False
+
+    def fail_first_three_request(route):
+        nonlocal blocked
+        if not blocked:
+            blocked = True
+            route.abort()
+        else:
+            route.continue_()
+
+    page.route("**/static/vendor/three.module.js?*", fail_first_three_request)
+    try:
+        page.goto("/", wait_until="networkidle")
+        retry = page.get_by_role("button", name="Retry interactive Sqafe 3D model")
+        retry.wait_for(timeout=20_000)
+        retry.click()
+        page.locator(".spline-showcase.webgl-ready").wait_for(timeout=20_000)
+        assert retry.is_hidden()
     finally:
         context.close()
 
@@ -127,17 +194,20 @@ def test_reduced_motion_keeps_static_model(browser_site):
         context.close()
 
 
-def test_mobile_scanner_works_without_loading_model(browser_site):
+def test_mobile_model_starts_when_scrolled_into_view(browser_site):
     browser, base_url = browser_site
     context, page = new_page(browser, base_url)
     page.set_viewport_size({"width": 375, "height": 812})
     requests = model_requests(page)
     try:
         page.goto("/", wait_until="networkidle")
+        assert not THREE_ASSETS.intersection(requests)
+        page.locator(".spline-showcase").scroll_into_view_if_needed()
+        page.locator(".spline-showcase.webgl-ready").wait_for(timeout=20_000)
+        assert THREE_ASSETS.issubset(requests)
         page.locator("#urlInput").fill("WIFI:T:WPA;S:Mobile;P:test;;")
         page.get_by_role("button", name="Analyze Payload").click()
         page.locator("#riskVerdictModal").wait_for(timeout=20_000)
         assert "WIFI:T:WPA;S:Mobile;P:test;;" in page.locator(".decoded-payload").first.inner_text()
-        assert not THREE_ASSETS.intersection(requests)
     finally:
         context.close()
