@@ -9,23 +9,37 @@
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <script src="/static/ui-states.js?v=ui-loading-v1"></script>
   <title>QR Generator | Sqafe</title>
-  <meta name="description" content="Generate a QR code after SafeScan checks the destination URL for known risk signals.">
+  <meta name="description" content="Generate a screened QR after SafeScan checks a link, or choose a plain QR with no safety check.">
   <link rel="icon" href="/static/safescan-logo.svg?v=sqafe-brand-v1" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=ascii-qr-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=plain-qr-v1">
 </head>
 <body class="test-site-page">
   <div class="page-shell">
     {% include "_topnav.html" %}
     <main>
       <section class="generate-qr-panel" id="generate-qr-section">
-        <div class="panel-header"><div><p class="eyebrow">SafeScan Generator</p><h2>Generate a screened QR</h2></div></div>
-        <p class="generate-qr-copy">Paste a web URL. SafeScan creates the QR only when its configured checks complete with no known threat match at that time. The generator mark identifies the tool; it does not endorse the destination. A destination can change later.</p>
+        <div class="panel-header"><div><p class="eyebrow">SafeScan Generator</p><h2>Generate a QR code</h2></div></div>
+        <p class="generate-qr-copy">Paste a web URL, then choose whether to check it first. A screened QR is available only when SafeScan's checks finish without a known threat match. A plain QR is made without safety checks and may lead to an unsafe site.</p>
+        <fieldset class="generate-qr-format generate-qr-mode">
+          <legend>Choose a safety mode</legend>
+          <div class="generate-qr-format-options">
+            <label class="generate-qr-format-option">
+              <input type="radio" name="generateQrMode" value="screened" checked>
+              <span><strong>Screened QR</strong><small>Requires completed safety checks</small></span>
+            </label>
+            <label class="generate-qr-format-option">
+              <input type="radio" name="generateQrMode" value="plain" aria-describedby="generateQrPlainWarning">
+              <span><strong>Plain QR</strong><small>No safety check or SafeScan mark</small></span>
+            </label>
+          </div>
+        </fieldset>
+        <p id="generateQrPlainWarning" class="generate-qr-warning hidden" role="status"><strong>Not safety checked.</strong> This QR may lead to an unsafe site. Verify the destination independently before sharing or opening it.</p>
         <fieldset class="generate-qr-format">
           <legend>Choose an output</legend>
           <div class="generate-qr-format-options">
             <label class="generate-qr-format-option">
               <input type="radio" name="generateQrFormat" value="png" checked>
-              <span><strong>PNG image</strong><small>Branded QR file</small></span>
+              <span><strong>PNG image</strong><small>Downloadable QR file</small></span>
             </label>
             <label class="generate-qr-format-option">
               <input type="radio" name="generateQrFormat" value="ascii">
@@ -35,7 +49,7 @@
         </fieldset>
         <div class="generate-qr-form-row">
           <input id="generateQrUrlInput" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Destination URL" placeholder="https://example.com">
-          <button id="generateQrButton" type="button" class="primary-button">Generate QR</button>
+          <button id="generateQrButton" type="button" class="primary-button">Generate screened QR</button>
         </div>
         <p id="generateQrError" class="generated-qr-error hidden" role="alert"></p>
         <div id="generatedQrWrap" class="generated-qr-wrap hidden" aria-live="polite">
@@ -53,7 +67,7 @@
           </div>
           <p id="generatedAsciiSizeNotice" class="generated-ascii-size-notice hidden" role="status">This text QR is too wide to show fully on this screen. Use a shorter URL, display the downloaded text on a larger screen, or choose PNG.</p>
           <p class="generated-ascii-destination">QR for <span id="generatedAsciiDestination"></span></p>
-          <p class="generated-qr-status">Checked when generated. Pause the motion if your camera has trouble scanning. Keep spacing and a fixed-width font when sharing the text; the destination can change later.</p>
+          <p id="generatedAsciiStatus" class="generated-qr-status">Checked when generated. Pause the motion if your camera has trouble scanning. Keep spacing and a fixed-width font when sharing the text; the destination can change later.</p>
           <div class="generated-ascii-actions">
             <button id="generatedAsciiCopy" class="secondary-button" type="button">Copy text</button>
             <a id="generatedAsciiDownload" class="secondary-button" download="sqafe-text-qr.txt" href="#">Download .txt</a>
@@ -68,6 +82,6 @@
   <script src="/static/app-widgets.js?v=legal-gpc-v1"></script>
   <script src="/static/app-go-ghost.js?v=ghost-inline-errors-v1"></script>
   <script src="/static/app-go-ghost-ui.js?v=legal-a11y-v1"></script>
-  <script src="/static/app-generate-qr.js?v=ascii-qr-v1"></script>
+  <script src="/static/app-generate-qr.js?v=plain-qr-v1"></script>
 </body>
 </html>

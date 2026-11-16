@@ -34,7 +34,7 @@ GET /health/ready
 
 `/health/ready` reports only `ready` or `not_ready` to public callers; it checks connectivity but does not prove persistence. Confirm in Render that the disk is mounted at `/var/data` and that `DATABASE_URL` or `SQLITE_DB_PATH` resolves to a file on that disk. For a custom persistent mount, set `PERSISTENT_DATA_DIR` to that mount path, or set `LEADERBOARD_STORAGE_PERSISTENT=true` only after confirming the database path is durable.
 
-## URL reputation and branded QR generation
+## URL reputation and QR generation
 
 For a commercial deployment, set `GOOGLE_WEB_RISK_API_KEY` in Render. Web Risk receives the full URL being checked. Google Web Risk takes precedence over the legacy Safe Browsing key. The legacy `GOOGLE_SAFE_BROWSING_API_KEY` or `googe_api_key` is ignored by default; `SAFESCAN_ENABLE_NONCOMMERCIAL_SAFE_BROWSING=true` opts in only when that use is permitted by Google's terms or a separate agreement. Do not enable the legacy fallback solely to make scans appear complete.
 
@@ -43,6 +43,8 @@ PhishTank supplies the second required phishing signal without receiving individ
 `GET /health/providers` reports only `configured` or `incomplete` to public callers; it does not expose per-provider configuration or claim a live Google lookup succeeded. It returns `200` even when coverage is incomplete; `/health/ready` remains the storage and service readiness check. The required URL checks are Google Web Risk (or explicitly permitted legacy Safe Browsing), a fresh PhishTank feed, and redirect inspection. The scan response lists incomplete required checks in `unverifiedChecks`; `optionalChecks` remains empty for API compatibility. Branded QR generation requires all required checks to complete. Remove retired `VIRUSTOTAL_API_KEY` and `SAFESCAN_VIRUSTOTAL_*` values from Render's environment after deployment.
 
 A scan that cannot complete a required reputation or redirect check must be shown as incomplete. Without a configured Google Web Risk key and a fresh, terms-approved PhishTank feed, web URL scans remain unverified and branded QR generation stays paused. `/api/qr/generate` refuses to stamp a branded QR unless the verdict is safe and verification status is complete. Monitor Web Risk errors and feed freshness: they reduce scan coverage and temporarily stop branded QR generation. A completed lookup means no *known* threat match was returned at scan time, not that a destination will remain safe.
+
+The separate `/api/qr/generate-plain` route is an explicit unchecked option. It renders a plain QR from a validated public web URL without running Web Risk, PhishTank, redirect inspection, or the scan pipeline. It may therefore encode a malicious destination. Its PNG has no SafeScan mark and its text output has no Sqafe footer; responses identify the mode as plain and verification as `not_checked`, never `safe` or `complete`. The generator page must show this limitation before the person chooses that mode and beside the result. The route shares the QR generation rate limit. Its availability does not relax the screened `/api/qr/generate` gate or change scan verdicts. Recipients should inspect the destination independently before opening a plain QR.
 
 Redirect inspection connects directly to the validated public IP for each hop and retains the original hostname for TLS verification. It intentionally ignores `HTTP_PROXY` and `HTTPS_PROXY`; ensure the deployment can make direct outbound HTTP/HTTPS connections or redirect checks will be reported as incomplete.
 

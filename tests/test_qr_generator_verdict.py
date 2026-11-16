@@ -2,6 +2,7 @@
 
 import asyncio
 import importlib
+import io
 import json
 import sys
 from pathlib import Path
@@ -9,6 +10,7 @@ from pathlib import Path
 from fastapi.responses import JSONResponse
 from PIL import Image, ImageDraw, ImageFont
 import pytest
+import qrcode
 from qrcode.exceptions import DataOverflowError
 
 
@@ -66,6 +68,109 @@ def test_generator_allows_only_complete_safe_scan(generator_api, monkeypatch):
     assert response.media_type == "image/png"
     assert response.headers["X-SafeScan-Verdict"] == "safe"
     assert response.body.startswith(b"\x89PNG\r\n\x1a\n")
+
+
+@pytest.mark.parametrize("format_option", [{}, {"format": "ascii"}, {"format": "ascii", "animation": True}])
+def test_plain_generator_never_checks_or_claims_a_safe_verdict(generator_api, monkeypatch, format_option):
+    async def analyze(_url):
+        pytest.fail("Plain QR started a safety scan")
+
+    monkeypatch.setattr(generator_api, "analyze_full_pipeline", analyze)
+    monkeypatch.setattr(generator_api, "audit_log", lambda *_args, **_kwargs: pytest.fail("Plain QR claimed a checked audit"))
+    response = asyncio.run(generator_api.api_qr_generate_plain(
+        object(), {"url": "https://example.com/", **format_option},
+    ))
+
+    assert response.headers["X-SafeScan-Mode"] == "plain"
+    assert response.headers["X-SafeScan-Verification"] == "not_checked"
+    assert response.headers["Cache-Control"] == "no-store"
+    assert "X-SafeScan-Verdict" not in response.headers
+    assert "X-SafeScan-Score" not in response.headers
+
+    if not format_option:
+        assert response.media_type == "image/png"
+        assert response.headers["Content-Disposition"] == 'inline; filename="plain-qr.png"'
+        image = Image.open(io.BytesIO(response.body)).convert("RGB")
+        expected_qr = qrcode.QRCode(
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            border=4,
+            box_size=10,
+        )
+        expected_qr.add_data("https://example.com/")
+        expected_qr.make(fit=True)
+        expected = expected_qr.make_image(fill_color="black", back_color="white").convert("RGB")
+        assert image.size == expected.size
+        assert image.tobytes() == expected.tobytes()  # No logo, badge or other overlay.
+        assert image.crop((0, 0, image.width, 40)).getextrema() == ((255, 255),) * 3
+        decoder = importlib.import_module("hackabull.qr_decode")
+        assert {barcode.data.decode("utf-8") for barcode in decoder.decode_qr_image(image)} == {"https://example.com/"}
+    else:
+        frames = json.loads(response.body)["frames"] if format_option.get("animation") else [response.body.decode("utf-8")]
+        if format_option.get("animation"):
+            assert response.media_type == "application/json"
+            assert json.loads(response.body)["text"] == frames[0]
+            assert len(set(frames)) == 4
+        else:
+            assert response.media_type == "text/plain; charset=utf-8"
+        decoder = importlib.import_module("hackabull.qr_decode")
+        for frame in frames:
+            assert "Sqafe" not in frame and "SafeScan" not in frame
+            rows = frame.splitlines()
+            assert len({len(row) for row in rows}) == 1
+            assert all(row == " " * len(row) for row in rows[:2] + rows[-2:])
+            assert all(row.startswith(" " * 4) and row.endswith(" " * 4) for row in rows)
+            image = _module_image_from_text(rows)
+            assert {barcode.data.decode("utf-8") for barcode in decoder.decode_qr_image(image)} == {"https://example.com/"}
+
+
+@pytest.mark.parametrize("format_option", [{}, {"format": "ascii"}, {"format": "ascii", "animation": True}])
+def test_plain_generator_shares_screened_rate_limit(generator_api, monkeypatch, format_option):
+    calls = []
+
+    def limited(_request, key, limit, period, *, user_key):
+        calls.append((key, limit, period, user_key))
+        return JSONResponse({"error": "rate_limited"}, status_code=429, headers={"Retry-After": "47"})
+
+    monkeypatch.setattr(generator_api, "enforce_rate_limit", limited)
+    monkeypatch.setattr(generator_api, "qr_plain_png_from_payload", lambda *_args: pytest.fail("Rate-limited plain PNG rendered"))
+    monkeypatch.setattr(generator_api, "qr_ascii_from_payload", lambda *_args, **_kwargs: pytest.fail("Rate-limited plain text QR rendered"))
+    response = asyncio.run(generator_api.api_qr_generate_plain(
+        object(), {"url": "https://example.com/", **format_option},
+    ))
+    assert response.status_code == 429
+    assert response.headers["Retry-After"] == "47"
+    assert calls == [("qr_generate", 5, 3600, None)]
+
+
+@pytest.mark.parametrize("bad_url", [None, 123, "http://localhost/", "http://127.0.0.1/"])
+def test_plain_generator_rejects_missing_or_private_urls(generator_api, monkeypatch, bad_url):
+    security = importlib.import_module("hackabull.security")
+    monkeypatch.setattr(generator_api, "validate_public_url", security.validate_public_url)
+    monkeypatch.setattr(generator_api, "qr_plain_png_from_payload", lambda *_args: pytest.fail("Invalid URL rendered"))
+    with pytest.raises(generator_api.SafeScanError) as caught:
+        asyncio.run(generator_api.api_qr_generate_plain(object(), {"url": bad_url}))
+    assert caught.value.status_code == 400
+
+
+@pytest.mark.parametrize("payload,field", [
+    ({"url": "https://example.com/", "format": "svg"}, "format"),
+    ({"url": "https://example.com/", "animation": True}, "animation"),
+    ({"url": "https://example.com/", "format": "ascii", "animation": "true"}, "animation"),
+])
+def test_plain_generator_rejects_invalid_render_options(generator_api, monkeypatch, payload, field):
+    monkeypatch.setattr(generator_api, "qr_plain_png_from_payload", lambda *_args: pytest.fail("Invalid options rendered"))
+    monkeypatch.setattr(generator_api, "qr_ascii_from_payload", lambda *_args, **_kwargs: pytest.fail("Invalid options rendered"))
+    with pytest.raises(generator_api.SafeScanError) as caught:
+        asyncio.run(generator_api.api_qr_generate_plain(object(), payload))
+    assert caught.value.code == "invalid_request"
+    assert caught.value.field == field
+
+
+def test_plain_generator_oversized_qr_has_actionable_error(generator_api, monkeypatch):
+    monkeypatch.setattr(generator_api, "qr_plain_png_from_payload", lambda *_args: (_ for _ in ()).throw(DataOverflowError("too long")))
+    with pytest.raises(generator_api.SafeScanError) as caught:
+        asyncio.run(generator_api.api_qr_generate_plain(object(), {"url": "https://example.com/"}))
+    assert caught.value.code == "qr_generation_too_long"
 
 
 @pytest.mark.parametrize("format_option", [{}, {"format": "ascii"}, {"format": "ascii", "animation": True}])

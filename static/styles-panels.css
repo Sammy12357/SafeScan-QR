@@ -55,6 +55,10 @@
   border-radius: 12px;
   background: rgba(var(--accent-rgb), 0.04);
 }
+.generated-qr-wrap[data-verification="not_checked"] {
+  border-color: rgba(255, 187, 85, 0.42);
+  background: rgba(255, 187, 85, 0.08);
+}
 .generated-qr-image {
   width: 192px;
   height: 192px;
@@ -63,6 +67,7 @@
   padding: var(--space-4);
 }
 .generated-qr-status { max-width: 440px; margin: var(--space-0); color: var(--muted); font-size: 0.85rem; line-height: 1.45; text-align: center; }
+.generated-qr-wrap[data-verification="not_checked"] .generated-qr-status { color: var(--text); }
 .generated-qr-wrap .secondary-button { padding: var(--space-3) var(--space-4); font-size: 0.9rem; }
 .generated-qr-error {
   margin: var(--space-3) var(--space-0) var(--space-0);
@@ -92,11 +97,23 @@
 .generate-qr-format-options { display: flex; flex-wrap: wrap; gap: var(--space-3); }
 .generate-qr-format-option { display: inline-flex; align-items: center; gap: var(--space-4); min-width: 180px; padding: var(--space-4) var(--space-5); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; }
 .generate-qr-format-option:has(input:checked) { border-color: var(--accent); background: rgba(var(--accent-rgb), 0.08); }
+.generate-qr-mode .generate-qr-format-option:has(input[value="plain"]:checked) { border-color: rgba(255, 187, 85, 0.55); background: rgba(255, 187, 85, 0.1); }
 .generate-qr-format-option input { margin: var(--space-0); accent-color: var(--accent); }
 .generate-qr-format-option strong, .generate-qr-format-option small { display: block; }
 .generate-qr-format-option strong { color: var(--text); font-size: 0.95rem; }
 .generate-qr-format-option small { margin-top: var(--space-2); color: var(--muted); font-size: 0.8rem; }
 .generate-qr-format-option:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.generate-qr-mode { margin-bottom: var(--space-4); }
+.generate-qr-warning {
+  margin: var(--space-0) var(--space-0) var(--space-6);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid rgba(255, 187, 85, 0.42);
+  border-radius: 12px;
+  background: rgba(255, 187, 85, 0.1);
+  color: var(--text);
+  line-height: 1.5;
+}
+.generate-qr-warning strong { color: var(--warning); }
 .generated-ascii-wrap { width: 100%; align-items: stretch; }
 .generated-ascii-heading { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
 .generated-ascii-heading p { margin: var(--space-0); color: var(--text); font-weight: 700; }
