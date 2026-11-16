@@ -15,6 +15,7 @@ import secrets
 import socket
 import time
 import csv
+import threading
 from decimal import Decimal, InvalidOperation
 from html import escape as escape_html
 from urllib.parse import quote, urlencode, urljoin, urlparse, parse_qsl
@@ -86,6 +87,10 @@ from .qr_detect import detect_payload
 from .qr_detect import pipeline_response_to_template_analysis
 from .qr_image import qr_ascii_from_payload
 from .qr_image import qr_ascii_art_png_from_payload
+from .qr_image import ascii_motion_color_rgb
+from .qr_image import ASCII_MOTION_DEFAULT_START, ASCII_MOTION_DEFAULT_END
+from .qr_image import qr_ascii_motion_pngs_from_payload
+from .qr_image import QRAsciiMotionDecodeError
 from .qr_image import qr_plain_png_from_payload
 from .qr_image import render_safescan_logo
 from .redirects import trace_redirect_chain
@@ -106,6 +111,20 @@ from .wallet import verify_solana_signature
 from .wallet import verify_wallet_on_chain
 from .wallet import wallet_verification_message
 from .token_flags import token_features_enabled
+
+
+_ASCII_MOTION_RENDER_SLOT = threading.BoundedSemaphore(1)
+
+
+async def _render_ascii_motion(payload, **options):
+    # Four large frames and their decode copies can use substantial memory.
+    # Reject concurrent renders promptly instead of queuing in the thread pool.
+    if not _ASCII_MOTION_RENDER_SLOT.acquire(blocking=False):
+        raise SafeScanError(code="qr_generation_busy")
+    try:
+        return await run_in_threadpool(qr_ascii_motion_pngs_from_payload, payload, **options)
+    finally:
+        _ASCII_MOTION_RENDER_SLOT.release()
 
 
 def _require_token_features():
@@ -188,10 +207,12 @@ async def _screen_url_for_qr(request, payload):
     if rate_limit:
         return rate_limit
 
-    validate_strict_payload(payload, {"url", "format", "animation", "art_style"})
+    validate_strict_payload(payload, {
+        "url", "format", "animation", "art_style", "gradient_start", "gradient_end",
+    })
     output_format = payload.get("format", "png")
     animation = payload.get("animation", False)
-    if output_format not in ("png", "ascii", "ascii_art"):
+    if output_format not in ("png", "ascii", "ascii_art", "ascii_motion"):
         raise SafeScanError(code="invalid_request", field="format")
     if type(animation) is not bool or (animation and output_format != "ascii"):
         raise SafeScanError(code="invalid_request", field="animation")
@@ -201,6 +222,18 @@ async def _screen_url_for_qr(request, payload):
             raise SafeScanError(code="invalid_request", field="art_style")
     elif "art_style" in payload:
         raise SafeScanError(code="invalid_request", field="art_style")
+    gradient_start = payload.get("gradient_start", ASCII_MOTION_DEFAULT_START)
+    gradient_end = payload.get("gradient_end", ASCII_MOTION_DEFAULT_END)
+    if output_format == "ascii_motion":
+        for field, value in (("gradient_start", gradient_start), ("gradient_end", gradient_end)):
+            try:
+                ascii_motion_color_rgb(value)
+            except ValueError as exc:
+                raise SafeScanError(str(exc), code="invalid_request", field=field) from None
+    else:
+        for field in ("gradient_start", "gradient_end"):
+            if field in payload:
+                raise SafeScanError(code="invalid_request", field=field)
     target_url = validate_public_url(payload.get("url"))
 
     analysis = await analyze_full_pipeline(target_url)
@@ -210,19 +243,19 @@ async def _screen_url_for_qr(request, payload):
         raise SafeScanError(code="scan_incomplete")
     if overall_risk != "safe":
         raise SafeScanError(code="qr_generation_blocked")
-    return user, target_url, analysis, output_format, animation, art_style
+    return user, target_url, analysis, output_format, animation, art_style, gradient_start, gradient_end
 
 
 @qr_app.post("/api/qr/generate")
 async def api_qr_generate(request: Request, payload: dict = Body(...)):
-    """Return PNG or text QR only after the same complete, safe URL verdict."""
+    """Return image, text, or motion QR only after a complete safe verdict."""
     from qrcode.exceptions import DataOverflowError
 
     screened = await _screen_url_for_qr(request, payload)
     if isinstance(screened, Response):
         return screened
 
-    user, target_url, analysis, output_format, animation, art_style = screened
+    user, target_url, analysis, output_format, animation, art_style, gradient_start, gradient_end = screened
     score = int(analysis.get("confidenceScore") or 0)
     headers = {
         "X-SafeScan-Verdict": "safe",
@@ -249,6 +282,16 @@ async def api_qr_generate(request: Request, payload: dict = Body(...)):
                 media_type="image/png",
                 headers={**headers, "Content-Disposition": 'inline; filename="sqafe-ascii-art-qr.png"'},
             )
+        elif output_format == "ascii_motion":
+            still, animated = await _render_ascii_motion(
+                target_url, gradient_start=gradient_start, gradient_end=gradient_end,
+            )
+            response = JSONResponse({
+                "still_png_base64": base64.b64encode(still).decode("ascii"),
+                "animated_png_base64": base64.b64encode(animated).decode("ascii"),
+                "frame_count": 4,
+                "frame_duration_ms": 350,
+            }, headers=headers)
         else:
             response = Response(
                 content=_render_branded_qr_png(target_url),
@@ -257,6 +300,8 @@ async def api_qr_generate(request: Request, payload: dict = Body(...)):
             )
     except DataOverflowError:
         raise SafeScanError(code="qr_generation_too_long", field="url") from None
+    except QRAsciiMotionDecodeError:
+        raise SafeScanError(code="qr_generation_unscannable") from None
 
     # Only record a generated code after rendering succeeds, as for PNG.
     audit_log(
@@ -270,7 +315,7 @@ async def api_qr_generate(request: Request, payload: dict = Body(...)):
             "score": score,
             "guest": not bool(user),
             "format": output_format,
-            "animation": animation,
+            "animation": animation or output_format == "ascii_motion",
             **({"art_style": art_style} if output_format == "ascii_art" else {}),
         },
     )
@@ -290,10 +335,12 @@ async def api_qr_generate_plain(request: Request, payload: dict = Body(...)):
     if rate_limit:
         return rate_limit
 
-    validate_strict_payload(payload, {"url", "format", "animation", "art_style"})
+    validate_strict_payload(payload, {
+        "url", "format", "animation", "art_style", "gradient_start", "gradient_end",
+    })
     output_format = payload.get("format", "png")
     animation = payload.get("animation", False)
-    if output_format not in ("png", "ascii", "ascii_art"):
+    if output_format not in ("png", "ascii", "ascii_art", "ascii_motion"):
         raise SafeScanError(code="invalid_request", field="format")
     if type(animation) is not bool or (animation and output_format != "ascii"):
         raise SafeScanError(code="invalid_request", field="animation")
@@ -303,6 +350,18 @@ async def api_qr_generate_plain(request: Request, payload: dict = Body(...)):
             raise SafeScanError(code="invalid_request", field="art_style")
     elif "art_style" in payload:
         raise SafeScanError(code="invalid_request", field="art_style")
+    gradient_start = payload.get("gradient_start", ASCII_MOTION_DEFAULT_START)
+    gradient_end = payload.get("gradient_end", ASCII_MOTION_DEFAULT_END)
+    if output_format == "ascii_motion":
+        for field, value in (("gradient_start", gradient_start), ("gradient_end", gradient_end)):
+            try:
+                ascii_motion_color_rgb(value)
+            except ValueError as exc:
+                raise SafeScanError(str(exc), code="invalid_request", field=field) from None
+    else:
+        for field in ("gradient_start", "gradient_end"):
+            if field in payload:
+                raise SafeScanError(code="invalid_request", field=field)
     target_url = validate_public_url(payload.get("url"))
 
     headers = {
@@ -331,6 +390,17 @@ async def api_qr_generate_plain(request: Request, payload: dict = Body(...)):
                 media_type="image/png",
                 headers={**headers, "Content-Disposition": 'inline; filename="plain-ascii-art-qr.png"'},
             )
+        if output_format == "ascii_motion":
+            still, animated = await _render_ascii_motion(
+                target_url, gradient_start=gradient_start, gradient_end=gradient_end,
+                include_attribution=False,
+            )
+            return JSONResponse({
+                "still_png_base64": base64.b64encode(still).decode("ascii"),
+                "animated_png_base64": base64.b64encode(animated).decode("ascii"),
+                "frame_count": 4,
+                "frame_duration_ms": 350,
+            }, headers=headers)
         return Response(
             content=qr_plain_png_from_payload(target_url),
             media_type="image/png",
@@ -338,6 +408,8 @@ async def api_qr_generate_plain(request: Request, payload: dict = Body(...)):
         )
     except DataOverflowError:
         raise SafeScanError(code="qr_generation_too_long", field="url") from None
+    except QRAsciiMotionDecodeError:
+        raise SafeScanError(code="qr_generation_unscannable") from None
 
 
 def _render_branded_qr_png(target_url):

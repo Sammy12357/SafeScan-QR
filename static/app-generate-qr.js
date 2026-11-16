@@ -1,39 +1,51 @@
 // Screened QR codes require a complete safety check. Plain QR codes are an
 // explicit unchecked choice with no SafeScan mark. The text preview swaps
-// whole, independently scannable frames; exported text stays fixed.
+// whole matrices; ASCII motion delivers verified still and animated images.
 (() => {
   const generateBtn = document.getElementById("generateQrButton");
   const urlInputField = document.getElementById("generateQrUrlInput");
   const modeInputs = [...document.querySelectorAll('input[name="generateQrMode"]')];
   const plainWarning = document.getElementById("generateQrPlainWarning");
   const formatInputs = [...document.querySelectorAll('input[name="generateQrFormat"]')];
-  const artStyles = document.getElementById("generateQrArtStyles");
-  const artStyleInputs = [...document.querySelectorAll('input[name="generateQrArtStyle"]')];
+  const gradientOptions = document.getElementById("generateQrGradientOptions");
+  const gradientStart = document.getElementById("generateQrGradientStart");
+  const gradientEnd = document.getElementById("generateQrGradientEnd");
+  const gradientStartValue = document.getElementById("generateQrGradientStartValue");
+  const gradientEndValue = document.getElementById("generateQrGradientEndValue");
+  const gradientSample = document.getElementById("generateQrGradientSample");
+  const gradientPresets = [...document.querySelectorAll("[data-gradient-preset]")];
   const wrap = document.getElementById("generatedQrWrap");
   const img = document.getElementById("generatedQrImage");
   const pngStatus = document.getElementById("generatedQrStatus");
   const dl = document.getElementById("generatedQrDownload");
+  const motionHeading = document.getElementById("generatedMotionHeading");
+  const imageMotionToggle = document.getElementById("generatedMotionToggle");
+  const motionDownloads = document.getElementById("generatedMotionDownloads");
+  const motionStillDownload = document.getElementById("generatedMotionStillDownload");
+  const motionAnimatedDownload = document.getElementById("generatedMotionAnimatedDownload");
   const textWrap = document.getElementById("generatedAsciiWrap");
   const paper = document.querySelector(".generated-ascii-paper");
   const art = document.getElementById("generatedAsciiArt");
   const asciiStatus = document.getElementById("generatedAsciiStatus");
   const sizeNotice = document.getElementById("generatedAsciiSizeNotice");
   const destination = document.getElementById("generatedAsciiDestination");
-  const motionToggle = document.getElementById("generatedAsciiMotionToggle");
+  const textMotionToggle = document.getElementById("generatedAsciiMotionToggle");
   const copyButton = document.getElementById("generatedAsciiCopy");
   const textDownload = document.getElementById("generatedAsciiDownload");
   const actionStatus = document.getElementById("generatedAsciiActionStatus");
   const errEl = document.getElementById("generateQrError");
-  if (!generateBtn || !urlInputField || modeInputs.length !== 2 || !plainWarning || formatInputs.length !== 3 || !artStyles || artStyleInputs.length !== 2 || !wrap || !img || !pngStatus || !dl || !textWrap || !paper || !art || !asciiStatus || !sizeNotice || !destination || !motionToggle || !copyButton || !textDownload || !actionStatus || !errEl) return;
+  if (!generateBtn || !urlInputField || modeInputs.length !== 2 || !plainWarning || formatInputs.length !== 3 || !gradientOptions || !gradientStart || !gradientEnd || !gradientStartValue || !gradientEndValue || !gradientSample || gradientPresets.length !== 3 || !wrap || !img || !pngStatus || !dl || !motionHeading || !imageMotionToggle || !motionDownloads || !motionStillDownload || !motionAnimatedDownload || !textWrap || !paper || !art || !asciiStatus || !sizeNotice || !destination || !textMotionToggle || !copyButton || !textDownload || !actionStatus || !errEl) return;
 
   const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
   let currentImageUrl = null;
+  let currentAnimatedImageUrl = null;
   let currentTextUrl = null;
   let currentText = "";
   let frames = [];
   let frameIndex = 0;
   let animationTimer = null;
   let motionPaused = true;
+  let imageMotionPlaying = false;
   let activeController = null;
   let requestVersion = 0;
 
@@ -41,10 +53,48 @@
     if (animationTimer) window.clearInterval(animationTimer);
     animationTimer = null;
   };
+  const updateImageMotionButton = () => {
+    imageMotionToggle.textContent = imageMotionPlaying ? "Pause motion" : "Play motion";
+    imageMotionToggle.setAttribute("aria-pressed", String(imageMotionPlaying));
+  };
+  const updateImageMotion = () => {
+    const source = imageMotionPlaying && !document.hidden ? currentAnimatedImageUrl : currentImageUrl;
+    if (source && img.getAttribute("src") !== source) img.src = source;
+  };
+  const colorContrastOnWhite = (color) => {
+    if (!/^#[0-9a-f]{6}$/i.test(color)) return 0;
+    const channels = [1, 3, 5].map((offset) => {
+      const value = parseInt(color.slice(offset, offset + 2), 16) / 255;
+      return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    });
+    return 1.05 / (0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2] + 0.05);
+  };
+  const updateGradientPresentation = () => {
+    const top = gradientStart.value.toUpperCase();
+    const bottom = gradientEnd.value.toUpperCase();
+    gradientStartValue.textContent = top;
+    gradientEndValue.textContent = bottom;
+    gradientSample.style.setProperty("--gradient-start", top);
+    gradientSample.style.setProperty("--gradient-end", bottom);
+    for (const preset of gradientPresets) {
+      preset.setAttribute("aria-pressed", String(preset.dataset.gradientStart === top && preset.dataset.gradientEnd === bottom));
+    }
+  };
+  const decodePngBase64 = (value) => {
+    if (typeof value !== "string" || value.length < 16 || value.length > 20000000) return null;
+    try {
+      const binary = window.atob(value);
+      const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+      const signature = [137, 80, 78, 71, 13, 10, 26, 10];
+      return signature.every((byte, index) => bytes[index] === byte) ? bytes : null;
+    } catch (_err) {
+      return null;
+    }
+  };
   const updateMotionButton = () => {
-    motionToggle.textContent = motionPaused ? "Play motion" : "Pause motion";
-    motionToggle.setAttribute("aria-pressed", String(!motionPaused));
-    motionToggle.disabled = frames.length < 2;
+    textMotionToggle.textContent = motionPaused ? "Play motion" : "Pause motion";
+    textMotionToggle.setAttribute("aria-pressed", String(!motionPaused));
+    textMotionToggle.disabled = frames.length < 2;
   };
   const startAnimation = () => {
     stopAnimation();
@@ -74,6 +124,11 @@
     textWrap.removeAttribute("data-verification");
     img.removeAttribute("src");
     dl.removeAttribute("href");
+    dl.classList.remove("hidden");
+    motionHeading.classList.add("hidden");
+    motionDownloads.classList.add("hidden");
+    motionStillDownload.removeAttribute("href");
+    motionAnimatedDownload.removeAttribute("href");
     textDownload.removeAttribute("href");
     art.textContent = "";
     art.style.removeProperty("font-size");
@@ -84,10 +139,14 @@
     frames = [];
     frameIndex = 0;
     motionPaused = true;
+    imageMotionPlaying = false;
     updateMotionButton();
+    updateImageMotionButton();
     if (currentImageUrl) URL.revokeObjectURL(currentImageUrl);
+    if (currentAnimatedImageUrl) URL.revokeObjectURL(currentAnimatedImageUrl);
     if (currentTextUrl) URL.revokeObjectURL(currentTextUrl);
     currentImageUrl = null;
+    currentAnimatedImageUrl = null;
     currentTextUrl = null;
   };
   const clearError = () => {
@@ -109,7 +168,7 @@
   const plainModeSelected = () => modeInputs.find((radio) => radio.checked)?.value === "plain";
   const selectedOutputFormat = () => formatInputs.find((radio) => radio.checked)?.value || "png";
   const updateFormatPresentation = () => {
-    artStyles.classList.toggle("hidden", selectedOutputFormat() !== "ascii_art");
+    gradientOptions.classList.toggle("hidden", selectedOutputFormat() !== "ascii_motion");
   };
   const updateModePresentation = () => {
     const plain = plainModeSelected();
@@ -128,21 +187,46 @@
     cancelCurrent();
     updateFormatPresentation();
   });
-  for (const radio of artStyleInputs) radio.addEventListener("change", cancelCurrent);
+  for (const preset of gradientPresets) preset.addEventListener("click", () => {
+    if (gradientStart.value.toUpperCase() === preset.dataset.gradientStart
+      && gradientEnd.value.toUpperCase() === preset.dataset.gradientEnd) return;
+    gradientStart.value = preset.dataset.gradientStart;
+    gradientEnd.value = preset.dataset.gradientEnd;
+    cancelCurrent();
+    updateGradientPresentation();
+  });
+  for (const input of [gradientStart, gradientEnd]) input.addEventListener("input", () => {
+    cancelCurrent();
+    updateGradientPresentation();
+  });
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) stopAnimation();
     else startAnimation();
+    updateImageMotion();
   });
   window.addEventListener("resize", fitTextPreview);
   reducedMotion?.addEventListener?.("change", (event) => {
-    if (!event.matches || !frames.length) return;
-    motionPaused = true;
-    frameIndex = 0;
-    art.textContent = frames[0];
-    updateMotionButton();
-    stopAnimation();
+    if (!event.matches) return;
+    if (frames.length) {
+      motionPaused = true;
+      frameIndex = 0;
+      art.textContent = frames[0];
+      updateMotionButton();
+      stopAnimation();
+    }
+    if (currentAnimatedImageUrl) {
+      imageMotionPlaying = false;
+      updateImageMotionButton();
+      updateImageMotion();
+    }
   });
-  motionToggle.addEventListener("click", () => {
+  imageMotionToggle.addEventListener("click", () => {
+    if (!currentAnimatedImageUrl) return;
+    imageMotionPlaying = !imageMotionPlaying;
+    updateImageMotionButton();
+    updateImageMotion();
+  });
+  textMotionToggle.addEventListener("click", () => {
     if (frames.length < 2) return;
     motionPaused = !motionPaused;
     if (motionPaused) {
@@ -186,17 +270,23 @@
 
     const plain = plainModeSelected();
     const outputFormat = selectedOutputFormat();
-    const artStyle = artStyleInputs.find((radio) => radio.checked)?.value || "cat";
+    const topColor = gradientStart.value.toUpperCase();
+    const bottomColor = gradientEnd.value.toUpperCase();
+    if (outputFormat === "ascii_motion"
+      && (colorContrastOnWhite(topColor) < 7 || colorContrastOnWhite(bottomColor) < 7)) {
+      showError("Choose two darker gradient colors so the QR can be scanned on white. Try a preset or adjust the colors.");
+      return;
+    }
     const version = requestVersion;
     const controller = new AbortController();
     activeController = controller;
-    const timeout = window.setTimeout(() => controller.abort(), 15000);
+    const timeout = window.setTimeout(() => controller.abort(), outputFormat === "ascii_motion" ? 30000 : 15000);
     UIStates.busy(generateBtn, async () => {
       try {
         const payload = outputFormat === "ascii"
           ? { url: normalized, format: "ascii", animation: true }
-          : outputFormat === "ascii_art"
-            ? { url: normalized, format: "ascii_art", art_style: artStyle }
+          : outputFormat === "ascii_motion"
+            ? { url: normalized, format: "ascii_motion", gradient_start: topColor, gradient_end: bottomColor }
             : { url: normalized };
         const res = await fetch(plain ? "/api/qr/generate-plain" : "/api/qr/generate", {
           method: "POST",
@@ -210,6 +300,12 @@
           try {
             const body = await res.json();
             detail = body.detail || body.error || detail;
+            if (outputFormat === "ascii_motion" && body.code === "invalid_request"
+              && (body.field === "gradient_start" || body.field === "gradient_end")) {
+              detail = (body.field === "gradient_start" ? "Top color: " : "Bottom color: ") + (body.error || detail);
+            } else if (outputFormat === "ascii_motion" && body.code === "qr_generation_unscannable" && body.hint) {
+              detail += " " + body.hint;
+            }
             if (!plain && body.code === "scan_incomplete") {
               detail = "Screened checks could not finish. No screened QR was made. Choose Plain QR above only if you want a code without safety checks.";
             }
@@ -227,35 +323,58 @@
           && verification === "not_checked"
           && res.headers.get("X-SafeScan-Verdict") === null;
         const contentType = res.headers.get("Content-Type")?.toLowerCase() || "";
-        if (!(plain ? plainResponse : screenedResponse) || (outputFormat !== "ascii" && !contentType.startsWith("image/png"))
-          || (outputFormat === "ascii" && !contentType.startsWith("application/json"))) {
+        if (!(plain ? plainResponse : screenedResponse) || (outputFormat === "png" && !contentType.startsWith("image/png"))
+          || (outputFormat !== "png" && !contentType.startsWith("application/json"))) {
           showError(plain
             ? "The plain QR response was not marked as unchecked. No QR was made available."
             : "SafeScan could not confirm a low-risk result for this URL. No QR was made available.");
           return;
         }
-        if (outputFormat !== "ascii") {
+        if (outputFormat === "png") {
           const blob = await res.blob();
           if (version !== requestVersion) return;
           currentImageUrl = URL.createObjectURL(blob);
           img.src = currentImageUrl;
-          const artName = artStyle === "flame" ? "flame" : "cat";
-          img.alt = outputFormat === "ascii_art"
-            ? `${plain ? "Plain" : "Screened"} ASCII art QR code with a ${artName} drawing`
-            : plain ? "Plain QR code for a link that was not safety checked" : "Screened QR code";
-          pngStatus.textContent = outputFormat === "ascii_art"
-            ? plain
-              ? "Not safety checked. Verify the destination independently before sharing or opening this QR. Download the full-size image for sharing."
-              : "Checked when generated. Download the full-size image for sharing; the destination may change later."
-            : plain
-              ? "Not safety checked. Verify the destination independently before sharing or opening this QR."
-              : "Checked when generated. The destination may change, so recheck before opening.";
-          dl.download = outputFormat === "ascii_art"
-            ? (plain ? "plain-ascii-art-qr.png" : "sqafe-ascii-art-qr.png")
-            : (plain ? "plain-qr.png" : "safescan-qr.png");
+          img.alt = plain ? "Plain QR code for a link that was not safety checked" : "Screened QR code";
+          pngStatus.textContent = plain
+            ? "Not safety checked. Verify the destination independently before sharing or opening this QR."
+            : "Checked when generated. The destination may change, so recheck before opening.";
+          dl.download = plain ? "plain-qr.png" : "safescan-qr.png";
           dl.href = currentImageUrl;
           wrap.setAttribute("data-verification", plain ? "not_checked" : "complete");
           wrap.setAttribute("data-output-format", outputFormat);
+          wrap.classList.remove("hidden");
+          return;
+        }
+        if (outputFormat === "ascii_motion") {
+          const body = await res.json();
+          if (version !== requestVersion) return;
+          const stillBytes = decodePngBase64(body?.still_png_base64);
+          const animatedBytes = decodePngBase64(body?.animated_png_base64);
+          if (!stillBytes || !animatedBytes || body.frame_count !== 4 || body.frame_duration_ms !== 350) {
+            showError("The animated QR response was incomplete. Try generating it again.");
+            return;
+          }
+          currentImageUrl = URL.createObjectURL(new Blob([stillBytes], { type: "image/png" }));
+          currentAnimatedImageUrl = URL.createObjectURL(new Blob([animatedBytes], { type: "image/png" }));
+          img.alt = plain
+            ? "Plain ASCII motion QR code for a link that was not safety checked"
+            : "Screened ASCII motion QR code";
+          pngStatus.textContent = plain
+            ? "Not safety checked. Verify the destination independently before sharing or opening this QR. Pause the motion if a camera has trouble scanning."
+            : "Checked when generated. Pause the motion if a camera has trouble scanning; the destination can change later.";
+          motionStillDownload.download = plain ? "plain-ascii-motion-qr.png" : "sqafe-ascii-motion-qr.png";
+          motionAnimatedDownload.download = plain ? "plain-ascii-motion-qr-animated.png" : "sqafe-ascii-motion-qr-animated.png";
+          motionStillDownload.href = currentImageUrl;
+          motionAnimatedDownload.href = currentAnimatedImageUrl;
+          dl.classList.add("hidden");
+          motionHeading.classList.remove("hidden");
+          motionDownloads.classList.remove("hidden");
+          wrap.setAttribute("data-verification", plain ? "not_checked" : "complete");
+          wrap.setAttribute("data-output-format", "ascii_motion");
+          imageMotionPlaying = !Boolean(reducedMotion?.matches);
+          updateImageMotionButton();
+          updateImageMotion();
           wrap.classList.remove("hidden");
           return;
         }
@@ -288,7 +407,9 @@
       } catch (err) {
         if (version !== requestVersion) return;
         showError(err?.name === "AbortError"
-          ? (plain ? "QR generation is taking longer than expected. No QR was made available. Try again." : "The check is taking longer than expected. No QR was made available. Try again.")
+          ? (outputFormat === "ascii_motion"
+            ? "The animated QR is taking longer than expected. Try again."
+            : plain ? "QR generation is taking longer than expected. No QR was made available. Try again." : "The check is taking longer than expected. No QR was made available. Try again.")
           : navigator.onLine === false
             ? "You're offline. Reconnect and try again."
             : "We couldn't connect. Check your connection and try again.");
@@ -296,9 +417,11 @@
         window.clearTimeout(timeout);
         if (activeController === controller) activeController = null;
       }
-    }, { label: plain ? "Generating QR…" : "Checking URL…" }).finally(updateModePresentation);
+    }, { label: outputFormat === "ascii_motion" ? (plain ? "Rendering QR…" : "Checking and rendering QR…") : plain ? "Generating QR…" : "Checking URL…" }).finally(updateModePresentation);
   });
   updateModePresentation();
   updateFormatPresentation();
+  updateGradientPresentation();
   updateMotionButton();
+  updateImageMotionButton();
 })();

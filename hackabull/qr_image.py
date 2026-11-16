@@ -498,3 +498,145 @@ def qr_ascii_art_png_from_payload(payload, *, art_style="cat", include_attributi
     buffer = io.BytesIO()
     image.save(buffer, format="PNG", optimize=True)
     return buffer.getvalue()
+
+
+ASCII_MOTION_DEFAULT_START = "#2A1B36"
+ASCII_MOTION_DEFAULT_END = "#8A280C"
+_ASCII_MOTION_GLYPHS = "#@%*+"
+
+
+class QRAsciiMotionDecodeError(Exception):
+    """A rendered ASCII motion frame could not be read back as its URL."""
+
+
+def ascii_motion_color_rgb(value):
+    """Accept only exact dark hex colors that preserve QR contrast on white."""
+    if type(value) is not str or re.fullmatch(r"#[0-9A-Fa-f]{6}", value) is None:
+        raise ValueError("Choose a six-digit hex color such as #2A1B36.")
+    rgb = tuple(int(value[i:i + 2], 16) for i in (1, 3, 5))
+    channels = []
+    for component in rgb:
+        channel = component / 255
+        channels.append(
+            channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4
+        )
+    luminance = sum(weight * channel for weight, channel in zip((0.2126, 0.7152, 0.0722), channels))
+    if 1.05 / (luminance + 0.05) < 7:
+        raise ValueError("Choose a darker color with at least 7:1 contrast against white.")
+    return rgb
+
+
+def qr_ascii_motion_pngs_from_payload(
+    payload, *, gradient_start=ASCII_MOTION_DEFAULT_START,
+    gradient_end=ASCII_MOTION_DEFAULT_END, include_attribution=True,
+):
+    """Return a still PNG and APNG whose ASCII glyphs move around a fixed QR.
+
+    Both files start with the same independently scannable frame. Every frame
+    retains the QR matrix, solid finder corners, and four-module quiet zone;
+    only glyph choices change. A dark vertical gradient colors the glyphs.
+    """
+    import qrcode
+    from qrcode.exceptions import DataOverflowError
+    from PIL import Image, ImageDraw, ImageFont
+
+    start_rgb = ascii_motion_color_rgb(gradient_start)
+    end_rgb = ascii_motion_color_rgb(gradient_end)
+    cell = 26
+    border = 4
+    qr = qrcode.QRCode(
+        version=3, error_correction=qrcode.constants.ERROR_CORRECT_H, border=border,
+    )
+    qr.add_data(payload)
+    try:
+        qr.make(fit=True)
+    except ValueError as exc:
+        raise DataOverflowError("ASCII motion QR data exceeds QR capacity.") from exc
+    matrix = qr.get_matrix()
+    module_count = len(matrix)
+    # Four large RGB frames plus APNG encoding are bounded to about 26 MP.
+    if module_count > 97:
+        raise DataOverflowError("ASCII motion QR is too large to render.")
+
+    font_path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), "static", "fonts", "IBMPlexMono-Bold.ttf",
+    )
+    glyph_font = ImageFont.truetype(font_path, 32)
+    label_font = ImageFont.truetype(font_path, 20) if include_attribution else None
+    code_size = module_count * cell
+    footer_height = 52 if include_attribution else 0
+    row_colors = []
+    for y in range(module_count):
+        t = y / (module_count - 1)
+        row_colors.append(tuple(
+            round(start_rgb[channel] * (1 - t) + end_rgb[channel] * t)
+            for channel in range(3)
+        ))
+    frames = []
+    for frame_index in range(4):
+        image = Image.new("RGB", (code_size, code_size + footer_height), "white")
+        draw = ImageDraw.Draw(image)
+        for y, row in enumerate(matrix):
+            ink = row_colors[y]
+            for x, dark in enumerate(row):
+                if not dark:
+                    continue
+                finder = (
+                    (x < border + 9 and y < border + 9)
+                    or (x >= module_count - border - 9 and y < border + 9)
+                    or (x < border + 9 and y >= module_count - border - 9)
+                )
+                if finder:
+                    draw.rectangle(
+                        (x * cell, y * cell, (x + 1) * cell - 1, (y + 1) * cell - 1),
+                        fill="black",
+                    )
+                else:
+                    glyph = _ASCII_MOTION_GLYPHS[(3 * x + 2 * y + frame_index) % len(_ASCII_MOTION_GLYPHS)]
+                    draw.text(
+                        (x * cell + cell / 2, y * cell + cell / 2),
+                        glyph, font=glyph_font, fill=ink, anchor="mm",
+                        stroke_width=1, stroke_fill=ink,
+                    )
+        if label_font is not None:
+            draw.text(
+                (code_size // 2, code_size + 13), "Sqafe · checked when generated",
+                fill="black", font=label_font, anchor="mt",
+            )
+        frames.append(image)
+
+    still = io.BytesIO()
+    frames[0].save(still, format="PNG", optimize=True)
+    animated = io.BytesIO()
+    # Pillow's default APNG disposal keeps each full frame intact. Setting
+    # disposal=2 here caused later extracted frames to lose QR modules.
+    frames[0].save(
+        animated, format="PNG", save_all=True, append_images=frames[1:],
+        duration=350, loop=0, optimize=True,
+    )
+    still_bytes = still.getvalue()
+    animated_bytes = animated.getvalue()
+
+    # Verify the actual exported APNG, not only our source images. A custom
+    # gradient or PNG frame encoding can change how a phone scanner reads it.
+    from .qr_decode import decode_qr_image
+
+    with Image.open(io.BytesIO(animated_bytes)) as exported:
+        if exported.n_frames != len(frames):
+            raise QRAsciiMotionDecodeError("The animated PNG lost a frame.")
+        for frame_index in range(exported.n_frames):
+            exported.seek(frame_index)
+            decoded_frame = exported.convert("RGB")
+            preview_frame = decoded_frame.resize(
+                (320, round(decoded_frame.height * 320 / decoded_frame.width)),
+                Image.Resampling.LANCZOS,
+            )
+            for candidate in (decoded_frame, preview_frame):
+                decoded_urls = {
+                    barcode.data.decode("utf-8")
+                    for barcode in decode_qr_image(candidate)
+                }
+                if decoded_urls != {payload}:
+                    raise QRAsciiMotionDecodeError("The ASCII motion QR did not decode reliably.")
+
+    return still_bytes, animated_bytes
