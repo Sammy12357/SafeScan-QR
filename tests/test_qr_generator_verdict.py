@@ -514,6 +514,82 @@ def test_ascii_art_qr_limits_render_work_and_does_not_audit_failed_generation(
     assert events == []
 
 
+def _assert_ascii_finder_corners(frame):
+    """All three finder squares show glyphs without losing their clear rings."""
+    def luminance(pixel):
+        linear = []
+        for value in pixel:
+            channel = value / 255
+            linear.append(channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4)
+        return sum(weight * channel for weight, channel in zip((0.2126, 0.7152, 0.0722), linear))
+
+    cell = 26
+    border = 4
+    assert frame.width % cell == 0
+    modules = frame.width // cell
+    code_size = frame.width
+    white = ((255, 255),) * 3
+    clear_border = border * cell
+    for quiet_zone in (
+        (0, 0, code_size, clear_border),
+        (0, 0, clear_border, code_size),
+        (code_size - clear_border, 0, code_size, code_size),
+        (0, code_size - clear_border, code_size, code_size),
+    ):
+        assert frame.crop(quiet_zone).getextrema() == white
+
+    origins = (
+        (border, border),
+        (modules - border - 7, border),
+        (border, modules - border - 7),
+    )
+    def assert_white_cell(x, y):
+        box = (x * cell, y * cell, (x + 1) * cell, (y + 1) * cell)
+        assert frame.crop(box).getextrema() == white
+
+    for corner_index, (origin_x, origin_y) in enumerate(origins):
+        # The complete one-module white ring must be untouched by glyphs.
+        for inner_y in range(1, 6):
+            for inner_x in range(1, 6):
+                if inner_x not in (1, 5) and inner_y not in (1, 5):
+                    continue
+                assert_white_cell(origin_x + inner_x, origin_y + inner_y)
+
+        # The one-module separator is white on both inward sides of each
+        # corner marker, including its inner junction cell.
+        if corner_index == 0:  # top left: right and bottom
+            separator = [(origin_x + 7, origin_y + offset) for offset in range(8)]
+            separator += [(origin_x + offset, origin_y + 7) for offset in range(8)]
+        elif corner_index == 1:  # top right: left and bottom
+            separator = [(origin_x - 1, origin_y + offset) for offset in range(8)]
+            separator += [(origin_x - 1 + offset, origin_y + 7) for offset in range(8)]
+        else:  # bottom left: right and top
+            separator = [(origin_x + 7, origin_y - 1 + offset) for offset in range(8)]
+            separator += [(origin_x + offset, origin_y - 1) for offset in range(8)]
+        for x, y in separator:
+            assert_white_cell(x, y)
+
+        # The outer border and center must remain mostly dark for detection,
+        # while their visible glyph contrast rules out solid-filled squares.
+        for inner_x, inner_y in ((0, 0), (3, 0), (3, 3)):
+            x = (origin_x + inner_x) * cell
+            y = (origin_y + inner_y) * cell
+            pixels = list(frame.crop((x, y, x + cell, y + cell)).getdata())
+            ink_pixels = sum(max(pixel) < 220 for pixel in pixels)
+            lightness = sorted(luminance(pixel) for pixel in pixels)
+            # These percentiles require visible clusters of at least 5% of
+            # the cell for both the dark field and contrasting ASCII glyph.
+            darkest = lightness[int(len(lightness) * 0.05)]
+            lightest = lightness[int(len(lightness) * 0.95)]
+            assert ink_pixels >= cell * cell * 0.3
+            assert (lightest + 0.05) / (darkest + 0.05) >= 1.5
+
+    return tuple(
+        frame.crop((x * cell, y * cell, (x + 7) * cell, (y + 7) * cell)).tobytes()
+        for x, y in origins
+    )
+
+
 def _assert_ascii_motion_bundle_decodes(response, url, *, checked):
     body = json.loads(response.body)
     assert set(body) == {
@@ -537,7 +613,7 @@ def _assert_ascii_motion_bundle_decodes(response, url, *, checked):
         animated.seek(index)
         frame = animated.convert("RGB")
         frame_bytes.append(frame.tobytes())
-        finder_bytes.append(frame.crop((4 * 26, 4 * 26, 11 * 26, 11 * 26)).tobytes())
+        finder_bytes.append(_assert_ascii_finder_corners(frame))
         for candidate in (
             frame,
             frame.resize((320, round(frame.height * 320 / frame.width)), Image.Resampling.LANCZOS),
@@ -546,7 +622,9 @@ def _assert_ascii_motion_bundle_decodes(response, url, *, checked):
             assert decoded == {url}
     assert still.tobytes() == frame_bytes[0]
     assert len(set(frame_bytes)) == 4  # The ASCII glyphs really move.
-    assert len(set(finder_bytes)) == 1  # Finder pattern stays fixed.
+    assert all(len({corners[index] for corners in finder_bytes}) == 4 for index in range(3))
+    # Every corner gets changing ASCII texture while its dark/white geometry
+    # remains recognizable in every frame (checked above).
 
 
 @pytest.mark.parametrize("plain", [False, True])
@@ -588,6 +666,16 @@ def test_ascii_motion_custom_gradient_and_long_url_decode(generator_api):
     response = asyncio.run(generator_api.api_qr_generate_plain(object(), {
         "url": url, "format": "ascii_motion",
         "gradient_start": "#093D3A", "gradient_end": "#4A245F",
+    }))
+    _assert_ascii_motion_bundle_decodes(response, url, checked=False)
+
+
+@pytest.mark.parametrize("color", ["#000000", "#000080"])
+def test_ascii_motion_dark_gradient_keeps_finders_visible_and_scannable(generator_api, color):
+    url = "https://a.co/"
+    response = asyncio.run(generator_api.api_qr_generate_plain(object(), {
+        "url": url, "format": "ascii_motion",
+        "gradient_start": color, "gradient_end": color,
     }))
     _assert_ascii_motion_bundle_decodes(response, url, checked=False)
 
