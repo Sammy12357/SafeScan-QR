@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
-  <title id="title">SafeScan QR logo</title>
-  <desc id="desc">A flat 2D version of the QR mark shown on the SafeScan interactive phone model.</desc>
+  <title id="title">Sqafe QR mark</title>
+  <desc id="desc">Pink and white QR-inspired tiles on a dark square.</desc>
   <defs>
     <filter id="tileGlow" x="-28%" y="-28%" width="156%" height="156%">
       <feGaussianBlur stdDeviation="4" result="blur"/>

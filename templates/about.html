@@ -1,0 +1,52 @@
+{# Public explanation of the Sqafe site and its SafeScan QR scanner. #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="/static/theme-init.js?v=rose-theme-v1"></script>
+  <script src="/static/ui-states.js?v=ui-loading-v1"></script>
+  {% set seo_fallback_title = 'About Sqafe' %}
+  {% include '_seo_head.html' %}
+  <link rel="icon" href="/static/safescan-logo.svg?v=sqafe-brand-v1" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css?v=seo-performance-v1">
+</head>
+<body class="test-site-page">
+  <div class="page-shell">
+    {% include "_topnav.html" %}
+    <main>
+      <section class="test-section">
+        <div class="test-section-header">
+          <p class="eyebrow">The project</p>
+          <h1>About Sqafe</h1>
+          <p>Sqafe is a QR code inspection site. Its SafeScan QR scanner lets you scan, upload, or paste a QR payload to review what it contains before you open a destination.</p>
+          <p>The name Sqafe identifies this website. SafeScan QR is the scanner used here.</p>
+          <p><a class="primary-button" href="/#scanner">Open the scanner</a></p>
+        </div>
+      </section>
+
+      <section class="test-section">
+        <div class="test-section-header">
+          <h2>What a scan tells you</h2>
+          <p>SafeScan QR decodes the content and, for supported links, attempts destination, redirect, and configured reputation checks. It shows when a required check could not complete.</p>
+          <p>A result describes the signals available at scan time. A destination or QR code can change, and a scan cannot confirm who placed a physical code or who will receive a payment. Confirm important requests through a trusted source before acting.</p>
+          <p class="learn-related-link">Read the <a href="/learn">QR safety guide</a> for practical checks, or <a href="/contact">contact Sqafe</a> with a question or security report.</p>
+        </div>
+      </section>
+
+      <section class="test-section">
+        <div class="test-section-header">
+          <h2>Public project</h2>
+          <p class="learn-related-link">The <a href="https://github.com/Sammy12357/SafeScan-QR" target="_blank" rel="noopener noreferrer">SafeScan QR repository on GitHub</a> contains the website and scanner code. The public project name and domain are Sqafe and <a href="https://sqafe.com/">sqafe.com</a>.</p>
+        </div>
+      </section>
+    </main>
+    {% include "footer.html" %}
+  </div>
+  <script src="/static/app-core.js?v=legal-a11y-v1"></script>
+  <script src="/static/app-widgets.js?v=legal-gpc-v1"></script>
+  <script src="/static/app-go-ghost.js?v=ghost-inline-errors-v1"></script>
+  <script src="/static/app-go-ghost-ui.js?v=legal-a11y-v1"></script>
+  <script src="/static/app-generate-qr.js?v=ui-loading-v1"></script>
+</body>
+</html>

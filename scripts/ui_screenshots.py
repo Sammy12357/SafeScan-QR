@@ -70,6 +70,7 @@ VIEWS = (
     View("token_member", "/token", "member"),
     View("plans", "/plans"),
     View("learn", "/learn"),
+    View("about", "/about"),
     View("alpha_payment", "/pay/alpha", final_path="/auth/confirm-adult"),
     View("alpha_success", "/pay/alpha/success"),
     View("privacy", "/legal/privacy-policy"),

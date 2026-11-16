@@ -9,9 +9,9 @@
     <span class="sidenav-toggle-bars" aria-hidden="true"></span>
     <span class="sidenav-toggle-text">Menu</span>
   </button>
-  <a class="top-brand" href="/" aria-label="SafeScan QR home">
-    <img class="top-brand-mark" src="/static/safescan-logo.svg?v=rose-theme-v1" alt="">
-    <span class="top-brand-name"><strong>SafeScan</strong> QR</span>
+  <a class="top-brand" href="/" aria-label="Sqafe home">
+    <img class="top-brand-mark" src="/static/safescan-logo.svg?v=sqafe-brand-v1" alt="">
+    <span class="top-brand-name"><strong>Sqafe</strong></span>
   </a>
   <div class="top-nav-actions">
     {% if logged_in %}
@@ -33,9 +33,9 @@
 
 <aside id="sideNav" class="sidenav" role="dialog" aria-modal="true" aria-label="Site navigation" aria-hidden="true" inert>
   <div class="sidenav-brand-row">
-    <a class="top-brand" href="/" aria-label="SafeScan QR home">
-      <img class="top-brand-mark" src="/static/safescan-logo.svg?v=rose-theme-v1" alt="">
-      <span class="top-brand-name"><strong>SafeScan</strong> QR</span>
+    <a class="top-brand" href="/" aria-label="Sqafe home">
+      <img class="top-brand-mark" src="/static/safescan-logo.svg?v=sqafe-brand-v1" alt="">
+      <span class="top-brand-name"><strong>Sqafe</strong></span>
     </a>
     <button class="sidenav-close" type="button" aria-label="Close menu" data-sidenav-close>&times;</button>
   </div>
@@ -47,6 +47,7 @@
     {% if (token_features_enabled is defined and token_features_enabled()) %}<a href="/token" class="sidenav-link {{ 'is-active' if active_nav == 'token' else '' }}">Airdrop</a>{% endif %}
     <a href="/plans" class="sidenav-link {{ 'is-active' if active_nav == 'plans' else '' }}">Plans</a>
     <a href="/learn" class="sidenav-link {{ 'is-active' if active_nav == 'learn' else '' }}">Learn</a>
+    <a href="/about" class="sidenav-link {{ 'is-active' if active_nav == 'about' else '' }}">About Sqafe</a>
     {% if logged_in %}
     <a href="/history" class="sidenav-link {{ 'is-active' if active_nav == 'history' else '' }}">Scan history</a>
     {% endif %}

@@ -8,9 +8,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="/static/theme-init.js?v=rose-theme-v1"></script>
   <script src="/static/ui-states.js?v=ui-loading-v1"></script>
-  {% set seo_fallback_title = 'SafeScan QR' %}
+  {% set seo_fallback_title = 'Sqafe' %}
   {% include '_seo_head.html' %}
-  <link rel="icon" href="/static/safescan-logo.svg?v=rose-theme-v1" type="image/svg+xml">
+  <link rel="icon" href="/static/safescan-logo.svg?v=sqafe-brand-v1" type="image/svg+xml">
   <link rel="stylesheet" href="/static/styles.css?v=seo-performance-v1">
 </head>
 <body class="{{ 'test-site-page' if test_site else '' }}">
@@ -20,14 +20,14 @@
     <header class="hero">
       <div class="hero-copy">
         <div class="hero-kicker">
-          <p class="eyebrow">Sqafe</p>
+          <p class="eyebrow">QR inspection</p>
           <div class="powered-by-solana"><span>Powered By</span><svg viewBox="0 0 398 312"><defs><linearGradient id="solanaGradientTop" x1="360" y1="28" x2="62" y2="301" gradientUnits="userSpaceOnUse"><stop stop-color="#14F195"/><stop offset="0.5" stop-color="#55A6F8"/><stop offset="1" stop-color="#9945FF"/></linearGradient></defs><path fill="url(#solanaGradientTop)" d="M64.6 3.8C67 1.4 70.4 0 73.8 0h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1L64.6 3.8Z"/><path fill="url(#solanaGradientTop)" d="M333.1 120.1c-2.4-2.4-5.7-3.8-9.2-3.8H6.5c-5.8 0-8.7 7-4.6 11.1l62.7 62.7c2.4 2.4 5.7 3.8 9.2 3.8h317.4c5.8 0 8.7-7 4.6-11.1l-62.7-62.7Z"/><path fill="url(#solanaGradientTop)" d="M64.6 237.9c2.4-2.4 5.7-3.8 9.2-3.8h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1l62.7-62.7Z"/></svg></div>
         </div>
-        <h1>SafeScan QR</h1>
-        <p class="hero-problem">{{ "Check QR links before they open." if test_site else "Can you distinguish a malicious QR?" }}</p>
-        <p class="hero-text">{{ "SafeScan decodes QR payloads, checks supported links and actions for risk, and explains what it found before you choose what to do." if test_site else "Review QR links, wallet prompts, and payment requests before opening them. SafeScan explains the payload and flags risks it can detect." }}</p>
+        <h1>Sqafe</h1>
+        <p class="hero-problem">Check QR links before they open.</p>
+        <p class="hero-text">Sqafe is a QR code inspection site. Its SafeScan QR scanner shows decoded content and available risk signals before you decide whether to open a destination.</p>
         <div class="hero-actions"><a class="primary-button" href="#scanner">Scan QR</a><a class="secondary-button" href="{{ '/#scanner' if test_site_path else '/go-ghost' }}">{{ "Scanner" if test_site_path else "Go Ghost" }}</a></div>
-        <div class="hero-metrics" aria-label="SafeScan QR demo capabilities">
+        <div class="hero-metrics" aria-label="SafeScan QR scanner capabilities">
           <div><span>ML</span><p>Risk verdicts</p></div>
           <div><span>ZBar</span><p>QR decoding</p></div>
           <div><span>QR</span><p>Payload review</p></div>

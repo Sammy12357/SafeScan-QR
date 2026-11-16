@@ -45,16 +45,17 @@ def test_homepage_identifies_sqafe_without_unverified_claims(seo_client):
     organization = nodes["Organization"]
     assert website["url"] == "https://sqafe.com/"
     assert website["name"] == "Sqafe"
-    assert website["alternateName"] == "SafeScan QR"
+    assert "alternateName" not in website
     assert website["publisher"] == {"@id": organization["@id"]}
     assert organization["url"] == "https://sqafe.com/"
     assert organization["name"] == "Sqafe"
+    assert organization["description"] == "Sqafe publishes a QR code scanner and QR safety guidance."
     assert organization["logo"] == "https://sqafe.com/static/safescan-logo.svg"
     assert not ({"legalName", "address", "telephone", "sameAs", "aggregateRating", "review"} & set(organization))
 
 
 def test_no_schema_is_published_on_non_home_or_private_pages(seo_client):
-    for path in ("/learn", "/contact", "/plans", "/login"):
+    for path in ("/about", "/learn", "/contact", "/plans", "/login"):
         assert structured_data(seo_client.get(path)) == [], path
 
     post_response = seo_client.post("/search_qr_api", data={"manual_url": "A plain-text QR payload"})
