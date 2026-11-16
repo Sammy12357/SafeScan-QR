@@ -84,6 +84,7 @@ from .qr_detect import analyze_qr_payload
 from .qr_detect import describe_qr_action
 from .qr_detect import detect_payload
 from .qr_detect import pipeline_response_to_template_analysis
+from .qr_image import qr_ascii_from_payload
 from .qr_image import render_safescan_logo
 from .redirects import trace_redirect_chain
 from .referrals import get_scan_count
@@ -172,27 +173,27 @@ async def api_scan_file(request: Request, response: Response, file: UploadFile =
         if qr_image_for_ml is not None:
             qr_image_for_ml.close()
 
-@qr_app.post("/api/qr/generate")
-async def api_qr_generate(request: Request, payload: dict = Body(...)):
-    """Generate a SafeScan-screened QR PNG for a URL.
+async def _screen_url_for_qr(request, payload):
+    """Apply one rate-limit, validation and verdict path to every QR format.
 
-    Runs the URL through the same risk pipeline as `/api/scan` and only
-    renders a branded QR when the verdict is safe and required checks have
-    completed. An incomplete lookup is not proof that a destination is safe.
-
-    Returns a PNG image with the SafeScan logo overlaid in the centre (high
-    error correction tolerates the badge without breaking scanning).
+    A rate-limited request returns the existing 429 response unchanged.
     """
     user = get_session_user(request)
     user_key = user.get("google_id") if user else None
-    # Guests on the homepage get 5/hour per IP; signed-in users get 20/hour.
+    # Guests get 5/hour per IP; signed-in users get 20/hour, across formats.
     limit = 20 if user else 5
     rate_limit = enforce_rate_limit(request, "qr_generate", limit, 60 * 60, user_key=user_key)
     if rate_limit:
         return rate_limit
 
-    validate_strict_payload(payload, {"url"})
-    target_url = validate_public_url((payload.get("url") or "").strip())
+    validate_strict_payload(payload, {"url", "format", "animation"})
+    output_format = payload.get("format", "png")
+    animation = payload.get("animation", False)
+    if output_format not in ("png", "ascii"):
+        raise SafeScanError(code="invalid_request", field="format")
+    if type(animation) is not bool or (animation and output_format != "ascii"):
+        raise SafeScanError(code="invalid_request", field="animation")
+    target_url = validate_public_url(payload.get("url"))
 
     analysis = await analyze_full_pipeline(target_url)
     overall_risk = (analysis.get("overallRisk") or "").lower()
@@ -201,6 +202,68 @@ async def api_qr_generate(request: Request, payload: dict = Body(...)):
         raise SafeScanError(code="scan_incomplete")
     if overall_risk != "safe":
         raise SafeScanError(code="qr_generation_blocked")
+    return user, target_url, analysis, output_format, animation
+
+
+@qr_app.post("/api/qr/generate")
+async def api_qr_generate(request: Request, payload: dict = Body(...)):
+    """Return PNG or text QR only after the same complete, safe URL verdict."""
+    from qrcode.exceptions import DataOverflowError
+
+    screened = await _screen_url_for_qr(request, payload)
+    if isinstance(screened, Response):
+        return screened
+
+    user, target_url, analysis, output_format, animation = screened
+    score = int(analysis.get("confidenceScore") or 0)
+    headers = {
+        "X-SafeScan-Verdict": "safe",
+        "X-SafeScan-Verification": "complete",
+        "X-SafeScan-Score": str(score),
+        "Cache-Control": "no-store",
+    }
+    try:
+        if output_format == "ascii":
+            if animation:
+                # Every frame is a complete, independently decodable QR. Only
+                # the standards-defined mask pattern changes between frames.
+                frames = [qr_ascii_from_payload(target_url, mask_pattern=mask) for mask in (0, 1, 2, 3)]
+                response = JSONResponse({"text": frames[0], "frames": frames}, headers=headers)
+            else:
+                response = Response(
+                    content=qr_ascii_from_payload(target_url),
+                    media_type="text/plain; charset=utf-8",
+                    headers=headers,
+                )
+        else:
+            response = Response(
+                content=_render_branded_qr_png(target_url),
+                media_type="image/png",
+                headers={**headers, "Content-Disposition": 'inline; filename="safescan-qr.png"'},
+            )
+    except DataOverflowError:
+        raise SafeScanError(code="qr_generation_too_long", field="url") from None
+
+    # Only record a generated code after rendering succeeds, as for PNG.
+    audit_log(
+        "qr.generated",
+        request=request,
+        actor_user_id=user.get("google_id") if user else None,
+        target_type="url",
+        metadata={
+            "url": target_url,
+            "risk": "safe",
+            "score": score,
+            "guest": not bool(user),
+            "format": output_format,
+            "animation": animation,
+        },
+    )
+    return response
+
+
+def _render_branded_qr_png(target_url):
+    """Keep the existing PNG encoding and centre badge unchanged."""
 
     # Lazy-imports keep boot-time fast for non-generator requests.
     import qrcode
@@ -257,30 +320,7 @@ async def api_qr_generate(request: Request, payload: dict = Body(...)):
     img.save(buffer, format="PNG", optimize=True)
     png_bytes = buffer.getvalue()
 
-    audit_log(
-        "qr.generated",
-        request=request,
-        actor_user_id=user.get("google_id") if user else None,
-        target_type="url",
-        metadata={
-            "url": target_url,
-            "risk": overall_risk,
-            "score": int(analysis.get("confidenceScore") or 0),
-            "guest": not bool(user),
-        },
-    )
-
-    return Response(
-        content=png_bytes,
-        media_type="image/png",
-        headers={
-            "X-SafeScan-Verdict": "safe",
-            "X-SafeScan-Verification": "complete",
-            "X-SafeScan-Score": str(int(analysis.get("confidenceScore") or 0)),
-            "Cache-Control": "no-store",
-            "Content-Disposition": 'inline; filename="safescan-qr.png"',
-        },
-    )
+    return png_bytes
 
 async def analyze_and_record_scan(request, user, raw_payload, device_fingerprint="", qr_image_for_ml=None):
     if len(raw_payload) > 4096:
