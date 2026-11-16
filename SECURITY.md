@@ -111,5 +111,5 @@ Send vulnerability reports to `safescanqr@gmail.com` or the address configured i
 - No URL-fetching code runs without `validate_public_url`.
 - No raw DB record is returned from JSON APIs if it contains internal or private fields.
 - `.env`, `.env.local`, SQLite databases, logs, and temporary dependency folders are not committed.
-- Render has explicit `AUTH0_DOMAIN` and `AUTH0_CLIENT_IDS` values that match the mobile Native application; deployments do not rely on the development fallback in `hackabull/config.py`.
+- Render has explicit `AUTH0_DOMAIN` and either `AUTH0_CLIENT_IDS` or `AUTH0_CLIENT_ID` values that match the mobile Native application; deployments do not rely on the development fallback in `hackabull/config.py`.
 - Security tests pass once the test suite is added.
