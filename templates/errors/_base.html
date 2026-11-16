@@ -16,7 +16,7 @@
     {% include "_topnav.html" %}
     <main class="error-main" id="main">
       <section class="error-card" aria-labelledby="error-title">
-        <p class="error-eyebrow">SafeScan QR · {{ status_code }}</p>
+        <p class="error-eyebrow">Sqafe · {{ status_code }}</p>
         <h1 id="error-title">{% block heading %}Sqafe needs a moment{% endblock %}</h1>
         <p class="error-description">{% block description %}{{ error_message }}{% endblock %}</p>
         {% block extra %}{% endblock %}
