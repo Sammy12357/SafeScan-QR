@@ -44,7 +44,9 @@ if (canvas && showcase && !showcase.dataset.splineSrc?.trim()) {
     activateFallback("mac-brave");
   } else {
     try {
-      THREE = await import("/static/vendor/three.module.js?v=local-three-v8");
+      const retry = new URL(import.meta.url).searchParams.get("retry");
+      const retryQuery = retry ? `&retry=${encodeURIComponent(retry)}` : "";
+      THREE = await import(`/static/vendor/three.module.js?v=local-three-v8${retryQuery}`);
     } catch (error) {
       console.error("SafeScan 3D model failed to load Three.js", error);
       activateFallback("three-import");

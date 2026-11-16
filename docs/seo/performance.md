@@ -1,6 +1,19 @@
 # Phase 5: homepage 3D load
 
-## Change
+## November 2026 follow-up: start when the model is visible
+
+The interaction-only loader below made the phone look frozen, particularly on touch screens where the full-card activation button had no visible label. The model now loads automatically when at least half of its card enters the viewport. It remains deferred when the card is offscreen, and people who prefer reduced motion keep the still image. A failed download leaves a visible retry control.
+
+One comparable local Lighthouse 13.6.0 run per form factor used the current `main` tree and the candidate tree on the same isolated mock-mode server setup. These are single lab runs, not field performance measurements or a guarantee of the same scores in production.
+
+| Version | Mobile score | Mobile LCP | Mobile TBT | Desktop score | Desktop LCP | Desktop TBT |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Interaction-only `main` | 82 | 4.44 s | 49 ms | 99 | 0.88 s | 0 ms |
+| Starts when visible | 82 | 4.54 s | 38 ms | 90 | 2.01 s | 64 ms |
+
+The desktop cost is accepted for an automatically moving hero. The mobile model starts when a person scrolls far enough to see it, so the initial mobile request still omits Three.js. Focused browser checks cover desktop and mobile activation, keyboard focus, reduced motion, failed downloads and retry, and the scanner flow. The [previous static screenshots](evidence/phase-5/after-static/dark/375/home.jpg) and [new active model screenshots](evidence/phone-model-autostart/active/dark/375/model.png) show the transition; the new model was also checked at 1440 px and in the light theme.
+
+## Original change (historical)
 
 The homepage now paints its existing still hero first. It requests `safescan-3d.js` and Three.js only after pointer interaction with the hero or keyboard activation of its labeled button. The still image remains visible until WebGL is ready. People who prefer reduced motion keep the still hero. The scanner does not depend on the model.
 
