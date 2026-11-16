@@ -85,6 +85,7 @@ from .qr_detect import describe_qr_action
 from .qr_detect import detect_payload
 from .qr_detect import pipeline_response_to_template_analysis
 from .qr_image import qr_ascii_from_payload
+from .qr_image import qr_ascii_art_png_from_payload
 from .qr_image import qr_plain_png_from_payload
 from .qr_image import render_safescan_logo
 from .redirects import trace_redirect_chain
@@ -187,13 +188,19 @@ async def _screen_url_for_qr(request, payload):
     if rate_limit:
         return rate_limit
 
-    validate_strict_payload(payload, {"url", "format", "animation"})
+    validate_strict_payload(payload, {"url", "format", "animation", "art_style"})
     output_format = payload.get("format", "png")
     animation = payload.get("animation", False)
-    if output_format not in ("png", "ascii"):
+    if output_format not in ("png", "ascii", "ascii_art"):
         raise SafeScanError(code="invalid_request", field="format")
     if type(animation) is not bool or (animation and output_format != "ascii"):
         raise SafeScanError(code="invalid_request", field="animation")
+    art_style = payload.get("art_style", "cat")
+    if output_format == "ascii_art":
+        if type(art_style) is not str or art_style not in ("cat", "flame"):
+            raise SafeScanError(code="invalid_request", field="art_style")
+    elif "art_style" in payload:
+        raise SafeScanError(code="invalid_request", field="art_style")
     target_url = validate_public_url(payload.get("url"))
 
     analysis = await analyze_full_pipeline(target_url)
@@ -203,7 +210,7 @@ async def _screen_url_for_qr(request, payload):
         raise SafeScanError(code="scan_incomplete")
     if overall_risk != "safe":
         raise SafeScanError(code="qr_generation_blocked")
-    return user, target_url, analysis, output_format, animation
+    return user, target_url, analysis, output_format, animation, art_style
 
 
 @qr_app.post("/api/qr/generate")
@@ -215,7 +222,7 @@ async def api_qr_generate(request: Request, payload: dict = Body(...)):
     if isinstance(screened, Response):
         return screened
 
-    user, target_url, analysis, output_format, animation = screened
+    user, target_url, analysis, output_format, animation, art_style = screened
     score = int(analysis.get("confidenceScore") or 0)
     headers = {
         "X-SafeScan-Verdict": "safe",
@@ -236,6 +243,12 @@ async def api_qr_generate(request: Request, payload: dict = Body(...)):
                     media_type="text/plain; charset=utf-8",
                     headers=headers,
                 )
+        elif output_format == "ascii_art":
+            response = Response(
+                content=qr_ascii_art_png_from_payload(target_url, art_style=art_style),
+                media_type="image/png",
+                headers={**headers, "Content-Disposition": 'inline; filename="sqafe-ascii-art-qr.png"'},
+            )
         else:
             response = Response(
                 content=_render_branded_qr_png(target_url),
@@ -258,6 +271,7 @@ async def api_qr_generate(request: Request, payload: dict = Body(...)):
             "guest": not bool(user),
             "format": output_format,
             "animation": animation,
+            **({"art_style": art_style} if output_format == "ascii_art" else {}),
         },
     )
     return response
@@ -276,13 +290,19 @@ async def api_qr_generate_plain(request: Request, payload: dict = Body(...)):
     if rate_limit:
         return rate_limit
 
-    validate_strict_payload(payload, {"url", "format", "animation"})
+    validate_strict_payload(payload, {"url", "format", "animation", "art_style"})
     output_format = payload.get("format", "png")
     animation = payload.get("animation", False)
-    if output_format not in ("png", "ascii"):
+    if output_format not in ("png", "ascii", "ascii_art"):
         raise SafeScanError(code="invalid_request", field="format")
     if type(animation) is not bool or (animation and output_format != "ascii"):
         raise SafeScanError(code="invalid_request", field="animation")
+    art_style = payload.get("art_style", "cat")
+    if output_format == "ascii_art":
+        if type(art_style) is not str or art_style not in ("cat", "flame"):
+            raise SafeScanError(code="invalid_request", field="art_style")
+    elif "art_style" in payload:
+        raise SafeScanError(code="invalid_request", field="art_style")
     target_url = validate_public_url(payload.get("url"))
 
     headers = {
@@ -302,6 +322,14 @@ async def api_qr_generate_plain(request: Request, payload: dict = Body(...)):
                 content=qr_ascii_from_payload(target_url, include_attribution=False),
                 media_type="text/plain; charset=utf-8",
                 headers=headers,
+            )
+        if output_format == "ascii_art":
+            return Response(
+                content=qr_ascii_art_png_from_payload(
+                    target_url, art_style=art_style, include_attribution=False,
+                ),
+                media_type="image/png",
+                headers={**headers, "Content-Disposition": 'inline; filename="plain-ascii-art-qr.png"'},
             )
         return Response(
             content=qr_plain_png_from_payload(target_url),

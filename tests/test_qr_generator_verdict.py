@@ -388,3 +388,126 @@ def test_text_qr_round_trips_when_drawn_in_a_monospace_font(generator_api):
     decoder = importlib.import_module("hackabull.qr_decode")
     decoded = {barcode.data.decode("utf-8") for barcode in decoder.decode_qr_image(image)}
     assert decoded == {url}
+
+
+def _assert_art_png_decodes(png, url):
+    decoder = importlib.import_module("hackabull.qr_decode")
+    image = Image.open(io.BytesIO(png)).convert("RGB")
+    for candidate in (
+        image,
+        image.resize(
+            (320, round(image.height * 320 / image.width)), Image.Resampling.LANCZOS,
+        ),
+    ):
+        decoded = {barcode.data.decode("utf-8") for barcode in decoder.decode_qr_image(candidate)}
+        assert decoded == {url}
+    return image
+
+
+@pytest.mark.parametrize("art_style", ["cat", "flame"])
+@pytest.mark.parametrize("plain", [False, True])
+def test_ascii_art_qr_api_is_scannable_and_preserves_verdict_mode(
+    generator_api, monkeypatch, art_style, plain,
+):
+    url = "https://sqafe.com/"
+    audits = []
+
+    async def analyze(_url):
+        if plain:
+            pytest.fail("Plain ASCII art QR ran a safety scan")
+        return {"overallRisk": "safe", "confidenceScore": 8, "verificationStatus": "complete"}
+
+    monkeypatch.setattr(generator_api, "analyze_full_pipeline", analyze)
+    monkeypatch.setattr(generator_api, "audit_log", lambda *args, **kwargs: audits.append((args, kwargs)))
+    route = generator_api.api_qr_generate_plain if plain else generator_api.api_qr_generate
+    response = asyncio.run(route(object(), {
+        "url": url, "format": "ascii_art", "art_style": art_style,
+    }))
+    assert response.media_type == "image/png"
+    assert response.body.startswith(b"\x89PNG\r\n\x1a\n")
+    assert response.headers["Cache-Control"] == "no-store"
+    image = _assert_art_png_decodes(response.body, url)
+    if plain:
+        assert response.headers["X-SafeScan-Verification"] == "not_checked"
+        assert "X-SafeScan-Verdict" not in response.headers
+        assert response.headers["Content-Disposition"] == 'inline; filename="plain-ascii-art-qr.png"'
+        assert image.height == image.width  # No Sqafe or checked footer.
+        assert audits == []
+    else:
+        assert response.headers["X-SafeScan-Verification"] == "complete"
+        assert response.headers["X-SafeScan-Verdict"] == "safe"
+        assert response.headers["Content-Disposition"] == 'inline; filename="sqafe-ascii-art-qr.png"'
+        assert image.height == image.width + 52  # Attribution outside the QR.
+        assert len(audits) == 1
+        assert audits[0][1]["metadata"]["art_style"] == art_style
+
+
+@pytest.mark.parametrize("url", [
+    "https://a.co/",  # The drawing needs a minimum QR version for this URL.
+    "https://sqafe.com/generate-qr?test=" + "long" * 45,
+])
+@pytest.mark.parametrize("art_style", ["cat", "flame"])
+def test_ascii_art_qr_short_and_long_urls_decode_at_mobile_size(generator_api, art_style, url):
+    png = generator_api.qr_ascii_art_png_from_payload(
+        url, art_style=art_style, include_attribution=False,
+    )
+    image = _assert_art_png_decodes(png, url)
+    assert image.width == image.height
+    assert image.width <= 121 * 26
+
+
+@pytest.mark.parametrize("plain", [False, True])
+@pytest.mark.parametrize("art_style", [None, 2, "", "rocket", "cat" * 100])
+def test_ascii_art_rejects_unsupported_styles_before_render_or_scan(
+    generator_api, monkeypatch, plain, art_style,
+):
+    async def analyze(_url):
+        pytest.fail("Invalid ASCII art style reached scanning")
+
+    monkeypatch.setattr(generator_api, "analyze_full_pipeline", analyze)
+    monkeypatch.setattr(
+        generator_api, "qr_ascii_art_png_from_payload",
+        lambda *_args, **_kwargs: pytest.fail("Invalid ASCII art style rendered"),
+    )
+    route = generator_api.api_qr_generate_plain if plain else generator_api.api_qr_generate
+    with pytest.raises(generator_api.SafeScanError) as caught:
+        asyncio.run(route(object(), {
+            "url": "https://sqafe.com/", "format": "ascii_art", "art_style": art_style,
+        }))
+    assert caught.value.code == "invalid_request"
+    assert caught.value.field == "art_style"
+
+
+@pytest.mark.parametrize("plain", [False, True])
+def test_ascii_art_rejects_animation_option(generator_api, monkeypatch, plain):
+    async def analyze(_url):
+        pytest.fail("Invalid ASCII art option reached scanning")
+
+    monkeypatch.setattr(generator_api, "analyze_full_pipeline", analyze)
+    route = generator_api.api_qr_generate_plain if plain else generator_api.api_qr_generate
+    with pytest.raises(generator_api.SafeScanError) as caught:
+        asyncio.run(route(object(), {
+            "url": "https://sqafe.com/", "format": "ascii_art",
+            "art_style": "cat", "animation": True,
+        }))
+    assert caught.value.field == "animation"
+
+
+@pytest.mark.parametrize("url_length", [500, 1300])
+def test_ascii_art_qr_limits_render_work_and_does_not_audit_failed_generation(
+    generator_api, monkeypatch, url_length,
+):
+    events = []
+
+    async def analyze(_url):
+        return {"overallRisk": "safe", "confidenceScore": 8, "verificationStatus": "complete"}
+
+    monkeypatch.setattr(generator_api, "analyze_full_pipeline", analyze)
+    monkeypatch.setattr(generator_api, "audit_log", lambda *args, **kwargs: events.append((args, kwargs)))
+    with pytest.raises(generator_api.SafeScanError) as caught:
+        asyncio.run(generator_api.api_qr_generate(object(), {
+            "url": "https://sqafe.com/" + "a" * url_length,
+            "format": "ascii_art", "art_style": "cat",
+        }))
+    assert caught.value.code == "qr_generation_too_long"
+    assert events == []

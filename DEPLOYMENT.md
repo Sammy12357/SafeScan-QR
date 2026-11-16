@@ -46,6 +46,8 @@ A scan that cannot complete a required reputation or redirect check must be show
 
 The separate `/api/qr/generate-plain` route is an explicit unchecked option. It renders a plain QR from a validated public web URL without running Web Risk, PhishTank, redirect inspection, or the scan pipeline. It may therefore encode a malicious destination. Its PNG has no SafeScan mark and its text output has no Sqafe footer; responses identify the mode as plain and verification as `not_checked`, never `safe` or `complete`. The generator page must show this limitation before the person chooses that mode and beside the result. The route shares the QR generation rate limit. Its availability does not relax the screened `/api/qr/generate` gate or change scan verdicts. Recipients should inspect the destination independently before opening a plain QR.
 
+Both generator routes also accept `format: "ascii_art"` with `art_style: "cat"` or `"flame"`. This returns a PNG whose QR data pattern is drawn with ASCII characters and whose small drawing sits inside the code. The screened route keeps the complete-check gate; the plain route remains unchecked and unbranded. The renderer uses the bundled IBM Plex Mono Bold font and preserves the standard QR corner markers and clear border so the exported image has fixed, tested spacing. Share the PNG rather than retyping or restyling its characters.
+
 Redirect inspection connects directly to the validated public IP for each hop and retains the original hostname for TLS verification. It intentionally ignores `HTTP_PROXY` and `HTTPS_PROXY`; ensure the deployment can make direct outbound HTTP/HTTPS connections or redirect checks will be reported as incomplete.
 
 ## Private QR payload retention

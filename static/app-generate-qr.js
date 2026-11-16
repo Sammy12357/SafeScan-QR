@@ -7,6 +7,8 @@
   const modeInputs = [...document.querySelectorAll('input[name="generateQrMode"]')];
   const plainWarning = document.getElementById("generateQrPlainWarning");
   const formatInputs = [...document.querySelectorAll('input[name="generateQrFormat"]')];
+  const artStyles = document.getElementById("generateQrArtStyles");
+  const artStyleInputs = [...document.querySelectorAll('input[name="generateQrArtStyle"]')];
   const wrap = document.getElementById("generatedQrWrap");
   const img = document.getElementById("generatedQrImage");
   const pngStatus = document.getElementById("generatedQrStatus");
@@ -22,7 +24,7 @@
   const textDownload = document.getElementById("generatedAsciiDownload");
   const actionStatus = document.getElementById("generatedAsciiActionStatus");
   const errEl = document.getElementById("generateQrError");
-  if (!generateBtn || !urlInputField || modeInputs.length !== 2 || !plainWarning || !wrap || !img || !pngStatus || !dl || !textWrap || !paper || !art || !asciiStatus || !sizeNotice || !destination || !motionToggle || !copyButton || !textDownload || !actionStatus || !errEl) return;
+  if (!generateBtn || !urlInputField || modeInputs.length !== 2 || !plainWarning || formatInputs.length !== 3 || !artStyles || artStyleInputs.length !== 2 || !wrap || !img || !pngStatus || !dl || !textWrap || !paper || !art || !asciiStatus || !sizeNotice || !destination || !motionToggle || !copyButton || !textDownload || !actionStatus || !errEl) return;
 
   const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
   let currentImageUrl = null;
@@ -68,6 +70,7 @@
     wrap.classList.add("hidden");
     textWrap.classList.add("hidden");
     wrap.removeAttribute("data-verification");
+    wrap.removeAttribute("data-output-format");
     textWrap.removeAttribute("data-verification");
     img.removeAttribute("src");
     dl.removeAttribute("href");
@@ -104,6 +107,10 @@
     clearResult();
   };
   const plainModeSelected = () => modeInputs.find((radio) => radio.checked)?.value === "plain";
+  const selectedOutputFormat = () => formatInputs.find((radio) => radio.checked)?.value || "png";
+  const updateFormatPresentation = () => {
+    artStyles.classList.toggle("hidden", selectedOutputFormat() !== "ascii_art");
+  };
   const updateModePresentation = () => {
     const plain = plainModeSelected();
     plainWarning.classList.toggle("hidden", !plain);
@@ -117,7 +124,11 @@
     cancelCurrent();
     updateModePresentation();
   });
-  for (const radio of formatInputs) radio.addEventListener("change", cancelCurrent);
+  for (const radio of formatInputs) radio.addEventListener("change", () => {
+    cancelCurrent();
+    updateFormatPresentation();
+  });
+  for (const radio of artStyleInputs) radio.addEventListener("change", cancelCurrent);
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) stopAnimation();
     else startAnimation();
@@ -174,7 +185,8 @@
     }
 
     const plain = plainModeSelected();
-    const outputFormat = formatInputs.find((radio) => radio.checked)?.value === "ascii" ? "ascii" : "png";
+    const outputFormat = selectedOutputFormat();
+    const artStyle = artStyleInputs.find((radio) => radio.checked)?.value || "cat";
     const version = requestVersion;
     const controller = new AbortController();
     activeController = controller;
@@ -183,7 +195,9 @@
       try {
         const payload = outputFormat === "ascii"
           ? { url: normalized, format: "ascii", animation: true }
-          : { url: normalized };
+          : outputFormat === "ascii_art"
+            ? { url: normalized, format: "ascii_art", art_style: artStyle }
+            : { url: normalized };
         const res = await fetch(plain ? "/api/qr/generate-plain" : "/api/qr/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -213,25 +227,35 @@
           && verification === "not_checked"
           && res.headers.get("X-SafeScan-Verdict") === null;
         const contentType = res.headers.get("Content-Type")?.toLowerCase() || "";
-        if (!(plain ? plainResponse : screenedResponse) || (outputFormat === "png" && !contentType.startsWith("image/png"))
+        if (!(plain ? plainResponse : screenedResponse) || (outputFormat !== "ascii" && !contentType.startsWith("image/png"))
           || (outputFormat === "ascii" && !contentType.startsWith("application/json"))) {
           showError(plain
             ? "The plain QR response was not marked as unchecked. No QR was made available."
             : "SafeScan could not confirm a low-risk result for this URL. No QR was made available.");
           return;
         }
-        if (outputFormat === "png") {
+        if (outputFormat !== "ascii") {
           const blob = await res.blob();
           if (version !== requestVersion) return;
           currentImageUrl = URL.createObjectURL(blob);
           img.src = currentImageUrl;
-          img.alt = plain ? "Plain QR code for a link that was not safety checked" : "Screened QR code";
-          pngStatus.textContent = plain
-            ? "Not safety checked. Verify the destination independently before sharing or opening this QR."
-            : "Checked when generated. The destination may change, so recheck before opening.";
-          dl.download = plain ? "plain-qr.png" : "safescan-qr.png";
+          const artName = artStyle === "flame" ? "flame" : "cat";
+          img.alt = outputFormat === "ascii_art"
+            ? `${plain ? "Plain" : "Screened"} ASCII art QR code with a ${artName} drawing`
+            : plain ? "Plain QR code for a link that was not safety checked" : "Screened QR code";
+          pngStatus.textContent = outputFormat === "ascii_art"
+            ? plain
+              ? "Not safety checked. Verify the destination independently before sharing or opening this QR. Download the full-size image for sharing."
+              : "Checked when generated. Download the full-size image for sharing; the destination may change later."
+            : plain
+              ? "Not safety checked. Verify the destination independently before sharing or opening this QR."
+              : "Checked when generated. The destination may change, so recheck before opening.";
+          dl.download = outputFormat === "ascii_art"
+            ? (plain ? "plain-ascii-art-qr.png" : "sqafe-ascii-art-qr.png")
+            : (plain ? "plain-qr.png" : "safescan-qr.png");
           dl.href = currentImageUrl;
           wrap.setAttribute("data-verification", plain ? "not_checked" : "complete");
+          wrap.setAttribute("data-output-format", outputFormat);
           wrap.classList.remove("hidden");
           return;
         }
@@ -275,5 +299,6 @@
     }, { label: plain ? "Generating QR…" : "Checking URL…" }).finally(updateModePresentation);
   });
   updateModePresentation();
+  updateFormatPresentation();
   updateMotionButton();
 })();
