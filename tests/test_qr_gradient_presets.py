@@ -99,12 +99,22 @@ def test_saved_slots_are_private_fixed_and_idempotent(gradient_site):
         ]
 
 
-def test_bright_and_mixed_slots_survive_account_reload(gradient_site):
-    _, client, _ = gradient_site
+def test_bright_and_mixed_slots_cannot_be_saved_but_existing_slots_remain_readable(gradient_site):
+    _, client, db_path = gradient_site
     colors = _colors("#FFFFFF", "#000000")
     saved = client.put("/api/qr/gradients/2", json=colors, headers=_auth("provider-a"))
-    assert saved.status_code == 200
-    assert saved.json() == {"slot": 2, **colors}
+    assert saved.status_code == 400
+    assert "darker color" in saved.json()["error"]
+    # Existing bright slots may already be stored from the previous release.
+    # Keep them available so the browser can adjust and resave their colors.
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO qr_gradient_presets "
+            "(user_id, slot, gradient_start, gradient_end, updated_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("provider-a", 2, colors["gradient_start"], colors["gradient_end"],
+             datetime.utcnow().isoformat() + "Z"),
+        )
     assert client.get("/api/qr/gradients", headers=_auth("provider-a")).json() == {
         "slots": [{"slot": 2, **colors}],
     }
@@ -134,6 +144,8 @@ def test_account_separation_and_inactive_or_guest_denial(gradient_site):
     (4, _colors()),
     (1, _colors("#FFFF0G", "#8A280C")),
     (1, _colors("red", "#8A280C")),
+    (1, _colors("#FFFFFF", "#8A280C")),
+    (1, _colors("#2A1B36", "#FFEE00")),
     (1, {"gradient_start": "#2A1B36"}),
     (1, {**_colors(), "url": "https://secret.example/path"}),
 ])

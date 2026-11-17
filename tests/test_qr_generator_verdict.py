@@ -756,8 +756,10 @@ def test_ascii_motion_dark_gradient_keeps_finders_visible_and_scannable(generato
     ("gradient_end", None),
     ("gradient_start", "#FFFFF"),
     ("gradient_end", "#FFFF0G"),
+    ("gradient_start", "#FFFFFF"),
+    ("gradient_end", "#FFEE00"),
 ])
-def test_ascii_motion_rejects_malformed_colors_before_scanning(
+def test_ascii_motion_rejects_invalid_colors_before_scanning(
     generator_api, monkeypatch, plain, field, value,
 ):
     async def analyze(_url):
