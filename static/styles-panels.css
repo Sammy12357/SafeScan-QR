@@ -142,6 +142,22 @@
 .generate-qr-color-control output { color: var(--muted); font-family: Menlo, "DejaVu Sans Mono", "Liberation Mono", monospace; font-size: 0.85rem; font-weight: 400; }
 .generate-qr-gradient-sample { width: 100%; max-width: 424px; height: 34px; margin-top: var(--space-4); border: 1px solid var(--line); border-radius: 8px; background: linear-gradient(var(--gradient-start, #2A1B36), var(--gradient-end, #8A280C)); }
 .generate-qr-gradient-hint { max-width: 520px; margin: var(--space-3) var(--space-0) var(--space-0); color: var(--muted); font-size: 0.85rem; line-height: 1.45; }
+.generate-qr-saved-gradients { max-width: 960px; margin-top: var(--space-5); padding-top: var(--space-5); border-top: 1px solid var(--line); }
+.generate-qr-saved-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-3); }
+.generate-qr-saved-heading h3 { margin: var(--space-0); color: var(--text); font-size: 1rem; }
+.generate-qr-saved-scope, .generate-qr-saved-status { margin: var(--space-3) var(--space-0); color: var(--muted); font-size: 0.85rem; line-height: 1.45; }
+.generate-qr-saved-status { min-height: 1.25em; }
+.generate-qr-saved-slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: var(--space-3); }
+.generate-qr-saved-slot { display: flex; align-items: stretch; gap: var(--space-2); min-width: 0; }
+.generate-qr-saved-use { display: inline-flex; align-items: center; flex: 1; min-width: 0; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line); border-radius: 10px; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.generate-qr-saved-use[aria-pressed="true"] { border-color: var(--accent); background: rgba(var(--accent-rgb), 0.08); }
+.generate-qr-saved-use:disabled { opacity: 0.65; cursor: not-allowed; }
+.generate-qr-saved-use strong, .generate-qr-saved-use small { display: block; }
+.generate-qr-saved-use strong { font-size: 0.85rem; }
+.generate-qr-saved-use small { margin-top: var(--space-1); color: var(--muted); font-size: 0.72rem; overflow-wrap: anywhere; }
+.generate-qr-saved-swatch { display: block; flex: 0 0 26px; width: 26px; height: 26px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 6px; background: linear-gradient(var(--slot-start, #59616B), var(--slot-end, #59616B)); }
+.generate-qr-saved-save { align-self: stretch; padding: var(--space-3); font-size: 0.85rem; }
+.generate-qr-saved-use:focus-visible, .generate-qr-saved-save:focus-visible, #generateQrSavedRetry:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .generate-qr-mode { margin-bottom: var(--space-4); }
 .generate-qr-warning {
   margin: var(--space-0) var(--space-0) var(--space-6);

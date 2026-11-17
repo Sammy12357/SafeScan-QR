@@ -55,6 +55,7 @@ USER_COLUMN = {
     "go_ghost_subjects": "user_id",
     "go_ghost_consents": "user_id",
     "go_ghost_requests": "user_id",
+    "qr_gradient_presets": "user_id",
 }
 
 # Tables with no per-user owner column. These hold global/administrative data,

@@ -465,6 +465,21 @@
       "retention": "Not verified against an automated deletion job",
       "status": "active schema"
     },
+    "qr_gradient_presets": {
+      "fields": [
+        "user_id",
+        "slot",
+        "gradient_start",
+        "gradient_end",
+        "updated_at"
+      ],
+      "source": "signed-in QR generator color choices",
+      "purpose": "remember up to three account-bound QR color gradients across sessions and devices",
+      "storage": "SQLite persistent disk",
+      "recipients": "Internal storage only",
+      "retention": "Until the user replaces a slot or deletes the account; backup retention unverified",
+      "status": "active schema"
+    },
     "referrals": {
       "fields": [
         "id",

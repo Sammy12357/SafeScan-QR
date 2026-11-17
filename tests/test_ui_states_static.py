@@ -12,7 +12,7 @@ STATIC_JS = Path(__file__).resolve().parents[1] / "static"
 RAW_FETCH_COUNTS = {
     "admin.js": 1,
     "app-core.js": 1,
-    "app-generate-qr.js": 1,
+    "app-generate-qr.js": 3,
     "app-go-ghost-ui.js": 2,
     "app-widgets.js": 2,
     "global_timer.js": 1,
@@ -21,7 +21,12 @@ RAW_FETCH_COUNTS = {
 FETCH_ERROR_GUARDS = {
     "admin.js": ("showActorLookupWarning()",),
     "app-core.js": ("boundedWalletStep(", "showWalletFeedback(\"error\"", "showScanTimeout(form)"),
-    "app-generate-qr.js": ("showError(", "controller.abort()"),
+    "app-generate-qr.js": (
+        "showError(",
+        "controller.abort()",
+        "Could not load saved gradients. Retry loading to try again.",
+        "Could not save Custom gradient",
+    ),
     "app-go-ghost-ui.js": ("ghostShowIssue(", "lockGhostWorkspace()"),
     "app-widgets.js": ("reportStatus.setAttribute(\"role\", \"alert\")", "UIStates.notice(feedback",),
     "global_timer.js": ("renderRuntimeUnavailable()", "controller.abort()"),

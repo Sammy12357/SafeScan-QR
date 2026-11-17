@@ -504,3 +504,168 @@ def test_existing_text_qr_still_fits_and_copies(browser_site):
         assert "copied" in page.locator("#generatedAsciiActionStatus").inner_text().lower()
     finally:
         context.close()
+
+
+def set_gradient_colors(page, start, end):
+    for selector, value in (("#generateQrGradientStart", start), ("#generateQrGradientEnd", end)):
+        page.locator(selector).evaluate(
+            "(input, color) => { input.value = color; input.dispatchEvent(new Event('input', { bubbles: true })); }",
+            value,
+        )
+
+
+def test_account_gradient_slots_save_replace_and_refresh(browser_site):
+    browser, base_url = browser_site
+    context, page = new_page(browser, base_url)
+    slots = {2: {"slot": 2, "gradient_start": "#153E3E", "gradient_end": "#4B246B"}}
+    writes = []
+
+    def gradients(route):
+        if route.request.method == "GET":
+            route.fulfill(status=200, content_type="application/json", body=json.dumps({"slots": list(slots.values())}))
+            return
+        slot = int(route.request.url.rsplit("/", 1)[-1])
+        colors = route.request.post_data_json
+        writes.append((slot, colors))
+        saved = {"slot": slot, **colors}
+        slots[slot] = saved
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(saved))
+
+    try:
+        page.route("**/api/qr/gradients**", gradients)
+        page.goto("/generate-qr", wait_until="domcontentloaded")
+        page.locator('input[name="generateQrFormat"][value="ascii_motion"]').check()
+        page.wait_for_function("() => document.querySelector('#generateQrSavedScope').textContent.includes('account')")
+        assert page.locator("[data-gradient-slot-use]").count() == 3
+        assert page.locator('[data-gradient-slot-use="1"]').is_disabled()
+        assert page.locator('[data-gradient-slot-use="2"]').is_enabled()
+        page.locator('[data-gradient-slot-use="2"]').click()
+        assert page.locator("#generateQrGradientStart").input_value().upper() == "#153E3E"
+        assert page.locator("#generateQrGradientEnd").input_value().upper() == "#4B246B"
+
+        set_gradient_colors(page, "#112233", "#334455")
+        page.locator('[data-gradient-slot-save="1"]').click()
+        page.wait_for_function("() => document.querySelector('#generateQrSavedStatus').textContent.includes('Saved Custom gradient 1')")
+        assert writes == [(1, {"gradient_start": "#112233", "gradient_end": "#334455"})]
+        assert page.locator('[data-gradient-slot-use="1"]').is_enabled()
+        assert page.locator('[data-gradient-slot-save="1"]').inner_text() == "Replace"
+        assert page.locator('[data-gradient-slot-use="1"]').get_attribute("aria-pressed") == "true"
+
+        page.locator('[data-gradient-preset="night"]').click()
+        page.locator('[data-gradient-slot-use="1"]').click()
+        assert page.locator("#generateQrGradientStart").input_value().upper() == "#112233"
+        assert page.locator("#generateQrGradientEnd").input_value().upper() == "#334455"
+        page.locator('[data-gradient-preset="night"]').click()
+        page.locator('[data-gradient-slot-save="1"]').click()
+        page.wait_for_function("() => document.querySelector('#generateQrSavedStatus').textContent.includes('Saved Custom gradient 1')")
+        assert writes[-1] == (1, {"gradient_start": "#10264A", "gradient_end": "#42316B"})
+
+        # A restored page must discard the previous account's in-memory slots.
+        slots.clear()
+        slots[3] = {"slot": 3, "gradient_start": "#2A1B36", "gradient_end": "#8A280C"}
+        page.evaluate("window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }))")
+        page.wait_for_function("() => document.querySelector('[data-gradient-slot-use=\"3\"]').disabled === false")
+        assert page.locator('[data-gradient-slot-use="1"]').is_disabled()
+        assert page.locator('[data-gradient-slot-use="3"]').is_enabled()
+
+        # A second visible window can change accounts without hiding this tab.
+        slots.clear()
+        slots[2] = {"slot": 2, "gradient_start": "#153E3E", "gradient_end": "#4B246B"}
+        page.evaluate("window.dispatchEvent(new Event('focus'))")
+        page.wait_for_function("() => document.querySelector('[data-gradient-slot-use=\"2\"]').disabled === false")
+        assert page.locator('[data-gradient-slot-use="3"]').is_disabled()
+    finally:
+        context.close()
+
+
+def test_guest_gradient_slots_are_browser_only_and_never_replace_account_slots(browser_site):
+    browser, base_url = browser_site
+    context, page = new_page(browser, base_url)
+    state = {"signed_in": False}
+
+    def gradients(route):
+        if not state["signed_in"]:
+            route.fulfill(status=401, content_type="application/json", body='{"error":"Sign in required"}')
+        else:
+            route.fulfill(status=200, content_type="application/json", body=json.dumps({
+                "slots": [{"slot": 3, "gradient_start": "#10264A", "gradient_end": "#42316B"}],
+            }))
+
+    try:
+        page.route("**/api/qr/gradients**", gradients)
+        page.goto("/generate-qr", wait_until="domcontentloaded")
+        page.locator("#generateQrUrlInput").fill("https://example.com/private-link")
+        page.locator('input[name="generateQrFormat"][value="ascii_motion"]').check()
+        page.wait_for_function("() => document.querySelector('#generateQrSavedScope').textContent.includes('browser')")
+        page.locator('[data-gradient-slot-save="1"]').click()
+        page.wait_for_function("() => document.querySelector('#generateQrSavedStatus').textContent.includes('Saved Custom gradient 1')")
+        stored = page.evaluate("localStorage.getItem('sqafeQrGradientSlots:guest')")
+        assert json.loads(stored) == {"slots": [{
+            "slot": 1, "gradient_start": "#2A1B36", "gradient_end": "#8A280C",
+        }]}
+        assert "private-link" not in stored
+
+        page.reload(wait_until="domcontentloaded")
+        page.locator('input[name="generateQrFormat"][value="ascii_motion"]').check()
+        page.wait_for_function("() => document.querySelector('[data-gradient-slot-use=\"1\"]').disabled === false")
+        assert page.locator('[data-gradient-slot-use="1"]').is_enabled()
+
+        state["signed_in"] = True
+        page.reload(wait_until="domcontentloaded")
+        page.locator('input[name="generateQrFormat"][value="ascii_motion"]').check()
+        page.wait_for_function("() => document.querySelector('[data-gradient-slot-use=\"3\"]').disabled === false")
+        assert page.locator('[data-gradient-slot-use="1"]').is_disabled()
+        assert page.locator('[data-gradient-slot-use="3"]').is_enabled()
+        assert "account" in page.locator("#generateQrSavedScope").inner_text()
+
+        state["signed_in"] = False
+        page.evaluate("localStorage.setItem('sqafeQrGradientSlots:guest', JSON.stringify({slots:[{slot:1,gradient_start:'#FFFFFF',gradient_end:'#334455'}]}))")
+        page.reload(wait_until="domcontentloaded")
+        page.locator('input[name="generateQrFormat"][value="ascii_motion"]').check()
+        page.wait_for_function("() => document.querySelector('#generateQrSavedScope').textContent.includes('browser')")
+        assert page.locator('[data-gradient-slot-use="1"]').is_disabled()
+        assert page.evaluate("localStorage.getItem('sqafeQrGradientSlots:guest')") is None
+
+        page.evaluate("""() => {
+          const original = Storage.prototype.setItem;
+          Storage.prototype.setItem = function(key, value) {
+            if (key === 'sqafeQrGradientSlots:guest') throw new DOMException('Storage full', 'QuotaExceededError');
+            return original.call(this, key, value);
+          };
+        }""")
+        page.locator('[data-gradient-slot-save="2"]').click()
+        assert "Could not save" in page.locator("#generateQrSavedStatus").inner_text()
+        assert page.locator('[data-gradient-slot-use="2"]').is_disabled()
+    finally:
+        context.close()
+
+
+def test_gradient_load_failure_never_falls_back_to_guest_storage(browser_site):
+    browser, base_url = browser_site
+    context, page = new_page(browser, base_url)
+    state = {"status": 500}
+
+    def gradients(route):
+        if state["status"] == 500:
+            route.fulfill(status=500, content_type="application/json", body='{"error":"Unavailable"}')
+        else:
+            route.fulfill(status=401, content_type="application/json", body='{"error":"Sign in required"}')
+
+    try:
+        page.route("**/api/qr/gradients**", gradients)
+        page.goto("/generate-qr", wait_until="domcontentloaded")
+        page.evaluate("localStorage.setItem('sqafeQrGradientSlots:guest', JSON.stringify({slots:[{slot:1,gradient_start:'#112233',gradient_end:'#334455'}]}))")
+        page.locator('input[name="generateQrFormat"][value="ascii_motion"]').check()
+        page.wait_for_function("() => document.querySelector('#generateQrSavedRetry').classList.contains('hidden') === false")
+        assert page.locator('[data-gradient-slot-use="1"]').is_disabled()
+        assert page.locator('[data-gradient-slot-save="1"]').is_disabled()
+        assert "Could not load" in page.locator("#generateQrSavedStatus").inner_text()
+        assert page.locator('[data-gradient-preset="night"]').is_enabled()
+
+        state["status"] = 401
+        page.locator("#generateQrSavedRetry").click()
+        page.wait_for_function("() => document.querySelector('[data-gradient-slot-use=\"1\"]').disabled === false")
+        assert "browser" in page.locator("#generateQrSavedScope").inner_text()
+        assert page.locator('[data-gradient-slot-use="1"]').is_enabled()
+    finally:
+        context.close()

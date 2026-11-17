@@ -90,6 +90,15 @@ def init_db():
                         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         deleted_at TEXT
                     )''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS qr_gradient_presets (
+                        user_id TEXT NOT NULL,
+                        slot INTEGER NOT NULL CHECK(slot BETWEEN 1 AND 3),
+                        gradient_start TEXT NOT NULL,
+                        gradient_end TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        PRIMARY KEY (user_id, slot),
+                        FOREIGN KEY (user_id) REFERENCES users(google_id) ON DELETE CASCADE
+                    )''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS scans (email TEXT PRIMARY KEY, url_found TEXT, scan_count INTEGER DEFAULT 0, wallet_address TEXT, tokens_sent INTEGER DEFAULT 0)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS scan_events
                         (email TEXT NOT NULL, payload_hash TEXT NOT NULL, url_found TEXT NOT NULL,

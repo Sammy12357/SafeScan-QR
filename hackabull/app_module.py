@@ -331,7 +331,10 @@ def apply_security_headers(request: Request, response):
         del response.headers["Server"]
     if "X-Powered-By" in response.headers:
         del response.headers["X-Powered-By"]
-    if request.url.path.startswith("/api/") or request.url.path == "/search_qr_api":
+    if request.url.path == "/api/qr/gradients" or request.url.path.startswith("/api/qr/gradients/"):
+        response.headers["Cache-Control"] = "private, no-store"
+        response.headers["Pragma"] = "no-cache"
+    elif request.url.path.startswith("/api/") or request.url.path == "/search_qr_api":
         response.headers["Cache-Control"] = "no-store"
         response.headers["Pragma"] = "no-cache"
     elif request.url.path.startswith("/static/") and response.status_code == 200:

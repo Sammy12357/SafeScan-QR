@@ -589,14 +589,15 @@ def fetch_audit_logs(search="", action="", target_type=""):
 
 PRIVACY_POLICY_HTML = f"""
 <h2>1. What We Collect</h2>
-<p>SafeScan QR collects only what is needed to authenticate users, analyze QR payloads, prevent abuse, and operate the optional SQR airdrop program.</p>
+<p>SafeScan QR collects only what is needed to authenticate users, analyze QR payloads, prevent abuse, save QR gradient preferences you choose, and operate the optional SQR airdrop program.</p>
 <ul>
   <li>For website sign-in, we store the Google account ID, name, email, profile picture, and login timestamp. When Auth0 handles sign-in, it may also receive public profile attributes Google makes available to its connection, such as language or country.</li>
   <li>Optional Solana wallet address supplied by the user for airdrop eligibility.</li>
   <li>QR scan payloads such as URLs analyzed for risk. Logged-in scans may be associated with the user's email for scan counts and fraud prevention.</li>
+  <li>If you save a custom QR gradient while signed in, we store its slot number, top and bottom color values, and update time with your account. We do not store a QR destination or image as part of that preference. Without sign-in, saved gradient colors stay in this browser's local storage and do not sync between devices.</li>
   <li>Referral link usage and referral counts.</li>
   <li>IP address hash, approximate region, browser type, device type, and session signals for fraud prevention and analytics.</li>
-  <li>Cookies and local storage values for authentication state, consent state, referral state, wallet state, and local report queues.</li>
+  <li>Cookies and local storage values for authentication state, consent state, referral state, wallet state, guest gradient preferences, and local report queues.</li>
 </ul>
 <p>Live camera preview frames are checked in your browser. If the local reader fails, SafeScan sends a captured photo to its server only after you choose “Send photo to SafeScan.” The server processes that photo in memory to read the QR code and does not store the image. The decoded payload follows the scan-history rules described here; signed-in scans may be saved.</p>
 <p>If you accept optional analytics, the upgraded scanner sends aggregate performance counts, such as decoder type, elapsed time, outcome, and guidance category. These counts do not include QR text, photos, or device identifiers.</p>
@@ -604,6 +605,7 @@ PRIVACY_POLICY_HTML = f"""
 <ul>
   <li>Authentication: contractual necessity.</li>
   <li>Scan history and QR security delivery: legitimate interest in providing and improving security analysis.</li>
+  <li>Saved QR gradient preferences: used to provide the optional preset feature after you choose to save colors.</li>
   <li>Airdrop eligibility, scan tiers, referrals, and wallet address: contractual necessity for the tier program.</li>
   <li>Analytics and abuse prevention: legitimate interest.</li>
   <li>Marketing emails: explicit consent only.</li>
@@ -612,6 +614,7 @@ PRIVACY_POLICY_HTML = f"""
 <ul>
   <li>Signed-in user scan history and leaderboard counters: retained as long-term account records unless deletion is requested or the account is removed.</li>
   <li>Account data: until deletion is requested or after 2 years of inactivity.</li>
+  <li>Saved QR gradient preferences: account slots remain until replaced or the account is deleted; guest slots remain in this browser until replaced or site data is cleared.</li>
   <li>Wallet address: until the user disconnects it or deletes the account.</li>
   <li>Consent records: retained for 5 years to document legal compliance.</li>
 </ul>
@@ -625,7 +628,7 @@ PRIVACY_POLICY_HTML = f"""
   <li>Render.com for hosting infrastructure.</li>
 </ul>
 <h2>5. Cookies and Tracking</h2>
-<p>SafeScan uses essential cookies/local storage for auth, consent, referral, wallet, and report state. Auth0 website sign-in sets a short-lived, essential, first-party flow cookie that is removed after the callback. Auth0 and Google may set their own cookies during sign-in; their cookie behavior is governed by their services. Analytics is optional and should only run after consent where required.</p>
+<p>SafeScan uses essential cookies/local storage for auth, consent, referral, wallet, and report state. Guest-saved QR gradient colors use first-party local storage. Auth0 website sign-in sets a short-lived, essential, first-party flow cookie that is removed after the callback. Auth0 and Google may set their own cookies during sign-in; their cookie behavior is governed by their services. Analytics is optional and should only run after consent where required.</p>
 <h2>6. Your Rights</h2>
 <p>EU/EEA users may exercise GDPR rights of access, erasure, rectification, restriction, portability, and objection. California users may exercise CCPA/CPRA rights to know, delete, correct, opt out of sale/sharing, limit sensitive personal information, and non-discrimination. Brazilian users may exercise LGPD rights including revoking consent and requesting information about public and private entities with whom data is shared. Canadian users are protected under PIPEDA principles: knowledge and consent, limited use, accuracy, safeguards, access, and the right to challenge compliance.</p>
 <p>Use the <a href="/legal/data-request">Data Request portal</a> to submit requests.</p>
@@ -681,6 +684,7 @@ COOKIE_POLICY_HTML = """
     <tr><td>consent-id</td><td>SafeScan</td><td>Stores consent record ID</td><td>Essential</td><td>12 months</td></tr>
     <tr><td>phishproofAirdropProfile</td><td>SafeScan local storage</td><td>Stores local demo profile and wallet state</td><td>Functional</td><td>Until cleared</td></tr>
     <tr><td>safeScanConsent</td><td>SafeScan local storage</td><td>Stores local consent choice so the banner does not reappear unnecessarily</td><td>Essential</td><td>12 months</td></tr>
+    <tr><td>sqafeQrGradientSlots:guest</td><td>SafeScan local storage</td><td>Stores up to three guest QR gradient color pairs in this browser</td><td>Functional</td><td>Until cleared</td></tr>
     <tr><td>safeScanReports</td><td>SafeScan local storage</td><td>Stores local Block & Report queue</td><td>Functional</td><td>Until cleared</td></tr>
   </tbody>
 </table>
