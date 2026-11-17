@@ -144,13 +144,17 @@ def get_user_export(email, user_id):
         billing_subscriptions = [dict(row) for row in conn.execute(
             "SELECT * FROM alpha_subscriptions WHERE user_id = ?", (user_id,)
         )]
+        qr_gradients = [dict(row) for row in conn.execute(
+            "SELECT * FROM qr_gradient_presets WHERE user_id = ? ORDER BY slot", (user_id,)
+        )]
     return {"email": email, "scans": scans, "scanEvents": events,
             "dataRequests": requests_, "ageConfirmations": age,
             "ageEligibility": age_eligibility,
             "privacyOptOuts": opt_outs,
             "goGhostSubjects": ghost_subjects, "goGhostConsents": ghost_consents,
             "goGhostRequests": ghost_requests, "goGhostLegacyJobs": ghost_legacy_jobs,
-            "billingConsents": billing_consents, "billingSubscriptions": billing_subscriptions}
+            "billingConsents": billing_consents, "billingSubscriptions": billing_subscriptions,
+            "qrGradientPresets": qr_gradients}
 
 def delete_user_data(email, user_id):
     with get_conn() as conn:
@@ -183,6 +187,7 @@ def delete_user_data(email, user_id):
             if _go_ghost_status_table_exists(conn, table):
                 conn.execute(_GO_GHOST_STATUS_SQL[table][1], (user_id,))
         conn.execute("DELETE FROM go_ghost_removal_jobs WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM qr_gradient_presets WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM users WHERE google_id = ?", (user_id,))
         conn.execute("DELETE FROM age_confirmations WHERE email = ?", (email,))
         conn.execute("DELETE FROM age_eligibility WHERE user_id = ?", (user_id,))

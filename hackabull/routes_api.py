@@ -135,6 +135,80 @@ def _require_token_features():
 # =============================================================================
 # ROUTES — PUBLIC JSON API (/api/*)
 # =============================================================================
+_QR_GRADIENT_HEADERS = {"Cache-Control": "private, no-store"}
+
+
+def _qr_gradient_user_id(request: Request) -> str:
+    """Use the signed-in account's stable ID, never an email or client ID."""
+    user = require_user(request)
+    user_id = user.get("google_id")
+    if user.get("status") != "active" or not isinstance(user_id, str) or not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    return user_id
+
+
+def _qr_gradient_slot(slot: int) -> int:
+    if type(slot) is not int or slot not in (1, 2, 3):
+        raise SafeScanError(code="invalid_request", field="slot")
+    return slot
+
+
+def _qr_gradient_colors(payload: dict) -> tuple[str, str]:
+    validate_strict_payload(payload, {"gradient_start", "gradient_end"})
+    if set(payload) != {"gradient_start", "gradient_end"}:
+        raise SafeScanError(code="invalid_request")
+    colors = []
+    for field in ("gradient_start", "gradient_end"):
+        value = payload[field]
+        try:
+            ascii_motion_color_rgb(value)
+        except ValueError as exc:
+            raise SafeScanError(str(exc), code="invalid_request", field=field) from None
+        colors.append(value.upper())
+    return colors[0], colors[1]
+
+
+def _qr_gradient_write_limit(request: Request, user_id: str):
+    limited = enforce_rate_limit(request, "qr_gradient_write", 60, 60 * 60, user_key=user_id)
+    if limited:
+        limited.headers.update(_QR_GRADIENT_HEADERS)
+    return limited
+
+
+@qr_app.get("/api/qr/gradients")
+async def api_qr_gradients(request: Request):
+    user_id = _qr_gradient_user_id(request)
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT slot, gradient_start, gradient_end FROM qr_gradient_presets "
+            "WHERE user_id = ? ORDER BY slot", (user_id,),
+        ).fetchall()
+    return JSONResponse({"slots": [dict(row) for row in rows]}, headers=_QR_GRADIENT_HEADERS)
+
+
+@qr_app.put("/api/qr/gradients/{slot}")
+async def api_qr_gradient_save(request: Request, slot: int, payload: dict = Body(...)):
+    user_id = _qr_gradient_user_id(request)
+    slot = _qr_gradient_slot(slot)
+    limited = _qr_gradient_write_limit(request, user_id)
+    if limited:
+        return limited
+    start, end = _qr_gradient_colors(payload)
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO qr_gradient_presets "
+            "(user_id, slot, gradient_start, gradient_end, updated_at) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(user_id, slot) DO UPDATE SET "
+            "gradient_start = excluded.gradient_start, "
+            "gradient_end = excluded.gradient_end, updated_at = excluded.updated_at",
+            (user_id, slot, start, end, now_iso()),
+        )
+    return JSONResponse(
+        {"slot": slot, "gradient_start": start, "gradient_end": end},
+        headers=_QR_GRADIENT_HEADERS,
+    )
+
+
 @qr_app.post("/api/analyze")
 async def api_analyze(request: Request, payload: dict = Body(...)):
     user = get_session_user(request)
