@@ -104,9 +104,7 @@
     });
     return 1.05 / (0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2] + 0.05);
   };
-  const needsBlackCells = (start, end) =>
-    colorContrastOnWhite(start) < 7 || colorContrastOnWhite(end) < 7;
-  const darkenForTextCopy = (color, targetContrast = 7) => {
+  const darkenForWhite = (color, targetContrast = 7) => {
     if (colorContrastOnWhite(color) >= targetContrast) return color.toUpperCase();
     const channels = [1, 3, 5].map((offset) => parseInt(color.slice(offset, offset + 2), 16));
     const scaled = (factor) => `#${channels.map((channel) => Math.floor(channel * factor).toString(16).padStart(2, "0")).join("")}`.toUpperCase();
@@ -125,8 +123,8 @@
       || typeof value.gradient_end !== "string" || !colorPattern.test(value.gradient_end)) return null;
     const gradient = {
       slot: value.slot,
-      gradient_start: value.gradient_start.toUpperCase(),
-      gradient_end: value.gradient_end.toUpperCase(),
+      gradient_start: darkenForWhite(value.gradient_start),
+      gradient_end: darkenForWhite(value.gradient_end),
     };
     return gradient;
   };
@@ -148,7 +146,12 @@
       return new Map();
     }
     try {
-      return parseSavedGradients(JSON.parse(stored));
+      const slots = parseSavedGradients(JSON.parse(stored));
+      const normalized = JSON.stringify({ slots: [...slots.values()].sort((a, b) => a.slot - b.slot) });
+      if (normalized !== stored) {
+        try { window.localStorage.setItem(guestGradientStorageKey, normalized); } catch (_err) { /* Keep usable in memory. */ }
+      }
+      return slots;
     } catch (_err) {
       window.localStorage.removeItem(guestGradientStorageKey);
       return new Map();
@@ -170,7 +173,7 @@
       button.disabled = !ready || !gradient || savingGradientSlot !== null;
       button.setAttribute("aria-pressed", String(Boolean(gradient && selectedSavedGradientSlot === slot)));
       button.setAttribute("aria-label", gradient
-        ? `Use Custom gradient ${slot}, top ${gradient.gradient_start}, bottom ${gradient.gradient_end}, ${needsBlackCells(gradient.gradient_start, gradient.gradient_end) ? "black QR cells with white spaces" : "colored ASCII on white"}`
+        ? `Use Custom gradient ${slot}, top ${gradient.gradient_start}, bottom ${gradient.gradient_end}, colored ASCII on white`
         : `Custom gradient ${slot}, empty slot`);
       const caption = button.querySelector("[data-gradient-slot-caption]");
       caption.textContent = gradient ? `${gradient.gradient_start} → ${gradient.gradient_end}` : "Empty slot";
@@ -178,11 +181,9 @@
       if (gradient) {
         swatch.style.setProperty("--slot-start", gradient.gradient_start);
         swatch.style.setProperty("--slot-end", gradient.gradient_end);
-        swatch.setAttribute("data-black-cells", String(needsBlackCells(gradient.gradient_start, gradient.gradient_end)));
       } else {
         swatch.style.removeProperty("--slot-start");
         swatch.style.removeProperty("--slot-end");
-        swatch.removeAttribute("data-black-cells");
       }
     }
     for (const button of savedGradientSaveButtons) {
@@ -224,10 +225,14 @@
           savedGradientStatus.textContent = "Browser storage is unavailable. Gradients cannot be saved here.";
         }
       } else if (response.ok) {
-        savedGradientSlots = parseSavedGradients(await response.json());
+        const body = await response.json();
+        savedGradientSlots = parseSavedGradients(body);
         if (version !== savedGradientRequestVersion) return;
         savedGradientMode = "account";
-        savedGradientStatus.textContent = "Your saved gradients are ready.";
+        savedGradientStatus.textContent = body.slots.some((slot) =>
+          colorContrastOnWhite(slot.gradient_start) < 7 || colorContrastOnWhite(slot.gradient_end) < 7)
+          ? "Older bright gradients appear darker for scanning. Replace a slot to save the adjusted colors."
+          : "Your saved gradients are ready.";
       } else {
         throw new Error("Could not load gradients");
       }
@@ -244,17 +249,15 @@
     }
   };
   const updateGradientPresentation = () => {
-    const top = gradientStart.value.toUpperCase();
-    const bottom = gradientEnd.value.toUpperCase();
+    const top = darkenForWhite(gradientStart.value);
+    const bottom = darkenForWhite(gradientEnd.value);
+    gradientStart.value = top;
+    gradientEnd.value = bottom;
     gradientStartValue.textContent = top;
     gradientEndValue.textContent = bottom;
     gradientSample.style.setProperty("--gradient-start", top);
     gradientSample.style.setProperty("--gradient-end", bottom);
-    const blackCells = needsBlackCells(top, bottom);
-    gradientSample.setAttribute("data-black-cells", String(blackCells));
-    const hint = blackCells
-      ? "Bright or mixed colors use black QR cells with colored ASCII accents. The white gaps and quiet zone remain for scanning."
-      : "Dark colors use colored ASCII on white. The white gaps and quiet zone remain for scanning.";
+    const hint = "Colors stay dark enough to scan on white. Brighter picks automatically darken while keeping their hue.";
     if (gradientHint.textContent !== hint) gradientHint.textContent = hint;
     for (const preset of gradientPresets) {
       preset.setAttribute("aria-pressed", String(selectedSavedGradientSlot === null
@@ -277,15 +280,17 @@
   };
   const saveGradient = async (slot) => {
     if (!['account', 'guest'].includes(savedGradientMode) || savingGradientSlot !== null) return;
-    const gradient = {
+    const gradient = normalizeSavedGradient({
       slot,
       gradient_start: gradientStart.value.toUpperCase(),
       gradient_end: gradientEnd.value.toUpperCase(),
-    };
-    if (!normalizeSavedGradient(gradient)) {
+    });
+    if (!gradient) {
       savedGradientStatus.textContent = "Choose two valid six-digit colors before saving.";
       return;
     }
+    gradientStart.value = gradient.gradient_start;
+    gradientEnd.value = gradient.gradient_end;
     const mode = savedGradientMode;
     const version = savedGradientRequestVersion;
     savingGradientSlot = slot;
@@ -396,14 +401,13 @@
   };
   const renderColoredText = (preview, value, start, end) => {
     preview.replaceChildren();
-    const targetContrast = needsBlackCells(start, end) ? 12 : 7;
     const lines = value.split("\n");
     const separator = lines.findIndex((line, index) => line === "" && index < lines.length - 1);
     const lastColoredLine = Math.max(1, separator > 0 ? separator - 1 : lines.length - 2);
     lines.forEach((line, index) => {
       if (index) preview.append(document.createTextNode("\n"));
       const span = document.createElement("span");
-      span.style.color = darkenForTextCopy(gradientColor(start, end, Math.min(index / lastColoredLine, 1)), targetContrast);
+      span.style.color = darkenForWhite(gradientColor(start, end, Math.min(index / lastColoredLine, 1)));
       span.textContent = line;
       preview.append(span);
     });
@@ -414,13 +418,9 @@
     const textUrl = compact ? motionCompactTextUrl : motionAsciiTextUrl;
     const htmlUrl = compact ? motionCompactHtmlUrl : motionAsciiHtmlUrl;
     motionTextCopy.textContent = compact ? "Copy compact QR" : "Copy ASCII QR";
-    const adjustedCopyColors = needsBlackCells(motionColorStart, motionColorEnd);
     motionTextDescription.textContent = compact
       ? "Compact Unicode text uses fewer characters. Rich text apps may keep its colors and spacing; plain message apps may stretch it."
       : "ASCII art uses keyboard characters but is much larger. Rich text apps may keep its colors and tight spacing; plain message apps may stretch it.";
-    if (adjustedCopyColors) {
-      motionTextDescription.textContent += " Bright colors are darkened in styled text copies to keep the QR readable on white; the animated image keeps your chosen colors.";
-    }
     motionCompactPreview.classList.toggle("hidden", !compact);
     motionCompactSizeNotice.classList.add("hidden");
     if (textUrl) motionTextDownload.href = textUrl;
@@ -555,10 +555,15 @@
     }
   });
   for (const input of [gradientStart, gradientEnd]) input.addEventListener("input", () => {
+    const chosen = input.value.toUpperCase();
+    const adjusted = darkenForWhite(chosen) !== chosen;
     selectedSavedGradientSlot = null;
     cancelCurrent();
     updateGradientPresentation();
-    if (savedGradientMode === "account" || savedGradientMode === "guest") {
+    if (adjusted) {
+      const status = "Bright color adjusted to a darker shade for scanning. Save the gradient to keep it.";
+      if (savedGradientStatus.textContent !== status) savedGradientStatus.textContent = status;
+    } else if (savedGradientMode === "account" || savedGradientMode === "guest") {
       savedGradientStatus.textContent = "Colors changed. Save to a Custom gradient slot to keep them.";
     }
   });
@@ -630,7 +635,7 @@
   const richMotionText = (value, compact) => {
     const preview = document.createElement("pre");
     const geometry = compact ? "font-size:18px;font-weight:400;line-height:18px" : "font-size:24px;font-weight:700;line-height:12px";
-    preview.style.cssText = `display:inline-block;width:max-content;max-width:none;overflow:visible;white-space:pre;font-family:Menlo,'DejaVu Sans Mono',monospace;${geometry};letter-spacing:0;font-variant-ligatures:none;margin:0;background:#fff;color:${darkenForTextCopy(motionColorStart, needsBlackCells(motionColorStart, motionColorEnd) ? 12 : 7)}`;
+    preview.style.cssText = `display:inline-block;width:max-content;max-width:none;overflow:visible;white-space:pre;font-family:Menlo,'DejaVu Sans Mono',monospace;${geometry};letter-spacing:0;font-variant-ligatures:none;margin:0;background:#fff;color:${darkenForWhite(motionColorStart)}`;
     renderColoredText(preview, value, motionColorStart, motionColorEnd);
     return preview.outerHTML;
   };
@@ -683,12 +688,19 @@
 
     const plain = plainModeSelected();
     const outputFormat = selectedOutputFormat();
-    const topColor = gradientStart.value.toUpperCase();
-    const bottomColor = gradientEnd.value.toUpperCase();
+    let topColor = gradientStart.value.toUpperCase();
+    let bottomColor = gradientEnd.value.toUpperCase();
     if (outputFormat === "ascii_motion"
       && (!colorPattern.test(topColor) || !colorPattern.test(bottomColor))) {
       showError("Choose two valid six-digit gradient colors. Try a preset or adjust the colors.");
       return;
+    }
+    if (outputFormat === "ascii_motion") {
+      topColor = darkenForWhite(topColor);
+      bottomColor = darkenForWhite(bottomColor);
+      gradientStart.value = topColor;
+      gradientEnd.value = bottomColor;
+      updateGradientPresentation();
     }
     const version = requestVersion;
     const controller = new AbortController();

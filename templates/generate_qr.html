@@ -11,7 +11,7 @@
   <title>QR Generator | Sqafe</title>
   <meta name="description" content="Generate a screened QR after SafeScan checks a link, or choose a plain QR with no safety check.">
   <link rel="icon" href="/static/safescan-logo.svg?v=sqafe-brand-v1" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=qr-bright-gradient-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=qr-dark-palette-v1">
 </head>
 <body class="test-site-page">
   <div class="page-shell">
@@ -72,8 +72,8 @@
               </span>
             </label>
           </div>
-          <div id="generateQrGradientSample" class="generate-qr-gradient-sample" data-black-cells="false" aria-hidden="true"><span># @ % * + # @ % * +</span></div>
-          <p id="generateQrGradientHint" class="generate-qr-gradient-hint" aria-live="polite">Dark colors use colored ASCII on white. The white gaps and quiet zone remain for scanning.</p>
+          <div id="generateQrGradientSample" class="generate-qr-gradient-sample" aria-hidden="true"><span># @ % * + # @ % * +</span></div>
+          <p id="generateQrGradientHint" class="generate-qr-gradient-hint" aria-live="polite">Colors stay dark enough to scan on white. Brighter picks automatically darken while keeping their hue.</p>
           <section id="generateQrSavedGradients" class="generate-qr-saved-gradients" aria-labelledby="generateQrSavedGradientsHeading">
             <div class="generate-qr-saved-heading">
               <h3 id="generateQrSavedGradientsHeading">Your gradients</h3>
@@ -133,7 +133,7 @@
               <a id="generatedMotionTextDownload" class="secondary-button" download="sqafe-ascii-art-qr.txt" href="#">Download raw .txt</a>
               <a id="generatedMotionHtmlDownload" class="secondary-button" download="sqafe-ascii-art-qr.html" href="#">Download styled HTML</a>
             </div>
-            <p class="generated-motion-copy-limit">Raw .txt keeps characters only. In plain chats, try a fixed-width code block without wrapping; if spacing changes, share the image. Styled HTML keeps the spacing and darkens bright colors for readability on white.</p>
+            <p class="generated-motion-copy-limit">Raw .txt keeps characters only. In plain chats, try a fixed-width code block without wrapping; if spacing changes, share the image. Styled HTML keeps the spacing and selected colors.</p>
             <p id="generatedMotionTextActionStatus" class="generated-ascii-action-status" role="status" aria-live="polite"></p>
           </section>
         </div>
@@ -162,6 +162,6 @@
   <script src="/static/app-widgets.js?v=legal-gpc-v1"></script>
   <script src="/static/app-go-ghost.js?v=ghost-inline-errors-v1"></script>
   <script src="/static/app-go-ghost-ui.js?v=legal-a11y-v1"></script>
-  <script src="/static/app-generate-qr.js?v=qr-bright-gif-v1"></script>
+  <script src="/static/app-generate-qr.js?v=qr-dark-palette-v1"></script>
 </body>
 </html>
