@@ -11,7 +11,7 @@
   <title>QR Generator | Sqafe</title>
   <meta name="description" content="Generate a screened QR after SafeScan checks a link, or choose a plain QR with no safety check.">
   <link rel="icon" href="/static/safescan-logo.svg?v=sqafe-brand-v1" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=ascii-compact-copy-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=qr-gradient-slots-v1">
 </head>
 <body class="test-site-page">
   <div class="page-shell">
@@ -74,6 +74,28 @@
           </div>
           <div id="generateQrGradientSample" class="generate-qr-gradient-sample" aria-hidden="true"></div>
           <p id="generateQrGradientHint" class="generate-qr-gradient-hint">Choose dark colors so the QR stays readable on white. Light colors cannot be generated.</p>
+          <section id="generateQrSavedGradients" class="generate-qr-saved-gradients" aria-labelledby="generateQrSavedGradientsHeading">
+            <div class="generate-qr-saved-heading">
+              <h3 id="generateQrSavedGradientsHeading">Your gradients</h3>
+              <button id="generateQrSavedRetry" class="secondary-button hidden" type="button">Retry loading</button>
+            </div>
+            <p id="generateQrSavedScope" class="generate-qr-saved-scope">Save up to three color pairs.</p>
+            <div class="generate-qr-saved-slots" role="group" aria-label="Custom gradients">
+              <div class="generate-qr-saved-slot">
+                <button class="generate-qr-saved-use" type="button" data-gradient-slot-use="1" aria-pressed="false" disabled><span class="generate-qr-saved-swatch" aria-hidden="true"></span><span><strong>Custom gradient 1</strong><small data-gradient-slot-caption="1">Empty slot</small></span></button>
+                <button class="secondary-button generate-qr-saved-save" type="button" data-gradient-slot-save="1" aria-label="Save current colors as Custom gradient 1" disabled>Save</button>
+              </div>
+              <div class="generate-qr-saved-slot">
+                <button class="generate-qr-saved-use" type="button" data-gradient-slot-use="2" aria-pressed="false" disabled><span class="generate-qr-saved-swatch" aria-hidden="true"></span><span><strong>Custom gradient 2</strong><small data-gradient-slot-caption="2">Empty slot</small></span></button>
+                <button class="secondary-button generate-qr-saved-save" type="button" data-gradient-slot-save="2" aria-label="Save current colors as Custom gradient 2" disabled>Save</button>
+              </div>
+              <div class="generate-qr-saved-slot">
+                <button class="generate-qr-saved-use" type="button" data-gradient-slot-use="3" aria-pressed="false" disabled><span class="generate-qr-saved-swatch" aria-hidden="true"></span><span><strong>Custom gradient 3</strong><small data-gradient-slot-caption="3">Empty slot</small></span></button>
+                <button class="secondary-button generate-qr-saved-save" type="button" data-gradient-slot-save="3" aria-label="Save current colors as Custom gradient 3" disabled>Save</button>
+              </div>
+            </div>
+            <p id="generateQrSavedStatus" class="generate-qr-saved-status" role="status" aria-live="polite"></p>
+          </section>
         </fieldset>
         <div class="generate-qr-form-row">
           <input id="generateQrUrlInput" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Destination URL" placeholder="https://example.com">
@@ -140,6 +162,6 @@
   <script src="/static/app-widgets.js?v=legal-gpc-v1"></script>
   <script src="/static/app-go-ghost.js?v=ghost-inline-errors-v1"></script>
   <script src="/static/app-go-ghost-ui.js?v=legal-a11y-v1"></script>
-  <script src="/static/app-generate-qr.js?v=ascii-compact-copy-v1"></script>
+  <script src="/static/app-generate-qr.js?v=qr-gradient-slots-v1"></script>
 </body>
 </html>

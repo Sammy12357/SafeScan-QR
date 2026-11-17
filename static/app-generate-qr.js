@@ -14,6 +14,12 @@
   const gradientEndValue = document.getElementById("generateQrGradientEndValue");
   const gradientSample = document.getElementById("generateQrGradientSample");
   const gradientPresets = [...document.querySelectorAll("[data-gradient-preset]")];
+  const savedGradientSection = document.getElementById("generateQrSavedGradients");
+  const savedGradientScope = document.getElementById("generateQrSavedScope");
+  const savedGradientStatus = document.getElementById("generateQrSavedStatus");
+  const savedGradientRetry = document.getElementById("generateQrSavedRetry");
+  const savedGradientUseButtons = [...document.querySelectorAll("[data-gradient-slot-use]")];
+  const savedGradientSaveButtons = [...document.querySelectorAll("[data-gradient-slot-save]")];
   const wrap = document.getElementById("generatedQrWrap");
   const img = document.getElementById("generatedQrImage");
   const pngStatus = document.getElementById("generatedQrStatus");
@@ -44,9 +50,16 @@
   const textDownload = document.getElementById("generatedAsciiDownload");
   const actionStatus = document.getElementById("generatedAsciiActionStatus");
   const errEl = document.getElementById("generateQrError");
-  if (!generateBtn || !urlInputField || modeInputs.length !== 2 || !plainWarning || formatInputs.length !== 3 || !gradientOptions || !gradientStart || !gradientEnd || !gradientStartValue || !gradientEndValue || !gradientSample || gradientPresets.length !== 3 || !wrap || !img || !pngStatus || !dl || !motionHeading || !imageMotionToggle || !motionDownloads || !motionStillDownload || !motionAnimatedDownload || !motionTextWrap || motionCopyFormats.length !== 2 || !motionTextDescription || !motionCompactPreview || !motionCompactArt || !motionCompactSizeNotice || !motionTextCopy || !motionTextDownload || !motionHtmlDownload || !motionTextActionStatus || !textWrap || !paper || !art || !asciiStatus || !sizeNotice || !destination || !textMotionToggle || !copyButton || !textDownload || !actionStatus || !errEl) return;
+  if (!generateBtn || !urlInputField || modeInputs.length !== 2 || !plainWarning || formatInputs.length !== 3 || !gradientOptions || !gradientStart || !gradientEnd || !gradientStartValue || !gradientEndValue || !gradientSample || gradientPresets.length !== 3 || !savedGradientSection || !savedGradientScope || !savedGradientStatus || !savedGradientRetry || savedGradientUseButtons.length !== 3 || savedGradientSaveButtons.length !== 3 || !wrap || !img || !pngStatus || !dl || !motionHeading || !imageMotionToggle || !motionDownloads || !motionStillDownload || !motionAnimatedDownload || !motionTextWrap || motionCopyFormats.length !== 2 || !motionTextDescription || !motionCompactPreview || !motionCompactArt || !motionCompactSizeNotice || !motionTextCopy || !motionTextDownload || !motionHtmlDownload || !motionTextActionStatus || !textWrap || !paper || !art || !asciiStatus || !sizeNotice || !destination || !textMotionToggle || !copyButton || !textDownload || !actionStatus || !errEl) return;
 
   const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+  const guestGradientStorageKey = "sqafeQrGradientSlots:guest";
+  const colorPattern = /^#[0-9a-f]{6}$/i;
+  let savedGradientMode = "idle";
+  let savedGradientSlots = new Map();
+  let selectedSavedGradientSlot = null;
+  let savedGradientRequestVersion = 0;
+  let savingGradientSlot = null;
   let currentImageUrl = null;
   let currentAnimatedImageUrl = null;
   let currentTextUrl = null;
@@ -88,6 +101,129 @@
     });
     return 1.05 / (0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2] + 0.05);
   };
+  const normalizeSavedGradient = (value) => {
+    if (!value || !Number.isInteger(value.slot) || value.slot < 1 || value.slot > 3
+      || typeof value.gradient_start !== "string" || !colorPattern.test(value.gradient_start)
+      || typeof value.gradient_end !== "string" || !colorPattern.test(value.gradient_end)) return null;
+    const gradient = {
+      slot: value.slot,
+      gradient_start: value.gradient_start.toUpperCase(),
+      gradient_end: value.gradient_end.toUpperCase(),
+    };
+    return colorContrastOnWhite(gradient.gradient_start) >= 7
+      && colorContrastOnWhite(gradient.gradient_end) >= 7 ? gradient : null;
+  };
+  const parseSavedGradients = (body) => {
+    if (!body || !Array.isArray(body.slots) || body.slots.length > 3) throw new Error("Invalid saved gradients");
+    const slots = new Map();
+    for (const item of body.slots) {
+      const gradient = normalizeSavedGradient(item);
+      if (!gradient || slots.has(gradient.slot)) throw new Error("Invalid saved gradients");
+      slots.set(gradient.slot, gradient);
+    }
+    return slots;
+  };
+  const readGuestGradients = () => {
+    const stored = window.localStorage.getItem(guestGradientStorageKey);
+    if (!stored) return new Map();
+    if (stored.length > 2048) {
+      window.localStorage.removeItem(guestGradientStorageKey);
+      return new Map();
+    }
+    try {
+      return parseSavedGradients(JSON.parse(stored));
+    } catch (_err) {
+      window.localStorage.removeItem(guestGradientStorageKey);
+      return new Map();
+    }
+  };
+  const renderSavedGradients = () => {
+    const ready = savedGradientMode === "account" || savedGradientMode === "guest";
+    savedGradientScope.textContent = savedGradientMode === "account"
+      ? "Saved to your account and available when you sign in."
+      : savedGradientMode === "guest"
+        ? "Saved only in this browser. Sign in to keep gradients with your account."
+        : savedGradientMode === "unavailable"
+          ? "Saved gradients are unavailable. Built-in presets and manual colors still work."
+          : "Save up to three color pairs.";
+    savedGradientRetry.classList.toggle("hidden", savedGradientMode !== "unavailable");
+    for (const button of savedGradientUseButtons) {
+      const slot = Number(button.dataset.gradientSlotUse);
+      const gradient = savedGradientSlots.get(slot);
+      button.disabled = !ready || !gradient || savingGradientSlot !== null;
+      button.setAttribute("aria-pressed", String(Boolean(gradient && selectedSavedGradientSlot === slot)));
+      button.setAttribute("aria-label", gradient
+        ? `Use Custom gradient ${slot}, top ${gradient.gradient_start}, bottom ${gradient.gradient_end}`
+        : `Custom gradient ${slot}, empty slot`);
+      const caption = button.querySelector("[data-gradient-slot-caption]");
+      caption.textContent = gradient ? `${gradient.gradient_start} → ${gradient.gradient_end}` : "Empty slot";
+      const swatch = button.querySelector(".generate-qr-saved-swatch");
+      if (gradient) {
+        swatch.style.setProperty("--slot-start", gradient.gradient_start);
+        swatch.style.setProperty("--slot-end", gradient.gradient_end);
+      } else {
+        swatch.style.removeProperty("--slot-start");
+        swatch.style.removeProperty("--slot-end");
+      }
+    }
+    for (const button of savedGradientSaveButtons) {
+      const slot = Number(button.dataset.gradientSlotSave);
+      const filled = savedGradientSlots.has(slot);
+      button.disabled = !ready || savingGradientSlot !== null;
+      button.textContent = savingGradientSlot === slot ? "Saving…" : filled ? "Replace" : "Save";
+      button.setAttribute("aria-label", `${filled ? "Replace" : "Save current colors as"} Custom gradient ${slot}`);
+    }
+  };
+  const resetSavedGradientSession = () => {
+    savedGradientRequestVersion += 1;
+    savedGradientMode = "idle";
+    savedGradientSlots = new Map();
+    selectedSavedGradientSlot = null;
+    savingGradientSlot = null;
+    savedGradientStatus.textContent = "";
+    renderSavedGradients();
+  };
+  const loadSavedGradients = async () => {
+    const version = ++savedGradientRequestVersion;
+    savedGradientMode = "loading";
+    savedGradientSlots = new Map();
+    selectedSavedGradientSlot = null;
+    savedGradientStatus.textContent = "Loading saved gradients…";
+    renderSavedGradients();
+    try {
+      const response = await fetch("/api/qr/gradients", {
+        method: "GET", credentials: "same-origin", cache: "no-store", headers: { Accept: "application/json" },
+      });
+      if (version !== savedGradientRequestVersion) return;
+      if (response.status === 401) {
+        try {
+          savedGradientSlots = readGuestGradients();
+          savedGradientMode = "guest";
+          savedGradientStatus.textContent = "Browser-only gradients ready.";
+        } catch (_err) {
+          savedGradientMode = "unavailable";
+          savedGradientStatus.textContent = "Browser storage is unavailable. Gradients cannot be saved here.";
+        }
+      } else if (response.ok) {
+        savedGradientSlots = parseSavedGradients(await response.json());
+        if (version !== savedGradientRequestVersion) return;
+        savedGradientMode = "account";
+        savedGradientStatus.textContent = "Your saved gradients are ready.";
+      } else {
+        throw new Error("Could not load gradients");
+      }
+    } catch (_err) {
+      if (version !== savedGradientRequestVersion) return;
+      savedGradientMode = "unavailable";
+      savedGradientStatus.textContent = "Could not load saved gradients. Retry loading to try again.";
+    }
+    if (version === savedGradientRequestVersion) renderSavedGradients();
+  };
+  const ensureSavedGradients = () => {
+    if (savedGradientMode === "idle" && !document.hidden && selectedOutputFormat() === "ascii_motion") {
+      void loadSavedGradients();
+    }
+  };
   const updateGradientPresentation = () => {
     const top = gradientStart.value.toUpperCase();
     const bottom = gradientEnd.value.toUpperCase();
@@ -96,7 +232,89 @@
     gradientSample.style.setProperty("--gradient-start", top);
     gradientSample.style.setProperty("--gradient-end", bottom);
     for (const preset of gradientPresets) {
-      preset.setAttribute("aria-pressed", String(preset.dataset.gradientStart === top && preset.dataset.gradientEnd === bottom));
+      preset.setAttribute("aria-pressed", String(selectedSavedGradientSlot === null
+        && preset.dataset.gradientStart === top && preset.dataset.gradientEnd === bottom));
+    }
+    renderSavedGradients();
+  };
+  const useSavedGradient = (slot) => {
+    if (!['account', 'guest'].includes(savedGradientMode)) return;
+    const gradient = savedGradientSlots.get(slot);
+    if (!gradient) return;
+    const changed = gradientStart.value.toUpperCase() !== gradient.gradient_start
+      || gradientEnd.value.toUpperCase() !== gradient.gradient_end;
+    gradientStart.value = gradient.gradient_start;
+    gradientEnd.value = gradient.gradient_end;
+    selectedSavedGradientSlot = slot;
+    if (changed) cancelCurrent();
+    updateGradientPresentation();
+    savedGradientStatus.textContent = `Using Custom gradient ${slot}.`;
+  };
+  const saveGradient = async (slot) => {
+    if (!['account', 'guest'].includes(savedGradientMode) || savingGradientSlot !== null) return;
+    const gradient = {
+      slot,
+      gradient_start: gradientStart.value.toUpperCase(),
+      gradient_end: gradientEnd.value.toUpperCase(),
+    };
+    if (!normalizeSavedGradient(gradient)) {
+      savedGradientStatus.textContent = "Choose two dark colors with enough contrast on white before saving.";
+      return;
+    }
+    const mode = savedGradientMode;
+    const version = savedGradientRequestVersion;
+    savingGradientSlot = slot;
+    savedGradientStatus.textContent = `Saving Custom gradient ${slot}…`;
+    renderSavedGradients();
+    if (mode === "guest") {
+      const next = new Map(savedGradientSlots);
+      next.set(slot, gradient);
+      try {
+        window.localStorage.setItem(guestGradientStorageKey, JSON.stringify({
+          slots: [...next.values()].sort((a, b) => a.slot - b.slot),
+        }));
+        savedGradientSlots = next;
+        selectedSavedGradientSlot = slot;
+        savedGradientStatus.textContent = `Saved Custom gradient ${slot} in this browser.`;
+      } catch (_err) {
+        savedGradientStatus.textContent = `Could not save Custom gradient ${slot} in this browser. Check browser storage settings and try again.`;
+      }
+      savingGradientSlot = null;
+      updateGradientPresentation();
+      return;
+    }
+    try {
+      const response = await fetch(`/api/qr/gradients/${slot}`, {
+        method: "PUT", credentials: "same-origin", cache: "no-store",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify({ gradient_start: gradient.gradient_start, gradient_end: gradient.gradient_end }),
+      });
+      if (version !== savedGradientRequestVersion) return;
+      if (response.status === 401) {
+        resetSavedGradientSession();
+        savedGradientMode = "unavailable";
+        savedGradientStatus.textContent = "Your sign-in changed. Retry loading to use saved gradients.";
+        renderSavedGradients();
+        return;
+      }
+      if (!response.ok) throw new Error("Could not save gradient");
+      const saved = normalizeSavedGradient(await response.json());
+      if (version !== savedGradientRequestVersion) return;
+      if (!saved || saved.slot !== slot || saved.gradient_start !== gradient.gradient_start
+        || saved.gradient_end !== gradient.gradient_end) throw new Error("Invalid saved gradient");
+      savedGradientSlots.set(slot, saved);
+      selectedSavedGradientSlot = gradientStart.value.toUpperCase() === saved.gradient_start
+        && gradientEnd.value.toUpperCase() === saved.gradient_end ? slot : null;
+      savedGradientStatus.textContent = `Saved Custom gradient ${slot} to your account.`;
+    } catch (_err) {
+      if (version === savedGradientRequestVersion) {
+        savedGradientStatus.textContent = `Could not save Custom gradient ${slot}. Try again.`;
+      }
+    } finally {
+      if (version === savedGradientRequestVersion) {
+        savingGradientSlot = null;
+        updateGradientPresentation();
+      }
     }
   };
   const decodePngBase64 = (value) => {
@@ -252,7 +470,9 @@
   const plainModeSelected = () => modeInputs.find((radio) => radio.checked)?.value === "plain";
   const selectedOutputFormat = () => formatInputs.find((radio) => radio.checked)?.value || "png";
   const updateFormatPresentation = () => {
-    gradientOptions.classList.toggle("hidden", selectedOutputFormat() !== "ascii_motion");
+    const motion = selectedOutputFormat() === "ascii_motion";
+    gradientOptions.classList.toggle("hidden", !motion);
+    if (motion) ensureSavedGradients();
   };
   const updateModePresentation = () => {
     const plain = plainModeSelected();
@@ -272,22 +492,57 @@
     updateFormatPresentation();
   });
   for (const radio of motionCopyFormats) radio.addEventListener("change", updateMotionCopyFormat);
+  for (const button of savedGradientUseButtons) button.addEventListener("click", () => {
+    useSavedGradient(Number(button.dataset.gradientSlotUse));
+  });
+  for (const button of savedGradientSaveButtons) button.addEventListener("click", () => {
+    void saveGradient(Number(button.dataset.gradientSlotSave));
+  });
+  savedGradientRetry.addEventListener("click", () => { void loadSavedGradients(); });
   for (const preset of gradientPresets) preset.addEventListener("click", () => {
-    if (gradientStart.value.toUpperCase() === preset.dataset.gradientStart
-      && gradientEnd.value.toUpperCase() === preset.dataset.gradientEnd) return;
+    const changed = gradientStart.value.toUpperCase() !== preset.dataset.gradientStart
+      || gradientEnd.value.toUpperCase() !== preset.dataset.gradientEnd;
+    if (!changed && selectedSavedGradientSlot === null) return;
     gradientStart.value = preset.dataset.gradientStart;
     gradientEnd.value = preset.dataset.gradientEnd;
-    cancelCurrent();
+    selectedSavedGradientSlot = null;
+    if (changed) cancelCurrent();
     updateGradientPresentation();
+    if (savedGradientMode === "account" || savedGradientMode === "guest") {
+      savedGradientStatus.textContent = `Using ${preset.textContent.trim()} preset.`;
+    }
   });
   for (const input of [gradientStart, gradientEnd]) input.addEventListener("input", () => {
+    selectedSavedGradientSlot = null;
     cancelCurrent();
     updateGradientPresentation();
+    if (savedGradientMode === "account" || savedGradientMode === "guest") {
+      savedGradientStatus.textContent = "Colors changed. Save to a Custom gradient slot to keep them.";
+    }
   });
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) stopAnimation();
-    else startAnimation();
+    if (document.hidden) {
+      stopAnimation();
+      // A different account can sign in while this tab is hidden. Clear its
+      // in-memory slots before the tab becomes visible again.
+      resetSavedGradientSession();
+    } else {
+      startAnimation();
+      ensureSavedGradients();
+    }
     updateImageMotion();
+  });
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) {
+      resetSavedGradientSession();
+      ensureSavedGradients();
+    }
+  });
+  window.addEventListener("focus", () => {
+    if (selectedOutputFormat() !== "ascii_motion") return;
+    // Both windows can remain visible while the account changes elsewhere.
+    resetSavedGradientSession();
+    ensureSavedGradients();
   });
   window.addEventListener("resize", fitTextPreview);
   reducedMotion?.addEventListener?.("change", (event) => {
