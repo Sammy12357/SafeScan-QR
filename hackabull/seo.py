@@ -50,6 +50,13 @@ SEO_PAGE_COPY = {
             "verify the official payment method, and what to do if you entered card details."
         ),
     },
+    "/learn/scan-qr-code-from-screenshot": {
+        "title": "How to Scan a QR Code From a Screenshot | Sqafe",
+        "description": (
+            "Learn how to scan a QR code from a screenshot or saved photo on the same "
+            "phone, read its link before opening it, and understand incomplete scan results."
+        ),
+    },
     "/contact": {
         "title": "Contact Sqafe | Support and Security Reports",
         "description": (
@@ -88,6 +95,7 @@ HOME_STRUCTURED_DATA = {
 GUIDE_BREADCRUMB_LABELS = {
     "/learn/after-scanning-suspicious-qr": "After a suspicious scan",
     "/learn/parking-meter-qr-scams": "Parking meter QR scams",
+    "/learn/scan-qr-code-from-screenshot": "Scan a QR screenshot",
 }
 
 # Public HTML routes may move to the canonical host. Keep auth, account,
