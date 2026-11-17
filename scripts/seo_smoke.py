@@ -15,7 +15,7 @@ import ssl
 import struct
 import sys
 from urllib.parse import urljoin, urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import HTTPErrorProcessor, HTTPSHandler, Request, build_opener, urlopen
 from xml.etree import ElementTree
 
 
@@ -24,6 +24,13 @@ SITEMAP_URL = ORIGIN + "/sitemap.xml"
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_SITEMAP_URLS = 100
 USER_AGENT = "SqafeSEO-Smoke/1.0 (+https://sqafe.com/contact)"
+REDIRECT_CASES = (
+    ("https://safescan-qr.onrender.com/", ORIGIN + "/"),
+    ("https://safescan-qr.onrender.com/learn?x=1", ORIGIN + "/learn?x=1"),
+    ("https://safescan-qr.onrender.com/plans?x=1", ORIGIN + "/plans?x=1"),
+    ("https://www.sqafe.com/learn", ORIGIN + "/learn"),
+    ("http://sqafe.com/learn", ORIGIN + "/learn"),
+)
 
 
 def verified_tls_context() -> ssl.SSLContext:
@@ -87,6 +94,59 @@ def fetch(url: str, timeout: float) -> tuple[int, str, object, bytes]:
         return response.status, response.geturl(), response.headers, body
 
 
+class _NoRedirectErrorProcessor(HTTPErrorProcessor):
+    """Return the first response so a followed 200 cannot hide a bad move."""
+
+    def http_response(self, request, response):
+        return response
+
+    https_response = http_response
+
+
+def fetch_redirect(url: str, timeout: float) -> tuple[int, str]:
+    request = Request(url, headers={"User-Agent": USER_AGENT, "Accept-Encoding": "identity"}, method="GET")
+    opener = build_opener(HTTPSHandler(context=verified_tls_context()), _NoRedirectErrorProcessor())
+    with opener.open(request, timeout=timeout) as response:
+        return response.status, response.headers.get("Location", "")
+
+
+def check_redirects(timeout: float) -> tuple[list[str], list[dict[str, object]]]:
+    problems: list[str] = []
+    rows: list[dict[str, object]] = []
+    for source, destination in REDIRECT_CASES:
+        try:
+            status, location = fetch_redirect(source, timeout)
+            errors = []
+            destination_status: int | str = ""
+            if status not in (301, 308):
+                errors.append(f"expected permanent HTTP 301 or 308, got {status}")
+            if location != destination:
+                errors.append(f"expected Location {destination}, got {location or '(missing)'}")
+            if not errors:
+                try:
+                    destination_status, destination_location = fetch_redirect(destination, timeout)
+                    if destination_status != 200:
+                        errors.append(
+                            f"expected redirect target HTTP 200 without another hop, got {destination_status}"
+                            + (f" to {destination_location}" if destination_location else "")
+                        )
+                except Exception as exc:
+                    errors.append(f"redirect target failed: {type(exc).__name__}: {exc}")
+            rows.append({
+                "source": source, "status": status, "location": location,
+                "destination_status": destination_status, "errors": errors,
+            })
+            problems.extend(f"{source}: {error}" for error in errors)
+        except Exception as exc:
+            error = f"{type(exc).__name__}: {exc}"
+            rows.append({
+                "source": source, "status": "", "location": "",
+                "destination_status": "", "errors": [error],
+            })
+            problems.append(f"{source}: {error}")
+    return problems, rows
+
+
 def one(values: list[str | None], label: str, errors: list[str]) -> str:
     if len(values) != 1 or not values[0] or not values[0].strip():
         errors.append(f"expected one nonempty {label}")
@@ -116,9 +176,11 @@ def markdown_cell(value: object) -> str:
     return str(value).replace("|", "\\|").replace("\n", " ")
 
 
-def run(timeout: float) -> tuple[list[str], list[dict[str, object]]]:
+def run(timeout: float) -> tuple[list[str], list[dict[str, object]], list[dict[str, object]]]:
     problems: list[str] = []
     rows: list[dict[str, object]] = []
+    redirect_problems, redirect_rows = check_redirects(timeout)
+    problems.extend(redirect_problems)
 
     status, final, _, robots = fetch(ORIGIN + "/robots.txt", timeout)
     if status != 200 or final != ORIGIN + "/robots.txt":
@@ -217,10 +279,10 @@ def run(timeout: float) -> tuple[list[str], list[dict[str, object]]]:
                 problems.append(f"{image_url}: image is not 1200 x 630")
         except Exception as exc:
             problems.append(f"{image_url}: {type(exc).__name__}: {exc}")
-    return problems, rows
+    return problems, rows, redirect_rows
 
 
-def report(problems: list[str], rows: list[dict[str, object]]) -> str:
+def report(problems: list[str], rows: list[dict[str, object]], redirect_rows: list[dict[str, object]]) -> str:
     checked_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     lines = [
         "# Sqafe public SEO smoke check",
@@ -228,9 +290,28 @@ def report(problems: list[str], rows: list[dict[str, object]]) -> str:
         f"**Checked:** {checked_at}. **Origin:** {ORIGIN}. **Result:** {'PASS' if not problems else 'FAIL'}.",
         "This is a live response check, not evidence of search-engine indexing or ranking.",
         "",
+        "## Redirect checks",
+        "",
+        "These GET checks record the first response from each source and target URL without following redirects.",
+        "",
+        "| Source URL | Status | Location | Target status | Check |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    for row in redirect_rows:
+        errors = row["errors"]
+        result = "Pass" if not errors else "; ".join(errors)
+        lines.append(
+            f"| {markdown_cell(row['source'])} | {markdown_cell(row['status'])} | "
+            f"{markdown_cell(row['location'])} | {markdown_cell(row['destination_status'])} | "
+            f"{markdown_cell(result)} |"
+        )
+    lines.extend((
+        "",
+        "## Sitemap pages",
+        "",
         "| Sitemap URL | Title | Page checks |",
         "| --- | --- | --- |",
-    ]
+    ))
     for row in rows:
         errors = row["errors"]
         result = "Pass" if not errors else "; ".join(errors)
@@ -248,10 +329,10 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=12, help="Per-request timeout in seconds")
     args = parser.parse_args()
     try:
-        problems, rows = run(args.timeout)
+        problems, rows, redirect_rows = run(args.timeout)
     except Exception as exc:
-        problems, rows = [f"Crawl stopped: {type(exc).__name__}: {exc}"], []
-    result = report(problems, rows)
+        problems, rows, redirect_rows = [f"Crawl stopped: {type(exc).__name__}: {exc}"], [], []
+    result = report(problems, rows, redirect_rows)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(result, encoding="utf-8")
