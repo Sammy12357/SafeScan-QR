@@ -1,8 +1,8 @@
 # Sqafe search visibility: owner checklist
 
-**Reviewed:** 2026-11-17. **Owner:** Sam / Sqafe. **Canonical site:** <https://sqafe.com/>. This is an execution checklist, not a ranking forecast. No Search Console or Bing Webmaster Tools export was available for this review, so search traffic, rankings, and indexed-page counts are **not yet measured**. The reviewed sitemap includes `/`, `/about`, `/learn`, `/learn/after-scanning-suspicious-qr`, `/learn/parking-meter-qr-scams`, and `/contact` after the brand release; check its live contents before every submission.
+**Reviewed:** 2026-11-17. **Owner:** Sam / Sqafe. **Canonical site:** <https://sqafe.com/>. This is an execution checklist, not a ranking forecast. Owner screenshots show two indexed URLs, but no complete Search Console or Bing Webmaster Tools report was available, so search traffic, rankings, and indexed-page counts are **not yet measured**. The reviewed sitemap includes `/`, `/about`, `/learn`, `/learn/after-scanning-suspicious-qr`, `/learn/parking-meter-qr-scams`, and `/contact` after the brand release; check its live contents before every submission.
 
-**Current state:** The owner confirmed the `sqafe.com` Domain property is verified. On 2026-11-15, Search Console showed “Sitemap submitted successfully” for `https://sqafe.com/sitemap.xml`. Its Performance and Indexing reports were still processing. Recheck the sitemap status and URL Inspection after Google processes the property.
+**Current state:** The owner confirmed the `sqafe.com` Domain property is verified. On 2026-11-15, Search Console showed “Sitemap submitted successfully” for `https://sqafe.com/sitemap.xml`. Its Performance and Indexing reports were still processing then. Owner-provided URL Inspection screenshots on 2026-11-17 show `/about` and `/learn` as indexed. Recheck the sitemap status, homepage, and remaining URLs after Google processes the property.
 
 For the current legacy-host redirect evidence and the indexing-specific Search Console handoff, use [the indexing checklist](indexing-checklist.md).
 
