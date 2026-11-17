@@ -289,6 +289,7 @@ async def api_qr_generate(request: Request, payload: dict = Body(...)):
             response = JSONResponse({
                 "still_png_base64": base64.b64encode(still).decode("ascii"),
                 "animated_png_base64": base64.b64encode(animated).decode("ascii"),
+                "text": qr_ascii_from_payload(target_url),
                 "frame_count": 4,
                 "frame_duration_ms": 350,
             }, headers=headers)
@@ -398,6 +399,7 @@ async def api_qr_generate_plain(request: Request, payload: dict = Body(...)):
             return JSONResponse({
                 "still_png_base64": base64.b64encode(still).decode("ascii"),
                 "animated_png_base64": base64.b64encode(animated).decode("ascii"),
+                "text": qr_ascii_from_payload(target_url, include_attribution=False),
                 "frame_count": 4,
                 "frame_duration_ms": 350,
             }, headers=headers)

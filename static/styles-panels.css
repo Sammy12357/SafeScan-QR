@@ -77,6 +77,10 @@
 .generated-motion-heading p { margin: var(--space-0); color: var(--text); font-weight: 700; }
 .generated-motion-downloads { display: flex; justify-content: center; flex-wrap: wrap; gap: var(--space-3); }
 .generated-motion-downloads p { flex-basis: 100%; margin: var(--space-0); color: var(--muted); font-size: 0.8rem; text-align: center; }
+.generated-motion-text { display: flex; flex-direction: column; gap: var(--space-3); width: min(100%, 600px); margin-top: var(--space-5); padding-top: var(--space-5); border-top: 1px solid var(--line); }
+.generated-motion-text h3, .generated-motion-text p { margin: var(--space-0); }
+.generated-motion-text h3 { color: var(--text); font-size: 1rem; }
+.generated-motion-text > p:not(.generated-ascii-action-status):not(.generated-ascii-size-notice) { color: var(--muted); font-size: 0.85rem; line-height: 1.45; }
 .generated-qr-status { max-width: 440px; margin: var(--space-0); color: var(--muted); font-size: 0.85rem; line-height: 1.45; text-align: center; }
 .generated-qr-wrap[data-verification="not_checked"] .generated-qr-status { color: var(--text); }
 .generated-qr-wrap .secondary-button { padding: var(--space-3) var(--space-4); font-size: 0.9rem; }
