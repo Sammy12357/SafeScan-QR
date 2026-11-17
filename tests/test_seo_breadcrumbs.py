@@ -25,6 +25,7 @@ def test_canonical_guides_have_breadcrumbs_matching_visible_navigation(seo_clien
     guides = {
         "/learn/after-scanning-suspicious-qr": "After a suspicious scan",
         "/learn/parking-meter-qr-scams": "Parking meter QR scams",
+        "/learn/scan-qr-code-from-screenshot": "Scan a QR screenshot",
     }
     for path, label in guides.items():
         response = seo_client.get(path + "?ref=breadcrumb-test")

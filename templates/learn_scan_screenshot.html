@@ -1,0 +1,68 @@
+{% extends "_guide_base.html" %}
+{% block guide_content %}
+<article class="test-section guide-article">
+  <nav class="guide-breadcrumb" aria-label="Breadcrumb"><a href="/">Home</a><span aria-hidden="true">/</span><a href="/learn">Learn</a><span aria-hidden="true">/</span><span aria-current="page">Scan a QR screenshot</span></nav>
+  <p class="eyebrow">Sqafe blog · QR safety guide</p>
+  <h1>How to scan a QR code from a screenshot without opening its link</h1>
+  <p>By Sqafe</p>
+  <p class="guide-intro">A QR code in a text message, email, or screenshot can be awkward to scan when it is already on your phone. You can save the image, upload it to Sqafe, and read the decoded content before deciding what to do. The important distinction is between <em>reading the code</em> and <em>trusting the destination</em>: a readable QR is not proof that its link or sender is legitimate.</p>
+
+  <h2>The quick answer</h2>
+  <ol>
+    <li>Save the original screenshot or photo to your device. Keep the whole QR and some clear space around it visible.</li>
+    <li>Open <a href="/#scanner">Sqafe's scanner</a> and choose <strong>Upload QR file/photo</strong>.</li>
+    <li>Select the screenshot. Sqafe will try to read the encoded content and display the exact payload.</li>
+    <li>Check the destination and any available risk signals. If checks are incomplete, treat the result as unverified.</li>
+    <li>For a login, payment, or account request, reach the organization through an app, website, or number you found independently.</li>
+  </ol>
+  <p>This works on one phone because the upload reads a saved image; you do not need a second camera pointed at your screen. If the QR is on another device or a printed sign, the scanner also offers <strong>Scan with camera</strong>.</p>
+
+  <h2>Before uploading, decide whether the QR is private</h2>
+  <p>A screenshot may contain more than a public website link. A one-time sign-in code, account setup code, boarding pass, ticket, or payment request can carry information you would not post publicly. Uploading an image sends it to Sqafe for processing. If you are not comfortable sending that code to a service, use your device's local QR preview if available, or ask the sender or operator through a known channel. Do not share an account or one-time code merely to have someone else identify it.</p>
+  <p>Be particularly cautious with an unexpected QR in a message claiming that a package failed, an account needs verification, or a payment must be made immediately. The FTC describes these as common QR scam pretexts and recommends using a trusted contact method instead of following the message's link.<sup class="guide-citation"><a href="#source-ftc-message" aria-label="[1] Source: FTC QR message warning">[1]</a></sup></p>
+
+  <h2>Step 1: Save an image the reader can use</h2>
+  <p>Use the original screenshot or photo when possible. If a message app shows a small thumbnail, save or open the full image before making another screenshot. Keep the entire code in the frame, including its clear border. If there are two separate QR codes in the same picture, crop to the one you intend to inspect. An image that cuts off a corner, blurs tiny squares, or places text over the pattern may not contain enough information to decode reliably.</p>
+  <p>You do not need to make the QR fill the whole image. A reasonably sharp code with its border intact is a better starting point than a heavily zoomed or edited copy. Do not assume an attractive or branded design is safe; the encoded destination is what matters.</p>
+
+  <h2>Step 2: Upload the screenshot to Sqafe</h2>
+  <p>Go to the <a href="/#scanner">scanner on sqafe.com</a>, choose <strong>Upload QR file/photo</strong>, and select the saved image. Sqafe attempts to decode it and shows the exact QR payload in the result. Sqafe does not automatically navigate your browser to the destination. It may assess supported links using available redirect and reputation signals, but those checks can be unavailable or incomplete. The result should be read as a snapshot, not as permission to trust a sender.</p>
+  <p>If the screenshot came from another person's message, keep the original message for context. A link can look ordinary in isolation while the message around it makes a false claim about who sent it or why you must act.</p>
+
+  <h2>Step 3: Read the result before taking an action</h2>
+  <p>Start with <strong>Exact decoded QR payload</strong>. For a web link, compare the website address with the organization you expected. Pay attention to the full domain, not just a familiar name in the path or a logo in the message. Watch for swapped letters, extra words, or a shortened address that hides where it will lead. The FBI and FTC both advise inspecting the URL before opening a QR destination.<sup class="guide-citation"><a href="#source-fbi-qr" aria-label="[2] Source: FBI QR advisory">[2]</a></sup><sup class="guide-citation"><a href="#source-ftc-message" aria-label="[1] Source: FTC QR message warning">[1]</a></sup></p>
+  <p>The result's headline answers a different question from whether the image was read:</p>
+  <ul>
+    <li><strong>QR scan could not finish:</strong> Sqafe did not obtain a decoded payload from this attempt. There is no link verdict to rely on. Try the original image or a clearer crop.</li>
+    <li><strong>Could not fully check:</strong> the QR was read, but Sqafe could not complete enough payload or link checks. Read the payload and verify the source independently.</li>
+    <li><strong>High-risk indicators:</strong> the available signals found something concerning. Avoid opening the destination or entering information there.</li>
+    <li><strong>No threats found in checks:</strong> the configured checks completed without a known match at that time. A destination can change, and a clean result cannot prove who sent the code or who owns a physical sign.</li>
+  </ul>
+  <p>A QR can also contain text, a Wi-Fi request, a contact card, or a wallet action rather than a normal website. In that case, read what it requests and do not authorize an account, device, or payment action solely because the code was readable. Sqafe can show decoded content without being able to verify what another app will do with it.</p>
+
+  <h2>If the screenshot will not scan</h2>
+  <p>First, try the full-resolution original. Then crop away unrelated background while leaving the complete QR and its border visible. If the image contains multiple codes, submit one at a time; Sqafe may refuse a picture with competing payloads rather than guess. Try a different photo with better focus and lighting if the code was photographed from paper or another screen. Some damaged or heavily stylized codes remain unreadable even when a phone app manages to infer them.</p>
+  <p>If your phone's built-in reader displays a URL preview but Sqafe cannot read the image, you can copy the previewed URL and use Sqafe's <strong>Or paste decoded content</strong> field. Do this without opening the page. If no reader can show the destination, ask the organization for its known website or app instead of repeatedly trying an unverified code.</p>
+
+  <h2>What an image scan cannot establish</h2>
+  <p>Reading a QR tells you what was encoded in the image you supplied. It cannot establish that a sticker was placed by the real business, that a message came from the claimed sender, or that the eventual payment recipient is authorized. The FBI documents both physical and digital QR replacement attacks and recommends checking a business through a known address or phone number.<sup class="guide-citation"><a href="#source-fbi-qr" aria-label="[2] Source: FBI QR advisory">[2]</a></sup></p>
+  <p>For example, if a QR in a delivery text asks you to pay a fee, open the delivery company through the app or site you already know. If a code on a parking meter asks for card details, check the parking operator's own instructions; our <a href="/learn/parking-meter-qr-scams">parking meter QR guide</a> walks through that case. If you already opened a suspicious link or entered information, use the <a href="/learn/after-scanning-suspicious-qr">after-scan response guide</a>.</p>
+
+  <h2>Common questions</h2>
+  <h3>Can I scan a QR screenshot on the same phone?</h3>
+  <p>Yes. Save the screenshot, then select it with <strong>Upload QR file/photo</strong>. This reads the image file without needing a second device. Your phone's photo app may also offer a local QR preview, depending on the device and app.</p>
+  <h3>Does decoding the QR open the link?</h3>
+  <p>Sqafe shows the decoded content and available check results before you choose whether to open a destination. If you use another camera or photo app, watch what it offers before tapping; interfaces differ.</p>
+  <h3>Does a green or low-risk result mean the QR is safe?</h3>
+  <p>Sqafe cannot establish the sender's identity or guarantee that a destination will stay unchanged. Treat a completed low-risk check as one observation. For money, credentials, or device permissions, confirm the request through a channel you trust.</p>
+
+  <section class="guide-sources" aria-labelledby="guideSourcesTitle">
+    <h2 id="guideSourcesTitle">Sources</h2>
+    <ol>
+      <li id="source-ftc-message"><a href="https://consumer.ftc.gov/consumer-alerts/2023/12/scammers-hide-harmful-links-qr-codes-steal-your-information">Federal Trade Commission: Scammers hide harmful links in QR codes to steal your information</a> (2023).</li>
+      <li id="source-fbi-qr"><a href="https://www.ic3.gov/PSA/2022/PSA220118">FBI Internet Crime Complaint Center: Cybercriminals Tampering with QR Codes to Steal Victim Funds</a> (2022).</li>
+    </ol>
+  </section>
+  <nav class="guide-related" aria-label="Related guides"><a href="/learn">All QR safety guides</a><a href="/learn/parking-meter-qr-scams">Parking meter QR scams</a><a href="/learn/after-scanning-suspicious-qr">After a suspicious scan</a></nav>
+</article>
+{% endblock %}

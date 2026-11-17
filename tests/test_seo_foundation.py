@@ -48,6 +48,7 @@ def test_robots_and_sitemap_are_canonical_and_parseable(seo_client):
         "https://sqafe.com/learn",
         "https://sqafe.com/learn/after-scanning-suspicious-qr",
         "https://sqafe.com/learn/parking-meter-qr-scams",
+        "https://sqafe.com/learn/scan-qr-code-from-screenshot",
         "https://sqafe.com/contact",
     ]
     assert root.findall("s:url/s:lastmod", namespace) == []
@@ -78,6 +79,10 @@ def test_public_pages_redirect_to_one_host_and_path_shape(seo_client):
         (
             "https://safescan-qr.onrender.com/Learn/Parking-Meter-QR-Scams/?from=sign",
             "https://sqafe.com/learn/parking-meter-qr-scams?from=sign",
+        ),
+        (
+            "https://www.sqafe.com/Learn/Scan-QR-Code-From-Screenshot/?from=photo",
+            "https://sqafe.com/learn/scan-qr-code-from-screenshot?from=photo",
         ),
         ("https://safescan-qr.onrender.com/?ref=abc123", "https://sqafe.com/?ref=abc123"),
         ("https://safescan-qr.onrender.com/plans", "https://sqafe.com/plans"),
@@ -133,6 +138,7 @@ def test_only_reviewed_public_html_is_indexable(seo_client):
     for path in (
         "/", "/learn", "/learn/after-scanning-suspicious-qr",
         "/learn/parking-meter-qr-scams", "/contact",
+        "/learn/scan-qr-code-from-screenshot",
     ):
         response = seo_client.get(path)
         assert response.status_code == 200, path

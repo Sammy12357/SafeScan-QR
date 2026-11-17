@@ -276,6 +276,21 @@ async def learn_parking_meter_page(request: Request):
         **index_user_context(user),
     })
 
+
+@qr_app.get("/learn/scan-qr-code-from-screenshot", response_class=HTMLResponse)
+async def learn_scan_screenshot_page(request: Request):
+    """Guide to reading a saved QR image and interpreting the scan result."""
+    user = get_session_user(request)
+    return templates.TemplateResponse("learn_scan_screenshot.html", {
+        "request": request,
+        "logged_in": bool(user),
+        "email": user["email"] if user else "",
+        "test_site_path": False,
+        "active_nav": "learn",
+        "google_client_id": CLIENT_ID,
+        **index_user_context(user),
+    })
+
 @qr_app.get("/token", response_class=HTMLResponse)
 async def token_page(request: Request):
     """Standalone SQR token & airdrop tab."""

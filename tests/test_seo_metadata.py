@@ -89,6 +89,10 @@ def test_reviewed_pages_have_unique_canonical_and_share_metadata(seo_client):
             "Parking Meter QR Scams: Check the Code Before You Pay | Sqafe",
             "Learn how fake QR stickers on parking meters redirect drivers, how to verify the official payment method, and what to do if you entered card details.",
         ),
+        "/learn/scan-qr-code-from-screenshot": (
+            "How to Scan a QR Code From a Screenshot | Sqafe",
+            "Learn how to scan a QR code from a screenshot or saved photo on the same phone, read its link before opening it, and understand incomplete scan results.",
+        ),
         "/contact": (
             "Contact Sqafe | Support and Security Reports",
             "Find Sqafe contact options for account help, privacy questions, partnerships, and reporting a security concern.",
@@ -180,6 +184,7 @@ def test_guides_have_practical_content_sources_and_hub_links(seo_client):
     for path in (
         "/learn/after-scanning-suspicious-qr",
         "/learn/parking-meter-qr-scams",
+        "/learn/scan-qr-code-from-screenshot",
     ):
         assert f'href="{path}"' in hub
         response = seo_client.get(path)
@@ -201,3 +206,11 @@ def test_guides_have_practical_content_sources_and_hub_links(seo_client):
     parking = seo_client.get("/learn/parking-meter-qr-scams").text
     assert "Find the operator without using the QR link" in parking
     assert "Read the destination before opening it" in parking
+    screenshot = seo_client.get("/learn/scan-qr-code-from-screenshot").text
+    home = seo_client.get("/").text
+    assert "How to scan a QR code from a screenshot without opening its link" in screenshot
+    assert "QR scan could not finish" in screenshot
+    assert "Could not fully check" in screenshot
+    assert "By Sqafe" in screenshot
+    assert "Upload QR file/photo" in screenshot
+    assert 'href="/learn/scan-qr-code-from-screenshot"' in home
