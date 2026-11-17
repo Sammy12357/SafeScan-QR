@@ -138,6 +138,29 @@ def test_halftone_requires_an_artwork_file(browser_site):
         context.close()
 
 
+def test_real_plain_halftone_download_scans_to_entered_url(browser_site, artwork_png):
+    from hackabull.qr_decode import decode_qr_upload
+
+    browser, base_url = browser_site
+    context, page = new_page(browser, base_url)
+    try:
+        select_halftone(page, artwork_png, mode="plain")
+        page.locator("#generateQrButton").click()
+        page.locator("#generatedQrWrap").wait_for(state="visible", timeout=30000)
+        assert page.locator("#generatedQrWrap").get_attribute("data-verification") == "not_checked"
+        with page.expect_download() as download_info:
+            page.locator("#generatedQrDownload").click()
+        png = Path(download_info.value.path()).read_bytes()
+        payload, decoded_image = decode_qr_upload(png, "halftone.png", "image/png")
+        try:
+            assert payload == TEST_URL
+        finally:
+            if decoded_image is not None:
+                decoded_image.close()
+    finally:
+        context.close()
+
+
 @pytest.mark.parametrize("mode", ["screened", "plain"])
 def test_halftone_upload_preview_and_download_require_matching_verification(browser_site, artwork_png, qr_png, mode):
     browser, base_url = browser_site
