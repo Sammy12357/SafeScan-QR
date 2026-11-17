@@ -271,7 +271,7 @@
   copyButton.addEventListener("click", () => copyCurrentText(actionStatus));
   const richAsciiFrame = (frame) => {
     const preview = document.createElement("pre");
-    preview.style.cssText = "display:inline-block;width:max-content;max-width:none;overflow:visible;white-space:pre;font-family:Menlo,monospace;font-size:24px;line-height:12px;margin:0;background:#fff;color:#05080d";
+    preview.style.cssText = "display:inline-block;width:max-content;max-width:none;overflow:visible;white-space:pre;font-family:Menlo,monospace;font-size:24px;font-weight:700;line-height:12px;letter-spacing:0;font-variant-ligatures:none;margin:0;background:#fff;color:#05080d";
     preview.textContent = frame;
     return preview.outerHTML;
   };
@@ -288,11 +288,11 @@
       } else {
         await navigator.clipboard.writeText(snapshot);
       }
-      motionTextActionStatus.textContent = "ASCII QR frame copied. Paste it with its spaces and line breaks intact.";
+      motionTextActionStatus.textContent = "ASCII QR frame copied. Apps that keep formatting preserve its scan-ready spacing.";
     } catch (_err) {
       try {
         await navigator.clipboard.writeText(snapshot);
-        motionTextActionStatus.textContent = "ASCII QR frame copied as plain text. Use a fixed-width font when pasting.";
+        motionTextActionStatus.textContent = "ASCII QR frame copied as plain text. Use bold monospace at 24px with 12px line spacing and no wrapping.";
       } catch (_fallbackError) {
         motionTextActionStatus.textContent = "Could not copy automatically. Use Download .txt instead.";
       }

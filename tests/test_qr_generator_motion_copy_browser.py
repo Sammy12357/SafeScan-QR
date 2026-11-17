@@ -198,6 +198,7 @@ def test_reduced_motion_copy_paste_and_download_preserve_ascii(browser_site, mot
         assert clipboard["htmlText"] == captured
         assert "line-height: 12px" in clipboard["style"]
         assert "white-space: pre" in clipboard["style"]
+        assert "font-weight: 700" in clipboard["style"]
 
         page.evaluate("""() => {
           const textarea = document.createElement('textarea');
