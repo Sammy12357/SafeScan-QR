@@ -11,7 +11,7 @@
   <title>QR Generator | Sqafe</title>
   <meta name="description" content="Generate a screened QR after SafeScan checks a link, or choose a plain QR with no safety check.">
   <link rel="icon" href="/static/safescan-logo.svg?v=sqafe-brand-v1" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=ascii-motion-text-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=ascii-motion-dom-v1">
 </head>
 <body class="test-site-page">
   <div class="page-shell">
@@ -47,7 +47,7 @@
             </label>
             <label class="generate-qr-format-option">
               <input type="radio" name="generateQrFormat" value="ascii_motion">
-              <span><strong>ASCII motion QR</strong><small>Auto-playing preview with copyable text</small></span>
+              <span><strong>ASCII motion QR</strong><small>Moving character QR you can copy</small></span>
             </label>
           </div>
         </fieldset>
@@ -81,31 +81,24 @@
         </div>
         <p id="generateQrError" class="generated-qr-error hidden" role="alert"></p>
         <div id="generatedQrWrap" class="generated-qr-wrap hidden" aria-live="polite">
-          <div id="generatedMotionHeading" class="generated-motion-heading hidden">
-            <p>ASCII motion QR preview</p>
-            <button id="generatedMotionToggle" class="secondary-button" type="button">Play motion</button>
-          </div>
-          <img id="generatedQrImage" class="generated-qr-image" alt="Generated QR code">
-          <p id="generatedQrStatus" class="generated-qr-status">Checked when generated. The destination may change, so recheck before opening.</p>
-          <a id="generatedQrDownload" class="secondary-button" download="safescan-qr.png" href="#">Download PNG</a>
-          <div id="generatedMotionDownloads" class="generated-motion-downloads hidden">
-            <a id="generatedMotionStillDownload" class="secondary-button" download="sqafe-ascii-motion-qr.png" href="#">Download still PNG</a>
-            <a id="generatedMotionAnimatedDownload" class="secondary-button" download="sqafe-ascii-motion-qr-animated.png" href="#">Download animated PNG</a>
-            <p>Some apps show only the first frame. The still PNG also scans.</p>
-          </div>
           <section id="generatedMotionTextWrap" class="generated-motion-text hidden" aria-labelledby="generatedMotionTextHeading">
-            <h3 id="generatedMotionTextHeading">Copyable text QR</h3>
-            <p>Copy a still QR frame as text. Pasted text cannot carry motion or the color gradient. Keep its spacing, use a fixed-width font, and display it large enough for a camera to read.</p>
+            <h3 id="generatedMotionTextHeading">Animated ASCII QR</h3>
+            <p>The characters move automatically. Copy captures the frame you see as text; pasted text is still. Apps that keep formatting preserve its scan-ready layout. For plain-text paste, keep every space and line break, turn off wrapping, and use bold monospace at 24px with 12px line spacing.</p>
             <div class="generated-ascii-paper" id="generatedMotionTextPaper">
-              <pre id="generatedMotionTextArt" aria-hidden="true"></pre>
+              <div id="generatedMotionTextSurface" class="generated-motion-text-surface">
+                <pre id="generatedMotionTextArt" aria-hidden="true"></pre>
+              </div>
             </div>
-            <p id="generatedMotionTextSizeNotice" class="generated-ascii-size-notice hidden" role="status">This text QR is too wide to show fully on this screen. Use a shorter URL or display the downloaded text on a larger screen.</p>
+            <p id="generatedMotionTextSizeNotice" class="generated-ascii-size-notice hidden" role="status">This ASCII QR appears small on this screen. Paste it in a fixed-width font on a larger display if your camera cannot read it.</p>
             <div class="generated-ascii-actions">
-              <button id="generatedMotionTextCopy" class="secondary-button" type="button">Copy text QR</button>
+              <button id="generatedMotionTextCopy" class="secondary-button" type="button">Copy ASCII QR</button>
               <a id="generatedMotionTextDownload" class="secondary-button" download="sqafe-ascii-motion-qr.txt" href="#">Download .txt</a>
             </div>
             <p id="generatedMotionTextActionStatus" class="generated-ascii-action-status" role="status" aria-live="polite"></p>
           </section>
+          <img id="generatedQrImage" class="generated-qr-image" alt="Generated QR code">
+          <p id="generatedQrStatus" class="generated-qr-status">Checked when generated. The destination may change, so recheck before opening.</p>
+          <a id="generatedQrDownload" class="secondary-button" download="safescan-qr.png" href="#">Download PNG</a>
         </div>
         <div id="generatedAsciiWrap" class="generated-qr-wrap generated-ascii-wrap hidden" aria-live="polite">
           <div class="generated-ascii-heading">
@@ -132,6 +125,6 @@
   <script src="/static/app-widgets.js?v=legal-gpc-v1"></script>
   <script src="/static/app-go-ghost.js?v=ghost-inline-errors-v1"></script>
   <script src="/static/app-go-ghost-ui.js?v=legal-a11y-v1"></script>
-  <script src="/static/app-generate-qr.js?v=ascii-motion-text-v1"></script>
+  <script src="/static/app-generate-qr.js?v=ascii-motion-dom-v1"></script>
 </body>
 </html>

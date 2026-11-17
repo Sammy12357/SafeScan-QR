@@ -48,10 +48,14 @@ def test_deadline_prevents_later_expensive_tiers(decoder, monkeypatch):
     calls = []
     monkeypatch.setenv("QR_DECODE_BUDGET_S", "0.1")
     monkeypatch.delenv("QR_WECHAT_ENABLED", raising=False)
+    # Image preparation can take longer than this budget on a busy test host.
+    # Advance a local clock in the native tier so the deadline check is stable.
+    now = [100.0]
+    monkeypatch.setattr(decoder, "time", SimpleNamespace(monotonic=lambda: now[0]))
 
     def slow_native(*_args, **_kwargs):
         calls.append("native")
-        time.sleep(0.12)
+        now[0] += 0.12
         return []
 
     monkeypatch.setattr(decoder, "_zxing_barcodes", slow_native)
