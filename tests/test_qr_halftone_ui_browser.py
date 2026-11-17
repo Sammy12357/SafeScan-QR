@@ -2,7 +2,6 @@
 
 import io
 import json
-import os
 import subprocess
 import sys
 import tempfile
@@ -17,7 +16,7 @@ from PIL import Image
 from scripts.ui_screenshots import free_port, isolated_server_env, wait_for_server
 
 
-ROOT = Path(os.environ.get("SAFESCAN_HALFTONE_TEST_ROOT", Path(__file__).resolve().parents[1])).resolve()
+ROOT = Path(__file__).resolve().parents[1]
 TEST_URL = "https://sqafe.com/learn"
 
 

@@ -627,7 +627,7 @@ def decode_qr_upload(contents, filename="", content_type=""):
     """Decode in a killable process so native library stalls have a hard limit.
 
     This runs from the bounded upload thread pool. The per-image tier budget
-    applies inside the worker; one extra second covers process startup and IPC.
+    applies inside the worker; a separate allowance covers process startup and IPC.
     """
     from pathlib import Path
 

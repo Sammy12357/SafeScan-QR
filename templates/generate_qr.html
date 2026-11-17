@@ -104,8 +104,9 @@
         <fieldset id="generateQrHalftoneOptions" class="generate-qr-format generate-qr-halftone-options hidden">
           <legend>Choose your artwork</legend>
           <label for="generateQrHalftoneImage">Upload a photo or illustration</label>
-          <input id="generateQrHalftoneImage" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" aria-describedby="generateQrHalftoneHint generateQrHalftoneStatus">
+          <input id="generateQrHalftoneImage" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" aria-describedby="generateQrHalftoneHint generateQrHalftonePrivacy generateQrHalftoneStatus">
           <p id="generateQrHalftoneHint">PNG, JPEG, or WebP, up to 8 MB and 12 megapixels. Sqafe checks the finished QR before offering a download. Detailed or low-contrast images may need another crop or photo.</p>
+          <p id="generateQrHalftonePrivacy">Your artwork and URL are sent to Sqafe to render the QR. The generator does not keep the source image or finished QR after the request. In screened mode, configured reputation services may receive the URL.</p>
           <img id="generateQrHalftonePreview" alt="Selected artwork preview" hidden>
           <p id="generateQrHalftoneStatus" role="status" aria-live="polite">Choose an image to blend with the QR.</p>
         </fieldset>
