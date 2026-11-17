@@ -1,0 +1,110 @@
+[
+  {
+    "phase": "before",
+    "theme": "dark",
+    "width": 375,
+    "document_width": 375,
+    "sample_background": "rgba(0, 0, 0, 0)",
+    "slot_one_enabled": false,
+    "hint": "Choose dark colors so the QR stays readable on white. Light colors cannot be generated."
+  },
+  {
+    "phase": "before",
+    "theme": "dark",
+    "width": 768,
+    "document_width": 768,
+    "sample_background": "rgba(0, 0, 0, 0)",
+    "slot_one_enabled": false,
+    "hint": "Choose dark colors so the QR stays readable on white. Light colors cannot be generated."
+  },
+  {
+    "phase": "before",
+    "theme": "dark",
+    "width": 1440,
+    "document_width": 1440,
+    "sample_background": "rgba(0, 0, 0, 0)",
+    "slot_one_enabled": false,
+    "hint": "Choose dark colors so the QR stays readable on white. Light colors cannot be generated."
+  },
+  {
+    "phase": "before",
+    "theme": "light",
+    "width": 375,
+    "document_width": 375,
+    "sample_background": "rgba(0, 0, 0, 0)",
+    "slot_one_enabled": false,
+    "hint": "Choose dark colors so the QR stays readable on white. Light colors cannot be generated."
+  },
+  {
+    "phase": "before",
+    "theme": "light",
+    "width": 768,
+    "document_width": 768,
+    "sample_background": "rgba(0, 0, 0, 0)",
+    "slot_one_enabled": false,
+    "hint": "Choose dark colors so the QR stays readable on white. Light colors cannot be generated."
+  },
+  {
+    "phase": "before",
+    "theme": "light",
+    "width": 1440,
+    "document_width": 1440,
+    "sample_background": "rgba(0, 0, 0, 0)",
+    "slot_one_enabled": false,
+    "hint": "Choose dark colors so the QR stays readable on white. Light colors cannot be generated."
+  },
+  {
+    "phase": "after",
+    "theme": "dark",
+    "width": 375,
+    "document_width": 375,
+    "sample_background": "rgb(5, 8, 13)",
+    "slot_one_enabled": true,
+    "hint": "Bright or mixed colors use black QR cells with colored ASCII accents. The white gaps and quiet zone remain for scanning."
+  },
+  {
+    "phase": "after",
+    "theme": "dark",
+    "width": 768,
+    "document_width": 768,
+    "sample_background": "rgb(5, 8, 13)",
+    "slot_one_enabled": true,
+    "hint": "Bright or mixed colors use black QR cells with colored ASCII accents. The white gaps and quiet zone remain for scanning."
+  },
+  {
+    "phase": "after",
+    "theme": "dark",
+    "width": 1440,
+    "document_width": 1440,
+    "sample_background": "rgb(5, 8, 13)",
+    "slot_one_enabled": true,
+    "hint": "Bright or mixed colors use black QR cells with colored ASCII accents. The white gaps and quiet zone remain for scanning."
+  },
+  {
+    "phase": "after",
+    "theme": "light",
+    "width": 375,
+    "document_width": 375,
+    "sample_background": "rgb(5, 8, 13)",
+    "slot_one_enabled": true,
+    "hint": "Bright or mixed colors use black QR cells with colored ASCII accents. The white gaps and quiet zone remain for scanning."
+  },
+  {
+    "phase": "after",
+    "theme": "light",
+    "width": 768,
+    "document_width": 768,
+    "sample_background": "rgb(5, 8, 13)",
+    "slot_one_enabled": true,
+    "hint": "Bright or mixed colors use black QR cells with colored ASCII accents. The white gaps and quiet zone remain for scanning."
+  },
+  {
+    "phase": "after",
+    "theme": "light",
+    "width": 1440,
+    "document_width": 1440,
+    "sample_background": "rgb(5, 8, 13)",
+    "slot_one_enabled": true,
+    "hint": "Bright or mixed colors use black QR cells with colored ASCII accents. The white gaps and quiet zone remain for scanning."
+  }
+]

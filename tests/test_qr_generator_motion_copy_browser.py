@@ -1,4 +1,4 @@
-"""The animated ASCII QR keeps its APNG preview and copies a text version."""
+"""The animated ASCII QR previews APNG, downloads GIF, and copies text."""
 
 import base64
 import io
@@ -56,11 +56,14 @@ def browser_site():
 @pytest.fixture(scope="module")
 def motion_response():
     from hackabull.qr_image import qr_ascii_from_payload, qr_ascii_motion_frames_from_payload, qr_ascii_motion_pngs_from_payload
+    from hackabull.qr_motion_gif import qr_ascii_motion_gif_from_apng
 
     still, animated = qr_ascii_motion_pngs_from_payload(TEST_URL, include_attribution=False)
+    gif = qr_ascii_motion_gif_from_apng(animated, TEST_URL)
     return {
         "still_png_base64": base64.b64encode(still).decode("ascii"),
         "animated_png_base64": base64.b64encode(animated).decode("ascii"),
+        "animated_gif_base64": base64.b64encode(gif).decode("ascii"),
         "frame_count": 4,
         "frame_duration_ms": 350,
         "text": qr_ascii_from_payload(TEST_URL, include_attribution=False),
@@ -71,6 +74,7 @@ def motion_response():
 @pytest.fixture(scope="module")
 def aurora_motion_response(motion_response):
     from hackabull.qr_image import qr_ascii_motion_pngs_from_payload
+    from hackabull.qr_motion_gif import qr_ascii_motion_gif_from_apng
 
     still, animated = qr_ascii_motion_pngs_from_payload(
         TEST_URL, gradient_start="#153E3E", gradient_end="#4B246B", include_attribution=False,
@@ -79,17 +83,21 @@ def aurora_motion_response(motion_response):
         **motion_response,
         "still_png_base64": base64.b64encode(still).decode("ascii"),
         "animated_png_base64": base64.b64encode(animated).decode("ascii"),
+        "animated_gif_base64": base64.b64encode(qr_ascii_motion_gif_from_apng(animated, TEST_URL)).decode("ascii"),
     }
 
 
 @pytest.fixture(scope="module")
 def screened_motion_response():
     from hackabull.qr_image import qr_ascii_from_payload, qr_ascii_motion_frames_from_payload, qr_ascii_motion_pngs_from_payload
+    from hackabull.qr_motion_gif import qr_ascii_motion_gif_from_apng
 
     still, animated = qr_ascii_motion_pngs_from_payload(TEST_URL, include_attribution=True)
+    gif = qr_ascii_motion_gif_from_apng(animated, TEST_URL)
     return {
         "still_png_base64": base64.b64encode(still).decode("ascii"),
         "animated_png_base64": base64.b64encode(animated).decode("ascii"),
+        "animated_gif_base64": base64.b64encode(gif).decode("ascii"),
         "frame_count": 4,
         "frame_duration_ms": 350,
         "text": qr_ascii_from_payload(TEST_URL, include_attribution=True),
@@ -158,7 +166,9 @@ def test_apng_preview_autoplays_and_copies_stable_ascii(browser_site, motion_res
         preview = page.locator("#generatedQrImage")
         toggle = page.locator("#generatedMotionToggle")
         assert preview.is_visible()
-        assert preview.get_attribute("src") == page.locator("#generatedMotionAnimatedDownload").get_attribute("href")
+        animated_preview_url = preview.get_attribute("src")
+        assert animated_preview_url != page.locator("#generatedMotionAnimatedDownload").get_attribute("href")
+        assert page.locator("#generatedMotionAnimatedDownload").inner_text() == "Download animated GIF"
         assert toggle.inner_text() == "Pause motion"
         assert toggle.get_attribute("aria-pressed") == "true"
         assert page.locator("#generatedMotionCompactPreview").is_hidden()
@@ -191,7 +201,41 @@ def test_apng_preview_autoplays_and_copies_stable_ascii(browser_site, motion_res
         assert preview.screenshot(animations="allow") == paused
         toggle.click()
         assert toggle.inner_text() == "Pause motion"
-        assert preview.get_attribute("src") == page.locator("#generatedMotionAnimatedDownload").get_attribute("href")
+        assert preview.get_attribute("src") == animated_preview_url
+    finally:
+        context.close()
+
+
+def test_downloaded_animated_gif_moves_and_every_frame_scans(browser_site, motion_response):
+    from hackabull.qr_decode import decode_qr_image
+
+    browser, base_url = browser_site
+    context, page = new_page(browser, base_url)
+    try:
+        assert len(json.dumps(motion_response)) < 2_000_000
+        generate_plain_motion(page, motion_response)
+        with page.expect_download() as download_info:
+            page.locator("#generatedMotionAnimatedDownload").click()
+        download = download_info.value
+        assert download.suggested_filename == "plain-ascii-motion-qr-animated.gif"
+        gif_bytes = Path(download.path()).read_bytes()
+        assert gif_bytes.startswith(b"GIF89a")
+        with Image.open(io.BytesIO(gif_bytes)) as animated:
+            assert animated.format == "GIF"
+            assert animated.n_frames == 4
+            assert animated.info["loop"] == 0
+            frames = []
+            for index in range(animated.n_frames):
+                animated.seek(index)
+                assert animated.info["duration"] == 350
+                frame = animated.convert("RGB")
+                frames.append(frame.copy())
+                mobile = frame.resize(
+                    (320, round(frame.height * 320 / frame.width)), Image.Resampling.LANCZOS,
+                )
+                for candidate in (frame, mobile):
+                    assert {barcode.data.decode("utf-8") for barcode in decode_qr_image(candidate)} == {TEST_URL}
+            assert len({frame.tobytes() for frame in frames}) == 4
     finally:
         context.close()
 
@@ -619,7 +663,7 @@ def test_guest_gradient_slots_are_browser_only_and_never_replace_account_slots(b
         assert "account" in page.locator("#generateQrSavedScope").inner_text()
 
         state["signed_in"] = False
-        page.evaluate("localStorage.setItem('sqafeQrGradientSlots:guest', JSON.stringify({slots:[{slot:1,gradient_start:'#FFFFFF',gradient_end:'#334455'}]}))")
+        page.evaluate("localStorage.setItem('sqafeQrGradientSlots:guest', JSON.stringify({slots:[{slot:1,gradient_start:'#FFFFF',gradient_end:'#334455'}]}))")
         page.reload(wait_until="domcontentloaded")
         page.locator('input[name="generateQrFormat"][value="ascii_motion"]').check()
         page.wait_for_function("() => document.querySelector('#generateQrSavedScope').textContent.includes('browser')")

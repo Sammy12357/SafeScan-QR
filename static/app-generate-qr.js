@@ -1,6 +1,7 @@
 // Screened QR codes require a complete safety check. Plain QR codes are an
 // explicit unchecked choice with no SafeScan mark. The text preview swaps
-// whole matrices; ASCII motion previews a verified APNG and offers two still text QR exports.
+// whole matrices; ASCII motion previews a verified APNG, downloads a verified GIF,
+// and offers two still text QR exports.
 (() => {
   const generateBtn = document.getElementById("generateQrButton");
   const urlInputField = document.getElementById("generateQrUrlInput");
@@ -13,6 +14,7 @@
   const gradientStartValue = document.getElementById("generateQrGradientStartValue");
   const gradientEndValue = document.getElementById("generateQrGradientEndValue");
   const gradientSample = document.getElementById("generateQrGradientSample");
+  const gradientHint = document.getElementById("generateQrGradientHint");
   const gradientPresets = [...document.querySelectorAll("[data-gradient-preset]")];
   const savedGradientSection = document.getElementById("generateQrSavedGradients");
   const savedGradientScope = document.getElementById("generateQrSavedScope");
@@ -50,7 +52,7 @@
   const textDownload = document.getElementById("generatedAsciiDownload");
   const actionStatus = document.getElementById("generatedAsciiActionStatus");
   const errEl = document.getElementById("generateQrError");
-  if (!generateBtn || !urlInputField || modeInputs.length !== 2 || !plainWarning || formatInputs.length !== 3 || !gradientOptions || !gradientStart || !gradientEnd || !gradientStartValue || !gradientEndValue || !gradientSample || gradientPresets.length !== 3 || !savedGradientSection || !savedGradientScope || !savedGradientStatus || !savedGradientRetry || savedGradientUseButtons.length !== 3 || savedGradientSaveButtons.length !== 3 || !wrap || !img || !pngStatus || !dl || !motionHeading || !imageMotionToggle || !motionDownloads || !motionStillDownload || !motionAnimatedDownload || !motionTextWrap || motionCopyFormats.length !== 2 || !motionTextDescription || !motionCompactPreview || !motionCompactArt || !motionCompactSizeNotice || !motionTextCopy || !motionTextDownload || !motionHtmlDownload || !motionTextActionStatus || !textWrap || !paper || !art || !asciiStatus || !sizeNotice || !destination || !textMotionToggle || !copyButton || !textDownload || !actionStatus || !errEl) return;
+  if (!generateBtn || !urlInputField || modeInputs.length !== 2 || !plainWarning || formatInputs.length !== 3 || !gradientOptions || !gradientStart || !gradientEnd || !gradientStartValue || !gradientEndValue || !gradientSample || !gradientHint || gradientPresets.length !== 3 || !savedGradientSection || !savedGradientScope || !savedGradientStatus || !savedGradientRetry || savedGradientUseButtons.length !== 3 || savedGradientSaveButtons.length !== 3 || !wrap || !img || !pngStatus || !dl || !motionHeading || !imageMotionToggle || !motionDownloads || !motionStillDownload || !motionAnimatedDownload || !motionTextWrap || motionCopyFormats.length !== 2 || !motionTextDescription || !motionCompactPreview || !motionCompactArt || !motionCompactSizeNotice || !motionTextCopy || !motionTextDownload || !motionHtmlDownload || !motionTextActionStatus || !textWrap || !paper || !art || !asciiStatus || !sizeNotice || !destination || !textMotionToggle || !copyButton || !textDownload || !actionStatus || !errEl) return;
 
   const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
   const guestGradientStorageKey = "sqafeQrGradientSlots:guest";
@@ -62,6 +64,7 @@
   let savingGradientSlot = null;
   let currentImageUrl = null;
   let currentAnimatedImageUrl = null;
+  let currentAnimatedGifUrl = null;
   let currentTextUrl = null;
   let currentText = "";
   let motionAsciiText = "";
@@ -101,6 +104,21 @@
     });
     return 1.05 / (0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2] + 0.05);
   };
+  const needsBlackCells = (start, end) =>
+    colorContrastOnWhite(start) < 7 || colorContrastOnWhite(end) < 7;
+  const darkenForTextCopy = (color, targetContrast = 7) => {
+    if (colorContrastOnWhite(color) >= targetContrast) return color.toUpperCase();
+    const channels = [1, 3, 5].map((offset) => parseInt(color.slice(offset, offset + 2), 16));
+    const scaled = (factor) => `#${channels.map((channel) => Math.floor(channel * factor).toString(16).padStart(2, "0")).join("")}`.toUpperCase();
+    let safe = 0;
+    let unsafe = 1;
+    for (let step = 0; step < 12; step += 1) {
+      const midpoint = (safe + unsafe) / 2;
+      if (colorContrastOnWhite(scaled(midpoint)) >= targetContrast) safe = midpoint;
+      else unsafe = midpoint;
+    }
+    return scaled(safe);
+  };
   const normalizeSavedGradient = (value) => {
     if (!value || !Number.isInteger(value.slot) || value.slot < 1 || value.slot > 3
       || typeof value.gradient_start !== "string" || !colorPattern.test(value.gradient_start)
@@ -110,8 +128,7 @@
       gradient_start: value.gradient_start.toUpperCase(),
       gradient_end: value.gradient_end.toUpperCase(),
     };
-    return colorContrastOnWhite(gradient.gradient_start) >= 7
-      && colorContrastOnWhite(gradient.gradient_end) >= 7 ? gradient : null;
+    return gradient;
   };
   const parseSavedGradients = (body) => {
     if (!body || !Array.isArray(body.slots) || body.slots.length > 3) throw new Error("Invalid saved gradients");
@@ -153,7 +170,7 @@
       button.disabled = !ready || !gradient || savingGradientSlot !== null;
       button.setAttribute("aria-pressed", String(Boolean(gradient && selectedSavedGradientSlot === slot)));
       button.setAttribute("aria-label", gradient
-        ? `Use Custom gradient ${slot}, top ${gradient.gradient_start}, bottom ${gradient.gradient_end}`
+        ? `Use Custom gradient ${slot}, top ${gradient.gradient_start}, bottom ${gradient.gradient_end}, ${needsBlackCells(gradient.gradient_start, gradient.gradient_end) ? "black QR cells with white spaces" : "colored ASCII on white"}`
         : `Custom gradient ${slot}, empty slot`);
       const caption = button.querySelector("[data-gradient-slot-caption]");
       caption.textContent = gradient ? `${gradient.gradient_start} → ${gradient.gradient_end}` : "Empty slot";
@@ -161,9 +178,11 @@
       if (gradient) {
         swatch.style.setProperty("--slot-start", gradient.gradient_start);
         swatch.style.setProperty("--slot-end", gradient.gradient_end);
+        swatch.setAttribute("data-black-cells", String(needsBlackCells(gradient.gradient_start, gradient.gradient_end)));
       } else {
         swatch.style.removeProperty("--slot-start");
         swatch.style.removeProperty("--slot-end");
+        swatch.removeAttribute("data-black-cells");
       }
     }
     for (const button of savedGradientSaveButtons) {
@@ -231,6 +250,12 @@
     gradientEndValue.textContent = bottom;
     gradientSample.style.setProperty("--gradient-start", top);
     gradientSample.style.setProperty("--gradient-end", bottom);
+    const blackCells = needsBlackCells(top, bottom);
+    gradientSample.setAttribute("data-black-cells", String(blackCells));
+    const hint = blackCells
+      ? "Bright or mixed colors use black QR cells with colored ASCII accents. The white gaps and quiet zone remain for scanning."
+      : "Dark colors use colored ASCII on white. The white gaps and quiet zone remain for scanning.";
+    if (gradientHint.textContent !== hint) gradientHint.textContent = hint;
     for (const preset of gradientPresets) {
       preset.setAttribute("aria-pressed", String(selectedSavedGradientSlot === null
         && preset.dataset.gradientStart === top && preset.dataset.gradientEnd === bottom));
@@ -258,7 +283,7 @@
       gradient_end: gradientEnd.value.toUpperCase(),
     };
     if (!normalizeSavedGradient(gradient)) {
-      savedGradientStatus.textContent = "Choose two dark colors with enough contrast on white before saving.";
+      savedGradientStatus.textContent = "Choose two valid six-digit colors before saving.";
       return;
     }
     const mode = savedGradientMode;
@@ -328,6 +353,16 @@
       return null;
     }
   };
+  const decodeGifBase64 = (value) => {
+    if (typeof value !== "string" || value.length < 16 || value.length > 20000000) return null;
+    try {
+      const binary = window.atob(value);
+      if (!binary.startsWith("GIF89a")) return null;
+      return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    } catch (_err) {
+      return null;
+    }
+  };
   const updateMotionButton = () => {
     textMotionToggle.textContent = motionPaused ? "Play motion" : "Pause motion";
     textMotionToggle.setAttribute("aria-pressed", String(!motionPaused));
@@ -361,13 +396,14 @@
   };
   const renderColoredText = (preview, value, start, end) => {
     preview.replaceChildren();
+    const targetContrast = needsBlackCells(start, end) ? 12 : 7;
     const lines = value.split("\n");
     const separator = lines.findIndex((line, index) => line === "" && index < lines.length - 1);
     const lastColoredLine = Math.max(1, separator > 0 ? separator - 1 : lines.length - 2);
     lines.forEach((line, index) => {
       if (index) preview.append(document.createTextNode("\n"));
       const span = document.createElement("span");
-      span.style.color = gradientColor(start, end, Math.min(index / lastColoredLine, 1));
+      span.style.color = darkenForTextCopy(gradientColor(start, end, Math.min(index / lastColoredLine, 1)), targetContrast);
       span.textContent = line;
       preview.append(span);
     });
@@ -378,9 +414,13 @@
     const textUrl = compact ? motionCompactTextUrl : motionAsciiTextUrl;
     const htmlUrl = compact ? motionCompactHtmlUrl : motionAsciiHtmlUrl;
     motionTextCopy.textContent = compact ? "Copy compact QR" : "Copy ASCII QR";
+    const adjustedCopyColors = needsBlackCells(motionColorStart, motionColorEnd);
     motionTextDescription.textContent = compact
       ? "Compact Unicode text uses fewer characters. Rich text apps may keep its colors and spacing; plain message apps may stretch it."
       : "ASCII art uses keyboard characters but is much larger. Rich text apps may keep its colors and tight spacing; plain message apps may stretch it.";
+    if (adjustedCopyColors) {
+      motionTextDescription.textContent += " Bright colors are darkened in styled text copies to keep the QR readable on white; the animated image keeps your chosen colors.";
+    }
     motionCompactPreview.classList.toggle("hidden", !compact);
     motionCompactSizeNotice.classList.add("hidden");
     if (textUrl) motionTextDownload.href = textUrl;
@@ -439,12 +479,14 @@
     updateImageMotionButton();
     if (currentImageUrl) URL.revokeObjectURL(currentImageUrl);
     if (currentAnimatedImageUrl) URL.revokeObjectURL(currentAnimatedImageUrl);
+    if (currentAnimatedGifUrl) URL.revokeObjectURL(currentAnimatedGifUrl);
     if (currentTextUrl) URL.revokeObjectURL(currentTextUrl);
     for (const url of [motionAsciiTextUrl, motionCompactTextUrl, motionAsciiHtmlUrl, motionCompactHtmlUrl]) {
       if (url) URL.revokeObjectURL(url);
     }
     currentImageUrl = null;
     currentAnimatedImageUrl = null;
+    currentAnimatedGifUrl = null;
     currentTextUrl = null;
     motionAsciiTextUrl = null;
     motionCompactTextUrl = null;
@@ -588,7 +630,7 @@
   const richMotionText = (value, compact) => {
     const preview = document.createElement("pre");
     const geometry = compact ? "font-size:18px;font-weight:400;line-height:18px" : "font-size:24px;font-weight:700;line-height:12px";
-    preview.style.cssText = `display:inline-block;width:max-content;max-width:none;overflow:visible;white-space:pre;font-family:Menlo,'DejaVu Sans Mono',monospace;${geometry};letter-spacing:0;font-variant-ligatures:none;margin:0;background:#fff;color:${motionColorStart}`;
+    preview.style.cssText = `display:inline-block;width:max-content;max-width:none;overflow:visible;white-space:pre;font-family:Menlo,'DejaVu Sans Mono',monospace;${geometry};letter-spacing:0;font-variant-ligatures:none;margin:0;background:#fff;color:${darkenForTextCopy(motionColorStart, needsBlackCells(motionColorStart, motionColorEnd) ? 12 : 7)}`;
     renderColoredText(preview, value, motionColorStart, motionColorEnd);
     return preview.outerHTML;
   };
@@ -644,8 +686,8 @@
     const topColor = gradientStart.value.toUpperCase();
     const bottomColor = gradientEnd.value.toUpperCase();
     if (outputFormat === "ascii_motion"
-      && (colorContrastOnWhite(topColor) < 7 || colorContrastOnWhite(bottomColor) < 7)) {
-      showError("Choose two darker gradient colors so the QR can be scanned on white. Try a preset or adjust the colors.");
+      && (!colorPattern.test(topColor) || !colorPattern.test(bottomColor))) {
+      showError("Choose two valid six-digit gradient colors. Try a preset or adjust the colors.");
       return;
     }
     const version = requestVersion;
@@ -722,7 +764,8 @@
           if (version !== requestVersion) return;
           const stillBytes = decodePngBase64(body?.still_png_base64);
           const animatedBytes = decodePngBase64(body?.animated_png_base64);
-          if (!stillBytes || !animatedBytes
+          const animatedGifBytes = decodeGifBase64(body?.animated_gif_base64);
+          if (!stillBytes || !animatedBytes || !animatedGifBytes
             || !Array.isArray(body?.ascii_frames) || body.ascii_frames.length !== 4
             || body.frame_count !== 4 || body.frame_duration_ms !== 350
             || typeof body.text !== "string" || !body.text || body.text.length > 20000
@@ -737,6 +780,7 @@
           }
           currentImageUrl = URL.createObjectURL(new Blob([stillBytes], { type: "image/png" }));
           currentAnimatedImageUrl = URL.createObjectURL(new Blob([animatedBytes], { type: "image/png" }));
+          currentAnimatedGifUrl = URL.createObjectURL(new Blob([animatedGifBytes], { type: "image/gif" }));
           motionAsciiText = body.ascii_frames[0];
           motionCompactText = body.text;
           motionColorStart = topColor;
@@ -757,9 +801,9 @@
             ? "Not safety checked. Verify the destination independently before sharing or opening this QR."
             : "Checked when generated. The destination may change, so recheck before opening.";
           motionStillDownload.download = plain ? "plain-ascii-motion-qr.png" : "sqafe-ascii-motion-qr.png";
-          motionAnimatedDownload.download = plain ? "plain-ascii-motion-qr-animated.png" : "sqafe-ascii-motion-qr-animated.png";
+          motionAnimatedDownload.download = plain ? "plain-ascii-motion-qr-animated.gif" : "sqafe-ascii-motion-qr-animated.gif";
           motionStillDownload.href = currentImageUrl;
-          motionAnimatedDownload.href = currentAnimatedImageUrl;
+          motionAnimatedDownload.href = currentAnimatedGifUrl;
           dl.classList.add("hidden");
           motionHeading.classList.remove("hidden");
           motionDownloads.classList.remove("hidden");

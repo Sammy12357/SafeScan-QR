@@ -597,7 +597,7 @@ def _assert_ascii_finder_corners(frame):
 def _assert_ascii_motion_bundle_decodes(response, url, *, checked):
     body = json.loads(response.body)
     assert set(body) == {
-        "still_png_base64", "animated_png_base64", "text", "ascii_frames",
+        "still_png_base64", "animated_png_base64", "animated_gif_base64", "text", "ascii_frames",
         "frame_count", "frame_duration_ms",
     }
     assert body["frame_count"] == 4
@@ -638,8 +638,13 @@ def _assert_ascii_motion_bundle_decodes(response, url, *, checked):
     assert all(len({corners[index] for corners in ascii_finder_textures}) == 4 for index in range(3))
     still_bytes = base64.b64decode(body["still_png_base64"], validate=True)
     animated_bytes = base64.b64decode(body["animated_png_base64"], validate=True)
+    gif_bytes = base64.b64decode(body["animated_gif_base64"], validate=True)
     assert still_bytes.startswith(b"\x89PNG\r\n\x1a\n")
     assert animated_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+    assert gif_bytes.startswith(b"GIF89a")
+    with Image.open(io.BytesIO(gif_bytes)) as gif:
+        assert gif.n_frames == 4
+        assert gif.info["loop"] == 0
 
     still = Image.open(io.BytesIO(still_bytes)).convert("RGB")
     animated = Image.open(io.BytesIO(animated_bytes))
@@ -749,10 +754,10 @@ def test_ascii_motion_dark_gradient_keeps_finders_visible_and_scannable(generato
 @pytest.mark.parametrize("field,value", [
     ("gradient_start", "red"),
     ("gradient_end", None),
-    ("gradient_start", "#FFFFFF"),
-    ("gradient_end", "#FFFF00"),
+    ("gradient_start", "#FFFFF"),
+    ("gradient_end", "#FFFF0G"),
 ])
-def test_ascii_motion_rejects_malformed_or_light_colors_before_scanning(
+def test_ascii_motion_rejects_malformed_colors_before_scanning(
     generator_api, monkeypatch, plain, field, value,
 ):
     async def analyze(_url):
@@ -811,7 +816,7 @@ def test_ascii_motion_rejects_concurrent_render_and_releases_slot(generator_api,
             renders.append((function, args, kwargs))
             started.set()
             await finish.wait()
-            return b"still", b"animated"
+            return b"still", b"animated", b"gif"
 
         monkeypatch.setattr(generator_api, "run_in_threadpool", slow_render)
         first = asyncio.create_task(generator_api.api_qr_generate_plain(object(), {

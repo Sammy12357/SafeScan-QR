@@ -98,6 +98,18 @@ def test_saved_slots_are_private_fixed_and_idempotent(gradient_site):
             "user_id", "slot", "gradient_start", "gradient_end", "updated_at",
         ]
 
+
+def test_bright_and_mixed_slots_survive_account_reload(gradient_site):
+    _, client, _ = gradient_site
+    colors = _colors("#FFFFFF", "#000000")
+    saved = client.put("/api/qr/gradients/2", json=colors, headers=_auth("provider-a"))
+    assert saved.status_code == 200
+    assert saved.json() == {"slot": 2, **colors}
+    assert client.get("/api/qr/gradients", headers=_auth("provider-a")).json() == {
+        "slots": [{"slot": 2, **colors}],
+    }
+    assert client.get("/api/qr/gradients", headers=_auth("provider-b")).json() == {"slots": []}
+
 def test_account_separation_and_inactive_or_guest_denial(gradient_site):
     _, client, _ = gradient_site
     assert client.put("/api/qr/gradients/2", json=_colors(), headers=_auth("provider-a")).status_code == 200
@@ -120,7 +132,7 @@ def test_account_separation_and_inactive_or_guest_denial(gradient_site):
 @pytest.mark.parametrize("slot,payload", [
     (0, _colors()),
     (4, _colors()),
-    (1, _colors("#FFFFFF", "#8A280C")),
+    (1, _colors("#FFFF0G", "#8A280C")),
     (1, _colors("red", "#8A280C")),
     (1, {"gradient_start": "#2A1B36"}),
     (1, {**_colors(), "url": "https://secret.example/path"}),
