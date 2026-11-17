@@ -1,6 +1,6 @@
 // Screened QR codes require a complete safety check. Plain QR codes are an
 // explicit unchecked choice with no SafeScan mark. The text preview swaps
-// whole matrices; ASCII motion delivers verified still and animated images.
+// whole matrices; ASCII motion delivers verified images and copyable text.
 (() => {
   const generateBtn = document.getElementById("generateQrButton");
   const urlInputField = document.getElementById("generateQrUrlInput");
@@ -23,8 +23,15 @@
   const motionDownloads = document.getElementById("generatedMotionDownloads");
   const motionStillDownload = document.getElementById("generatedMotionStillDownload");
   const motionAnimatedDownload = document.getElementById("generatedMotionAnimatedDownload");
+  const motionTextWrap = document.getElementById("generatedMotionTextWrap");
+  const motionTextPaper = document.getElementById("generatedMotionTextPaper");
+  const motionTextArt = document.getElementById("generatedMotionTextArt");
+  const motionTextSizeNotice = document.getElementById("generatedMotionTextSizeNotice");
+  const motionTextCopy = document.getElementById("generatedMotionTextCopy");
+  const motionTextDownload = document.getElementById("generatedMotionTextDownload");
+  const motionTextActionStatus = document.getElementById("generatedMotionTextActionStatus");
   const textWrap = document.getElementById("generatedAsciiWrap");
-  const paper = document.querySelector(".generated-ascii-paper");
+  const paper = textWrap?.querySelector(".generated-ascii-paper");
   const art = document.getElementById("generatedAsciiArt");
   const asciiStatus = document.getElementById("generatedAsciiStatus");
   const sizeNotice = document.getElementById("generatedAsciiSizeNotice");
@@ -34,7 +41,7 @@
   const textDownload = document.getElementById("generatedAsciiDownload");
   const actionStatus = document.getElementById("generatedAsciiActionStatus");
   const errEl = document.getElementById("generateQrError");
-  if (!generateBtn || !urlInputField || modeInputs.length !== 2 || !plainWarning || formatInputs.length !== 3 || !gradientOptions || !gradientStart || !gradientEnd || !gradientStartValue || !gradientEndValue || !gradientSample || gradientPresets.length !== 3 || !wrap || !img || !pngStatus || !dl || !motionHeading || !imageMotionToggle || !motionDownloads || !motionStillDownload || !motionAnimatedDownload || !textWrap || !paper || !art || !asciiStatus || !sizeNotice || !destination || !textMotionToggle || !copyButton || !textDownload || !actionStatus || !errEl) return;
+  if (!generateBtn || !urlInputField || modeInputs.length !== 2 || !plainWarning || formatInputs.length !== 3 || !gradientOptions || !gradientStart || !gradientEnd || !gradientStartValue || !gradientEndValue || !gradientSample || gradientPresets.length !== 3 || !wrap || !img || !pngStatus || !dl || !motionHeading || !imageMotionToggle || !motionDownloads || !motionStillDownload || !motionAnimatedDownload || !motionTextWrap || !motionTextPaper || !motionTextArt || !motionTextSizeNotice || !motionTextCopy || !motionTextDownload || !motionTextActionStatus || !textWrap || !paper || !art || !asciiStatus || !sizeNotice || !destination || !textMotionToggle || !copyButton || !textDownload || !actionStatus || !errEl) return;
 
   const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
   let currentImageUrl = null;
@@ -104,16 +111,22 @@
       art.textContent = frames[frameIndex];
     }, 3000);
   };
-  const fitTextPreview = () => {
-    if (!frames.length) return;
-    art.style.removeProperty("font-size");
-    const style = window.getComputedStyle(paper);
-    const available = paper.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
-    if (art.scrollWidth > available) {
-      const baseSize = parseFloat(window.getComputedStyle(art).fontSize);
-      art.style.fontSize = `${Math.max(10, baseSize * available / art.scrollWidth * 0.96)}px`;
+  const fitOneTextPreview = (surface, preview, notice) => {
+    if (!preview.textContent) return;
+    preview.style.removeProperty("font-size");
+    const style = window.getComputedStyle(surface);
+    const available = surface.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    if (preview.scrollWidth > available) {
+      const baseSize = parseFloat(window.getComputedStyle(preview).fontSize);
+      preview.style.fontSize = `${Math.max(10, baseSize * available / preview.scrollWidth * 0.96)}px`;
     }
-    sizeNotice.classList.toggle("hidden", art.scrollWidth <= available + 1);
+    notice.classList.toggle("hidden", preview.scrollWidth <= available + 1);
+  };
+  const fitTextPreview = () => {
+    if (!textWrap.classList.contains("hidden")) fitOneTextPreview(paper, art, sizeNotice);
+    if (!motionTextWrap.classList.contains("hidden")) {
+      fitOneTextPreview(motionTextPaper, motionTextArt, motionTextSizeNotice);
+    }
   };
   const clearResult = () => {
     stopAnimation();
@@ -127,9 +140,15 @@
     dl.classList.remove("hidden");
     motionHeading.classList.add("hidden");
     motionDownloads.classList.add("hidden");
+    motionTextWrap.classList.add("hidden");
     motionStillDownload.removeAttribute("href");
     motionAnimatedDownload.removeAttribute("href");
+    motionTextDownload.removeAttribute("href");
     textDownload.removeAttribute("href");
+    motionTextArt.textContent = "";
+    motionTextArt.style.removeProperty("font-size");
+    motionTextSizeNotice.classList.add("hidden");
+    motionTextActionStatus.textContent = "";
     art.textContent = "";
     art.style.removeProperty("font-size");
     sizeNotice.classList.add("hidden");
@@ -236,15 +255,17 @@
     updateMotionButton();
     startAnimation();
   });
-  copyButton.addEventListener("click", async () => {
+  const copyCurrentText = async (status) => {
     if (!currentText) return;
     try {
       await navigator.clipboard.writeText(currentText);
-      actionStatus.textContent = "Text QR copied. Keep its spacing and use a fixed-width font.";
+      status.textContent = "Text QR copied. Keep its spacing and use a fixed-width font.";
     } catch (_err) {
-      actionStatus.textContent = "Could not copy automatically. Use Download .txt instead.";
+      status.textContent = "Could not copy automatically. Use Download .txt instead.";
     }
-  });
+  };
+  copyButton.addEventListener("click", () => copyCurrentText(actionStatus));
+  motionTextCopy.addEventListener("click", () => copyCurrentText(motionTextActionStatus));
 
   generateBtn.addEventListener("click", () => {
     if (generateBtn.disabled) return;
@@ -351,12 +372,19 @@
           if (version !== requestVersion) return;
           const stillBytes = decodePngBase64(body?.still_png_base64);
           const animatedBytes = decodePngBase64(body?.animated_png_base64);
-          if (!stillBytes || !animatedBytes || body.frame_count !== 4 || body.frame_duration_ms !== 350) {
+          if (!stillBytes || !animatedBytes || body.frame_count !== 4 || body.frame_duration_ms !== 350
+            || typeof body.text !== "string" || !body.text || body.text.length > 10000
+            || (plain && body.text.includes("Generated by Sqafe"))) {
             showError("The animated QR response was incomplete. Try generating it again.");
             return;
           }
           currentImageUrl = URL.createObjectURL(new Blob([stillBytes], { type: "image/png" }));
           currentAnimatedImageUrl = URL.createObjectURL(new Blob([animatedBytes], { type: "image/png" }));
+          currentText = body.text;
+          currentTextUrl = URL.createObjectURL(new Blob([currentText], { type: "text/plain;charset=utf-8" }));
+          motionTextArt.textContent = currentText;
+          motionTextDownload.download = plain ? "plain-ascii-motion-qr.txt" : "sqafe-ascii-motion-qr.txt";
+          motionTextDownload.href = currentTextUrl;
           img.alt = plain
             ? "Plain ASCII motion QR code for a link that was not safety checked"
             : "Screened ASCII motion QR code";
@@ -370,12 +398,14 @@
           dl.classList.add("hidden");
           motionHeading.classList.remove("hidden");
           motionDownloads.classList.remove("hidden");
+          motionTextWrap.classList.remove("hidden");
           wrap.setAttribute("data-verification", plain ? "not_checked" : "complete");
           wrap.setAttribute("data-output-format", "ascii_motion");
           imageMotionPlaying = !Boolean(reducedMotion?.matches);
           updateImageMotionButton();
           updateImageMotion();
           wrap.classList.remove("hidden");
+          fitTextPreview();
           return;
         }
         const body = await res.json();
