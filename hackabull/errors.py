@@ -60,7 +60,7 @@ ERRORS: dict[str, Message] = {
         400,
     ),
     "qr_generation_busy": Message(
-        "The animated QR renderer is busy. Try again in a moment.",
+        "The QR renderer is busy. Try again in a moment.",
         "Wait a moment, then try again.",
         503,
     ),

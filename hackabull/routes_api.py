@@ -92,6 +92,9 @@ from .qr_image import ASCII_MOTION_DEFAULT_START, ASCII_MOTION_DEFAULT_END
 from .qr_image import qr_ascii_motion_pngs_from_payload
 from .qr_image import qr_ascii_motion_frames_from_payload
 from .qr_image import QRAsciiMotionDecodeError
+from .qr_image import QRHalftoneDecodeError
+from .qr_image import QRHalftoneImageError
+from .qr_image import qr_photo_halftone_png_from_payload
 from .qr_image import qr_plain_png_from_payload
 from .qr_image import render_safescan_logo
 from .qr_motion_gif import qr_ascii_motion_gif_from_apng
@@ -116,6 +119,9 @@ from .token_flags import token_features_enabled
 
 
 _ASCII_MOTION_RENDER_SLOT = threading.BoundedSemaphore(1)
+_HALFTONE_RENDER_SLOT = threading.BoundedSemaphore(1)
+_HALFTONE_MAX_IMAGE_BYTES = min(MAX_QR_UPLOAD_BYTES, 8 * 1024 * 1024)
+_HALFTONE_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp"}
 
 
 def _render_ascii_motion_bundle(payload, **options):
@@ -133,6 +139,24 @@ async def _render_ascii_motion(payload, **options):
         return await run_in_threadpool(_render_ascii_motion_bundle, payload, **options)
     finally:
         _ASCII_MOTION_RENDER_SLOT.release()
+
+
+async def _render_photo_halftone(payload, contents, content_type, *, include_attribution):
+    # Photo decoding, dot rendering, and read-back validation are CPU work.
+    # Bound concurrent jobs independently from ordinary scanner uploads.
+    if not _HALFTONE_RENDER_SLOT.acquire(blocking=False):
+        raise SafeScanError(
+            "The photo QR renderer is busy. Try again in a moment.",
+            503, code="qr_generation_busy",
+        )
+    try:
+        return await run_in_threadpool(
+            qr_photo_halftone_png_from_payload,
+            payload, contents, content_type,
+            include_attribution=include_attribution,
+        )
+    finally:
+        _HALFTONE_RENDER_SLOT.release()
 
 
 def _require_token_features():
@@ -318,6 +342,12 @@ async def _screen_url_for_qr(request, payload):
                 raise SafeScanError(code="invalid_request", field=field)
     target_url = validate_public_url(payload.get("url"))
 
+    analysis = await _safe_qr_generation_analysis(target_url)
+    return user, target_url, analysis, output_format, animation, art_style, gradient_start, gradient_end
+
+
+async def _safe_qr_generation_analysis(target_url):
+    """Use the existing complete/safe rule for JSON and photo QR output."""
     analysis = await analyze_full_pipeline(target_url)
     overall_risk = (analysis.get("overallRisk") or "").lower()
     verification_status = analysis.get("verificationStatus")
@@ -325,7 +355,7 @@ async def _screen_url_for_qr(request, payload):
         raise SafeScanError(code="scan_incomplete")
     if overall_risk != "safe":
         raise SafeScanError(code="qr_generation_blocked")
-    return user, target_url, analysis, output_format, animation, art_style, gradient_start, gradient_end
+    return analysis
 
 
 @qr_app.post("/api/qr/generate")
@@ -500,6 +530,101 @@ async def api_qr_generate_plain(request: Request, payload: dict = Body(...)):
         raise SafeScanError(code="qr_generation_too_long", field="url") from None
     except QRAsciiMotionDecodeError:
         raise SafeScanError(code="qr_generation_unscannable") from None
+
+
+@qr_app.post("/api/qr/generate-halftone")
+async def api_qr_generate_halftone(
+    request: Request,
+    mode: str = Form(...),
+    url: str = Form(...),
+    image: UploadFile = File(...),
+):
+    """Blend a transient uploaded photo into a checked or unchecked QR."""
+    from qrcode.exceptions import DataOverflowError
+
+    try:
+        user = get_session_user(request)
+        user_key = user.get("google_id") if user else None
+        limit = 20 if user else 5
+        rate_limit = enforce_rate_limit(request, "qr_generate", limit, 60 * 60, user_key=user_key)
+        if rate_limit:
+            return rate_limit
+        if mode not in ("plain", "screened"):
+            raise SafeScanError(code="invalid_request", field="mode")
+        target_url = validate_public_url(url)
+        content_type = (image.content_type or "").lower()
+        if content_type not in _HALFTONE_IMAGE_TYPES:
+            raise SafeScanError(
+                "Choose a PNG, JPEG, or WebP photo.", 400,
+                code="invalid_request", field="image",
+            )
+        contents = await image.read(_HALFTONE_MAX_IMAGE_BYTES + 1)
+        if len(contents) > _HALFTONE_MAX_IMAGE_BYTES:
+            raise SafeScanError(
+                "Choose a photo under 8 MB.", 413,
+                code="upload_too_large", field="image",
+            )
+        if not contents:
+            raise SafeScanError(
+                "Choose a photo to add to the QR code.", 400,
+                code="invalid_request", field="image",
+            )
+
+        if mode == "screened":
+            analysis = await _safe_qr_generation_analysis(target_url)
+            score = int(analysis.get("confidenceScore") or 0)
+            headers = {
+                "X-SafeScan-Verdict": "safe",
+                "X-SafeScan-Verification": "complete",
+                "X-SafeScan-Score": str(score),
+                "Cache-Control": "no-store",
+                "Content-Disposition": 'inline; filename="sqafe-halftone-qr.png"',
+            }
+        else:
+            headers = {
+                "X-SafeScan-Mode": "plain",
+                "X-SafeScan-Verification": "not_checked",
+                "Cache-Control": "no-store",
+                "Content-Disposition": 'inline; filename="plain-halftone-qr.png"',
+            }
+
+        try:
+            png = await _render_photo_halftone(
+                target_url, contents, content_type,
+                include_attribution=(mode == "screened"),
+            )
+        except QRHalftoneImageError as exc:
+            if exc.too_large:
+                raise SafeScanError(str(exc), 413, code="upload_too_large", field="image") from None
+            raise SafeScanError(
+                str(exc), 400, code="invalid_request", field="image",
+            ) from None
+        except DataOverflowError:
+            raise SafeScanError(code="qr_generation_too_long", field="url") from None
+        except QRHalftoneDecodeError:
+            raise SafeScanError(
+                "We couldn't make a scannable QR with this photo.", 400,
+                code="qr_generation_unscannable",
+                hint="Try a simpler photo or a shorter web address.", field="image",
+            ) from None
+
+        if mode == "screened":
+            audit_log(
+                "qr.generated", request=request,
+                actor_user_id=user.get("google_id") if user else None,
+                target_type="url",
+                metadata={
+                    "url": target_url,
+                    "risk": "safe",
+                    "score": score,
+                    "guest": not bool(user),
+                    "format": "halftone",
+                    "animation": False,
+                },
+            )
+        return Response(content=png, media_type="image/png", headers=headers)
+    finally:
+        await image.close()
 
 
 def _render_branded_qr_png(target_url):

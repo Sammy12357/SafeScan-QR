@@ -195,7 +195,7 @@ mimetypes.add_type("application/wasm", ".wasm")
 qr_app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Keep bounded QR uploads in memory instead of Starlette's default 1 MiB
-# disk-backed spool. These are the site's only UploadFile routes.
+# disk-backed spool. Keep every UploadFile route inside the same body cap.
 QR_MULTIPART_OVERHEAD_BYTES = 64 * 1024
 QR_REQUEST_BODY_LIMIT = MAX_QR_UPLOAD_BYTES + QR_MULTIPART_OVERHEAD_BYTES
 MultiPartParser.spool_max_size = QR_REQUEST_BODY_LIMIT + 1
@@ -430,7 +430,9 @@ async def security_headers_and_rate_limits(request: Request, call_next):
         # The telemetry endpoint has its own in-memory count-only budget.
         # Generic rate-limit failures write IP-linked audit rows.
         return await call_next(request)
-    if request.method == "POST" and path in ("/search_qr_api", "/api/scan/file"):
+    if request.method == "POST" and path in (
+        "/search_qr_api", "/api/scan/file", "/api/qr/generate-halftone",
+    ):
         raw_length = request.headers.get("content-length")
         if raw_length:
             try:
@@ -438,7 +440,7 @@ async def security_headers_and_rate_limits(request: Request, call_next):
             except ValueError:
                 declared_length = -1
             if declared_length < 0 or declared_length > QR_REQUEST_BODY_LIMIT:
-                return apply_security_headers(request, error_response(request, 413, code="upload_too_large", message="QR scan request is too large."))
+                return apply_security_headers(request, error_response(request, 413, code="upload_too_large", message="QR upload is too large."))
         client_identity = qr_request_client_identity(request)
         if client_identity:
             scan_limit = enforce_rate_limit(request, "qr_upload_client", 90, 15 * 60, user_key=client_identity)
@@ -465,7 +467,7 @@ async def security_headers_and_rate_limits(request: Request, call_next):
                         async for chunk in request.stream():
                             received += len(chunk)
                             if received > QR_REQUEST_BODY_LIMIT:
-                                return apply_security_headers(request, error_response(request, 413, code="upload_too_large", message="QR scan request is too large."))
+                                return apply_security_headers(request, error_response(request, 413, code="upload_too_large", message="QR upload is too large."))
                             chunks.append(chunk)
                 except TimeoutError:
                     return apply_security_headers(request, error_response(request, 408, code="upload_timed_out", message="QR scan upload timed out. Please retry."))

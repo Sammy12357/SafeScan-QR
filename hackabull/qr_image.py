@@ -736,3 +736,228 @@ def qr_ascii_motion_pngs_from_payload(
                     raise QRAsciiMotionDecodeError("The ASCII motion QR did not decode reliably.")
 
     return still_bytes, animated_bytes
+
+
+HALFTONE_MAX_SOURCE_PIXELS = 12_000_000
+_HALFTONE_MIME_FORMATS = {
+    "image/png": "PNG",
+    "image/jpeg": "JPEG",
+    "image/webp": "WEBP",
+}
+
+
+class QRHalftoneImageError(ValueError):
+    """The uploaded source image is unsupported or exceeds a safe limit."""
+
+    def __init__(self, message, *, too_large=False):
+        super().__init__(message)
+        self.too_large = too_large
+
+
+class QRHalftoneDecodeError(ValueError):
+    """No photo halftone variant remained readable after export."""
+
+
+def _halftone_photo_from_upload(contents, content_type):
+    """Decode a bounded still image in memory and normalize EXIF/alpha."""
+    import warnings
+    from PIL import Image, ImageOps, UnidentifiedImageError
+
+    expected_format = _HALFTONE_MIME_FORMATS.get((content_type or "").lower())
+    if expected_format is None:
+        raise QRHalftoneImageError("Choose a PNG, JPEG, or WebP photo.")
+    if not isinstance(contents, bytes) or not contents:
+        raise QRHalftoneImageError("Choose a photo to add to the QR code.")
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(io.BytesIO(contents)) as source:
+                if source.format != expected_format:
+                    raise QRHalftoneImageError("The photo format does not match its file type.")
+                if source.width * source.height > HALFTONE_MAX_SOURCE_PIXELS:
+                    raise QRHalftoneImageError(
+                        "Choose a photo under 12 megapixels.", too_large=True,
+                    )
+                if min(source.size) < 64:
+                    raise QRHalftoneImageError("Choose a photo at least 64 pixels wide and tall.")
+                if getattr(source, "is_animated", False) or getattr(source, "n_frames", 1) != 1:
+                    raise QRHalftoneImageError("Choose a still photo; animated images are not supported.")
+                source.load()
+                oriented = ImageOps.exif_transpose(source)
+                try:
+                    rgba = oriented.convert("RGBA")
+                    try:
+                        background = Image.new("RGBA", rgba.size, "white")
+                        try:
+                            background.alpha_composite(rgba)
+                            return background.convert("L")
+                        finally:
+                            background.close()
+                    finally:
+                        rgba.close()
+                finally:
+                    if oriented is not source:
+                        oriented.close()
+    except QRHalftoneImageError:
+        raise
+    except (OSError, ValueError, UnidentifiedImageError, Image.DecompressionBombError,
+            Image.DecompressionBombWarning) as exc:
+        raise QRHalftoneImageError("We couldn't read that photo. Choose a PNG, JPEG, or WebP still image.") from exc
+
+
+def _halftone_function_mask(version, symbol_size):
+    """Protect QR function patterns from the uploaded photo's dot texture."""
+    from qrcode.util import pattern_position
+
+    centers = pattern_position(version)
+    alignment = []
+    for center_y in centers:
+        for center_x in centers:
+            if ((center_x <= 8 and center_y <= 8)
+                    or (center_x >= symbol_size - 9 and center_y <= 8)
+                    or (center_x <= 8 and center_y >= symbol_size - 9)):
+                continue
+            alignment.append((center_x, center_y))
+
+    protected = set()
+    for y in range(symbol_size):
+        for x in range(symbol_size):
+            finder = (
+                (x < 9 and y < 9)
+                or (x >= symbol_size - 9 and y < 9)
+                or (x < 9 and y >= symbol_size - 9)
+            )
+            timing_and_format = x in (6, 8) or y in (6, 8)
+            version_bits = version >= 7 and (
+                (x >= symbol_size - 11 and y < 6)
+                or (x < 6 and y >= symbol_size - 11)
+            )
+            if (finder or timing_and_format or version_bits
+                    or any(abs(x - cx) <= 2 and abs(y - cy) <= 2 for cx, cy in alignment)):
+                protected.add((x, y))
+    return protected
+
+
+def _halftone_png_decodes(png, payload):
+    """Read the actual PNG at full and phone-preview sizes with pinned ZXing."""
+    from PIL import Image
+    try:
+        import zxingcpp
+    except ImportError:
+        return False
+
+    with Image.open(io.BytesIO(png)) as exported:
+        full = exported.convert("RGB")
+    try:
+        preview = full.resize(
+            (320, round(full.height * 320 / full.width)), Image.Resampling.LANCZOS,
+        )
+        try:
+            for candidate in (full, preview):
+                results = zxingcpp.read_barcodes(
+                    candidate,
+                    formats=zxingcpp.BarcodeFormat.QRCode,
+                    try_rotate=True,
+                    try_downscale=True,
+                    try_invert=True,
+                    text_mode=zxingcpp.TextMode.Plain,
+                )
+                if {result.text for result in results if getattr(result, "valid", True)} != {payload}:
+                    return False
+            return True
+        finally:
+            preview.close()
+    finally:
+        full.close()
+
+
+def qr_photo_halftone_png_from_payload(payload, contents, content_type, *, include_attribution=True):
+    """Render uploaded photo tones as dots inside a scannable QR matrix.
+
+    The photo is never stored. Function patterns and four-module quiet zone
+    remain exact. Increasingly subtle dot textures are tried until the actual
+    exported PNG reads back as the one intended URL at two display sizes.
+    """
+    import qrcode
+    from qrcode.exceptions import DataOverflowError
+    from PIL import Image, ImageDraw, ImageFont, ImageOps
+
+    photo = _halftone_photo_from_upload(contents, content_type)
+    try:
+        border = 4
+        cell = 16
+        qr = qrcode.QRCode(
+            version=3, error_correction=qrcode.constants.ERROR_CORRECT_H,
+            border=border, box_size=1,
+        )
+        qr.add_data(payload)
+        try:
+            qr.make(fit=True)
+        except ValueError as exc:
+            raise DataOverflowError("Photo halftone QR data exceeds QR capacity.") from exc
+        matrix = qr.get_matrix()
+        module_count = len(matrix)
+        if module_count > 121:
+            raise DataOverflowError("Photo halftone QR is too large to render.")
+        symbol_size = module_count - 2 * border
+        protected = _halftone_function_mask(qr.version, symbol_size)
+        sample = ImageOps.fit(
+            photo, (symbol_size, symbol_size), method=Image.Resampling.LANCZOS,
+        )
+        try:
+            tones = sample.tobytes()
+        finally:
+            sample.close()
+
+        code_size = module_count * cell
+        footer_height = 48 if include_attribution else 0
+        font_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), "static", "fonts", "IBMPlexMono-Bold.ttf",
+        )
+        font = ImageFont.truetype(font_path, 18) if include_attribution else None
+        for core_fraction in (0.5, 0.625, 0.75, 0.875):
+            output = Image.new("RGB", (code_size, code_size + footer_height), "white")
+            draw = ImageDraw.Draw(output)
+            for y, row in enumerate(matrix):
+                for x, dark in enumerate(row):
+                    left, top = x * cell, y * cell
+                    if (x < border or y < border
+                            or x >= module_count - border or y >= module_count - border):
+                        continue
+                    if (x - border, y - border) in protected:
+                        if dark:
+                            draw.rectangle(
+                                (left, top, left + cell - 1, top + cell - 1), fill="black",
+                            )
+                        continue
+                    tone = tones[(y - border) * symbol_size + x - border]
+                    draw.rectangle(
+                        (left, top, left + cell - 1, top + cell - 1),
+                        fill=(tone, tone, tone),
+                    )
+                    # Each data module has a true black or white center. The
+                    # photo remains visible around that circular core. If a
+                    # compact preview cannot read a highly textured version,
+                    # enlarge the cores and try again below.
+                    radius = cell * core_fraction / 2
+                    cx, cy = left + cell / 2, top + cell / 2
+                    dot_color = "black" if dark else "white"
+                    draw.ellipse(
+                        (cx - radius, cy - radius, cx + radius, cy + radius),
+                        fill=dot_color,
+                    )
+            if font is not None:
+                draw.text(
+                    (code_size // 2, code_size + 10), "Sqafe · checked when generated",
+                    fill="black", font=font, anchor="mt",
+                )
+            encoded = io.BytesIO()
+            output.save(encoded, format="PNG", optimize=True)
+            output.close()
+            png = encoded.getvalue()
+            if _halftone_png_decodes(png, payload):
+                return png
+    finally:
+        photo.close()
+    raise QRHalftoneDecodeError("The photo QR did not stay readable at phone size.")
