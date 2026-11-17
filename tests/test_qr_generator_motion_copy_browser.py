@@ -663,7 +663,7 @@ def test_guest_gradient_slots_are_browser_only_and_never_replace_account_slots(b
         assert "account" in page.locator("#generateQrSavedScope").inner_text()
 
         state["signed_in"] = False
-        page.evaluate("localStorage.setItem('sqafeQrGradientSlots:guest', JSON.stringify({slots:[{slot:1,gradient_start:'#FFFFFF',gradient_end:'#334455'}]}))")
+        page.evaluate("localStorage.setItem('sqafeQrGradientSlots:guest', JSON.stringify({slots:[{slot:1,gradient_start:'#FFFFF',gradient_end:'#334455'}]}))")
         page.reload(wait_until="domcontentloaded")
         page.locator('input[name="generateQrFormat"][value="ascii_motion"]').check()
         page.wait_for_function("() => document.querySelector('#generateQrSavedScope').textContent.includes('browser')")

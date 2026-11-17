@@ -11,7 +11,7 @@
   <title>QR Generator | Sqafe</title>
   <meta name="description" content="Generate a screened QR after SafeScan checks a link, or choose a plain QR with no safety check.">
   <link rel="icon" href="/static/safescan-logo.svg?v=sqafe-brand-v1" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=qr-gradient-slots-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=qr-bright-gradient-v1">
 </head>
 <body class="test-site-page">
   <div class="page-shell">
@@ -72,8 +72,8 @@
               </span>
             </label>
           </div>
-          <div id="generateQrGradientSample" class="generate-qr-gradient-sample" aria-hidden="true"></div>
-          <p id="generateQrGradientHint" class="generate-qr-gradient-hint">Choose dark colors so the QR stays readable on white. Light colors cannot be generated.</p>
+          <div id="generateQrGradientSample" class="generate-qr-gradient-sample" data-black-cells="false" aria-hidden="true"><span># @ % * + # @ % * +</span></div>
+          <p id="generateQrGradientHint" class="generate-qr-gradient-hint" aria-live="polite">Dark colors use colored ASCII on white. The white gaps and quiet zone remain for scanning.</p>
           <section id="generateQrSavedGradients" class="generate-qr-saved-gradients" aria-labelledby="generateQrSavedGradientsHeading">
             <div class="generate-qr-saved-heading">
               <h3 id="generateQrSavedGradientsHeading">Your gradients</h3>
@@ -116,14 +116,14 @@
             <p>The GIF moves in compatible viewers. If your app shows one frame, open it in a browser or use the still PNG.</p>
           </div>
           <section id="generatedMotionTextWrap" class="generated-motion-text hidden" aria-label="Copy QR as text">
-            <fieldset class="generated-motion-copy-format">
+            <fieldset class="generated-motion-copy-format" aria-describedby="generatedMotionTextDescription">
               <legend>Copy as text</legend>
               <div class="generated-motion-copy-options">
                 <label><input type="radio" name="generatedMotionCopyFormat" value="ascii" checked><span><strong>ASCII art</strong><small>Keyboard characters only</small></span></label>
                 <label><input type="radio" name="generatedMotionCopyFormat" value="compact"><span><strong>Compact text</strong><small>Shorter for messages</small></span></label>
               </div>
             </fieldset>
-            <p id="generatedMotionTextDescription">ASCII art uses keyboard characters but is much larger. Rich text apps may keep its colors and tight spacing; plain message apps may stretch it.</p>
+            <p id="generatedMotionTextDescription" aria-live="polite">ASCII art uses keyboard characters but is much larger. Rich text apps may keep its colors and tight spacing; plain message apps may stretch it.</p>
             <div id="generatedMotionCompactPreview" class="generated-ascii-paper generated-motion-compact-preview hidden" role="img" aria-label="Compact text QR preview">
               <pre id="generatedMotionCompactArt" aria-hidden="true"></pre>
             </div>
@@ -133,7 +133,7 @@
               <a id="generatedMotionTextDownload" class="secondary-button" download="sqafe-ascii-art-qr.txt" href="#">Download raw .txt</a>
               <a id="generatedMotionHtmlDownload" class="secondary-button" download="sqafe-ascii-art-qr.html" href="#">Download styled HTML</a>
             </div>
-            <p class="generated-motion-copy-limit">Raw .txt keeps characters only. In plain chats, try a fixed-width code block without wrapping; if spacing changes, share the PNG. Styled HTML keeps the chosen colors and spacing.</p>
+            <p class="generated-motion-copy-limit">Raw .txt keeps characters only. In plain chats, try a fixed-width code block without wrapping; if spacing changes, share the image. Styled HTML keeps the spacing and darkens bright colors for readability on white.</p>
             <p id="generatedMotionTextActionStatus" class="generated-ascii-action-status" role="status" aria-live="polite"></p>
           </section>
         </div>
@@ -162,6 +162,6 @@
   <script src="/static/app-widgets.js?v=legal-gpc-v1"></script>
   <script src="/static/app-go-ghost.js?v=ghost-inline-errors-v1"></script>
   <script src="/static/app-go-ghost-ui.js?v=legal-a11y-v1"></script>
-  <script src="/static/app-generate-qr.js?v=qr-motion-gif-v1"></script>
+  <script src="/static/app-generate-qr.js?v=qr-bright-gif-v1"></script>
 </body>
 </html>
