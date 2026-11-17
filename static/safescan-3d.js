@@ -15,6 +15,8 @@ let pageWasHidden = document.visibilityState === "hidden";
 
 function activateFallback(reason) {
   if (!showcase) return;
+  const wasReady = showcase.classList.contains("webgl-ready");
+  const hadCanvasFocus = document.activeElement === canvas;
   if (reason) {
     showcase.dataset.webglFallbackReason = reason;
   }
@@ -24,6 +26,9 @@ function activateFallback(reason) {
     canvas.style.setProperty("opacity", "0", "important");
     canvas.style.setProperty("visibility", "hidden", "important");
     canvas.style.setProperty("pointer-events", "none", "important");
+  }
+  if (wasReady) {
+    showcase.dispatchEvent(new CustomEvent("sqafe:model-fallback", { detail: { reason, hadCanvasFocus } }));
   }
 }
 
@@ -669,6 +674,7 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim()) {
   });
 
   showcase.addEventListener("pointerdown", (event) => {
+    if (showcase.classList.contains("webgl-fallback")) return;
     isDragging = true;
     dragStart = { x: event.clientX, y: event.clientY };
     rigStart = { x: target.x, y: target.y };
@@ -676,8 +682,11 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim()) {
   });
 
   showcase.addEventListener("pointerup", (event) => {
+    if (!isDragging) return;
     isDragging = false;
-    showcase.releasePointerCapture(event.pointerId);
+    if (showcase.hasPointerCapture(event.pointerId)) {
+      showcase.releasePointerCapture(event.pointerId);
+    }
   });
 
   showcase.addEventListener("pointerleave", () => {
@@ -738,6 +747,7 @@ if (THREE && canvas && showcase && !showcase.dataset.splineSrc?.trim()) {
 
   const clock = new THREE.Clock();
   function animate() {
+    if (showcase.classList.contains("webgl-fallback")) return;
     frameCount += 1;
     lastFrameAt = performance.now();
     const time = clock.getElapsedTime();
