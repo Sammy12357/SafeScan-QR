@@ -8,6 +8,10 @@
   const modeInputs = [...document.querySelectorAll('input[name="generateQrMode"]')];
   const plainWarning = document.getElementById("generateQrPlainWarning");
   const formatInputs = [...document.querySelectorAll('input[name="generateQrFormat"]')];
+  const halftoneOptions = document.getElementById("generateQrHalftoneOptions");
+  const halftoneImageInput = document.getElementById("generateQrHalftoneImage");
+  const halftonePreview = document.getElementById("generateQrHalftonePreview");
+  const halftoneStatus = document.getElementById("generateQrHalftoneStatus");
   const gradientOptions = document.getElementById("generateQrGradientOptions");
   const gradientStart = document.getElementById("generateQrGradientStart");
   const gradientEnd = document.getElementById("generateQrGradientEnd");
@@ -52,7 +56,7 @@
   const textDownload = document.getElementById("generatedAsciiDownload");
   const actionStatus = document.getElementById("generatedAsciiActionStatus");
   const errEl = document.getElementById("generateQrError");
-  if (!generateBtn || !urlInputField || modeInputs.length !== 2 || !plainWarning || formatInputs.length !== 3 || !gradientOptions || !gradientStart || !gradientEnd || !gradientStartValue || !gradientEndValue || !gradientSample || !gradientHint || gradientPresets.length !== 3 || !savedGradientSection || !savedGradientScope || !savedGradientStatus || !savedGradientRetry || savedGradientUseButtons.length !== 3 || savedGradientSaveButtons.length !== 3 || !wrap || !img || !pngStatus || !dl || !motionHeading || !imageMotionToggle || !motionDownloads || !motionStillDownload || !motionAnimatedDownload || !motionTextWrap || motionCopyFormats.length !== 2 || !motionTextDescription || !motionCompactPreview || !motionCompactArt || !motionCompactSizeNotice || !motionTextCopy || !motionTextDownload || !motionHtmlDownload || !motionTextActionStatus || !textWrap || !paper || !art || !asciiStatus || !sizeNotice || !destination || !textMotionToggle || !copyButton || !textDownload || !actionStatus || !errEl) return;
+  if (!generateBtn || !urlInputField || modeInputs.length !== 2 || !plainWarning || formatInputs.length !== 4 || !halftoneOptions || !halftoneImageInput || !halftonePreview || !halftoneStatus || !gradientOptions || !gradientStart || !gradientEnd || !gradientStartValue || !gradientEndValue || !gradientSample || !gradientHint || gradientPresets.length !== 3 || !savedGradientSection || !savedGradientScope || !savedGradientStatus || !savedGradientRetry || savedGradientUseButtons.length !== 3 || savedGradientSaveButtons.length !== 3 || !wrap || !img || !pngStatus || !dl || !motionHeading || !imageMotionToggle || !motionDownloads || !motionStillDownload || !motionAnimatedDownload || !motionTextWrap || motionCopyFormats.length !== 2 || !motionTextDescription || !motionCompactPreview || !motionCompactArt || !motionCompactSizeNotice || !motionTextCopy || !motionTextDownload || !motionHtmlDownload || !motionTextActionStatus || !textWrap || !paper || !art || !asciiStatus || !sizeNotice || !destination || !textMotionToggle || !copyButton || !textDownload || !actionStatus || !errEl) return;
 
   const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
   const guestGradientStorageKey = "sqafeQrGradientSlots:guest";
@@ -83,6 +87,16 @@
   let motionPaused = true;
   let activeController = null;
   let requestVersion = 0;
+  let halftonePreviewUrl = null;
+  const maxHalftoneImageBytes = 8 * 1024 * 1024;
+  const halftoneImageTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
+
+  const clearHalftonePreview = () => {
+    if (halftonePreviewUrl) URL.revokeObjectURL(halftonePreviewUrl);
+    halftonePreviewUrl = null;
+    halftonePreview.removeAttribute("src");
+    halftonePreview.hidden = true;
+  };
 
   const stopAnimation = () => {
     if (animationTimer) window.clearInterval(animationTimer);
@@ -512,9 +526,29 @@
   const plainModeSelected = () => modeInputs.find((radio) => radio.checked)?.value === "plain";
   const selectedOutputFormat = () => formatInputs.find((radio) => radio.checked)?.value || "png";
   const updateFormatPresentation = () => {
-    const motion = selectedOutputFormat() === "ascii_motion";
+    const format = selectedOutputFormat();
+    const motion = format === "ascii_motion";
     gradientOptions.classList.toggle("hidden", !motion);
+    halftoneOptions.classList.toggle("hidden", format !== "halftone");
     if (motion) ensureSavedGradients();
+  };
+  const updateHalftonePreview = () => {
+    clearHalftonePreview();
+    const file = halftoneImageInput.files?.[0];
+    if (!file) {
+      halftoneStatus.textContent = "Choose an image to blend with the QR.";
+      return;
+    }
+    if (!halftoneImageTypes.has(file.type) || !file.size || file.size > maxHalftoneImageBytes) {
+      halftoneImageInput.value = "";
+      halftoneStatus.textContent = "Choose a still PNG, JPEG, or WebP image under 8 MB.";
+      showError("That artwork file is unsupported or too large. Choose a still PNG, JPEG, or WebP image under 8 MB.");
+      return;
+    }
+    halftonePreviewUrl = URL.createObjectURL(file);
+    halftonePreview.src = halftonePreviewUrl;
+    halftonePreview.hidden = false;
+    halftoneStatus.textContent = `${file.name} selected. The finished QR will be checked before download.`;
   };
   const updateModePresentation = () => {
     const plain = plainModeSelected();
@@ -533,6 +567,18 @@
     cancelCurrent();
     updateFormatPresentation();
   });
+  halftoneImageInput.addEventListener("change", () => {
+    cancelCurrent();
+    updateHalftonePreview();
+  });
+  halftonePreview.addEventListener("error", () => {
+    if (!halftonePreviewUrl) return;
+    clearHalftonePreview();
+    halftoneImageInput.value = "";
+    halftoneStatus.textContent = "This image could not be previewed. Choose another still image.";
+    showError("This artwork image could not be read. Choose another PNG, JPEG, or WebP image.");
+  });
+  window.addEventListener("pagehide", clearHalftonePreview);
   for (const radio of motionCopyFormats) radio.addEventListener("change", updateMotionCopyFormat);
   for (const button of savedGradientUseButtons) button.addEventListener("click", () => {
     useSavedGradient(Number(button.dataset.gradientSlotUse));
@@ -583,6 +629,7 @@
     if (event.persisted) {
       resetSavedGradientSession();
       ensureSavedGradients();
+      if (halftoneImageInput.files?.length) updateHalftonePreview();
     }
   });
   window.addEventListener("focus", () => {
@@ -688,6 +735,12 @@
 
     const plain = plainModeSelected();
     const outputFormat = selectedOutputFormat();
+    const halftoneFile = outputFormat === "halftone" ? halftoneImageInput.files?.[0] : null;
+    if (outputFormat === "halftone" && !halftoneFile) {
+      showError("Choose a PNG, JPEG, or WebP photo or illustration for the halftone QR.");
+      halftoneImageInput.focus();
+      return;
+    }
     let topColor = gradientStart.value.toUpperCase();
     let bottomColor = gradientEnd.value.toUpperCase();
     if (outputFormat === "ascii_motion"
@@ -705,7 +758,7 @@
     const version = requestVersion;
     const controller = new AbortController();
     activeController = controller;
-    const timeout = window.setTimeout(() => controller.abort(), outputFormat === "ascii_motion" ? 30000 : 15000);
+    const timeout = window.setTimeout(() => controller.abort(), outputFormat === "ascii_motion" || outputFormat === "halftone" ? 30000 : 15000);
     UIStates.busy(generateBtn, async () => {
       try {
         const payload = outputFormat === "ascii"
@@ -713,12 +766,22 @@
           : outputFormat === "ascii_motion"
             ? { url: normalized, format: "ascii_motion", gradient_start: topColor, gradient_end: bottomColor }
             : { url: normalized };
-        const res = await fetch(plain ? "/api/qr/generate-plain" : "/api/qr/generate", {
+        let endpoint = plain ? "/api/qr/generate-plain" : "/api/qr/generate";
+        let request = {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           signal: controller.signal,
           body: JSON.stringify(payload)
-        });
+        };
+        if (outputFormat === "halftone") {
+          const form = new FormData();
+          form.set("mode", plain ? "plain" : "screened");
+          form.set("url", normalized);
+          form.set("image", halftoneFile);
+          endpoint = "/api/qr/generate-halftone";
+          request = { method: "POST", signal: controller.signal, body: form };
+        }
+        const res = await fetch(endpoint, request);
         if (version !== requestVersion) return;
         if (!res.ok) {
           let detail = "Could not generate QR.";
@@ -730,6 +793,12 @@
               detail = (body.field === "gradient_start" ? "Top color: " : "Bottom color: ") + (body.error || detail);
             } else if (outputFormat === "ascii_motion" && body.code === "qr_generation_unscannable" && body.hint) {
               detail += " " + body.hint;
+            } else if (outputFormat === "halftone" && body.code === "qr_generation_unscannable") {
+              detail = "This artwork did not make a QR that Sqafe could read. Try a clearer crop or a shorter URL.";
+            } else if (outputFormat === "halftone" && body.code === "upload_too_large") {
+              detail = "The artwork is too large. Choose an image under 8 MB and 12 megapixels.";
+            } else if (outputFormat === "halftone" && body.code === "invalid_request" && body.field === "image") {
+              detail = "This artwork file could not be used. Choose a still PNG, JPEG, or WebP image.";
             }
             if (!plain && body.code === "scan_incomplete") {
               detail = "Screened checks could not finish. No screened QR was made. Choose Plain QR above only if you want a code without safety checks.";
@@ -748,23 +817,32 @@
           && verification === "not_checked"
           && res.headers.get("X-SafeScan-Verdict") === null;
         const contentType = res.headers.get("Content-Type")?.toLowerCase() || "";
-        if (!(plain ? plainResponse : screenedResponse) || (outputFormat === "png" && !contentType.startsWith("image/png"))
-          || (outputFormat !== "png" && !contentType.startsWith("application/json"))) {
+        const imageOutput = outputFormat === "png" || outputFormat === "halftone";
+        if (!(plain ? plainResponse : screenedResponse) || (imageOutput && !contentType.startsWith("image/png"))
+          || (!imageOutput && !contentType.startsWith("application/json"))) {
           showError(plain
             ? "The plain QR response was not marked as unchecked. No QR was made available."
             : "SafeScan could not confirm a low-risk result for this URL. No QR was made available.");
           return;
         }
-        if (outputFormat === "png") {
+        if (imageOutput) {
           const blob = await res.blob();
           if (version !== requestVersion) return;
           currentImageUrl = URL.createObjectURL(blob);
           img.src = currentImageUrl;
-          img.alt = plain ? "Plain QR code for a link that was not safety checked" : "Screened QR code";
-          pngStatus.textContent = plain
-            ? "Not safety checked. Verify the destination independently before sharing or opening this QR."
-            : "Checked when generated. The destination may change, so recheck before opening.";
-          dl.download = plain ? "plain-qr.png" : "safescan-qr.png";
+          img.alt = outputFormat === "halftone"
+            ? (plain ? "Plain halftone art QR for a link that was not safety checked" : "Screened halftone art QR")
+            : (plain ? "Plain QR code for a link that was not safety checked" : "Screened QR code");
+          pngStatus.textContent = outputFormat === "halftone"
+            ? (plain
+              ? "QR image checked for scanning, but the destination was not safety checked. Test it with a phone before sharing."
+              : "QR image checked for scanning and destination checked when generated. Test it with a phone before sharing; the destination may change later.")
+            : (plain
+              ? "Not safety checked. Verify the destination independently before sharing or opening this QR."
+              : "Checked when generated. The destination may change, so recheck before opening.");
+          dl.download = outputFormat === "halftone"
+            ? (plain ? "plain-halftone-qr.png" : "sqafe-halftone-qr.png")
+            : (plain ? "plain-qr.png" : "safescan-qr.png");
           dl.href = currentImageUrl;
           wrap.setAttribute("data-verification", plain ? "not_checked" : "complete");
           wrap.setAttribute("data-output-format", outputFormat);
@@ -860,7 +938,9 @@
         showError(err?.name === "AbortError"
           ? (outputFormat === "ascii_motion"
             ? "The animated QR is taking longer than expected. Try again."
-            : plain ? "QR generation is taking longer than expected. No QR was made available. Try again." : "The check is taking longer than expected. No QR was made available. Try again.")
+            : outputFormat === "halftone"
+              ? "The halftone QR is taking longer than expected. No QR was made available. Try a smaller image or shorter URL."
+              : plain ? "QR generation is taking longer than expected. No QR was made available. Try again." : "The check is taking longer than expected. No QR was made available. Try again.")
           : navigator.onLine === false
             ? "You're offline. Reconnect and try again."
             : "We couldn't connect. Check your connection and try again.");
@@ -868,7 +948,9 @@
         window.clearTimeout(timeout);
         if (activeController === controller) activeController = null;
       }
-    }, { label: outputFormat === "ascii_motion" ? (plain ? "Rendering QR…" : "Checking and rendering QR…") : plain ? "Generating QR…" : "Checking URL…" }).finally(updateModePresentation);
+    }, { label: outputFormat === "ascii_motion" || outputFormat === "halftone"
+      ? (plain ? "Rendering QR…" : "Checking and rendering QR…")
+      : plain ? "Generating QR…" : "Checking URL…" }).finally(updateModePresentation);
   });
   updateModePresentation();
   updateFormatPresentation();
