@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+"""Capture the original ASCII and additive compact copy states locally."""
+
+from __future__ import annotations
+
+import argparse
+import io
+import json
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+from PIL import Image
+from playwright.sync_api import sync_playwright
+
+from hackabull.qr_decode import decode_qr_image
+from scripts.capture_ascii_motion_text_evidence import responses
+from scripts.ui_screenshots import free_port, isolated_server_env, wait_for_server
+
+
+ROOT = Path(__file__).resolve().parents[1]
+URL = "https://sqafe.com/"
+
+
+def capture(browser, phase: str, base_url: str, response: dict, output: Path) -> list[dict]:
+    records = []
+    for theme in ("dark", "light"):
+        for width in (375, 768, 1440):
+            context = browser.new_context(base_url=base_url, viewport={"width": width, "height": 900})
+            page = context.new_page()
+            page.add_init_script(
+                "localStorage.setItem('safescan_theme', " + json.dumps(theme) + ");"
+                "localStorage.setItem('safeScanConsent', JSON.stringify({"
+                "consentType:'essential_only',bannerVersion:'consent-v1',"
+                "timestamp:new Date().toISOString()}));"
+            )
+            page.route("**/api/qr/generate-plain", lambda route: route.fulfill(
+                status=200,
+                content_type="application/json",
+                headers={"X-SafeScan-Mode": "plain", "X-SafeScan-Verification": "not_checked"},
+                body=json.dumps(response),
+            ))
+            try:
+                page.goto("/generate-qr", wait_until="domcontentloaded")
+                page.locator('input[name="generateQrMode"][value="plain"]').check()
+                page.locator('input[name="generateQrFormat"][value="ascii_motion"]').check()
+                page.locator("#generateQrUrlInput").fill(URL)
+                page.locator("#generateQrButton").click()
+                page.locator("#generatedMotionTextWrap").wait_for(state="visible", timeout=30_000)
+                page.wait_for_function("() => document.querySelector('#generatedQrImage').complete && document.querySelector('#generatedQrImage').naturalWidth > 0")
+                if phase == "after-compact":
+                    page.locator('input[name="generatedMotionCopyFormat"][value="compact"]').check()
+                    paper = page.locator("#generatedMotionCompactPreview")
+                    paper.wait_for(state="visible")
+                    with Image.open(io.BytesIO(paper.screenshot())) as screenshot:
+                        decoded = {
+                            barcode.data.decode("utf-8")
+                            for barcode in decode_qr_image(screenshot.convert("RGB"))
+                        }
+                    if decoded != {URL}:
+                        raise RuntimeError(f"Compact preview did not decode at {theme}/{width}: {decoded}")
+                    paper.screenshot(path=str(output / f"compact-{theme}-{width}.png"))
+                page.locator("#generate-qr-section").screenshot(
+                    path=str(output / f"{phase}-{theme}-{width}.jpg"),
+                    type="jpeg", quality=82, animations="allow",
+                )
+                record = page.evaluate("""() => {
+                  const image = document.querySelector('#generatedQrImage');
+                  const compact = document.querySelector('#generatedMotionCompactPreview');
+                  const art = document.querySelector('#generatedMotionCompactArt');
+                  return {
+                    theme: document.documentElement.getAttribute('data-theme'),
+                    viewport: innerWidth,
+                    document_width: document.documentElement.scrollWidth,
+                    image_width: Math.round(image.getBoundingClientRect().width),
+                    compact_visible: compact && getComputedStyle(compact).display !== 'none',
+                    compact_width: compact ? Math.round(compact.getBoundingClientRect().width) : null,
+                    compact_font: art ? getComputedStyle(art).fontSize : null,
+                    compact_line_height: art ? getComputedStyle(art).lineHeight : null,
+                    copy_button: document.querySelector('#generatedMotionTextCopy').textContent.trim(),
+                    html_download: !!document.querySelector('#generatedMotionHtmlDownload'),
+                  };
+                }""")
+                record["phase"] = phase
+                records.append(record)
+            finally:
+                context.close()
+    return records
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--baseline", type=Path, required=True, help="Clean worktree at commit 37ab8f3")
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    args.output.mkdir(parents=True, exist_ok=True)
+    parts = responses()
+    response = {**parts["before"], **parts["after"]}
+    records = []
+    with tempfile.TemporaryDirectory(prefix="safescan-compact-copy-evidence-") as temp_dir:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            try:
+                for phase, repo in (("before", args.baseline), ("after-ascii", ROOT), ("after-compact", ROOT)):
+                    phase_temp = Path(temp_dir) / phase
+                    phase_temp.mkdir()
+                    port = free_port()
+                    base_url = f"http://localhost:{port}"
+                    process = subprocess.Popen(
+                        [sys.executable, "-m", "uvicorn", "hackabull:qr_app", "--host", "127.0.0.1", "--port", str(port), "--no-access-log"],
+                        cwd=repo,
+                        env=isolated_server_env(str(phase_temp), base_url),
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                    )
+                    try:
+                        wait_for_server(base_url, process)
+                        records.extend(capture(browser, phase, base_url, response, args.output))
+                    finally:
+                        if process.poll() is None:
+                            process.terminate()
+                            process.communicate(timeout=5)
+            finally:
+                browser.close()
+    (args.output / "metrics.json").write_text(json.dumps(records, indent=2) + "\n")
+
+
+if __name__ == "__main__":
+    main()
