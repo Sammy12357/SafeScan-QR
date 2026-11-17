@@ -73,6 +73,12 @@ class QRDecodeSafetyError(ValueError):
 
 MAX_QR_IMAGE_PIXELS = 40_000_000
 MAX_QR_PAYLOAD_LENGTH = 4096
+# Render's small CPU instance can take several seconds to start the isolated
+# Python worker under load, even when native ZXing reads the image in a few
+# milliseconds. This allowance covers startup and IPC only; decode_qr_image
+# still enforces QR_DECODE_BUDGET_S inside the killable child process.
+QR_WORKER_STARTUP_GRACE_SECONDS = 5.0
+QR_WORKER_PDF_RENDER_GRACE_SECONDS = 1.5
 PILImage.MAX_IMAGE_PIXELS = MAX_QR_IMAGE_PIXELS
 
 
@@ -626,10 +632,11 @@ def decode_qr_upload(contents, filename="", content_type=""):
     from pathlib import Path
 
     started = time.monotonic()
-    # Render's small CPU instance can spend more than a second starting a
-    # fresh Python child under load. Keep the decode tier at 1.5 seconds, but
-    # allow bounded startup/IPC time before killing the process.
-    timeout = _decode_budget_seconds() + (3.5 if _looks_like_pdf(contents, filename, content_type) else 2.0)
+    # Keep the internal decode tier budget separate from the parent deadline.
+    # A PDF may need additional time to render a page before its decode tiers.
+    timeout = _decode_budget_seconds() + QR_WORKER_STARTUP_GRACE_SECONDS
+    if _looks_like_pdf(contents, filename, content_type):
+        timeout += QR_WORKER_PDF_RENDER_GRACE_SECONDS
     worker = Path(__file__).with_name("qr_decode_worker.py")
     worker_filename = str(filename or "")[:255].replace("\x00", "")
     worker_content_type = str(content_type or "")[:255].replace("\x00", "")
