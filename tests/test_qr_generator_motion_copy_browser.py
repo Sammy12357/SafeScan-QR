@@ -1,5 +1,6 @@
-"""The animated ASCII QR is live text and copies its visible frame."""
+"""The animated ASCII QR keeps its APNG preview and copies a text version."""
 
+import base64
 import io
 import json
 import subprocess
@@ -8,7 +9,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageChops
 
 from scripts.ui_screenshots import free_port, isolated_server_env, wait_for_server
 
@@ -54,9 +55,12 @@ def browser_site():
 
 @pytest.fixture(scope="module")
 def motion_response():
-    from hackabull.qr_image import qr_ascii_motion_frames_from_payload
+    from hackabull.qr_image import qr_ascii_motion_frames_from_payload, qr_ascii_motion_pngs_from_payload
 
+    still, animated = qr_ascii_motion_pngs_from_payload(TEST_URL, include_attribution=False)
     return {
+        "still_png_base64": base64.b64encode(still).decode("ascii"),
+        "animated_png_base64": base64.b64encode(animated).decode("ascii"),
         "frame_count": 4,
         "frame_duration_ms": 350,
         "ascii_frames": qr_ascii_motion_frames_from_payload(TEST_URL, include_attribution=False),
@@ -112,47 +116,48 @@ def decoded_urls(png_bytes):
         return {barcode.data.decode("utf-8") for barcode in decode_qr_image(image.convert("RGB"))}
 
 
-def test_ascii_text_autoplays_without_a_play_button(browser_site, motion_response):
+def test_apng_preview_autoplays_and_copies_stable_ascii(browser_site, motion_response):
+    from hackabull.qr_decode import decode_qr_image
+
     browser, base_url = browser_site
     context, page = new_page(browser, base_url)
     try:
         generate_plain_motion(page, motion_response)
-        art = page.locator("#generatedMotionTextArt")
-        assert page.locator("#generatedMotionToggle").count() == 0
-        assert page.locator("#generatedQrImage").is_hidden()
-        assert page.locator("#generatedMotionTextWrap img").count() == 0
-        assert art.text_content() in motion_response["ascii_frames"]
-        assert {"#", "@", "8", "M", "%", "W"}.intersection(art.text_content())
-        style = art.evaluate("element => ({font: getComputedStyle(element).fontFamily, size: getComputedStyle(element).fontSize, line: getComputedStyle(element).lineHeight})")
-        assert "Sqafe ASCII Mono" in style["font"]
-        assert style["size"] == "24px"
-        assert style["line"] == "12px"
+        preview = page.locator("#generatedQrImage")
+        toggle = page.locator("#generatedMotionToggle")
+        assert preview.is_visible()
+        assert preview.get_attribute("src") == page.locator("#generatedMotionAnimatedDownload").get_attribute("href")
+        assert toggle.inner_text() == "Pause motion"
+        assert toggle.get_attribute("aria-pressed") == "true"
+        assert page.locator("#generatedQrWrap pre").count() == 0
+        assert preview.evaluate("element => Math.round(element.getBoundingClientRect().width)") == 480
+        page.wait_for_function("() => document.querySelector('#generatedQrImage').complete && document.querySelector('#generatedQrImage').naturalWidth > 0")
+        samples = [Image.open(io.BytesIO(preview.screenshot(animations="allow"))).convert("RGB")]
+        for _ in range(3):
+            page.wait_for_timeout(400)
+            samples.append(Image.open(io.BytesIO(preview.screenshot(animations="allow"))).convert("RGB"))
+        assert any(ImageChops.difference(samples[0], sample).getbbox() for sample in samples[1:]), "APNG preview did not move"
+        assert all(
+            {barcode.data.decode("utf-8") for barcode in decode_qr_image(sample)} == {TEST_URL}
+            for sample in samples
+        )
 
-        observed = {art.text_content()}
-        for _ in range(30):
-            page.wait_for_timeout(100)
-            observed.add(art.text_content())
-            if len(observed) == 4:
-                break
-        assert observed == set(motion_response["ascii_frames"]), "Four ASCII frames did not play automatically"
-
-        page.evaluate("""() => {
-          document.querySelector('#generatedMotionTextCopy').addEventListener('click', () => {
-            window.__movingFrameAtCopy = document.querySelector('#generatedMotionTextArt').textContent;
-          }, { capture: true });
-        }""")
         page.locator("#generatedMotionTextCopy").click()
         page.wait_for_function("() => document.querySelector('#generatedMotionTextActionStatus').textContent.includes('copied')")
-        assert page.evaluate("navigator.clipboard.readText()") == page.evaluate("window.__movingFrameAtCopy")
-
-        page.evaluate("""() => {
-          document.querySelector('#generatedMotionTextDownload').addEventListener('click', () => {
-            window.__movingFrameAtDownload = document.querySelector('#generatedMotionTextArt').textContent;
-          }, { capture: true });
-        }""")
+        assert page.evaluate("navigator.clipboard.readText()") == motion_response["ascii_frames"][0]
         with page.expect_download() as download_info:
             page.locator("#generatedMotionTextDownload").click()
-        assert Path(download_info.value.path()).read_text(encoding="utf-8") == page.evaluate("window.__movingFrameAtDownload")
+        assert Path(download_info.value.path()).read_text(encoding="utf-8") == motion_response["ascii_frames"][0]
+
+        toggle.click()
+        assert toggle.inner_text() == "Resume motion"
+        assert preview.get_attribute("src") == page.locator("#generatedMotionStillDownload").get_attribute("href")
+        paused = preview.screenshot(animations="allow")
+        page.wait_for_timeout(400)
+        assert preview.screenshot(animations="allow") == paused
+        toggle.click()
+        assert toggle.inner_text() == "Pause motion"
+        assert preview.get_attribute("src") == page.locator("#generatedMotionAnimatedDownload").get_attribute("href")
     finally:
         context.close()
 
@@ -162,22 +167,17 @@ def test_reduced_motion_copy_paste_and_download_preserve_ascii(browser_site, mot
     context, page = new_page(browser, base_url, reduced_motion="reduce")
     try:
         generate_plain_motion(page, motion_response)
-        art = page.locator("#generatedMotionTextArt")
-        assert art.text_content() == motion_response["ascii_frames"][0]
+        preview = page.locator("#generatedQrImage")
+        assert preview.is_visible()
+        assert preview.get_attribute("src") == page.locator("#generatedMotionStillDownload").get_attribute("href")
+        assert page.locator("#generatedMotionToggle").inner_text() == "Resume motion"
+        assert page.locator("#generatedQrWrap pre").count() == 0
+        first = preview.screenshot(animations="allow")
         page.wait_for_timeout(750)
-        assert art.text_content() == motion_response["ascii_frames"][0]
-        assert page.locator("#generatedMotionToggle").count() == 0
-        assert page.locator("#generatedQrImage").is_hidden()
+        assert preview.screenshot(animations="allow") == first
 
-        page.evaluate("""() => {
-          const button = document.querySelector('#generatedMotionTextCopy');
-          button.addEventListener('click', () => {
-            window.__asciiAtCopy = document.querySelector('#generatedMotionTextArt').textContent;
-          }, { capture: true });
-        }""")
         page.locator("#generatedMotionTextCopy").click()
-        captured = page.evaluate("window.__asciiAtCopy")
-        assert captured == art.text_content()
+        captured = motion_response["ascii_frames"][0]
         page.wait_for_function("() => document.querySelector('#generatedMotionTextActionStatus').textContent.includes('copied')")
         assert page.evaluate("navigator.clipboard.readText()") == captured
         assert all(ord(char) < 128 for char in captured)
@@ -230,26 +230,25 @@ def test_reduced_motion_copy_paste_and_download_preserve_ascii(browser_site, mot
         assert Path(download_info.value.path()).read_text(encoding="utf-8") == captured
 
         page.set_viewport_size({"width": 375, "height": 812})
-        page.evaluate("document.fonts.ready")
-        paper = page.locator("#generatedMotionTextPaper")
-        assert decoded_urls(paper.screenshot()) == {TEST_URL}
+        assert preview.evaluate("element => Math.round(element.getBoundingClientRect().width)") == 279
+        assert decoded_urls(preview.screenshot(animations="allow")) == {TEST_URL}
     finally:
         context.close()
 
 
-def test_each_browser_rendered_ascii_frame_decodes_at_mobile_and_tablet(browser_site, motion_response):
+def test_apng_scans_at_mobile_and_tablet(browser_site, motion_response):
     browser, base_url = browser_site
-    context, page = new_page(browser, base_url, reduced_motion="reduce")
+    context, page = new_page(browser, base_url)
     try:
         generate_plain_motion(page, motion_response)
-        page.evaluate("document.fonts.ready")
-        art = page.locator("#generatedMotionTextArt")
-        paper = page.locator("#generatedMotionTextPaper")
+        preview = page.locator("#generatedQrImage")
         for width in (375, 768):
             page.set_viewport_size({"width": width, "height": 900})
-            for frame in motion_response["ascii_frames"]:
-                art.evaluate("(element, value) => { element.textContent = value; }", frame)
-                assert decoded_urls(paper.screenshot()) == {TEST_URL}
+            expected_width = 279 if width == 375 else 480
+            assert preview.evaluate("element => Math.round(element.getBoundingClientRect().width)") == expected_width
+            for _ in range(3):
+                assert decoded_urls(preview.screenshot(animations="allow")) == {TEST_URL}
+                page.wait_for_timeout(400)
     finally:
         context.close()
 
