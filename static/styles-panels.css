@@ -66,21 +66,38 @@
   background: #ffffff;
   padding: var(--space-4);
 }
-.generated-qr-wrap[data-output-format="ascii_motion"] .generated-qr-image {
-  width: 480px;
-  max-width: 100%;
-  height: auto;
-  padding: var(--space-0);
-  border-radius: 0;
-}
-.generated-motion-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-3); width: min(100%, 480px); }
-.generated-motion-heading p { margin: var(--space-0); color: var(--text); font-weight: 700; }
-.generated-motion-downloads { display: flex; justify-content: center; flex-wrap: wrap; gap: var(--space-3); }
-.generated-motion-downloads p { flex-basis: 100%; margin: var(--space-0); color: var(--muted); font-size: 0.8rem; text-align: center; }
-.generated-motion-text { display: flex; flex-direction: column; gap: var(--space-3); width: min(100%, 600px); margin-top: var(--space-5); padding-top: var(--space-5); border-top: 1px solid var(--line); }
+.generated-qr-wrap[data-output-format="ascii_motion"] .generated-qr-image { display: none; }
+.generated-motion-text { display: flex; flex-direction: column; align-items: center; gap: var(--space-3); width: 100%; }
 .generated-motion-text h3, .generated-motion-text p { margin: var(--space-0); }
 .generated-motion-text h3 { color: var(--text); font-size: 1rem; }
-.generated-motion-text > p:not(.generated-ascii-action-status):not(.generated-ascii-size-notice) { color: var(--muted); font-size: 0.85rem; line-height: 1.45; }
+.generated-motion-text > p:not(.generated-ascii-action-status):not(.generated-ascii-size-notice) { max-width: 720px; color: var(--muted); font-size: 0.85rem; line-height: 1.45; text-align: center; }
+.generated-motion-text .generated-ascii-paper { width: min(100%, 1000px); overflow: hidden; }
+.generated-motion-text-surface { position: relative; width: 100%; min-height: 1px; }
+.generated-motion-text .generated-motion-text-surface pre {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: max-content;
+  margin: var(--space-0);
+  color: var(--gradient-start, #2A1B36);
+  font-family: "Sqafe ASCII Mono", Menlo, monospace;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: .5;
+  letter-spacing: 0;
+  white-space: pre;
+  font-variant-ligatures: none;
+  transform-origin: top left;
+}
+@supports (background-clip: text) {
+  .generated-motion-text .generated-motion-text-surface pre {
+    background: linear-gradient(var(--gradient-start, #2A1B36), var(--gradient-end, #8A280C));
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
+}
+.generated-motion-text .generated-ascii-actions { justify-content: center; }
 .generated-qr-status { max-width: 440px; margin: var(--space-0); color: var(--muted); font-size: 0.85rem; line-height: 1.45; text-align: center; }
 .generated-qr-wrap[data-verification="not_checked"] .generated-qr-status { color: var(--text); }
 .generated-qr-wrap .secondary-button { padding: var(--space-3) var(--space-4); font-size: 0.9rem; }
@@ -154,6 +171,13 @@
 .generated-ascii-size-notice { margin: var(--space-0); color: var(--danger); font-size: 0.85rem; line-height: 1.45; }
 .generated-ascii-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); }
 .generated-ascii-action-status { min-height: 1.25em; margin: var(--space-0); color: var(--muted); font-size: 0.85rem; }
+@font-face {
+  font-family: "Sqafe ASCII Mono";
+  src: url("/static/fonts/IBMPlexMono-Bold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
 @media (max-width: 640px) {
   .generate-qr-gradient-fields { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
   .generated-ascii-paper { padding: var(--space-3); }
