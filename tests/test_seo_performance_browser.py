@@ -146,7 +146,7 @@ def test_failed_model_load_can_be_retried(browser_site):
     page.route("**/static/safescan-3d.js?*", fail_first_model_request)
     try:
         page.goto("/", wait_until="networkidle")
-        retry = page.get_by_role("button", name="Retry interactive Sqafe 3D model")
+        retry = page.get_by_role("button", name="Retry 3D model")
         retry.wait_for(timeout=20_000)
         assert retry.is_visible()
         retry.click()
@@ -172,7 +172,7 @@ def test_failed_three_dependency_can_be_retried(browser_site):
     page.route("**/static/vendor/three.module.js?*", fail_first_three_request)
     try:
         page.goto("/", wait_until="networkidle")
-        retry = page.get_by_role("button", name="Retry interactive Sqafe 3D model")
+        retry = page.get_by_role("button", name="Retry 3D model")
         retry.wait_for(timeout=20_000)
         retry.click()
         page.locator(".spline-showcase.webgl-ready").wait_for(timeout=20_000)
@@ -206,7 +206,7 @@ def test_late_webgl_context_loss_exposes_retry_and_recovers(browser_site):
         page.locator('.spline-showcase.webgl-fallback[data-webgl-fallback-reason="context-lost"]').wait_for(
             timeout=20_000
         )
-        retry = page.get_by_role("button", name="Retry interactive Sqafe 3D model")
+        retry = page.get_by_role("button", name="Retry 3D model")
         retry.wait_for(timeout=20_000)
         assert retry.is_visible()
         assert retry.evaluate("node => document.activeElement === node")
@@ -223,7 +223,7 @@ def test_reduced_motion_keeps_static_model_until_manual_play(browser_site):
     requests = model_requests(page)
     try:
         page.goto("/", wait_until="networkidle")
-        play = page.get_by_role("button", name="Play interactive Sqafe 3D model")
+        play = page.get_by_role("button", name="Play 3D model")
         assert play.is_visible()
         assert page.locator(".spline-showcase.webgl-fallback").count() == 1
         assert not THREE_ASSETS.intersection(requests)

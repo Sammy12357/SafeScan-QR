@@ -11,19 +11,19 @@ if (showcase && activation && canvas && !showcase.dataset.splineSrc?.trim()) {
   let reloadOnRetry = false;
   let observer;
 
-  function showAction(label, accessibleLabel) {
+  function showAction(label) {
     activation.hidden = false;
     activation.textContent = label;
     activation.classList.add("model-activation-action");
-    activation.setAttribute("aria-label", accessibleLabel);
+    activation.removeAttribute("aria-label");
   }
 
   function showRetry() {
-    showAction("Retry 3D model", "Retry interactive Sqafe 3D model");
+    showAction("Retry 3D model");
   }
 
   if (reducedMotion.matches) {
-    showAction("Play 3D model", "Play interactive Sqafe 3D model");
+    showAction("Play 3D model");
   }
 
   async function startModel() {
@@ -36,7 +36,7 @@ if (showcase && activation && canvas && !showcase.dataset.splineSrc?.trim()) {
     observer?.disconnect();
     activation.setAttribute("aria-disabled", "true");
     activation.setAttribute("aria-busy", "true");
-    activation.setAttribute("aria-label", "Loading interactive Sqafe 3D model");
+    activation.setAttribute("aria-label", "Loading 3D model");
     if (attempts || reducedMotion.matches) activation.textContent = "Loading 3D model";
 
     try {
