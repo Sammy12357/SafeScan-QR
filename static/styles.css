@@ -1,6 +1,6 @@
 /* styles.css — manifest. Imports the modular stylesheets below in cascade
    order. Rules live in the styles-*.css files; edit those, not this list. */
-@import url("/static/styles-base.css?v=phone-model-autostart-v1");
+@import url("/static/styles-base.css?v=phone-model-recovery-v1");
 @import url("/static/styles-layout.css?v=ui-a11y-v1");
 @import url("/static/styles-scanner.css?v=age-check-ux-v1");
 @import url("/static/styles-go-ghost.css?v=ui-phase7-v1");

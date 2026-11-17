@@ -1,4 +1,4 @@
-// Load the optional model when it enters view, after the scanner can render.
+// Start the hero model when visible, with a visible recovery control.
 const showcase = document.querySelector(".spline-showcase");
 const activation = document.getElementById("modelActivation");
 const canvas = document.getElementById("safeScanModel");
@@ -8,45 +8,71 @@ if (showcase && activation && canvas && !showcase.dataset.splineSrc?.trim()) {
   let loading = false;
   let ready = false;
   let attempts = 0;
+  let reloadOnRetry = false;
   let observer;
 
+  function showAction(label) {
+    activation.hidden = false;
+    activation.textContent = label;
+    activation.classList.add("model-activation-action");
+    activation.removeAttribute("aria-label");
+  }
+
+  function showRetry() {
+    showAction("Retry 3D model");
+  }
+
   if (reducedMotion.matches) {
-    activation.hidden = true;
-  } else {
-    async function startModel() {
-      if (loading || ready) return;
-      loading = true;
-      observer?.disconnect();
-      activation.setAttribute("aria-disabled", "true");
-      activation.setAttribute("aria-busy", "true");
-      activation.setAttribute("aria-label", "Loading interactive Sqafe 3D model");
-      if (attempts) activation.textContent = "Loading 3D model";
+    showAction("Play 3D model");
+  }
 
-      try {
-        const retry = attempts++ ? `&retry=${attempts}` : "";
-        await import(`/static/safescan-3d.js?v=phone-model-autostart-v1${retry}`);
-        if (!showcase.classList.contains("webgl-ready")) {
-          throw new Error("3D model unavailable");
-        }
-        canvas.tabIndex = 0;
-        canvas.setAttribute("aria-label", "Interactive Sqafe 3D security model. Use arrow keys to rotate it.");
-        const transferFocus = document.activeElement === activation;
-        activation.hidden = true;
-        if (transferFocus) canvas.focus({ preventScroll: true });
-        ready = true;
-      } catch (_error) {
-        showcase.classList.add("webgl-fallback");
-        activation.textContent = "Retry 3D model";
-        activation.classList.add("model-activation-retry");
-        activation.setAttribute("aria-label", "Retry interactive Sqafe 3D model");
-      } finally {
-        loading = false;
-        activation.removeAttribute("aria-disabled");
-        activation.removeAttribute("aria-busy");
-      }
+  async function startModel() {
+    if (loading || ready) return;
+    if (reloadOnRetry) {
+      window.location.reload();
+      return;
     }
+    loading = true;
+    observer?.disconnect();
+    activation.setAttribute("aria-disabled", "true");
+    activation.setAttribute("aria-busy", "true");
+    activation.setAttribute("aria-label", "Loading 3D model");
+    if (attempts || reducedMotion.matches) activation.textContent = "Loading 3D model";
 
-    activation.addEventListener("click", startModel);
+    try {
+      const retry = attempts++ ? `&retry=${attempts}` : "";
+      await import(`/static/safescan-3d.js?v=phone-model-recovery-v1${retry}`);
+      if (!showcase.classList.contains("webgl-ready")) {
+        throw new Error("3D model unavailable");
+      }
+      canvas.tabIndex = 0;
+      canvas.setAttribute("aria-label", "Interactive Sqafe 3D security model. Use arrow keys to rotate it.");
+      const transferFocus = document.activeElement === activation;
+      activation.hidden = true;
+      if (transferFocus) canvas.focus({ preventScroll: true });
+      ready = true;
+    } catch (_error) {
+      showcase.classList.add("webgl-fallback");
+      showRetry();
+    } finally {
+      loading = false;
+      activation.removeAttribute("aria-disabled");
+      activation.removeAttribute("aria-busy");
+    }
+  }
+
+  activation.addEventListener("click", startModel);
+  showcase.addEventListener("sqafe:model-fallback", (event) => {
+    reloadOnRetry = true;
+    if (!ready) return;
+    ready = false;
+    canvas.tabIndex = -1;
+    const transferFocus = event.detail?.hadCanvasFocus || document.activeElement === canvas;
+    showRetry();
+    if (transferFocus) activation.focus({ preventScroll: true });
+  });
+
+  if (!reducedMotion.matches) {
     if ("IntersectionObserver" in window) {
       observer = new IntersectionObserver((entries) => {
         if (entries.some((entry) => entry.isIntersecting)) startModel();

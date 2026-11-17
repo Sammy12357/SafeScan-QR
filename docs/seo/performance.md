@@ -1,5 +1,11 @@
 # Phase 5: homepage 3D load
 
+## November 17, 2026: recover stalled model
+
+The phone still starts automatically when at least half of its card enters the viewport. A trial of unconditional startup raised simulated mobile total blocking time from 142 ms to 1,428 ms in one comparable local Lighthouse run, so this release keeps viewport loading. The final candidate scored 81 with 118 ms total blocking time, close to the original score of 80 with 142 ms, and did not request Three.js before scrolling. These single runs are directional evidence, not field measurements.
+
+When the browser requests reduced motion, the still image remains the default, with a visible **Play 3D model** button for people who want to opt in. If WebGL fails after the scene starts, the page reveals **Retry 3D model**; choosing it reloads the page and creates a fresh canvas context. The model's drag handler no longer captures Retry clicks. Initial download failures can still retry in place. The scanner does not depend on the hero model.
+
 ## November 2026 follow-up: start when the model is visible
 
 The interaction-only loader below made the phone look frozen, particularly on touch screens where the full-card activation button had no visible label. The model now loads automatically when at least half of its card enters the viewport. It remains deferred when the card is offscreen, and people who prefer reduced motion keep the still image. A failed download leaves a visible retry control.
