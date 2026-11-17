@@ -754,10 +754,10 @@ def test_ascii_motion_dark_gradient_keeps_finders_visible_and_scannable(generato
 @pytest.mark.parametrize("field,value", [
     ("gradient_start", "red"),
     ("gradient_end", None),
-    ("gradient_start", "#FFFFFF"),
-    ("gradient_end", "#FFFF00"),
+    ("gradient_start", "#FFFFF"),
+    ("gradient_end", "#FFFF0G"),
 ])
-def test_ascii_motion_rejects_malformed_or_light_colors_before_scanning(
+def test_ascii_motion_rejects_malformed_colors_before_scanning(
     generator_api, monkeypatch, plain, field, value,
 ):
     async def analyze(_url):
