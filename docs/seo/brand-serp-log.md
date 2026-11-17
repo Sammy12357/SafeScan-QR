@@ -6,7 +6,7 @@ Use this log for observations, not rank promises. Record date, location, languag
 | --- | --- | --- | --- |
 | 2026-11-15, Toronto, English, browser | Google `sqafe` | Search challenge prevented inspection. | No Google rank or indexation conclusion. |
 | 2026-11-15, Toronto, English, browser | Bing `sqafe` | Bing offered results for “safe” and asked whether to show only `sqafe`. Sqafe was absent from the first visible group. | The rewrite and search challenge prevent a reliable rank or indexation conclusion. |
-| 2026-11-17, owner screenshots | Google Search Console URL Inspection for `https://sqafe.com/about` and `https://sqafe.com/learn` | Both show “URL is on Google” and “Page is indexed.” | The screenshots do not show the homepage, Google-selected canonicals, query impressions, or ranking positions. |
+| 2026-11-17, owner screenshots | Google Search Console URL Inspection for `https://sqafe.com/`, `/about`, and `/learn` | All three show “URL is on Google” and “Page is indexed.” | The screenshots do not show Google-selected canonicals, query impressions, or ranking positions. |
 
 ## Repeatable check
 
