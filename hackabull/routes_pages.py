@@ -398,7 +398,15 @@ async def cookie_policy(request: Request):
 
 @qr_app.get("/legal/terms-history", response_class=HTMLResponse)
 async def terms_history(request: Request):
-    body = "<h2>Version History</h2><p>v1.0 - May 2026: Initial SafeScan QR Terms of Use.</p>"
+    body = (
+        "<h2>Version History</h2>"
+        "<ul>"
+        "<li>v1.0 - May 2026: Initial SafeScan QR Terms of Use.</li>"
+        "<li>v1.1 - November 16, 2026: Reissued under the shared site version; Terms text unchanged.</li>"
+        "<li>v1.2 - November 17, 2026: Reissued under the shared site version; Terms text unchanged.</li>"
+        "<li>v1.3 - November 17, 2026, 20:00 UTC: Reissued under the shared site version; Terms text unchanged.</li>"
+        "</ul>"
+    )
     return templates.TemplateResponse("legal_page.html", legal_context(request, "Terms History", body))
 
 @qr_app.get("/changelog", response_class=HTMLResponse)
