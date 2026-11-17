@@ -1,6 +1,6 @@
 // Screened QR codes require a complete safety check. Plain QR codes are an
 // explicit unchecked choice with no SafeScan mark. The text preview swaps
-// whole matrices; ASCII motion swaps copyable, printable character frames.
+// whole matrices; ASCII motion previews a verified APNG and copies a still text QR.
 (() => {
   const generateBtn = document.getElementById("generateQrButton");
   const urlInputField = document.getElementById("generateQrUrlInput");
@@ -18,11 +18,12 @@
   const img = document.getElementById("generatedQrImage");
   const pngStatus = document.getElementById("generatedQrStatus");
   const dl = document.getElementById("generatedQrDownload");
+  const motionHeading = document.getElementById("generatedMotionHeading");
+  const imageMotionToggle = document.getElementById("generatedMotionToggle");
+  const motionDownloads = document.getElementById("generatedMotionDownloads");
+  const motionStillDownload = document.getElementById("generatedMotionStillDownload");
+  const motionAnimatedDownload = document.getElementById("generatedMotionAnimatedDownload");
   const motionTextWrap = document.getElementById("generatedMotionTextWrap");
-  const motionTextPaper = document.getElementById("generatedMotionTextPaper");
-  const motionTextSurface = document.getElementById("generatedMotionTextSurface");
-  const motionTextArt = document.getElementById("generatedMotionTextArt");
-  const motionTextSizeNotice = document.getElementById("generatedMotionTextSizeNotice");
   const motionTextCopy = document.getElementById("generatedMotionTextCopy");
   const motionTextDownload = document.getElementById("generatedMotionTextDownload");
   const motionTextActionStatus = document.getElementById("generatedMotionTextActionStatus");
@@ -37,17 +38,14 @@
   const textDownload = document.getElementById("generatedAsciiDownload");
   const actionStatus = document.getElementById("generatedAsciiActionStatus");
   const errEl = document.getElementById("generateQrError");
-  if (!generateBtn || !urlInputField || modeInputs.length !== 2 || !plainWarning || formatInputs.length !== 3 || !gradientOptions || !gradientStart || !gradientEnd || !gradientStartValue || !gradientEndValue || !gradientSample || gradientPresets.length !== 3 || !wrap || !img || !pngStatus || !dl || !motionTextWrap || !motionTextPaper || !motionTextSurface || !motionTextArt || !motionTextSizeNotice || !motionTextCopy || !motionTextDownload || !motionTextActionStatus || !textWrap || !paper || !art || !asciiStatus || !sizeNotice || !destination || !textMotionToggle || !copyButton || !textDownload || !actionStatus || !errEl) return;
+  if (!generateBtn || !urlInputField || modeInputs.length !== 2 || !plainWarning || formatInputs.length !== 3 || !gradientOptions || !gradientStart || !gradientEnd || !gradientStartValue || !gradientEndValue || !gradientSample || gradientPresets.length !== 3 || !wrap || !img || !pngStatus || !dl || !motionHeading || !imageMotionToggle || !motionDownloads || !motionStillDownload || !motionAnimatedDownload || !motionTextWrap || !motionTextCopy || !motionTextDownload || !motionTextActionStatus || !textWrap || !paper || !art || !asciiStatus || !sizeNotice || !destination || !textMotionToggle || !copyButton || !textDownload || !actionStatus || !errEl) return;
 
   const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
   let currentImageUrl = null;
+  let currentAnimatedImageUrl = null;
   let currentTextUrl = null;
   let currentText = "";
-  let motionFrames = [];
-  let motionFrameUrls = [];
-  let motionFrameIndex = 0;
-  let motionTimer = null;
-  let motionFrameDuration = 350;
+  let imageMotionPaused = true;
   let frames = [];
   let frameIndex = 0;
   let animationTimer = null;
@@ -59,22 +57,13 @@
     if (animationTimer) window.clearInterval(animationTimer);
     animationTimer = null;
   };
-  const stopMotionAnimation = () => {
-    if (motionTimer) window.clearInterval(motionTimer);
-    motionTimer = null;
+  const updateImageMotionButton = () => {
+    imageMotionToggle.textContent = imageMotionPaused ? "Resume motion" : "Pause motion";
+    imageMotionToggle.setAttribute("aria-pressed", String(!imageMotionPaused));
   };
-  const showMotionFrame = (index) => {
-    motionFrameIndex = index;
-    currentText = motionFrames[index];
-    motionTextArt.textContent = currentText;
-    motionTextDownload.href = motionFrameUrls[index];
-  };
-  const startMotionAnimation = () => {
-    stopMotionAnimation();
-    if (motionFrames.length < 2 || reducedMotion?.matches || document.hidden) return;
-    motionTimer = window.setInterval(() => {
-      showMotionFrame((motionFrameIndex + 1) % motionFrames.length);
-    }, motionFrameDuration);
+  const updateImageMotion = () => {
+    const source = !imageMotionPaused && !document.hidden ? currentAnimatedImageUrl : currentImageUrl;
+    if (source && img.getAttribute("src") !== source) img.src = source;
   };
   const colorContrastOnWhite = (color) => {
     if (!/^#[0-9a-f]{6}$/i.test(color)) return 0;
@@ -93,6 +82,17 @@
     gradientSample.style.setProperty("--gradient-end", bottom);
     for (const preset of gradientPresets) {
       preset.setAttribute("aria-pressed", String(preset.dataset.gradientStart === top && preset.dataset.gradientEnd === bottom));
+    }
+  };
+  const decodePngBase64 = (value) => {
+    if (typeof value !== "string" || value.length < 16 || value.length > 20000000) return null;
+    try {
+      const binary = window.atob(value);
+      const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+      const signature = [137, 80, 78, 71, 13, 10, 26, 10];
+      return signature.every((byte, index) => bytes[index] === byte) ? bytes : null;
+    } catch (_err) {
+      return null;
     }
   };
   const updateMotionButton = () => {
@@ -119,26 +119,11 @@
     }
     notice.classList.toggle("hidden", preview.scrollWidth <= available + 1);
   };
-  const fitMotionTextPreview = () => {
-    if (!motionTextArt.textContent) return;
-    motionTextArt.style.removeProperty("transform");
-    const fullWidth = motionTextArt.offsetWidth;
-    const fullHeight = motionTextArt.offsetHeight;
-    const available = motionTextSurface.clientWidth;
-    if (!fullWidth || !fullHeight || !available) return;
-    const scale = Math.min(1, available / fullWidth);
-    motionTextArt.style.transform = `scale(${scale})`;
-    motionTextArt.style.left = `${Math.max(0, (available - fullWidth * scale) / 2)}px`;
-    motionTextSurface.style.height = `${Math.ceil(fullHeight * scale)}px`;
-    motionTextSizeNotice.classList.toggle("hidden", scale >= 0.2);
-  };
   const fitTextPreview = () => {
     if (!textWrap.classList.contains("hidden")) fitOneTextPreview(paper, art, sizeNotice);
-    if (!motionTextWrap.classList.contains("hidden")) fitMotionTextPreview();
   };
   const clearResult = () => {
     stopAnimation();
-    stopMotionAnimation();
     wrap.classList.add("hidden");
     textWrap.classList.add("hidden");
     wrap.removeAttribute("data-verification");
@@ -147,14 +132,13 @@
     img.removeAttribute("src");
     dl.removeAttribute("href");
     dl.classList.remove("hidden");
+    motionHeading.classList.add("hidden");
+    motionDownloads.classList.add("hidden");
     motionTextWrap.classList.add("hidden");
+    motionStillDownload.removeAttribute("href");
+    motionAnimatedDownload.removeAttribute("href");
     motionTextDownload.removeAttribute("href");
     textDownload.removeAttribute("href");
-    motionTextArt.textContent = "";
-    motionTextArt.style.removeProperty("transform");
-    motionTextArt.style.removeProperty("left");
-    motionTextSurface.style.removeProperty("height");
-    motionTextSizeNotice.classList.add("hidden");
     motionTextActionStatus.textContent = "";
     art.textContent = "";
     art.style.removeProperty("font-size");
@@ -162,17 +146,17 @@
     destination.textContent = "";
     actionStatus.textContent = "";
     currentText = "";
-    motionFrames = [];
-    motionFrameIndex = 0;
-    for (const frameUrl of motionFrameUrls) URL.revokeObjectURL(frameUrl);
-    motionFrameUrls = [];
     frames = [];
     frameIndex = 0;
     motionPaused = true;
     updateMotionButton();
+    imageMotionPaused = true;
+    updateImageMotionButton();
     if (currentImageUrl) URL.revokeObjectURL(currentImageUrl);
+    if (currentAnimatedImageUrl) URL.revokeObjectURL(currentAnimatedImageUrl);
     if (currentTextUrl) URL.revokeObjectURL(currentTextUrl);
     currentImageUrl = null;
+    currentAnimatedImageUrl = null;
     currentTextUrl = null;
   };
   const clearError = () => {
@@ -226,13 +210,9 @@
     updateGradientPresentation();
   });
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) {
-      stopAnimation();
-      stopMotionAnimation();
-    } else {
-      startAnimation();
-      startMotionAnimation();
-    }
+    if (document.hidden) stopAnimation();
+    else startAnimation();
+    updateImageMotion();
   });
   window.addEventListener("resize", fitTextPreview);
   reducedMotion?.addEventListener?.("change", (event) => {
@@ -243,11 +223,17 @@
       updateMotionButton();
       stopAnimation();
     }
-    if (motionFrames.length) {
-      stopMotionAnimation();
-      if (event.matches) showMotionFrame(0);
-      else startMotionAnimation();
+    if (currentAnimatedImageUrl) {
+      imageMotionPaused = event.matches;
+      updateImageMotionButton();
+      updateImageMotion();
     }
+  });
+  imageMotionToggle.addEventListener("click", () => {
+    if (!currentAnimatedImageUrl) return;
+    imageMotionPaused = !imageMotionPaused;
+    updateImageMotionButton();
+    updateImageMotion();
   });
   textMotionToggle.addEventListener("click", () => {
     if (frames.length < 2) return;
@@ -276,9 +262,9 @@
     return preview.outerHTML;
   };
   motionTextCopy.addEventListener("click", async () => {
-    // Capture the visible frame before the animation can advance or clipboard work awaits.
-    const snapshot = motionTextArt.textContent;
-    if (!snapshot || snapshot !== currentText) return;
+    // The text export is the stable first ASCII frame of the same QR payload.
+    const snapshot = currentText;
+    if (!snapshot) return;
     try {
       if (navigator.clipboard.write && window.ClipboardItem) {
         await navigator.clipboard.write([new ClipboardItem({
@@ -288,11 +274,11 @@
       } else {
         await navigator.clipboard.writeText(snapshot);
       }
-      motionTextActionStatus.textContent = "ASCII QR frame copied. Apps that keep formatting preserve its scan-ready spacing.";
+      motionTextActionStatus.textContent = "ASCII text QR copied. Apps that keep formatting preserve its scan-ready spacing.";
     } catch (_err) {
       try {
         await navigator.clipboard.writeText(snapshot);
-        motionTextActionStatus.textContent = "ASCII QR frame copied as plain text. Use bold monospace at 24px with 12px line spacing and no wrapping.";
+        motionTextActionStatus.textContent = "ASCII text QR copied. Use bold monospace at 24px with 12px line spacing and no wrapping.";
       } catch (_fallbackError) {
         motionTextActionStatus.textContent = "Could not copy automatically. Use Download .txt instead.";
       }
@@ -402,7 +388,10 @@
         if (outputFormat === "ascii_motion") {
           const body = await res.json();
           if (version !== requestVersion) return;
-          if (!Array.isArray(body?.ascii_frames) || body.ascii_frames.length !== 4
+          const stillBytes = decodePngBase64(body?.still_png_base64);
+          const animatedBytes = decodePngBase64(body?.animated_png_base64);
+          if (!stillBytes || !animatedBytes
+            || !Array.isArray(body?.ascii_frames) || body.ascii_frames.length !== 4
             || body.frame_count !== 4 || body.frame_duration_ms !== 350
             || body.ascii_frames.some((frame) => typeof frame !== "string" || !frame
               || frame.length > 100000 || !/^[\x20-\x7e\n]+$/.test(frame))
@@ -412,28 +401,32 @@
             showError("The animated ASCII QR response was incomplete. Try generating it again.");
             return;
           }
-          motionFrames = body.ascii_frames;
-          motionFrameUrls = motionFrames.map((frame) => URL.createObjectURL(new Blob([frame], { type: "text/plain;charset=utf-8" })));
-          motionFrameDuration = body.frame_duration_ms;
-          motionTextPaper.style.setProperty("--gradient-start", topColor);
-          motionTextPaper.style.setProperty("--gradient-end", bottomColor);
+          currentImageUrl = URL.createObjectURL(new Blob([stillBytes], { type: "image/png" }));
+          currentAnimatedImageUrl = URL.createObjectURL(new Blob([animatedBytes], { type: "image/png" }));
+          currentText = body.ascii_frames[0];
+          currentTextUrl = URL.createObjectURL(new Blob([currentText], { type: "text/plain;charset=utf-8" }));
           motionTextDownload.download = plain ? "plain-ascii-motion-qr.txt" : "sqafe-ascii-motion-qr.txt";
-          showMotionFrame(0);
+          motionTextDownload.href = currentTextUrl;
+          img.alt = plain
+            ? "Plain animated ASCII motion QR for a link that was not safety checked"
+            : "Screened animated ASCII motion QR";
           pngStatus.textContent = plain
             ? "Not safety checked. Verify the destination independently before sharing or opening this QR."
             : "Checked when generated. The destination may change, so recheck before opening.";
+          motionStillDownload.download = plain ? "plain-ascii-motion-qr.png" : "sqafe-ascii-motion-qr.png";
+          motionAnimatedDownload.download = plain ? "plain-ascii-motion-qr-animated.png" : "sqafe-ascii-motion-qr-animated.png";
+          motionStillDownload.href = currentImageUrl;
+          motionAnimatedDownload.href = currentAnimatedImageUrl;
           dl.classList.add("hidden");
+          motionHeading.classList.remove("hidden");
+          motionDownloads.classList.remove("hidden");
           motionTextWrap.classList.remove("hidden");
           wrap.setAttribute("data-verification", plain ? "not_checked" : "complete");
           wrap.setAttribute("data-output-format", "ascii_motion");
+          imageMotionPaused = Boolean(reducedMotion?.matches);
+          updateImageMotionButton();
+          updateImageMotion();
           wrap.classList.remove("hidden");
-          fitTextPreview();
-          document.fonts?.load?.('700 24px "Sqafe ASCII Mono"')?.then(() => {
-            if (version === requestVersion) fitTextPreview();
-          }).catch(() => {
-            if (version === requestVersion) fitTextPreview();
-          });
-          startMotionAnimation();
           return;
         }
         const body = await res.json();
@@ -481,4 +474,5 @@
   updateFormatPresentation();
   updateGradientPresentation();
   updateMotionButton();
+  updateImageMotionButton();
 })();
