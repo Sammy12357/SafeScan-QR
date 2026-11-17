@@ -39,6 +39,15 @@
       "code_sha256": "77c3fbe0acae52e0db0765e9b086ff2ad1c85922a4970e121a126e3e32337cde"
     },
     {
+      "filename": "hackabull/admin_data.py",
+      "line_number": 590,
+      "test_id": "B608",
+      "issue_severity": "MEDIUM",
+      "issue_confidence": "LOW",
+      "issue_text": "Possible SQL injection vector through string-based query construction.",
+      "code_sha256": "62fc5c67bbc138bcd859269cfd3d83125c4f197bf66d6fae8ad576484859f8fe"
+    },
+    {
       "filename": "hackabull/qr_decode.py",
       "line_number": 431,
       "test_id": "B314",
@@ -67,30 +76,30 @@
     },
     {
       "filename": "hackabull/schema.py",
-      "line_number": 372,
+      "line_number": 381,
       "test_id": "B608",
       "issue_severity": "MEDIUM",
       "issue_confidence": "MEDIUM",
       "issue_text": "Possible SQL injection vector through string-based query construction.",
-      "code_sha256": "1dae75fb1ef74fd2941c65142a1d1509f493fcd161abbe85b9cd5ec5d95c8ac6"
+      "code_sha256": "0f136e362e772322d8bcf4b061d117dd0912260bde6c7615a48340ad8a1f18db"
     },
     {
       "filename": "hackabull/schema.py",
-      "line_number": 378,
+      "line_number": 387,
       "test_id": "B608",
       "issue_severity": "MEDIUM",
       "issue_confidence": "MEDIUM",
       "issue_text": "Possible SQL injection vector through string-based query construction.",
-      "code_sha256": "24481d0eb7f93d2a048c01069b0b45d89db56626576672bee70ad1e6476823f1"
+      "code_sha256": "ee950cbbd234c109d8250f95919131fc9c0be1814ff20be53191b554513744d7"
     },
     {
       "filename": "hackabull/schema.py",
-      "line_number": 384,
+      "line_number": 393,
       "test_id": "B608",
       "issue_severity": "MEDIUM",
       "issue_confidence": "MEDIUM",
       "issue_text": "Possible SQL injection vector through string-based query construction.",
-      "code_sha256": "825b90485bd2295cc9e2a5e275057d5f582b93e10e6936d30dd906fa670f71c2"
+      "code_sha256": "5035c165915a0d967a95c61dee8d2b3ef2171d2386dd131afb5fe9eff19cdb7c"
     }
   ]
 }

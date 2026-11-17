@@ -1,5 +1,9 @@
 # Security research log
 
+## 2026-11-17 — Saved QR gradient Bandit baseline review
+
+Bandit 1.9.4 reports 11 medium/high findings after adding account-bound QR gradient storage. The new `hackabull/admin_data.py:590` `B608` is a false positive: the interpolated string is the public Privacy Policy HTML, with `ADMIN_EMAIL` inserted into a contact link; it is never executed as SQL. The new table definition shifts the three existing `hackabull/schema.py` dynamic SQL findings from lines 372, 378, and 384 to lines 381, 387, and 393. Their statements and parameter binding are unchanged; Bandit's code digest includes the shifted source context. The remaining seven findings match the prior reviewed baseline. The exact baseline was refreshed after this review without suppressing any finding.
+
 ## 2026-11-16 — Website Auth0 Google sign-in
 
 | Primary source | Finding | Sqafe decision |
