@@ -1,6 +1,7 @@
 // Screened QR codes require a complete safety check. Plain QR codes are an
 // explicit unchecked choice with no SafeScan mark. The text preview swaps
-// whole matrices; ASCII motion previews a verified APNG and offers two still text QR exports.
+// whole matrices; ASCII motion previews a verified APNG, downloads a verified GIF,
+// and offers two still text QR exports.
 (() => {
   const generateBtn = document.getElementById("generateQrButton");
   const urlInputField = document.getElementById("generateQrUrlInput");
@@ -62,6 +63,7 @@
   let savingGradientSlot = null;
   let currentImageUrl = null;
   let currentAnimatedImageUrl = null;
+  let currentAnimatedGifUrl = null;
   let currentTextUrl = null;
   let currentText = "";
   let motionAsciiText = "";
@@ -328,6 +330,16 @@
       return null;
     }
   };
+  const decodeGifBase64 = (value) => {
+    if (typeof value !== "string" || value.length < 16 || value.length > 20000000) return null;
+    try {
+      const binary = window.atob(value);
+      if (!binary.startsWith("GIF89a")) return null;
+      return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    } catch (_err) {
+      return null;
+    }
+  };
   const updateMotionButton = () => {
     textMotionToggle.textContent = motionPaused ? "Play motion" : "Pause motion";
     textMotionToggle.setAttribute("aria-pressed", String(!motionPaused));
@@ -439,12 +451,14 @@
     updateImageMotionButton();
     if (currentImageUrl) URL.revokeObjectURL(currentImageUrl);
     if (currentAnimatedImageUrl) URL.revokeObjectURL(currentAnimatedImageUrl);
+    if (currentAnimatedGifUrl) URL.revokeObjectURL(currentAnimatedGifUrl);
     if (currentTextUrl) URL.revokeObjectURL(currentTextUrl);
     for (const url of [motionAsciiTextUrl, motionCompactTextUrl, motionAsciiHtmlUrl, motionCompactHtmlUrl]) {
       if (url) URL.revokeObjectURL(url);
     }
     currentImageUrl = null;
     currentAnimatedImageUrl = null;
+    currentAnimatedGifUrl = null;
     currentTextUrl = null;
     motionAsciiTextUrl = null;
     motionCompactTextUrl = null;
@@ -722,7 +736,8 @@
           if (version !== requestVersion) return;
           const stillBytes = decodePngBase64(body?.still_png_base64);
           const animatedBytes = decodePngBase64(body?.animated_png_base64);
-          if (!stillBytes || !animatedBytes
+          const animatedGifBytes = decodeGifBase64(body?.animated_gif_base64);
+          if (!stillBytes || !animatedBytes || !animatedGifBytes
             || !Array.isArray(body?.ascii_frames) || body.ascii_frames.length !== 4
             || body.frame_count !== 4 || body.frame_duration_ms !== 350
             || typeof body.text !== "string" || !body.text || body.text.length > 20000
@@ -737,6 +752,7 @@
           }
           currentImageUrl = URL.createObjectURL(new Blob([stillBytes], { type: "image/png" }));
           currentAnimatedImageUrl = URL.createObjectURL(new Blob([animatedBytes], { type: "image/png" }));
+          currentAnimatedGifUrl = URL.createObjectURL(new Blob([animatedGifBytes], { type: "image/gif" }));
           motionAsciiText = body.ascii_frames[0];
           motionCompactText = body.text;
           motionColorStart = topColor;
@@ -757,9 +773,9 @@
             ? "Not safety checked. Verify the destination independently before sharing or opening this QR."
             : "Checked when generated. The destination may change, so recheck before opening.";
           motionStillDownload.download = plain ? "plain-ascii-motion-qr.png" : "sqafe-ascii-motion-qr.png";
-          motionAnimatedDownload.download = plain ? "plain-ascii-motion-qr-animated.png" : "sqafe-ascii-motion-qr-animated.png";
+          motionAnimatedDownload.download = plain ? "plain-ascii-motion-qr-animated.gif" : "sqafe-ascii-motion-qr-animated.gif";
           motionStillDownload.href = currentImageUrl;
-          motionAnimatedDownload.href = currentAnimatedImageUrl;
+          motionAnimatedDownload.href = currentAnimatedGifUrl;
           dl.classList.add("hidden");
           motionHeading.classList.remove("hidden");
           motionDownloads.classList.remove("hidden");

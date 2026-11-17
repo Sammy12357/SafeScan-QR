@@ -94,6 +94,7 @@ from .qr_image import qr_ascii_motion_frames_from_payload
 from .qr_image import QRAsciiMotionDecodeError
 from .qr_image import qr_plain_png_from_payload
 from .qr_image import render_safescan_logo
+from .qr_motion_gif import qr_ascii_motion_gif_from_apng
 from .redirects import trace_redirect_chain
 from .referrals import get_scan_count
 from .referrals import record_unique_scan
@@ -117,13 +118,19 @@ from .token_flags import token_features_enabled
 _ASCII_MOTION_RENDER_SLOT = threading.BoundedSemaphore(1)
 
 
+def _render_ascii_motion_bundle(payload, **options):
+    still, animated = qr_ascii_motion_pngs_from_payload(payload, **options)
+    gif = qr_ascii_motion_gif_from_apng(animated, payload)
+    return still, animated, gif
+
+
 async def _render_ascii_motion(payload, **options):
-    # Four large frames and their decode copies can use substantial memory.
-    # Reject concurrent renders promptly instead of queuing in the thread pool.
+    # Four large frames, APNG encoding, GIF conversion, and their decode copies
+    # can use substantial memory. Keep the entire bundle inside one render slot.
     if not _ASCII_MOTION_RENDER_SLOT.acquire(blocking=False):
         raise SafeScanError(code="qr_generation_busy")
     try:
-        return await run_in_threadpool(qr_ascii_motion_pngs_from_payload, payload, **options)
+        return await run_in_threadpool(_render_ascii_motion_bundle, payload, **options)
     finally:
         _ASCII_MOTION_RENDER_SLOT.release()
 
@@ -358,12 +365,13 @@ async def api_qr_generate(request: Request, payload: dict = Body(...)):
                 headers={**headers, "Content-Disposition": 'inline; filename="sqafe-ascii-art-qr.png"'},
             )
         elif output_format == "ascii_motion":
-            still, animated = await _render_ascii_motion(
+            still, animated, gif = await _render_ascii_motion(
                 target_url, gradient_start=gradient_start, gradient_end=gradient_end,
             )
             response = JSONResponse({
                 "still_png_base64": base64.b64encode(still).decode("ascii"),
                 "animated_png_base64": base64.b64encode(animated).decode("ascii"),
+                "animated_gif_base64": base64.b64encode(gif).decode("ascii"),
                 "text": qr_ascii_from_payload(target_url),
                 "ascii_frames": qr_ascii_motion_frames_from_payload(target_url),
                 "frame_count": 4,
@@ -468,13 +476,14 @@ async def api_qr_generate_plain(request: Request, payload: dict = Body(...)):
                 headers={**headers, "Content-Disposition": 'inline; filename="plain-ascii-art-qr.png"'},
             )
         if output_format == "ascii_motion":
-            still, animated = await _render_ascii_motion(
+            still, animated, gif = await _render_ascii_motion(
                 target_url, gradient_start=gradient_start, gradient_end=gradient_end,
                 include_attribution=False,
             )
             return JSONResponse({
                 "still_png_base64": base64.b64encode(still).decode("ascii"),
                 "animated_png_base64": base64.b64encode(animated).decode("ascii"),
+                "animated_gif_base64": base64.b64encode(gif).decode("ascii"),
                 "text": qr_ascii_from_payload(target_url, include_attribution=False),
                 "ascii_frames": qr_ascii_motion_frames_from_payload(
                     target_url, include_attribution=False,
