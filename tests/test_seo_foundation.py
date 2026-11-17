@@ -89,6 +89,14 @@ def test_public_pages_redirect_to_one_host_and_path_shape(seo_client):
         assert response.headers["X-Frame-Options"] == "DENY"
 
 
+def test_legacy_public_head_redirects_without_downgrading_to_temporary(seo_client):
+    response = seo_client.head(
+        "https://safescan-qr.onrender.com/learn?x=1", follow_redirects=False,
+    )
+    assert response.status_code == 301
+    assert response.headers["location"] == "https://sqafe.com/learn?x=1"
+
+
 def test_render_api_and_private_pages_remain_on_requested_host(seo_client):
     for path in ("/api/health", "/health", "/api/app-runtime"):
         response = seo_client.get("https://safescan-qr.onrender.com" + path, follow_redirects=False)
@@ -100,6 +108,25 @@ def test_render_api_and_private_pages_remain_on_requested_host(seo_client):
         assert response.status_code == 200, path
         assert response.headers["X-Robots-Tag"] == "noindex, follow"
         assert "location" not in response.headers
+
+    # Existing mobile clients and form submissions still use the Render host.
+    api = seo_client.post(
+        "https://safescan-qr.onrender.com/api/qr/generate-plain",
+        json={"url": "https://example.com", "format": "png"},
+        follow_redirects=False,
+    )
+    assert api.status_code == 200
+    assert api.headers["X-SafeScan-Mode"] == "plain"
+    assert "location" not in api.headers
+
+    result = seo_client.post(
+        "https://safescan-qr.onrender.com/search_qr_api",
+        data={"manual_url": "A plain-text QR payload"},
+        follow_redirects=False,
+    )
+    assert result.status_code == 200
+    assert result.headers["X-Robots-Tag"] == "noindex, follow"
+    assert "location" not in result.headers
 
 
 def test_only_reviewed_public_html_is_indexable(seo_client):
