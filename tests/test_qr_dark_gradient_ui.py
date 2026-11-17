@@ -1,4 +1,4 @@
-"""Bright QR gradients keep the chosen image colors and readable text copies."""
+"""Gradient picks stay dark enough for the white-background ASCII QR."""
 
 import base64
 import io
@@ -22,7 +22,7 @@ TEST_URL = "https://sqafe.com/"
 @pytest.fixture(scope="module")
 def browser_site():
     playwright_api = pytest.importorskip("playwright.sync_api")
-    with tempfile.TemporaryDirectory(prefix="safescan-bright-gradient-") as temp_dir:
+    with tempfile.TemporaryDirectory(prefix="safescan-dark-palette-") as temp_dir:
         port = free_port()
         base_url = f"http://localhost:{port}"
         process = subprocess.Popen(
@@ -88,8 +88,9 @@ def set_color(page, selector, value):
     )
 
 
-def color_contrast_on_white(css_rgb):
-    rgb = [int(channel) for channel in re.findall(r"\d+", css_rgb)[:3]]
+def color_contrast_on_white(color):
+    rgb = ([int(color[index:index + 2], 16) for index in (1, 3, 5)]
+           if color.startswith("#") else [int(channel) for channel in re.findall(r"\d+", color)[:3]])
     channels = [
         value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
         for value in (component / 255 for component in rgb)
@@ -97,7 +98,7 @@ def color_contrast_on_white(css_rgb):
     return 1.05 / (0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2] + 0.05)
 
 
-def test_bright_pair_saves_as_guest_and_keeps_styled_text_scannable(browser_site, motion_response):
+def test_bright_pick_darkens_before_guest_save_generation_and_styled_copy(browser_site, motion_response):
     from hackabull.qr_decode import decode_qr_image
 
     browser, base_url = browser_site
@@ -130,12 +131,20 @@ def test_bright_pair_saves_as_guest_and_keeps_styled_text_scannable(browser_site
         page.wait_for_function("() => document.querySelector('#generateQrSavedStatus').textContent.includes('Browser-only gradients ready')")
         set_color(page, "#generateQrGradientStart", "#f7e9ff")
         set_color(page, "#generateQrGradientEnd", "#ffe6a8")
-        assert page.locator("#generateQrGradientSample").get_attribute("data-black-cells") == "true"
-        assert "black QR cells" in page.locator("#generateQrGradientHint").inner_text()
+        safe_top = page.locator("#generateQrGradientStart").input_value().upper()
+        safe_bottom = page.locator("#generateQrGradientEnd").input_value().upper()
+        assert safe_top != "#F7E9FF" and safe_bottom != "#FFE6A8"
+        assert color_contrast_on_white(safe_top) >= 7
+        assert color_contrast_on_white(safe_bottom) >= 7
+        sample = page.locator("#generateQrGradientSample")
+        assert sample.get_attribute("data-black-cells") is None
+        assert sample.evaluate("element => getComputedStyle(element).backgroundColor") == "rgb(255, 255, 255)"
+        assert "automatically darken" in page.locator("#generateQrGradientHint").inner_text()
+        assert "Bright color adjusted" in page.locator("#generateQrSavedStatus").inner_text()
         page.locator('[data-gradient-slot-save="1"]').click()
         page.wait_for_function("() => document.querySelector('#generateQrSavedStatus').textContent.includes('Saved Custom gradient 1')")
         assert json.loads(page.evaluate("localStorage.getItem('sqafeQrGradientSlots:guest')")) == {
-            "slots": [{"slot": 1, "gradient_start": "#F7E9FF", "gradient_end": "#FFE6A8"}],
+            "slots": [{"slot": 1, "gradient_start": safe_top, "gradient_end": safe_bottom}],
         }
 
         page.reload(wait_until="domcontentloaded")
@@ -143,19 +152,19 @@ def test_bright_pair_saves_as_guest_and_keeps_styled_text_scannable(browser_site
         page.locator('input[name="generateQrFormat"][value="ascii_motion"]').check()
         page.wait_for_function("() => !document.querySelector('[data-gradient-slot-use=\"1\"]').disabled")
         page.locator('[data-gradient-slot-use="1"]').click()
-        assert page.locator("#generateQrGradientStart").input_value().upper() == "#F7E9FF"
-        assert page.locator("#generateQrGradientEnd").input_value().upper() == "#FFE6A8"
+        assert page.locator("#generateQrGradientStart").input_value().upper() == safe_top
+        assert page.locator("#generateQrGradientEnd").input_value().upper() == safe_bottom
         page.locator("#generateQrUrlInput").fill(TEST_URL)
         page.locator("#generateQrButton").click()
         page.locator("#generatedMotionTextWrap").wait_for(state="visible", timeout=30_000)
         assert requests == [{
             "url": TEST_URL,
             "format": "ascii_motion",
-            "gradient_start": "#F7E9FF",
-            "gradient_end": "#FFE6A8",
+            "gradient_start": safe_top,
+            "gradient_end": safe_bottom,
         }]
         page.locator('input[name="generatedMotionCopyFormat"][value="compact"]').check()
-        assert "Bright colors are darkened" in page.locator("#generatedMotionTextDescription").inner_text()
+        assert "Bright colors are darkened" not in page.locator("#generatedMotionTextDescription").inner_text()
         preview = page.locator("#generatedMotionCompactPreview")
         assert page.evaluate("document.documentElement.scrollWidth === innerWidth")
         colors = preview.locator("span").evaluate_all("elements => elements.map(element => getComputedStyle(element).color)")
@@ -191,20 +200,47 @@ def test_bright_pair_saves_as_guest_and_keeps_styled_text_scannable(browser_site
         context.close()
 
 
-def test_dark_pair_keeps_white_sample(browser_site):
+def test_dark_pair_keeps_selected_colors_and_white_sample(browser_site):
     browser, base_url = browser_site
     context = browser.new_context(base_url=base_url)
     page = context.new_page()
     try:
         page.goto("/generate-qr", wait_until="domcontentloaded")
         page.locator('input[name="generateQrFormat"][value="ascii_motion"]').check()
-        assert page.locator("#generateQrGradientSample").get_attribute("data-black-cells") == "false"
-        assert "Dark colors" in page.locator("#generateQrGradientHint").inner_text()
+        assert page.locator("#generateQrGradientSample").get_attribute("data-black-cells") is None
+        assert page.locator("#generateQrGradientStart").input_value().upper() == "#2A1B36"
+        assert page.locator("#generateQrGradientEnd").input_value().upper() == "#8A280C"
+        assert "dark enough" in page.locator("#generateQrGradientHint").inner_text()
     finally:
         context.close()
 
 
-def test_account_bright_slot_loads_and_mixed_pair_can_be_saved(browser_site):
+def test_guest_old_bright_slot_is_migrated_without_losing_it(browser_site):
+    browser, base_url = browser_site
+    context = browser.new_context(base_url=base_url)
+    context.add_init_script("""(() => {
+      localStorage.setItem('sqafeQrGradientSlots:guest', JSON.stringify({slots: [
+        {slot: 3, gradient_start: '#F7E9FF', gradient_end: '#FFE6A8'}
+      ]}));
+    })();""")
+    page = context.new_page()
+    try:
+        page.goto("/generate-qr", wait_until="domcontentloaded")
+        page.locator('input[name="generateQrFormat"][value="ascii_motion"]').check()
+        page.wait_for_function("() => !document.querySelector('[data-gradient-slot-use=\"3\"]').disabled")
+        saved = json.loads(page.evaluate("localStorage.getItem('sqafeQrGradientSlots:guest')"))
+        assert len(saved["slots"]) == 1
+        assert saved["slots"][0]["slot"] == 3
+        assert color_contrast_on_white(saved["slots"][0]["gradient_start"]) >= 7
+        assert color_contrast_on_white(saved["slots"][0]["gradient_end"]) >= 7
+        page.locator('[data-gradient-slot-use="3"]').click()
+        assert page.locator("#generateQrGradientStart").input_value().upper() == saved["slots"][0]["gradient_start"]
+        assert page.locator("#generateQrGradientEnd").input_value().upper() == saved["slots"][0]["gradient_end"]
+    finally:
+        context.close()
+
+
+def test_account_old_bright_slot_is_usable_and_new_save_is_dark(browser_site):
     browser, base_url = browser_site
     context = browser.new_context(base_url=base_url)
     page = context.new_page()
@@ -226,14 +262,19 @@ def test_account_bright_slot_loads_and_mixed_pair_can_be_saved(browser_site):
         page.goto("/generate-qr", wait_until="domcontentloaded")
         page.locator('input[name="generateQrFormat"][value="ascii_motion"]').check()
         page.wait_for_function("() => !document.querySelector('[data-gradient-slot-use=\"2\"]').disabled")
+        assert "Older bright gradients" in page.locator("#generateQrSavedStatus").inner_text()
         page.locator('[data-gradient-slot-use="2"]').click()
-        assert page.locator("#generateQrGradientSample").get_attribute("data-black-cells") == "true"
-        assert page.locator("#generateQrGradientStart").input_value().upper() == "#F7E9FF"
+        assert page.locator("#generateQrGradientSample").get_attribute("data-black-cells") is None
+        safe_top = page.locator("#generateQrGradientStart").input_value().upper()
+        safe_bottom = page.locator("#generateQrGradientEnd").input_value().upper()
+        assert safe_top != "#F7E9FF" and safe_bottom != "#FFE6A8"
+        assert color_contrast_on_white(safe_top) >= 7
+        assert color_contrast_on_white(safe_bottom) >= 7
         set_color(page, "#generateQrGradientStart", "#101820")
-        assert page.locator("#generateQrGradientSample").get_attribute("data-black-cells") == "true"
+        assert page.locator("#generateQrGradientSample").get_attribute("data-black-cells") is None
         page.locator('[data-gradient-slot-save="1"]').click()
         page.wait_for_function("() => document.querySelector('#generateQrSavedStatus').textContent.includes('Saved Custom gradient 1')")
-        assert writes == [{"gradient_start": "#101820", "gradient_end": "#FFE6A8"}]
+        assert writes == [{"gradient_start": "#101820", "gradient_end": safe_bottom}]
         assert page.locator('[data-gradient-slot-use="1"]').is_enabled()
     finally:
         context.close()

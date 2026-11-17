@@ -1,0 +1,50 @@
+[
+  {
+    "theme": "dark",
+    "width": 375,
+    "scrollWidth": 375,
+    "top": "#5D5760",
+    "bottom": "#625840",
+    "sampleBackground": "rgb(255, 255, 255)"
+  },
+  {
+    "theme": "dark",
+    "width": 768,
+    "scrollWidth": 768,
+    "top": "#5D5760",
+    "bottom": "#625840",
+    "sampleBackground": "rgb(255, 255, 255)"
+  },
+  {
+    "theme": "dark",
+    "width": 1440,
+    "scrollWidth": 1440,
+    "top": "#5D5760",
+    "bottom": "#625840",
+    "sampleBackground": "rgb(255, 255, 255)"
+  },
+  {
+    "theme": "light",
+    "width": 375,
+    "scrollWidth": 375,
+    "top": "#5D5760",
+    "bottom": "#625840",
+    "sampleBackground": "rgb(255, 255, 255)"
+  },
+  {
+    "theme": "light",
+    "width": 768,
+    "scrollWidth": 768,
+    "top": "#5D5760",
+    "bottom": "#625840",
+    "sampleBackground": "rgb(255, 255, 255)"
+  },
+  {
+    "theme": "light",
+    "width": 1440,
+    "scrollWidth": 1440,
+    "top": "#5D5760",
+    "bottom": "#625840",
+    "sampleBackground": "rgb(255, 255, 255)"
+  }
+]

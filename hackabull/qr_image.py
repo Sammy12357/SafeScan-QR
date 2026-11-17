@@ -573,42 +573,14 @@ def _relative_luminance(rgb):
 
 
 def ascii_motion_color_rgb(value):
-    """Accept an exact hex color; the renderer chooses a readable cell style."""
+    """Accept only exact dark hex colors that preserve QR contrast on white."""
     if type(value) is not str or re.fullmatch(r"#[0-9A-Fa-f]{6}", value) is None:
         raise ValueError("Choose a six-digit hex color such as #2A1B36.")
-    return tuple(int(value[i:i + 2], 16) for i in (1, 3, 5))
-
-
-def _ascii_outline_on_black(rgb):
-    """Lift dark accents enough to show on black without changing their hue."""
-    if _relative_luminance(rgb) >= 0.175:
-        return rgb
-    low, high = 0.0, 1.0
-    for _ in range(9):
-        blend = (low + high) / 2
-        candidate = tuple(round(component + (255 - component) * blend) for component in rgb)
-        if _relative_luminance(candidate) < 0.175:
-            low = blend
-        else:
-            high = blend
-    return tuple(round(component + (255 - component) * high) for component in rgb)
-
-
-def _ascii_dark_cell_tint(rgb, luminance_limit):
-    """Keep a chosen hue scanner-dark while giving motion a visible surface."""
-    if luminance_limit <= 0:
-        return (0, 0, 0)
-    if _relative_luminance(rgb) <= luminance_limit:
-        return rgb
-    low, high = 0.0, 1.0
-    for _ in range(9):
-        scale = (low + high) / 2
-        candidate = tuple(round(component * scale) for component in rgb)
-        if _relative_luminance(candidate) > luminance_limit:
-            high = scale
-        else:
-            low = scale
-    return tuple(round(component * low) for component in rgb)
+    rgb = tuple(int(value[i:i + 2], 16) for i in (1, 3, 5))
+    luminance = _relative_luminance(rgb)
+    if 1.05 / (luminance + 0.05) < 7:
+        raise ValueError("Choose a darker color with at least 7:1 contrast against white.")
+    return rgb
 
 
 def qr_ascii_motion_pngs_from_payload(
@@ -620,9 +592,7 @@ def qr_ascii_motion_pngs_from_payload(
     Both files start with the same independently scannable frame. Every frame
     retains the QR matrix, ASCII-textured finder corners, and four-module
     quiet zone while glyphs change throughout. A dark vertical gradient
-    colors the data glyphs and finder cells. Bright choices draw color outlines
-    inside dark QR modules, which pulse through scanner-dark shades of the
-    chosen hues while light modules and the quiet zone stay white.
+    colors the data glyphs and finder cells.
     """
     import qrcode
     from qrcode.exceptions import DataOverflowError
@@ -630,13 +600,6 @@ def qr_ascii_motion_pngs_from_payload(
 
     start_rgb = ascii_motion_color_rgb(gradient_start)
     end_rgb = ascii_motion_color_rgb(gradient_end)
-    # A fully black canvas would invert the QR and fail on scanners that only
-    # recognize dark modules on a light background. For bright choices, make
-    # the matrix dark while its ASCII characters carry the chosen color.
-    black_cell_style = any(
-        1.05 / (_relative_luminance(rgb) + 0.05) < 7
-        for rgb in (start_rgb, end_rgb)
-    )
     cell = 26
     border = 4
     qr = qrcode.QRCode(
@@ -656,8 +619,8 @@ def qr_ascii_motion_pngs_from_payload(
     font_path = os.path.join(
         os.path.dirname(os.path.dirname(__file__)), "static", "fonts", "IBMPlexMono-Bold.ttf",
     )
-    glyph_font = ImageFont.truetype(font_path, 13 if black_cell_style else 32)
-    finder_font = ImageFont.truetype(font_path, 13 if black_cell_style else 30)
+    glyph_font = ImageFont.truetype(font_path, 32)
+    finder_font = ImageFont.truetype(font_path, 30)
     label_font = ImageFont.truetype(font_path, 20) if include_attribution else None
     code_size = module_count * cell
     footer_height = 52 if include_attribution else 0
@@ -667,7 +630,6 @@ def qr_ascii_motion_pngs_from_payload(
         (border, module_count - border - 7),
     )
     row_colors = []
-    gradient_row_colors = []
     finder_letter_colors = []
     for y in range(module_count):
         t = y / (module_count - 1)
@@ -675,8 +637,7 @@ def qr_ascii_motion_pngs_from_payload(
             round(start_rgb[channel] * (1 - t) + end_rgb[channel] * t)
             for channel in range(3)
         )
-        gradient_row_colors.append(ink)
-        row_colors.append(_ascii_outline_on_black(ink) if black_cell_style else ink)
+        row_colors.append(ink)
         # At luminance below about .034, #555 characters contrast more with
         # the dark cell than black ones do. Keep both choices scanner-dark.
         finder_letter_colors.append("#555555" if _relative_luminance(ink) < 0.034 else "black")
@@ -686,10 +647,6 @@ def qr_ascii_motion_pngs_from_payload(
         draw = ImageDraw.Draw(image)
         for y, row in enumerate(matrix):
             ink = row_colors[y]
-            cell_shade = _ascii_dark_cell_tint(
-                gradient_row_colors[y], (0.0, 0.015, 0.025, 0.01)[frame_index],
-            ) if black_cell_style else None
-            finder_outline = _ascii_dark_cell_tint(ink, 0.10) if black_cell_style else None
             for x, dark in enumerate(row):
                 if not dark:
                     continue
@@ -700,53 +657,24 @@ def qr_ascii_motion_pngs_from_payload(
                 if finder:
                     draw.rectangle(
                         (x * cell, y * cell, (x + 1) * cell - 1, (y + 1) * cell - 1),
-                        fill=cell_shade if black_cell_style else ink,
+                        fill=ink,
                     )
                     # A dense dark cell keeps the finder geometry readable at
                     # phone size; the overlaid ASCII glyph supplies visible
                     # character texture and changes with each APNG frame.
-                    if black_cell_style:
-                        draw.text(
-                            (x * cell + 2, y * cell + 2),
-                            _ASCII_FINDER_GLYPHS[frame_index],
-                            font=finder_font, fill=cell_shade, anchor="lt",
-                            stroke_width=1, stroke_fill=finder_outline,
-                        )
-                    else:
-                        draw.text(
-                            (x * cell + cell / 2, y * cell + cell / 2),
-                            _ASCII_FINDER_GLYPHS[frame_index],
-                            font=finder_font,
-                            fill=finder_letter_colors[y], anchor="mm",
-                        )
+                    draw.text(
+                        (x * cell + cell / 2, y * cell + cell / 2),
+                        _ASCII_FINDER_GLYPHS[frame_index],
+                        font=finder_font,
+                        fill=finder_letter_colors[y], anchor="mm",
+                    )
                 else:
                     glyph = _ASCII_MOTION_GLYPHS[(3 * x + 2 * y + frame_index) % len(_ASCII_MOTION_GLYPHS)]
-                    if black_cell_style:
-                        draw.rectangle(
-                            (x * cell, y * cell, (x + 1) * cell - 1, (y + 1) * cell - 1),
-                            fill=cell_shade,
-                        )
-                        draw.text(
-                            (x * cell + 2, y * cell + 2),
-                            glyph, font=glyph_font, fill=cell_shade, anchor="lt",
-                            stroke_width=1, stroke_fill=ink,
-                        )
-                    else:
-                        draw.text(
-                            (x * cell + cell / 2, y * cell + cell / 2),
-                            glyph, font=glyph_font, fill=ink, anchor="mm",
-                            stroke_width=1, stroke_fill=ink,
-                        )
-        if black_cell_style:
-            # Outlined characters can overhang a cell. Restoring every light
-            # module keeps the QR's conventional dark-on-light polarity exact.
-            for y, row in enumerate(matrix):
-                for x, dark in enumerate(row):
-                    if not dark:
-                        draw.rectangle(
-                            (x * cell, y * cell, (x + 1) * cell - 1, (y + 1) * cell - 1),
-                            fill="white",
-                        )
+                    draw.text(
+                        (x * cell + cell / 2, y * cell + cell / 2),
+                        glyph, font=glyph_font, fill=ink, anchor="mm",
+                        stroke_width=1, stroke_fill=ink,
+                    )
         # Large finder glyphs can overhang into a white ring or separator.
         # Restore those light modules exactly before exporting each frame.
         for origin_x, origin_y in finder_origins:
@@ -767,11 +695,9 @@ def qr_ascii_motion_pngs_from_payload(
         draw.rectangle((0, 0, clear - 1, code_size - 1), fill="white")
         draw.rectangle((code_size - clear, 0, code_size - 1, code_size - 1), fill="white")
         if label_font is not None:
-            if black_cell_style:
-                draw.rectangle((0, code_size, code_size - 1, image.height - 1), fill="black")
             draw.text(
                 (code_size // 2, code_size + 13), "Sqafe · checked when generated",
-                fill="white" if black_cell_style else "black", font=label_font, anchor="mt",
+                fill="black", font=label_font, anchor="mt",
             )
         frames.append(image)
 
