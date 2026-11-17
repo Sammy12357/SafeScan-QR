@@ -11,7 +11,7 @@
   <title>QR Generator | Sqafe</title>
   <meta name="description" content="Generate a screened QR after SafeScan checks a link, or choose a plain QR with no safety check.">
   <link rel="icon" href="/static/safescan-logo.svg?v=sqafe-brand-v1" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=ascii-motion-preview-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=ascii-compact-copy-v1">
 </head>
 <body class="test-site-page">
   <div class="page-shell">
@@ -93,12 +93,25 @@
             <a id="generatedMotionAnimatedDownload" class="secondary-button" download="sqafe-ascii-motion-qr-animated.png" href="#">Download animated PNG</a>
             <p>Some apps show only the first frame. The still PNG also scans.</p>
           </div>
-          <section id="generatedMotionTextWrap" class="generated-motion-text hidden" aria-label="Copy ASCII text version">
-            <p>Copy a scannable ASCII text version of this QR. Pasted text is still and does not keep the gradient. Keep every space and line break, turn off wrapping, and use bold monospace at 24px with 12px line spacing.</p>
+          <section id="generatedMotionTextWrap" class="generated-motion-text hidden" aria-label="Copy QR as text">
+            <fieldset class="generated-motion-copy-format">
+              <legend>Copy as text</legend>
+              <div class="generated-motion-copy-options">
+                <label><input type="radio" name="generatedMotionCopyFormat" value="ascii" checked><span><strong>ASCII art</strong><small>Keyboard characters only</small></span></label>
+                <label><input type="radio" name="generatedMotionCopyFormat" value="compact"><span><strong>Compact text</strong><small>Shorter for messages</small></span></label>
+              </div>
+            </fieldset>
+            <p id="generatedMotionTextDescription">ASCII art uses keyboard characters but is much larger. Rich text apps may keep its colors and tight spacing; plain message apps may stretch it.</p>
+            <div id="generatedMotionCompactPreview" class="generated-ascii-paper generated-motion-compact-preview hidden" role="img" aria-label="Compact text QR preview">
+              <pre id="generatedMotionCompactArt" aria-hidden="true"></pre>
+            </div>
+            <p id="generatedMotionCompactSizeNotice" class="generated-ascii-size-notice hidden" role="status">This text QR is too wide to show fully here. Use a shorter URL or open the PNG on a larger screen.</p>
             <div class="generated-ascii-actions">
               <button id="generatedMotionTextCopy" class="secondary-button" type="button">Copy ASCII QR</button>
-              <a id="generatedMotionTextDownload" class="secondary-button" download="sqafe-ascii-motion-qr.txt" href="#">Download .txt</a>
+              <a id="generatedMotionTextDownload" class="secondary-button" download="sqafe-ascii-art-qr.txt" href="#">Download raw .txt</a>
+              <a id="generatedMotionHtmlDownload" class="secondary-button" download="sqafe-ascii-art-qr.html" href="#">Download styled HTML</a>
             </div>
+            <p class="generated-motion-copy-limit">Raw .txt keeps characters only. In plain chats, try a fixed-width code block without wrapping; if spacing changes, share the PNG. Styled HTML keeps the chosen colors and spacing.</p>
             <p id="generatedMotionTextActionStatus" class="generated-ascii-action-status" role="status" aria-live="polite"></p>
           </section>
         </div>
@@ -127,6 +140,6 @@
   <script src="/static/app-widgets.js?v=legal-gpc-v1"></script>
   <script src="/static/app-go-ghost.js?v=ghost-inline-errors-v1"></script>
   <script src="/static/app-go-ghost-ui.js?v=legal-a11y-v1"></script>
-  <script src="/static/app-generate-qr.js?v=ascii-motion-preview-v1"></script>
+  <script src="/static/app-generate-qr.js?v=ascii-compact-copy-v1"></script>
 </body>
 </html>
