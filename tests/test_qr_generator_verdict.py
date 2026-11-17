@@ -610,6 +610,7 @@ def _assert_ascii_motion_bundle_decodes(response, url, *, checked):
     ascii_frames = body["ascii_frames"]
     assert isinstance(ascii_frames, list) and len(ascii_frames) == 4
     assert len(set(ascii_frames)) == 4
+    ascii_finder_textures = []
     for ascii_frame in ascii_frames:
         assert isinstance(ascii_frame, str) and len(ascii_frame) <= 60000
         assert all(character == "\n" or 32 <= ord(character) <= 126 for character in ascii_frame)
@@ -627,10 +628,14 @@ def _assert_ascii_motion_bundle_decodes(response, url, *, checked):
         assert all(len(row) == 3 * modules for row in rows)
         assert rows[:8] == rows[-8:] == [" " * (3 * modules)] * 8
         assert all(row.startswith(" " * 12) and row.endswith(" " * 12) for row in rows)
-        # Finder squares are ASCII characters too, with dense `#` outlines.
-        assert rows[8][12:33] == "#" * 21
-        assert rows[8][-33:-12] == "#" * 21
-        assert rows[-22][12:33] == "#" * 21
+        # Finder squares are dense ASCII characters and move in each frame.
+        corners = (rows[8][12:33], rows[8][-33:-12], rows[-22][12:33])
+        for corner in corners:
+            assert len(corner) == 21
+            assert set(corner) <= set("@8M%")
+            assert all(len(set(corner[index:index + 3])) == 1 for index in range(0, 21, 3))
+        ascii_finder_textures.append(corners)
+    assert all(len({corners[index] for corners in ascii_finder_textures}) == 4 for index in range(3))
     still_bytes = base64.b64decode(body["still_png_base64"], validate=True)
     animated_bytes = base64.b64decode(body["animated_png_base64"], validate=True)
     assert still_bytes.startswith(b"\x89PNG\r\n\x1a\n")
@@ -680,7 +685,7 @@ def test_ascii_motion_copied_ascii_frames_decode(url, checked):
             draw.text((2, index * 12), line, font=font, fill="black")
         for candidate in (
             image,
-            image.resize((480, round(image.height * 480 / image.width)), Image.Resampling.LANCZOS),
+            image.resize((600, round(image.height * 600 / image.width)), Image.Resampling.LANCZOS),
             image.resize((279, round(image.height * 279 / image.width)), Image.Resampling.LANCZOS),
         ):
             decoded = {barcode.data.decode("utf-8") for barcode in decoder.decode_qr_image(candidate)}

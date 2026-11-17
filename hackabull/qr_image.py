@@ -395,7 +395,7 @@ def qr_ascii_from_payload(payload, *, border=4, ec="M", mask_pattern=None, inclu
     return "\n".join((*lines, ""))
 
 
-_ASCII_MOTION_TEXT_GLYPHS = ("#", "@", "M", "W")
+_ASCII_MOTION_TEXT_GLYPHS = ("@", "8", "M", "%")
 
 
 def qr_ascii_motion_frames_from_payload(payload, *, include_attribution=True):
@@ -404,7 +404,8 @@ def qr_ascii_motion_frames_from_payload(payload, *, include_attribution=True):
     Each QR module occupies three text columns and two text rows. Dense
     characters overlap vertically when shown in a fixed-width bold font at
     half-height line spacing; this preserves the finder geometry while the
-    characters in data modules change. The copied text needs that formatting
+    characters in all dark modules, including finder corners, change.
+    The copied text needs that formatting
     and its spaces and line breaks to remain scannable in a display.
     """
     import qrcode
@@ -424,10 +425,6 @@ def qr_ascii_motion_frames_from_payload(payload, *, include_attribution=True):
     if count > 97:
         raise DataOverflowError("ASCII motion QR is too large to render.")
 
-    finder_origins = (
-        (border, border), (count - border - 7, border),
-        (border, count - border - 7),
-    )
     frames = []
     for frame_index in range(4):
         rows = []
@@ -437,11 +434,7 @@ def qr_ascii_motion_frames_from_payload(payload, *, include_attribution=True):
                 if not dark:
                     row.append("   ")
                     continue
-                finder = any(
-                    ox <= x < ox + 7 and oy <= y < oy + 7
-                    for ox, oy in finder_origins
-                )
-                glyph = "#" if finder else _ASCII_MOTION_TEXT_GLYPHS[
+                glyph = _ASCII_MOTION_TEXT_GLYPHS[
                     (3 * x + 2 * y + frame_index) % len(_ASCII_MOTION_TEXT_GLYPHS)
                 ]
                 row.append(glyph * 3)
