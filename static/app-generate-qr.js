@@ -430,7 +430,9 @@
           fitTextPreview();
           document.fonts?.load?.('700 24px "Sqafe ASCII Mono"')?.then(() => {
             if (version === requestVersion) fitTextPreview();
-          }).catch(() => {});
+          }).catch(() => {
+            if (version === requestVersion) fitTextPreview();
+          });
           startMotionAnimation();
           return;
         }
