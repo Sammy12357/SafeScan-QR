@@ -90,6 +90,7 @@ from .qr_image import qr_ascii_art_png_from_payload
 from .qr_image import ascii_motion_color_rgb
 from .qr_image import ASCII_MOTION_DEFAULT_START, ASCII_MOTION_DEFAULT_END
 from .qr_image import qr_ascii_motion_pngs_from_payload
+from .qr_image import qr_ascii_motion_frames_from_payload
 from .qr_image import QRAsciiMotionDecodeError
 from .qr_image import qr_plain_png_from_payload
 from .qr_image import render_safescan_logo
@@ -290,6 +291,7 @@ async def api_qr_generate(request: Request, payload: dict = Body(...)):
                 "still_png_base64": base64.b64encode(still).decode("ascii"),
                 "animated_png_base64": base64.b64encode(animated).decode("ascii"),
                 "text": qr_ascii_from_payload(target_url),
+                "ascii_frames": qr_ascii_motion_frames_from_payload(target_url),
                 "frame_count": 4,
                 "frame_duration_ms": 350,
             }, headers=headers)
@@ -400,6 +402,9 @@ async def api_qr_generate_plain(request: Request, payload: dict = Body(...)):
                 "still_png_base64": base64.b64encode(still).decode("ascii"),
                 "animated_png_base64": base64.b64encode(animated).decode("ascii"),
                 "text": qr_ascii_from_payload(target_url, include_attribution=False),
+                "ascii_frames": qr_ascii_motion_frames_from_payload(
+                    target_url, include_attribution=False,
+                ),
                 "frame_count": 4,
                 "frame_duration_ms": 350,
             }, headers=headers)
