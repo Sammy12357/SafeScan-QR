@@ -1,8 +1,9 @@
 """Turn the verified ASCII-motion APNG into a widely playable GIF download."""
 
+import hashlib
 import io
 
-from PIL import Image, ImageChops
+from PIL import Image
 
 from .qr_decode import decode_qr_image
 from .qr_image import QRAsciiMotionDecodeError
@@ -38,16 +39,16 @@ def qr_ascii_motion_gif_from_apng(animated_png: bytes, payload: str) -> bytes:
     with Image.open(io.BytesIO(gif_bytes)) as exported:
         if exported.format != "GIF" or exported.n_frames != _FRAME_COUNT or exported.info.get("loop") != 0:
             raise QRAsciiMotionDecodeError("The animated GIF lost its motion.")
-        first_frame = None
+        frame_digests = set()
         for index in range(exported.n_frames):
             exported.seek(index)
             if exported.info.get("duration") != _FRAME_DURATION_MS:
                 raise QRAsciiMotionDecodeError("The animated GIF lost its timing.")
             frame = exported.convert("RGB")
-            if first_frame is None:
-                first_frame = frame
-            elif not ImageChops.difference(first_frame, frame).getbbox():
+            digest = hashlib.blake2b(frame.tobytes(), digest_size=16).digest()
+            if digest in frame_digests:
                 raise QRAsciiMotionDecodeError("The animated GIF lost its motion.")
+            frame_digests.add(digest)
             preview = frame.resize(
                 (320, round(frame.height * 320 / frame.width)), Image.Resampling.LANCZOS,
             )

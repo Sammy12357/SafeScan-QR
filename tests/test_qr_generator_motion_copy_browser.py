@@ -235,7 +235,7 @@ def test_downloaded_animated_gif_moves_and_every_frame_scans(browser_site, motio
                 )
                 for candidate in (frame, mobile):
                     assert {barcode.data.decode("utf-8") for barcode in decode_qr_image(candidate)} == {TEST_URL}
-            assert all(ImageChops.difference(frames[0], frame).getbbox() for frame in frames[1:])
+            assert len({frame.tobytes() for frame in frames}) == 4
     finally:
         context.close()
 
