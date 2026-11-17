@@ -43,7 +43,7 @@ def test_counts_only_endpoint_and_rollout_flag(tmp_path, monkeypatch):
     home = client.get("/")
     assert home.status_code == 200
     assert 'qr-camera-phase3.js?v=ui-a11y-v1' in home.text
-    assert 'src="/static/qr-camera.js?v=legal-gpc-v1"' not in home.text
+    assert 'src="/static/qr-camera.js?v=score-fallback-v1"' not in home.text
     counted = client.post("/api/telemetry/scan", json=sample_event())
     assert counted.status_code == 204
     assert counted.headers["cache-control"] == "no-store"
@@ -54,7 +54,7 @@ def test_counts_only_endpoint_and_rollout_flag(tmp_path, monkeypatch):
     module, _, client = load_app(tmp_path, monkeypatch, scanner_v3=True)
     assert module.SCANNER_V3 is True
     home = client.get("/")
-    assert 'src="/static/qr-camera.js?v=legal-gpc-v1"' in home.text
+    assert 'src="/static/qr-camera.js?v=score-fallback-v1"' in home.text
     assert 'qr-camera-phase3.js?v=ui-a11y-v1' not in home.text
 
 

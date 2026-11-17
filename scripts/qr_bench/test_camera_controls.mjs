@@ -158,6 +158,7 @@ const navigator = { mediaDevices };
 let scenario = "single";
 let captureRequests = 0;
 let locateRequests = 0;
+let failedCaptureRequest = -1;
 
 class Worker {
   constructor() {
@@ -167,6 +168,11 @@ class Worker {
   postMessage(request) {
     if (request.mode === "capture") captureRequests += 1;
     if (request.mode === "locate") locateRequests += 1;
+    if ((scenario === "score-fail" && request.mode === "score") ||
+        (scenario === "decode-fail" && request.mode === "capture" && captureRequests === failedCaptureRequest)) {
+      setTimeout(() => this.onmessage?.({ data: { id: request.id, error: "decode_failed" } }), 0);
+      return;
+    }
     const payload = scenario === "ambiguous"
       ? (captureRequests % 2 === 1 ? "https://a.example" : "https://b.example")
       : "https://example.com";
@@ -243,6 +249,25 @@ assert.equal(captureRequests, 6, "burst must inspect all six frames before accep
 assert.equal(tracks.at(-1).readyState, "ended", "closing scanner stops camera");
 assert.equal(document.activeElement, launcher, "closing scanner restores the launcher focus");
 assert.equal(launcher.inert, false, "closing scanner restores background interaction");
+
+scenario = "score-fail";
+const scoreFailureResults = [];
+window.SafeScanQrCamera.open({ onResult: (payload) => scoreFailureResults.push(payload) });
+await eventually(() => !elements[".qr-camera-capture"].disabled, "score failure preview");
+await elements[".qr-camera-capture"].dispatch("click");
+assert.deepEqual(scoreFailureResults, ["https://example.com"],
+  "frame scoring errors must not discard a valid full-frame QR decode");
+assert.equal(tracks.at(-1).readyState, "ended", "successful decode closes the camera");
+
+scenario = "decode-fail";
+failedCaptureRequest = captureRequests + 1;
+const decodeFailureResults = [];
+window.SafeScanQrCamera.open({ onResult: (payload) => decodeFailureResults.push(payload) });
+await eventually(() => !elements[".qr-camera-capture"].disabled, "decode failure preview");
+await elements[".qr-camera-capture"].dispatch("click");
+assert.deepEqual(decodeFailureResults, [], "a failed capture decode must remain fail closed");
+assert.match(elements[".qr-camera-status"].textContent, /One frame was unclear/);
+await elements[".qr-camera-close"].dispatch("click");
 
 scenario = "ambiguous";
 const ambiguousResults = [];

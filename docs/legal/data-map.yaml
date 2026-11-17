@@ -9,6 +9,16 @@
     "Data-request export and deletion do not yet cover every table, including new payment consent records.",
     "Go Ghost status tables exist in code but are disabled and are not created at startup."
   ],
+  "transient_request_inputs": {
+    "halftone_qr_artwork": {
+      "source": "image file selected on the QR generator page",
+      "purpose": "render and decode-check a QR image carrying the requested destination URL",
+      "storage": "request processing memory; the parser spool threshold exceeds the enforced request body cap, and no source or generated image column or retained object is created by the generator",
+      "recipients": "SafeScan application and its hosting provider; artwork bytes are not sent to URL reputation providers",
+      "retention": "application image processing ends with the request; hosting request metadata and backup behavior require production verification",
+      "limits": "PNG, JPEG, or WebP; 8 MiB request image and 12 megapixel decoded-image caps"
+    }
+  },
   "tables": {
     "abuse_flags": {
       "fields": [
@@ -216,8 +226,8 @@
         "user_agent",
         "created_at"
       ],
-      "source": "requests and administrative actions",
-      "purpose": "security and operational audit; includes raw IP address",
+      "source": "requests and administrative actions, including screened QR generation with destination URL in metadata",
+      "purpose": "security and operational audit; includes raw IP address and may include screened QR destination URL",
       "storage": "SQLite persistent disk",
       "recipients": "Internal storage; outbound processing is listed in vendor-register.md",
       "retention": "Not verified against an automated deletion job",

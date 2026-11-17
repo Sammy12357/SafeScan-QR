@@ -44,6 +44,8 @@ def test_result_label_and_visual_state_follow_coverage(status, risk, coverage, e
     assert '<h2 id="riskVerdictTitle">SAFE</h2>' not in html
     if coverage != "complete":
         assert 'class="risk-modal-card risk-modal-safe"' not in html
+    if expected == "Could not fully check":
+        assert "The QR was read, but SafeScan could not complete enough checks" in html
     if status == "CAUTION" and coverage == "not_applicable":
         assert "Some findings need review. Confirm the source independently." in html
         assert "This content was decoded; no website destination check applies." not in html
@@ -54,6 +56,25 @@ def test_history_uses_bounded_legacy_labels():
 
     assert SCAN_CLASSIFICATION_LABELS["SAFE"] == "Lower risk score at scan time"
     assert SCAN_CLASSIFICATION_LABELS["MALICIOUS"] == "High-risk indicators"
+
+
+def test_unreadable_qr_is_not_presented_as_a_link_check_failure():
+    html = TEMPLATES.get_template("index.html").render(
+        results_visible=True,
+        status="ERROR",
+        source="Scanner",
+        overall_risk="suspicious",
+        url_found="No QR code or valid payload detected.",
+        verdict_summary="SafeScan could not decode a QR payload from this file.",
+        score="0",
+    )
+
+    assert '<h2 id="riskVerdictTitle">QR scan could not finish</h2>' in html
+    assert "Scan issue" in html
+    assert "SafeScan could not decode a QR payload" in html
+    assert "Could not fully check" not in html
+    assert "Exact decoded QR payload" not in html
+    assert "Risk score 0 out of 100" not in html
 
 
 def test_legacy_history_url_never_opens_directly_and_offers_recheck():

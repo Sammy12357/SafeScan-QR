@@ -1017,7 +1017,11 @@
           try {
             const score = await decoder.score(item.sample);
             item.sharpness = score.stats?.sharpness || 0;
-          } catch (_error) { scanError = true; }
+          } catch (_error) {
+            // Scoring only orders the burst. A failed score does not invalidate
+            // a later full-frame decode or imply a second QR code.
+            item.sharpness = 0;
+          }
         }
         frames.sort((first, second) => second.sharpness - first.sharpness);
         if (active && captureGeneration === cameraGeneration && typeof opts.onServerFallback === "function") {

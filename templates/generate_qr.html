@@ -11,7 +11,7 @@
   <title>QR Generator | Sqafe</title>
   <meta name="description" content="Generate a screened QR after SafeScan checks a link, or choose a plain QR with no safety check.">
   <link rel="icon" href="/static/safescan-logo.svg?v=sqafe-brand-v1" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=qr-dark-palette-v1">
+  <link rel="stylesheet" href="/static/styles.css?v=halftone-qr-v1">
 </head>
 <body class="test-site-page">
   <div class="page-shell">
@@ -48,6 +48,10 @@
             <label class="generate-qr-format-option">
               <input type="radio" name="generateQrFormat" value="ascii_motion">
               <span><strong>ASCII motion QR</strong><small>Moving character QR you can copy</small></span>
+            </label>
+            <label class="generate-qr-format-option">
+              <input type="radio" name="generateQrFormat" value="halftone">
+              <span><strong>Halftone art QR</strong><small>Blend your image into a scannable QR</small></span>
             </label>
           </div>
         </fieldset>
@@ -96,6 +100,15 @@
             </div>
             <p id="generateQrSavedStatus" class="generate-qr-saved-status" role="status" aria-live="polite"></p>
           </section>
+        </fieldset>
+        <fieldset id="generateQrHalftoneOptions" class="generate-qr-format generate-qr-halftone-options hidden">
+          <legend>Choose your artwork</legend>
+          <label for="generateQrHalftoneImage">Upload a photo or illustration</label>
+          <input id="generateQrHalftoneImage" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" aria-describedby="generateQrHalftoneHint generateQrHalftonePrivacy generateQrHalftoneStatus">
+          <p id="generateQrHalftoneHint">PNG, JPEG, or WebP, up to 8 MB and 12 megapixels. Sqafe checks the finished QR before offering a download. Detailed or low-contrast images may need another crop or photo.</p>
+          <p id="generateQrHalftonePrivacy">Your artwork and URL are sent to Sqafe to render the QR. The generator does not keep the source image or finished QR after the request. In screened mode, configured reputation services may receive the URL.</p>
+          <img id="generateQrHalftonePreview" alt="Selected artwork preview" hidden>
+          <p id="generateQrHalftoneStatus" role="status" aria-live="polite">Choose an image to blend with the QR.</p>
         </fieldset>
         <div class="generate-qr-form-row">
           <input id="generateQrUrlInput" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Destination URL" placeholder="https://example.com">
@@ -162,6 +175,6 @@
   <script src="/static/app-widgets.js?v=legal-gpc-v1"></script>
   <script src="/static/app-go-ghost.js?v=ghost-inline-errors-v1"></script>
   <script src="/static/app-go-ghost-ui.js?v=legal-a11y-v1"></script>
-  <script src="/static/app-generate-qr.js?v=qr-dark-palette-v1"></script>
+  <script src="/static/app-generate-qr.js?v=halftone-qr-v1"></script>
 </body>
 </html>

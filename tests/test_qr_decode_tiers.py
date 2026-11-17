@@ -182,10 +182,45 @@ def test_oversized_image_is_rejected_before_copying_pixels(decoder):
         decoder.decode_qr_image(huge)
 
 
+def test_upload_worker_has_startup_time_for_easy_qr_on_busy_host(decoder, monkeypatch):
+    # Simulate a 4.5-second Render process startup without making CI wait.
+    # The previous 2-second allowance would reject this valid worker result.
+    monkeypatch.setenv("QR_DECODE_BUDGET_S", "0.1")
+    response = json.dumps({
+        "payload": "https://example.com/", "image": None, "error": None,
+        "tier_events": [["native", "hit"]],
+    }).encode()
+    observed = []
+
+    def delayed_worker(_command, *, input, capture_output, timeout, check):
+        observed.append(timeout)
+        assert input.endswith(image_bytes)
+        assert capture_output is True and check is False
+        if timeout < 4.5:
+            raise decoder.subprocess.TimeoutExpired("qr_decode_worker.py", timeout)
+        return SimpleNamespace(returncode=0, stdout=response)
+
+    monkeypatch.setattr(decoder.subprocess, "run", delayed_worker)
+    output = io.BytesIO()
+    with Image.new("RGB", (16, 16), "white") as image:
+        image.save(output, format="PNG")
+    image_bytes = output.getvalue()
+    payload, inspected = decoder.decode_qr_upload(image_bytes, "frame.png", "image/png")
+    try:
+        assert payload == "https://example.com/"
+        assert inspected is not None and inspected.size == (16, 16)
+    finally:
+        if inspected is not None:
+            inspected.close()
+    assert len(observed) == 1
+    assert observed[0] == pytest.approx(5.1)
+
+
 def test_upload_worker_is_killed_when_native_decode_stalls(decoder, monkeypatch, tmp_path):
     worker = tmp_path / "qr_decode_worker.py"
     worker.write_text("import time\ntime.sleep(30)\n")
     monkeypatch.setattr(decoder, "__file__", str(tmp_path / "qr_decode.py"))
+    monkeypatch.setattr(decoder, "QR_WORKER_STARTUP_GRACE_SECONDS", 0.25)
     monkeypatch.setenv("QR_DECODE_BUDGET_S", "0.1")
     started = time.monotonic()
     with pytest.raises(decoder.QRDecodeSafetyError, match="time limit"):

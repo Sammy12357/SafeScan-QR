@@ -45,25 +45,25 @@
       "issue_severity": "MEDIUM",
       "issue_confidence": "LOW",
       "issue_text": "Possible SQL injection vector through string-based query construction.",
-      "code_sha256": "62fc5c67bbc138bcd859269cfd3d83125c4f197bf66d6fae8ad576484859f8fe"
+      "code_sha256": "afa01a62c0a7b2100daafb965f554e45a68ddb9e3098368126207e2e7b3a9f88"
     },
     {
       "filename": "hackabull/qr_decode.py",
-      "line_number": 431,
+      "line_number": 437,
       "test_id": "B314",
       "issue_severity": "MEDIUM",
       "issue_confidence": "HIGH",
       "issue_text": "Using xml.etree.ElementTree.fromstring to parse untrusted XML data is known to be vulnerable to XML attacks. Replace xml.etree.ElementTree.fromstring with its defusedxml equivalent function or make sure defusedxml.defuse_stdlib() is called",
-      "code_sha256": "d2b05634e9fccb9fbf2c6e2fa186a61c1b9511dde332f7109d4a0a584e31926f"
+      "code_sha256": "dce1723e02faffd7e392cc84994423d37762fd7c8ff7b9727cf87ceb7a2257c2"
     },
     {
       "filename": "hackabull/qr_decode.py",
-      "line_number": 463,
+      "line_number": 469,
       "test_id": "B314",
       "issue_severity": "MEDIUM",
       "issue_confidence": "HIGH",
       "issue_text": "Using xml.etree.ElementTree.fromstring to parse untrusted XML data is known to be vulnerable to XML attacks. Replace xml.etree.ElementTree.fromstring with its defusedxml equivalent function or make sure defusedxml.defuse_stdlib() is called",
-      "code_sha256": "7b03ce86ff00bcf9f711896934c3d19a7d76f179a7079552db30c31ca14ee87b"
+      "code_sha256": "13e5d630a6ada4400c588716c0719dec74f03683755c3062568a60909809be3f"
     },
     {
       "filename": "hackabull/qr_image.py",
